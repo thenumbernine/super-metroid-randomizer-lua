@@ -45,64 +45,90 @@ local locations = table{
 	{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=CanDefeatPhantoon},
 	{name="Missile (Crateria moat)", addr=0x78248, access=function() return req.supermissile() and req.powerbomb() end},
 	{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump() or req.speed()) end},
+
+	-- this is the missile tank under old mother brain 
+	-- here's one that, if you choose morph => screw attack, then your first missiles could end up here
+	--  however ... unless security is activated, this item will not appear
+	-- so either (a) deactivate security or (b) require morph and 1 missile tank for every item after security
 	{name="Missile (Crateria bottom)", addr=0x783EE, access=CanDestroyBombWalls},
-	{name="Bomb", addr=0x78404, ItemStorageType='Chozo', access=function() return CanOpenMissileDoors() and CanPassBombPassages() end},
+
+	-- this is another one of those, like plasma and the spore spawn super missiles, where there's no harm if we cut it off, because you need the very item to leave its own area
+	{name="Bomb", addr=0x78404, access=function() return CanOpenMissileDoors() and CanPassBombPassages() end},
+	
 	{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432, access=CanDestroyBombWalls},
 	{name="Missile (Crateria gauntlet right)", addr=0x78464, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump() or req.speed()) and CanPassBombPassages() end},
 	{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump() or req.speed()) and CanPassBombPassages() end},
 	{name="Super Missile (Crateria)", addr=0x78478, access=function() return CanUsePowerBombs() and req.speed() and (EnergyReserveCount() >= 1 or req.varia() or req.gravity()) end},
 	{name="Missile (Crateria middle)", addr=0x78486, access=CanPassBombPassages},
-	{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, ItemStorageType='Chozo', access=CanUsePowerBombs},
-	{name="Super Missile (pink Brinstar)", addr=0x784E4, ItemStorageType='Chozo', access=function() return CanPassBombPassages() and req.supermissile() end},
+	{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=CanUsePowerBombs},
+	{name="Super Missile (pink Brinstar)", addr=0x784E4, access=function() return CanPassBombPassages() and req.supermissile() end},
 	{name="Missile (green Brinstar below super missile)", addr=0x78518, access=function() return CanPassBombPassages() and CanOpenMissileDoors() end},
 	{name="Super Missile (green Brinstar top)", addr=0x7851E, access=function() return CanDestroyBombWalls() and CanOpenMissileDoors() and req.speed() end},
-	{name="Reserve Tank (Brinstar)", addr=0x7852C, ItemStorageType='Chozo', access=function() return CanDestroyBombWalls() and CanOpenMissileDoors() and req.speed() end},
+	{name="Reserve Tank (Brinstar)", addr=0x7852C, access=function() return CanDestroyBombWalls() and CanOpenMissileDoors() and req.speed() end},
 	{name="Missile (green Brinstar behind missile)", addr=0x78532, ItemStorageType='Hidden', access=function() return CanPassBombPassages() and CanOpenMissileDoors() and req.speed() end},
 	{name="Missile (green Brinstar behind Reserve Tank)", addr=0x78538, access=function() return CanDestroyBombWalls() and CanOpenMissileDoors() and req.speed() and req.morph() end},
 	{name="Missile (pink Brinstar top)", addr=0x78608, access=function() return CanDestroyBombWalls() and CanOpenMissileDoors() and (req.grappling() or req.spacejump() or req.speed()) end},
 	{name="Missile (pink Brinstar bottom)", addr=0x7860E, access=function() return (CanDestroyBombWalls() and CanOpenMissileDoors()) or CanUsePowerBombs() end},
-	{name="Charge Beam", addr=0x78614, ItemStorageType='Chozo', access=function() return (CanPassBombPassages() and CanOpenMissileDoors()) or CanUsePowerBombs() end},
+	{name="Charge Beam", addr=0x78614, access=function() return (CanPassBombPassages() and CanOpenMissileDoors()) or CanUsePowerBombs() end},
 	{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=function() return CanUsePowerBombs() and req.supermissile() and (req.grappling() or req.spacejump() or req.speed()) end,    },
 	{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() return ((CanPassBombPassages() and req.supermissile()) or CanUsePowerBombs()) and (req.hijump() or req.spacejump()) end},
+	
 	{name="Morphing Ball", addr=0x786DE, access=function() return true end},
 	{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=CanUsePowerBombs},
+	
 	{name="Missile (blue Brinstar middle)", addr=0x78798, access=function() return CanOpenMissileDoors() and req.morph() end},
-	{name="Energy Tank (blue Brinstar)", addr=0x7879E, ItemStorageType='Hidden', access=function() return CanOpenMissileDoors() and (req.hijump() or req.speed() or req.spacejump()) end},
+
+	-- technically you can use a damage boost, so all you really need is missiles
+	--  however this doesn't work until after security is activated ...
+	{name="Energy Tank (blue Brinstar)", addr=0x7879E, ItemStorageType='Hidden', access=function() 
+		return CanOpenMissileDoors() and (req.hijump() or req.speed() or req.spacejump()
+			-- or CanActivateAlarm()
+		) 
+	end},
+	
 	{name="Energy Tank (green Brinstar bottom)", addr=0x787C2, access=CanUsePowerBombs},
 	{name="Super Missile (green Brinstar bottom)", addr=0x787D0, access=function() return CanUsePowerBombs() and req.supermissile() end},
-	{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() return CanUsePowerBombs() and CanOpenMissileDoors() and req.speed() and req.gravity() end},
-	{name="Missile (blue Brinstar bottom)", addr=0x78802, ItemStorageType='Chozo', access=function() return req.morph() end},
+
+	-- doesn't really need gravity, just helps
+	{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() return CanUsePowerBombs() and CanOpenMissileDoors() and req.speed() 
+		--and req.gravity() 
+	end},
+	
+	{name="Missile (blue Brinstar bottom)", addr=0x78802, access=function() return req.morph() end},
+
+	-- only thing that needs wave:
 	{name="Energy Tank (pink Brinstar top)", addr=0x78824, access=function() return CanUsePowerBombs() and req.wave() end},
+	
 	{name="Missile (blue Brinstar top)", addr=0x78836, access=function() return CanOpenMissileDoors() and CanUsePowerBombs() and (req.speed() or req.spacejump()) end},
 	{name="Missile (blue Brinstar behind missile)", addr=0x7883C, ItemStorageType='Hidden', access=function() return CanOpenMissileDoors() and CanUsePowerBombs() and (req.speed() or req.spacejump()) end},
-	{name="X-Ray Visor", addr=0x78876, ItemStorageType='Chozo', access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() and (req.grappling() or req.spacejump()) end},
+	{name="X-Ray Visor", addr=0x78876, access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() and (req.grappling() or req.spacejump()) end},
 	{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() end},
-	{name="Power Bomb (red Brinstar spike room)", addr=0x7890E, ItemStorageType='Chozo', access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() end},
+	{name="Power Bomb (red Brinstar spike room)", addr=0x7890E, access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() end},
 	{name="Missile (red Brinstar spike room)", addr=0x78914, access=function() return CanAccessRedBrinstar() and CanUsePowerBombs() end},
-	{name="Spazer", addr=0x7896E, ItemStorageType='Chozo', access=function() return CanAccessRedBrinstar() and CanPassBombPassages() and (req.spacejump() or req.hijump()) end},
+	{name="Spazer", addr=0x7896E, access=function() return CanAccessRedBrinstar() and CanPassBombPassages() and (req.spacejump() or req.hijump()) end},
 	{name="Energy Tank (Kraid)", addr=0x7899C, ItemStorageType='Hidden', access=CanAccessKraid},
 	{name="Missile (Kraid)", addr=0x789EC, ItemStorageType='Hidden', access=function() return CanAccessKraid() and CanUsePowerBombs() end},
-	{name="Varia Suit", addr=0x78ACA, ItemStorageType='Chozo', access=CanAccessKraid},
+	{name="Varia Suit", addr=0x78ACA, access=CanAccessKraid},
 	{name="Missile (lava room)", addr=0x78AE4, ItemStorageType='Hidden', access=CanAccessHeatedNorfair},
-	{name="Ice Beam", addr=0x78B24, ItemStorageType='Chozo', access=function() return CanAccessKraid() and (req.gravity() or req.varia()) and req.speed() and (CanUsePowerBombs() or req.ice()) end},
+	{name="Ice Beam", addr=0x78B24, access=function() return CanAccessKraid() and (req.gravity() or req.varia()) and req.speed() and (CanUsePowerBombs() or req.ice()) end},
 	{name="Missile (below Ice Beam)", addr=0x78B46, ItemStorageType='Hidden', access=function() return CanAccessHeatedNorfair() and CanUsePowerBombs() and req.speed() end},
 	{name="Energy Tank (Crocomire)", addr=0x78BA4, access=CanAccessCrocomire},
-	{name="Hi-Jump Boots", addr=0x78BAC, ItemStorageType='Chozo', access=CanAccessRedBrinstar},
+	{name="Hi-Jump Boots", addr=0x78BAC, access=CanAccessRedBrinstar},
 	{name="Missile (above Crocomire)", addr=0x78BC0, access=function() return CanAccessCrocomire() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=CanAccessRedBrinstar},
 	{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=CanAccessRedBrinstar},
 	{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() return CanAccessCrocomire() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (below Crocomire)", addr=0x78C14, access=CanAccessCrocomire},
 	{name="Missile (Grapple Beam)", addr=0x78C2A, access=function() return CanAccessCrocomire() and (req.spacejump() or req.grappling() or req.speed()) end},
-	{name="Grapple Beam", addr=0x78C36, ItemStorageType='Chozo', access=function() return CanAccessCrocomire() and (req.spacejump() or (req.speed() and req.hijump())) end},
-	{name="Reserve Tank (Norfair)", addr=0x78C3E, ItemStorageType='Chozo', access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
+	{name="Grapple Beam", addr=0x78C36, access=function() return CanAccessCrocomire() and (req.spacejump() or (req.speed() and req.hijump())) end},
+	{name="Reserve Tank (Norfair)", addr=0x78C3E, access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (Norfair Reserve Tank)", addr=0x78C44, ItemStorageType='Hidden', access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (bubble Norfair green door)", addr=0x78C52, access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (bubble Norfair)", addr=0x78C66, access=CanAccessHeatedNorfair},
 	{name="Missile (Speed Booster)", addr=0x78C74, ItemStorageType='Hidden', access=CanAccessHeatedNorfair},
-	{name="Speed Booster", addr=0x78C82, ItemStorageType='Chozo', access=CanAccessHeatedNorfair},
+	{name="Speed Booster", addr=0x78C82, access=CanAccessHeatedNorfair},
 	{name="Missile (Wave Beam)", addr=0x78CBC, access=CanAccessHeatedNorfair},
-	{name="Wave Beam", addr=0x78CCA, ItemStorageType='Chozo', access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
+	{name="Wave Beam", addr=0x78CCA, access=function() return CanAccessHeatedNorfair() and (req.spacejump() or req.grappling()) end},
 	{name="Missile (Gold Torizo)", addr=0x78E6E, access=CanAccessLowerNorfair},
 	{name="Super Missile (Gold Torizo)", addr=0x78E74, ItemStorageType='Hidden', access=CanAccessLowerNorfair},
 	{name="Missile (Mickey Mouse room)", addr=0x78F30, access=CanAccessLowerNorfair},
@@ -111,16 +137,16 @@ local locations = table{
 	{name="Power Bomb (above Ridley)", addr=0x790C0, access=CanAccessLowerNorfair},
 	{name="Missile (lower Norfair near Wave Beam)", addr=0x79100, access=CanAccessLowerNorfair},
 	{name="Energy Tank (Ridley)", addr=0x79108, ItemStorageType='Hidden', access=function() return CanAccessLowerNorfair() and req.charge() and EnergyReserveCount() >= 4 end},
-	{name="Screw Attack", addr=0x79110, ItemStorageType='Chozo', access=CanAccessLowerNorfair},
+	{name="Screw Attack", addr=0x79110, access=CanAccessLowerNorfair},
 	{name="Energy Tank (lower Norfair fire flea room)", addr=0x79184, access=CanAccessLowerNorfair},
 	{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=CanAccessWs},
-	{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, ItemStorageType='Chozo', access=function() return CanDefeatPhantoon() and req.speed() end},
+	{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return CanDefeatPhantoon() and req.speed() end},
 	{name="Missile (Gravity Suit)", addr=0x7C2EF, access=CanDefeatPhantoon},
 	{name="Missile (Wrecked Ship top)", addr=0x7C319, access=CanDefeatPhantoon},
 	{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() return CanDefeatPhantoon() and req.gravity() and (req.grappling() or req.spacejump()) end},
 	{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=CanDefeatPhantoon},
 	{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=CanDefeatPhantoon},
-	{name="Gravity Suit", addr=0x7C36D, ItemStorageType='Chozo', access=CanDefeatPhantoon},
+	{name="Gravity Suit", addr=0x7C36D, access=CanDefeatPhantoon},
 	{name="Missile (green Maridia shinespark)", addr=0x7C437, access=function() return CanAccessOuterMaridia() and req.speed() end},
 	{name="Super Missile (green Maridia)", addr=0x7C43D, access=CanAccessOuterMaridia},
 	{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return CanAccessOuterMaridia() and (req.speed() or req.grappling() or req.spacejump()) end},
@@ -128,17 +154,34 @@ local locations = table{
 	{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=CanAccessInnerMaridia},
 	{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=CanAccessInnerMaridia},
 	{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=CanAccessInnerMaridia},
-	{name="Plasma Beam", addr=0x7C559, ItemStorageType='Chozo', access=function() return CanDefeatDraygon() and req.spacejump() and (req.screwattack() or req.plasma()) end},
+
+	-- This item requires plasma *to exit*
+	--  but this is no different from the super missile after spore spawn requiring super missile *to exit*
+	-- so I propose to use a different constraint for items in these situations.
+	-- Maybe I should make the randomizer to only put worthless items in these locations?
+	--  Otherwise I can't make randomizations that don't include the plasma item. 
+	{name="Plasma Beam", addr=0x7C559, access=function() 
+		return CanDefeatDraygon() 
+		--and req.spacejump() 
+		and (req.screwattack() or req.plasma()) 
+	end},
+	
 	{name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() return CanAccessOuterMaridia() and req.morph() and (req.springball() or req.bomb()) end},
-	{name="Reserve Tank (Maridia)", addr=0x7C5E3, ItemStorageType='Chozo', access=function() return CanAccessOuterMaridia() and req.morph() and (req.springball() or req.bomb()) end},
+	{name="Reserve Tank (Maridia)", addr=0x7C5E3, access=function() return CanAccessOuterMaridia() and req.morph() and (req.springball() or req.bomb()) end},
 	{name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=CanAccessOuterMaridia},
 	{name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=CanAccessOuterMaridia},
 	{name="Missile (pink Maridia)", addr=0x7C603, access=function() return CanAccessOuterMaridia() and req.speed() end},
 	{name="Super Missile (pink Maridia)", addr=0x7C609, access=function() return CanAccessOuterMaridia() and req.speed() end},
-	{name="Spring Ball", addr=0x7C6E5, ItemStorageType='Chozo', access=function() return CanAccessOuterMaridia() and req.grappling() and req.spacejump() end},
+
+	-- here's another fringe item
+	-- requires grappling, but what if we put something unimportant there? who cares about it then?
+	{name="Spring Ball", addr=0x7C6E5, access=function() return CanAccessOuterMaridia() and req.grappling() 
+		--and req.spacejump() 
+	end},
+	
 	{name="Missile (Draygon)", addr=0x7C74D, ItemStorageType='Hidden', access=CanDefeatDraygon},
 	{name="Energy Tank (Botwoon)", addr=0x7C755, access=CanDefeatBotwoon},
-	{name="Space Jump", addr=0x7C7A7, ItemStorageType='Chozo', access=CanDefeatDraygon},
+	{name="Space Jump", addr=0x7C7A7, access=CanDefeatDraygon},
 }
 --]]
 
@@ -296,6 +339,11 @@ for _,item in ipairs(itemInsts) do
 end
 --]]
 
+print('found '..#itemInsts..' items')
+print('found '..#doorInsts..' doors')
+print(tolua(countsForType):gsub(', ', ',\n\t'))
+
+
 --[[
 args:
 	changes = {[from] => [to]} key/value pairs
@@ -327,6 +375,34 @@ change{spazer='missile'}
 change{hijump='missile'}
 change{xray='missile'}
 change{springball='missile'}
+
+-- beyond this point is retarded
+
+-- this requires screwattack to be remaining, or else it'll stall the randomizer
+change{plasma='missile'}
+--local plasmaLoc = locations:remove(locations:find(nil, function(loc) return loc.name == "Energy Tank (pink Brinstar top)" end))
+--wr2b(itemInsts:remove(itemInsts:find(nil,function(inst) return inst.addr == plasmaLoc.addr end)).addr, itemTypes.missile)
+
+-- this will stall the randomizer because of pink Brinstar energy tank
+-- so lets remove it and write it as a missile
+change{wave='missile'}
+local pinkBrinstarEnergyTankLoc = locations:remove(locations:find(nil, function(loc) return loc.name == "Energy Tank (pink Brinstar top)" end))
+wr2b(itemInsts:remove(itemInsts:find(nil,function(inst) return inst.addr == pinkBrinstarEnergyTankLoc.addr end)).addr, itemTypes.missile)
+
+-- is this possible?
+--change{charge='missile'}
+
+-- is this possible?  you will have a hard time escaping Draygon's room
+--change{gravity='missile'}
+
+-- only possible if you have enough e-tanks before hell runs
+--change{varia='missile'}
+
+--
+--change{screwattack='missile'}
+
+--change{spacejump='missile'}
+
 --]]
 --[[
 change{missile='supermissile'}						-- turn all missiles into super missiles (one is already left -- the first missile tank)
@@ -339,6 +415,27 @@ change({energy='supermissile'}, {leave=7})
 for _,door in ipairs(doorInsts) do
 	--door.value = 
 end
+--]]
+
+
+
+
+--[[
+local itemInstValues = itemInsts:map(function(item) return item.value end)
+shuffle(itemInstValues)
+for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
+--]]
+
+--[[ filter out bombs and morph ball, so we know the run is possible 
+itemInsts = itemInsts:filter(function(item)
+	if item.addr ~= 0x786de		-- morph ball -- must be morph ball
+	and item.addr ~= 0x78802	-- blue brinstar bottom -- must be either missiles or super missiles
+	--and item.addr ~= 0x78798	-- blue brinstar middle -- if blue brinstar bottom isn't missiles then this must be missiles
+	and item.addr ~= 0x78404	-- chozo bombs
+	then
+		return true
+	end
+end)
 --]]
 
 
@@ -366,6 +463,7 @@ for _,loc in ipairs(locations) do
 	loc.defaultName = objNameForValue[loc.defaultValue]
 end
 
+local replaceMap = {}
 
 local function iterate(depth)
 	depth = depth or 0
@@ -388,77 +486,76 @@ local function iterate(depth)
 		return
 	end
 	local chooseLoc = chooseLocs[math.random(#chooseLocs)]
-	dprint('choosing to replace '..chooseLoc.defaultName)
+	dprint('choosing to replace '..chooseLoc.name)
 	
 	-- remove it from the currentLocs list 
 	local nextLocs = currentLocs:filter(function(loc) return chooseLoc ~= loc end)
-
+	
 	-- find an item to replace it with
 	if #itemInstIndexesLeft == 0 then 
 		dprint('we have no items left to replace it with!')
 		os.exit()
 	end
-
-	for _,i in ipairs(shuffle(range(#itemInstIndexesLeft))) do
-		
-		local push_itemInstIndexesLeft = table(itemInstIndexesLeft)
 	
+	for _,i in ipairs(shuffle(range(#itemInstIndexesLeft))) do
+		local push_itemInstIndexesLeft = table(itemInstIndexesLeft)
+		
 		local replaceInstIndex = itemInstIndexesLeft:remove(i)
-		dprint('...with '..objNameForValue[origItems[replaceInstIndex]])
-
 		local value = origItems[replaceInstIndex]
 		local name = objNameForValue[value]
-
+		dprint('...replacing '..chooseLoc.name..' with '..name)
+				
+		-- plan to write it 
+		replaceMap[chooseLoc.addr] = {value=value, sofar=table(sofar)}
+	
 		-- now replace it with an item
 		local push_sofar = table(sofar)
 		sofar[name] = (sofar[name] or 0) + 1
-
-		-- TODO write it here.  only really works with depth-first searching.
-		itemInsts[replaceInstIndex].value = value
-
+	
 		local push_currentLocs = table(currentLocs)
 		currentLocs = nextLocs
-
+		
 		dprint('iterating...')
 		if iterate(depth + 1) then return true end
-
+		
 		currentLocs = push_currentLocs
 		sofar = push_sofar
 		itemInstIndexesLeft = push_itemInstIndexesLeft
 	end
 end	
+
 iterate()
 
---]]
-
-
-
--- [[ filter out bombs and morph ball, so we know the run is possible 
-itemInsts = itemInsts:filter(function(item)
-	if item.addr ~= 0x786de		-- morph ball -- must be morph ball
-	and item.addr ~= 0x78802	-- blue brinstar bottom -- must be either missiles or super missiles
-	--and item.addr ~= 0x78798	-- blue brinstar middle -- if blue brinstar bottom isn't missiles then this must be missiles
-	and item.addr ~= 0x78404	-- chozo bombs
-	then
-		return true
-	end
+print()
+print()
+print'summary:'
+local longestName = locations:map(function(loc) return #loc.name end):sup()
+local function score(loc)
+	return table.values(replaceMap[loc.addr].sofar):sum() or 0
+end
+table(locations):sort(function(a,b) 
+	return score(a) < score(b) 
+end):map(function(loc)
+	local addr = loc.addr
+	local value = replaceMap[addr].value
+	local sofar = replaceMap[addr].sofar
+	print(loc.name
+		..('.'):rep(longestName - #loc.name + 10)
+		..objNameForValue[value]
+		..'\t'..tolua(sofar))
+	select(2, itemInsts:find(nil, function(inst) return inst.addr == addr end)).value = value
 end)
 --]]
-print('found '..#itemInsts..' items')
-print('found '..#doorInsts..' doors')
-print(tolua(countsForType):gsub(', ', ',\n\t'))
-
-local itemInstValues = itemInsts:map(function(item) return item.value end)
-shuffle(itemInstValues)
-for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
 
 
 for i,item in ipairs(itemInsts) do
 	wr2b(item.addr, item.value)
 end
+--[[
 for i,door in ipairs(doorInsts) do
 	wr2b(door.addr, door.value)
 end
+--]]
 
 file[outfilename] = header .. rom
 
