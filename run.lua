@@ -129,8 +129,8 @@ local locations = table{
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=CanAccessInnerMaridia},
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (yellow Maridia false wall)", addr=0x7C533, access=CanAccessInnerMaridia},
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Plasma Beam", addr=0x7C559, ItemStorageType='Chozo', access=function() return CanDefeatDraygon() and req.spacejump() and (req.screwattack() or req.plasma()) end},
-	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() return CanAccessOuterMaridia() and req.springball() end},
-	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Reserve Tank (Maridia)", addr=0x7C5E3, ItemStorageType='Chozo', access=function() return CanAccessOuterMaridia() and req.springball() end},
+	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() return CanAccessOuterMaridia() and req.morph() and (req.springball() or req.bomb()) end},
+	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Reserve Tank (Maridia)", addr=0x7C5E3, ItemStorageType='Chozo', access=function() return CanAccessOuterMaridia() and req.morph() and (req.springball() or req.bomb()) end},
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=CanAccessOuterMaridia},
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=CanAccessOuterMaridia},
 	{NoHidden=false, GravityOkay=true, Region='Maridia', name="Missile (pink Maridia)", addr=0x7C603, access=function() return CanAccessOuterMaridia() and req.speed() end},
@@ -318,16 +318,20 @@ local function change(changes, args)
 	end
 end
 
---[[
+-- [[ 
 change({supermissile='missile'}, {leave=1})		-- turn all (but one) super missiles into missiles
 change({powerbomb='missile'}, {leave=1}) 	-- turn all (but one) power bombs into missiles
-change{plasma='missile', spazer='missile', charge='missile', hijump='missile', springball='missile', reserve='missile', xray='missile'}	-- no need for these
-change({energy='missile'}, {leave=7})
+change({energy='missile'}, {leave=6})
+change{reserve='missile'}
+change{spazer='missile'}
+change{hijump='missile'}
+change{xray='missile'}
+change{springball='missile'}
 --]]
 --[[
 change{missile='supermissile'}						-- turn all missiles into super missiles (one is already left -- the first missile tank)
 change({powerbomb='supermissile'}, {leave=1}) 		-- turn all but one power bombs into super missiles
-change{plasma='supermissile', spazer='supermissile', charge='supermissile', hijump='supermissile', springball='supermissile', reserve='supermissile', xray='supermissile'}	-- no need for these
+change{spazer='supermissile', hijump='supermissile', springball='supermissile', reserve='supermissile', xray='supermissile'}	-- no need for these
 change({energy='supermissile'}, {leave=7})
 --]]
 
@@ -350,9 +354,7 @@ req = setmetatable({}, {
 
 -- deep copy, so the orginal itemInsts is intact
 local origItems = itemInsts:map(function(inst) return inst.value end)
---[[ feel free to modify origItems to your hearts content ... like replacing all reserve tanks with missiles, etc
---]]
-
+-- feel free to modify origItems to your hearts content ... like replacing all reserve tanks with missiles, etc
 
 -- keep track of the remaining items to place -- via indexes into the original array
 local itemInstIndexesLeft = range(#origItems)
