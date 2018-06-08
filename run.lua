@@ -140,7 +140,7 @@ local function CanAccessOuterMaridia()
 	and (
 		-- if you have gravity, you can get up with touch-and-go, spacejump, hijump, or bomb technique
 		(req.gravity and (skills.touchAndGo or req.spacejump or req.hijump or (skills.bombTechnique and CanUseBombs())))
-		-- if you don't have gravity then you need high jump and ice
+		-- if you don't have gravity then you need high jump and ice.  without gravity you do need high jump just to jump up from the tube that you break, into the next room.
 		or (skills.suitlessMaridiaFreezeCrabs and req.hijump and req.ice)
 		
 		-- suitless is possible so long as the space jump item is replaced with gravity suit to get out of Draygon's room ... or you do the crystal spark + blue spark + whatever move that I don't know how to do
@@ -580,6 +580,8 @@ local locations = table{
 	{name="Super Missile (green Maridia)", addr=0x7C43D, access=CanAccessOuterMaridia},
 	{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return CanAccessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end},
 	{name="Missile (green Maridia tatori)", addr=0x7C483, access=CanAccessOuterMaridia},
+
+	-- top of maridia
 	{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=CanAccessInnerMaridia},
 	{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=CanAccessInnerMaridia},
 	{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=CanAccessInnerMaridia},
@@ -871,9 +873,8 @@ local function removeLocation(locName, with)
 end
 
 -- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
-change{plasma='missile'}
 -- the other fix is to just not consider the plasma location, and put something innocuous there ...
---removeLocation('Plasma Beam', 'missile')
+change{plasma='missile'}
 
 -- this will stall the randomizer because of pink Brinstar energy tank
 -- so lets remove it and write it as a missile
@@ -891,12 +892,14 @@ removeLocation("Spring Ball", 'missile')
 --change{gravity='missile'}
 
 -- only possible if you have enough e-tanks before hell runs
+-- what this means is ... if the randomizer doesn't come up with a varia suit before hell run ... then it will be forced to place *all* energy tanks before hell run ... which might make a game that's too easy
 --change{varia='missile'}
 
 -- if you're replacing plasma item and screw attack item then you must remove plasma location ...
 change{screwattack='missile'}
+removeLocation('Plasma Beam', 'missile')
 
---change{spacejump='missile'}
+change{spacejump='missile'}
 
 --]]
 --[[

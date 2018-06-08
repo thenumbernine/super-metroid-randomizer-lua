@@ -1,6 +1,6 @@
 Super Metroid item randomizer
 Based on https://github.com/Dessyreqt/smrandomizer
-I didn't want to bother set up any kind of C# or MSVC solution builder, so I just rewrote it as a Lua script.  Should work with vanilla Lua.  Uses my lua-ext library.
+I didn't want to bother set up any kind of C# or MSVC solution builder, so I just rewrote it as a Lua script.  Should work with vanilla Lua 5.1 through 5.3, or LuaJIT 2.xx.  Uses my lua-ext library.
 
 I build off Dessyreqt's idea in using both access() functions and escape() functions,
 so now there are constraints based on what items it takes to access each item and what items it takes to escape from the room that the item is in.
