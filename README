@@ -1,1 +1,11 @@
-port of https://github.com/Dessyreqt/smrandomizer
+Super Metroid item randomizer
+Based on https://github.com/Dessyreqt/smrandomizer
+I didn't want to bother set up any kind of C# or MSVC solution builder, so I just rewrote it as a Lua script.  Should work with vanilla Lua.  Uses my lua-ext library.
+
+I build off Dessyreqt's idea in using both access() functions and escape() functions,
+so now there are constraints based on what items it takes to access each item and what items it takes to escape from the room that the item is in.
+
+This is useful for a few item's sake, such as plasma, wave, space jump, red Brinstar power bombs, and pink Brinstar super missiles, which have more relaxed constraints of what it takes to reach the item compared to what it takes to return to your normal game route.
+Of course this allows for more dangerous randomizations.  With the previous access() only, you are guaranteed to get super missiles before having to walk into the spore spawn super missile room with a random item which requires super missiles to exit it ... so you know in advance whether you can leave.
+
+With access() and escape(), you can potentially come up with a randomization where you cannot find super missiles anywhere else outside of the spore spawn super missile room.
