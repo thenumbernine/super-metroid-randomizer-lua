@@ -27,13 +27,19 @@ local skills = {
 	-- 2) accessing Kraid without hijump or spacejump
 	-- 3) lots more
 	touchAndGo = true,
+	touchAndGoToBoulderRoom = true,
+	touchAndGoUpAlcatraz = true,
 
 	bombTechnique = true,
+
+	damageBoostToBrinstarEnergy = true,
 
 	-- whether the player knows to use mockball to get into the green Brinstar item area
 	-- I think that's the only place it's really necessary
 	mockball = true,
-	
+
+	maridiaSuitSwap = true,
+
 	-- if you want to bother freeze the crab to jump up the maridia start area
 	suitlessMaridiaFreezeCrabs = true,
 	
@@ -62,40 +68,456 @@ local skills = {
 
 
 -- [[
-local function CanUsePowerBombs() 
+
+
+local function effectiveMissileCount()
+	return (req.missile or 0) + 5 * (req.supermissile or 0)
+end
+
+local function effectiveEnergyCount() 
+	return (req.energy or 0) + math.min((req.energy or 0) + 1, req.reserve or 0) 
+end
+
+
+
+local locations = table()
+
+
+-- start run / pre-alarm items ...
+
+
+	-- morph ball room:
+
+locations:insert{name="Morphing Ball", addr=0x786DE, access=function() 
+	return true 
+end}
+
+local function canUsePowerBombs() 
 	return req.morph and req.powerbomb
 end
 
-local function CanUseBombs() 
+-- power bombs behind power bomb wall near the morph ball 
+locations:insert{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=canUsePowerBombs}
+
+	-- first missile room:
+
+locations:insert{name="Missile (blue Brinstar bottom)", addr=0x78802, access=function() 
+	return req.morph 
+end}
+
+local function canOpenMissileDoors() 
+	return req.missile 
+	or req.supermissile 
+end
+
+	-- blue brinstar energy tank room:
+
+local function accessBlueBrinstarEnergyTankRoom() 
+	return canOpenMissileDoors()
+end
+
+-- second missile tank you get
+locations:insert{name="Missile (blue Brinstar middle)", addr=0x78798, access=function() 
+	return accessBlueBrinstarEnergyTankRoom() 
+	and req.morph 
+end}
+
+	-- blue brinstar double missile room (behind boulder room):
+
+local function accessBlueBrinstarDoubleMissileRoom()
+	-- get in the door
+	return canOpenMissileDoors()
+	-- get through the power bomb blocks
+	and canUsePowerBombs()
+	-- if you can already use powerbombs then you can get up the top.  touch and go replaces spacejump / speed boost
+	and (
+		-- get upstrairs
+		skills.touchAndGoToBoulderRoom
+		or req.speed
+		or req.spacejump
+	)
+end
+
+locations:insert{name="Missile (blue Brinstar top)", addr=0x78836, access=accessBlueBrinstarDoubleMissileRoom}
+locations:insert{name="Missile (blue Brinstar behind missile)", addr=0x7883C, access=accessBlueBrinstarDoubleMissileRoom}
+
+local function canUseBombs() 
 	return req.morph and req.bomb
 end
 
-local function CanUseSpringBall()
-	return req.morph and req.springball
+local function canBombTechnique()
+	return skills.bombTechnique and canUseBombs()
 end
 
-local function CanDestroyBombWalls() 
-	return CanUseBombs()
-	or CanUsePowerBombs() 
-	or req.screwattack 
+-- can you get up to high areas using a runway
+local function canGetUpWithRunway()
+	return req.speed
+	or req.spacejump
+	or canBombTechnique()
 end
 
-local function CanPassBombPassages() 
-	return CanUseBombs() or CanUsePowerBombs() 
+-- in order for the alarm to activate, you need to collect morph and a missile tank and go to some room in crateria.
+local function canActivateAlarm()
+	return req.morph and req.missile
 end
 
-local function CanGetBackThroughBlueGates()
+locations:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
+	return accessBlueBrinstarEnergyTankRoom() 
+	and (
+		-- how to get up?
+		req.hijump 
+		or canGetUpWithRunway()
+		-- technically you can use a damage boost, so all you really need is missiles
+		--  however this doesn't work until after security is activated ...
+		or (skills.damageBoostToBrinstarEnergy and canActivateAlarm())
+	)
+end}
+
+	-- Crateria pit room:
+
+-- bomb walls that must be morphed:
+local function canDestroyBombWallsMorphed()
+	return canUseBombs()
+	or canUsePowerBombs() 
+end
+
+-- bomb walls that can be destroyed without needing to morph 
+local function canDestroyBombWallsStanding() 
+	return req.screwattack 
+	or canDestroyBombWallsMorphed()
+end
+
+-- this is the missile tank under old mother brain 
+-- here's one that, if you choose morph => screw attack, then your first missiles could end up here
+--  however ... unless security is activated, this item will not appear
+-- so either (a) deactivate security or (b) require morph and 1 missile tank for every item after security
+locations:insert{name="Missile (Crateria bottom)", addr=0x783EE, access=function()
+	-- alarm needs to be activated or the missile won't appear
+	return canActivateAlarm() 
+	and canDestroyBombWallsStanding()
+end}
+
+
+	-- Bomb Torizo room:
+
+
+-- this is another one of those, like plasma and the spore spawn super missiles, where there's no harm if we cut it off, because you need the very item to leave its own area
+locations:insert{
+	name = "Bomb",
+	addr = 0x78404, 
+	access = function() 
+		return canActivateAlarm()
+		and canOpenMissileDoors() 
+	end,
+	escape = function()
+		return skills.touchAndGoUpAlcatraz 
+		or canDestroyBombWallsMorphed()
+	end,
+}
+
+	-- Final missile bombway:
+
+locations:insert{name="Missile (Crateria middle)", addr=0x78486, access=function()
+	return canDestroyBombWallsMorphed()
+	-- without the alarm, this item is replaced with a security scanner
+	and canActivateAlarm()
+end}
+
+	-- Terminator room:
+
+-- bomb walls that can be destroyed and have a runway nearby
+local function canDestroyBombWallsWithRunway()
+	return req.speed
+	or canDestroyBombWallsStanding()
+end
+
+local function accessTerminator()
+	-- accessing terminator from the regular entrance
+	return canActivateAlarm()
+	and canDestroyBombWallsWithRunway()
+end
+
+locations:insert{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432, access=accessTerminator}
+
+
+-- Crateria surface
+
+
+	-- Crateria power bomb room:
+
+locations:insert{name="Power Bomb (Crateria surface)", addr=0x781CC, access=function() 
+	-- to get up there
+	return canGetUpWithRunway()
+	-- to get in the door
+	and canUsePowerBombs()
+end}
+
+	-- Crateria gauntlet:
+
+-- so technically ...
+-- you need either bombs, or you need speed + 5 powerbombs to enter ...
+-- then you need either bombs or another 5 power bombs to exit
+local function accessGauntlet()
+	-- getting up
+	return canGetUpWithRunway()
+	-- getting through the bombable walls
+	and (
+		-- either something to destroy it while standing...
+		-- screw attack...
+		req.screwattack
+		-- bombs...
+		or canUseBombs()
+		-- it takes 3 power bombs (no pull-through walls) to get through the first gauntlet room
+		or (req.morph and (req.powerbomb or 0) >= 1)
+		-- speed boost from the landing site through the door
+		or (req.speed and (req.energy or 0) >= 3)	-- it takes 213 energy from the upper right plateau to go through the first gauntlet room 
+	)
+end
+
+-- right now escape()'s are only constrained one item at a time
+-- maybe I need separate functions ... 
+-- ... one for escaping the way you came (energy tank escape() function)
+-- ... and one for entering into the second gauntlet room ...are the constraints any different from escaping the way you came?
+local function escapeGauntletFirstRoom()
+	return req.screwattack
+	or canUseBombs()
+	-- it takes another 3 power bombs to get back the way we came ...
+	-- or another 4 to get through second gauntlet room
+	or (req.morph and (req.powerbomb or 0) >= 2)
+end
+
+local function accessGauntletSecondRoom()
+	return accessGauntlet() and escapeGauntletFirstRoom()
+end
+
+-- here's another escape condition shared between items: only one of the two green pirate shaft items needs to be morph
+local function escapeGreenPirateShaftItems()
+	return req.morph
+end
+
+locations:insert{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=accessGauntlet, escape=escapeGauntletFirstRoom}
+
+	-- Green pirate shaft
+
+locations:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
+locations:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
+
+-- speed boost area ... don't you need ice? nahhh, but you might need to destroy the jumping monsters if you don't have ice 
+locations:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
+	-- power bomb doors
+	return canUsePowerBombs() 
+	-- speed boost blocks
+	and req.speed 
+	-- escaping over the spikes
+	and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
+	-- killing / freezing the monsters? ... well, you already need power bombs 
+end}
+
+
+-- green Brinstar
+
+
+local accessEnterGreenBrinstar = accessTerminator
+
+	-- early supers room:
+
+locations:insert{name="Missile (green Brinstar below super missile)", addr=0x78518, access=function() 
+	return accessEnterGreenBrinstar()
+	-- missile door to enter room
+	and canOpenMissileDoors() 
+end, escape=function()
+	-- because you need to morph and bomb to get out ... 
+	return canDestroyBombWallsMorphed()	
+end}
+
+-- accessing the items & escaping through the top ...
+local function accessEarlySupersRoomItems()
+	return accessEnterGreenBrinstar()
+	and canOpenMissileDoors() 
+	-- missiles and mockball/speed to get up to it ...
+	and (skills.mockball or req.speed)
+	-- getting up to exit ...
+	and (skills.touchAndGo or req.hijump)
+end
+
+locations:insert{name="Super Missile (green Brinstar top)", addr=0x7851E, access=accessEarlySupersRoomItems}
+
+	-- Brinstar reserve tank room:
+
+locations:insert{name="Reserve Tank (Brinstar)", addr=0x7852C, access=accessEarlySupersRoomItems}
+
+local function accessBrinstarReserveMissile()
+	return accessEarlySupersRoomItems()
+	-- takes morph to get to the item ...
+	and req.morph 
+end
+
+locations:insert{name="Missile (green Brinstar behind Reserve Tank)", addr=0x78538, access=accessBrinstarReserveMissile}
+
+locations:insert{name="Missile (green Brinstar behind missile)", addr=0x78532, access=function()
+	return accessBrinstarReserveMissile()
+	-- takes morph + power/bombs to get to this item ...
+	and canDestroyBombWallsMorphed()
+end}
+
+	-- etecoon energy tank room:
+local accessEtecoons = canUsePowerBombs
+
+-- takes power bombs to get through the floor
+locations:insert{name="Energy Tank (green Brinstar bottom)", addr=0x787C2, access=accessEtecoons}
+
+locations:insert{name="Super Missile (green Brinstar bottom)", addr=0x787D0, access=function() 
+	return accessEtecoons() 
+	-- it's behind one more super missile door
+	and req.supermissile 
+end}
+
+locations:insert{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=function()
+	return accessEtecoons()
+	-- technically ...
+	-- and skills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
+	-- and technically you need morph, but you already need it to power bomb through the floor to get into etecoon area
+end}
+
+
+-- pink Brinstar
+
+
+local function accessPinkBrinstarFromLeft()
+	return
+	-- get into terminator
+	accessTerminator() 
+	-- get through missile door of green brinstar main shaft
+	and canOpenMissileDoors()
+	-- use bombs, power bombs, screw attack, or speed booster to enter pink Brinstar
+	and canDestroyBombWallsWithRunway()
+end
+
+-- notice, you can enter pink brinstar from the right with only power bombs
+-- ... but you can't leave without getting super missiles ...
+local function accessPinkBrinstarFromRight()
+	-- power bomb from the morph ball room
+	return canUsePowerBombs()
+end
+
+-- this is for accessing post-bomb-wall pink-brinstar
+local function accessPinkBrinstar()
+	-- accessing it from the left entrance:
+	return accessPinkBrinstarFromLeft()
+	-- accessing from the right entrance
+	or accessPinkBrinstarFromRight()
+end
+
+	-- Spore Spawn super room
+
+locations:insert{
+	name = "Super Missile (pink Brinstar)", 
+	addr = 0x784E4, 
+	access=function() 
+		-- getting into pink brinstar
+		return accessPinkBrinstar() 
+		-- getting into spore spawn
+		and canOpenMissileDoors()
+	end,
+	escape = function()
+		return req.supermissile
+		and req.morph
+	end
+}
+
+local function accessMissilesAtTopOfPinkBrinstar()
+	return accessPinkBrinstar()
+	and (
+		skills.touchAndGo 
+		or canBombTechnique()
+		or req.grappling 
+		or req.spacejump 
+		or req.speed
+	)
+end
+
+locations:insert{name="Missile (pink Brinstar top)", addr=0x78608, access=accessMissilesAtTopOfPinkBrinstar}
+
+locations:insert{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=function() 
+	return accessMissilesAtTopOfPinkBrinstar()
+	-- behind power bomb blocks
+	and canUsePowerBombs() 
+	-- behind a super missile block
+	and req.supermissile 
+end}
+
+locations:insert{name="Missile (pink Brinstar bottom)", addr=0x7860E, access=function() 
+	return accessPinkBrinstar() 
+end}
+
+local function accessCharge()
+	return accessPinkBrinstar() and canDestroyBombWallsMorphed()
+end
+
+locations:insert{name="Charge Beam", addr=0x78614, access=accessCharge}
+
+-- doesn't really need gravity, just helps
+locations:insert{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() 
+	-- get to the charge room
+	return accessCharge()
+	-- power bomb block
+	and canUsePowerBombs() 
+	-- missile door
+	and canOpenMissileDoors() 
+	-- speed booster
+	and req.speed 
+	-- maybe gravity to get through the water
+	and (skills.shortSpeedBoost or req.gravity)
+end}
+
+local function canGetBackThroughBlueGates()
 	return (skills.superMissileGateGlitch and req.supermissile) or req.wave
 end
 
+-- the only thing that needs wave:
+locations:insert{name="Energy Tank (pink Brinstar top)", addr=0x78824, access=function() 
+	return accessPinkBrinstar()
+	and canUsePowerBombs() 
+	and canGetBackThroughBlueGates()
+end}
+
+
+-- right side of Brinstar (lower green, red, Kraid, etc)
+
+
+local function accessLowerGreenBrinstar()
+	-- technically you can either access pink Brinstar from the left side ...
+	-- ... and exit via super missile door
+	-- ... or enter via power bombs through the morph ball room
+	return (accessPinkBrinstarFromLeft() and req.supermissile)
+	or accessPinkBrinstarFromRight()
+end
+
+locations:insert{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
+	return accessLowerGreenBrinstar()
+	and (skills.touchAndGo or req.hijump or req.spacejump) 
+end}
 
 -- what it takes to get into lower green Brinstar, and subsequently red Brinstar
 -- either a supermissile through the pink Brinstar door
 -- or a powerbomb through the blue Brinstar below Crateria entrance
-local function CanAccessRedBrinstar() 
-	return req.supermissile or CanUsePowerBombs() 
+local function accessRedBrinstar() 
+	return canActivateAlarm()
+	and accessLowerGreenBrinstar()
+	and (req.supermissile or canUsePowerBombs())
 end
 
+locations:insert{name="X-Ray Visor", addr=0x78876, access=function()
+	return accessRedBrinstar() 
+	and canUsePowerBombs() 
+	and (
+		req.grappling 
+		or req.spacejump 
+		or (effectiveEnergyCount() >= 5 and canUseBombs() and skills.bombTechnique)
+	)
+end}
+
+-- red Brinstar top:
 
 -- upper red Brinstar is the area of the first powerbomb you find, with the missile tank behind it, and the jumper room next to it
 -- notice that these items require an on-escape to be powerbombs 
@@ -104,42 +526,310 @@ end
 --  either the power bomb must be a powerbomb to escape
 --  or you must have super missiles beforehand, and the super missile must be a powerbomb
 -- I will implement this as requiring the escape-condition of the power bomb to be to have power bombs
-local function CanAccessUpperRedBrinstar()
-	return CanAccessRedBrinstar()
+local function accessUpperRedBrinstar()
+	return accessRedBrinstar()
 	and (
 		-- you can freeze the monsters and jump off of them
 		req.ice 
 		-- or you can super missile them and touch-and-go up
 		or (skills.touchAndGo and req.supermissile) 
 		-- or you can destroy them (with super missiles or screw attack) and either bomb technique or spacejump up
-		or ((req.screwattack or req.supermissile) and (skills.bombTechnique or req.spacejump))
+		or (
+			(req.screwattack or req.supermissile) 
+			and (skills.bombTechnique or req.spacejump)
+		)
 	)
 end
 
+-- behind a super missile door
+-- you don't need power bombs to get this, but you need power bombs to escape this area
+-- another shared exit constraint...
+locations:insert{
+	name = "Power Bomb (red Brinstar spike room)", 
+	addr = 0x7890E, 
+	access = function() 
+		return accessUpperRedBrinstar() and req.supermissile
+	end,
+	escape = function()
+		return canUsePowerBombs()
+	end,
+}
 
-local function CanAccessKraid() 
-	return CanAccessRedBrinstar() 
+-- behind a powerbomb wall 
+locations:insert{name="Missile (red Brinstar spike room)", addr=0x78914, access=function() 
+	return accessUpperRedBrinstar() and canUsePowerBombs() 
+end}
+
+-- super missile door, power bomb floor
+locations:insert{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() 
+	return accessUpperRedBrinstar() and req.supermissile and canUsePowerBombs() 
+end}
+
+-- red Brinstar bottom:
+
+locations:insert{name="Spazer", addr=0x7896E, access=function() 
+	-- getting there:
+	return accessRedBrinstar() 
+	-- getting up:
+	and (skills.touchAndGo or skills.bombTechnique or req.spacejump or req.hijump) 
+	-- getting over:
+	and canDestroyBombWallsMorphed() 
+	-- supermissile door:
+	and req.supermissile
+end}
+
+local function accessKraid() 
+	return accessRedBrinstar() 
 	and (skills.touchAndGo or req.spacejump or req.hijump) 
-	and CanPassBombPassages() 
+	and canDestroyBombWallsMorphed() 
 end
 
-local function EffectiveMissileCount()
-	return (req.missile or 0) + 5 * (req.supermissile or 0)
+locations:insert{name="Missile (Kraid)", addr=0x789EC, access=function() 
+	return accessKraid() and canUsePowerBombs() 
+end}
+
+-- accessible only after kraid is killed
+locations:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=accessKraid}
+
+locations:insert{name="Varia Suit", addr=0x78ACA, access=accessKraid}
+
+
+-- Norfair
+
+
+local accessEnterNorfair = accessRedBrinstar
+
+locations:insert{name="Hi-Jump Boots", addr=0x78BAC, access=function() return accessEnterNorfair() end}
+locations:insert{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=accessEnterNorfair}
+locations:insert{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=accessEnterNorfair}
+
+local function accessHeatedNorfair() 
+	return accessEnterNorfair() 
+	and (
+		-- you either need a suit
+		req.varia 
+		or req.gravity
+		-- or, if you want to do hellrun ...
+		or (skills.hellrun 
+			-- ... with high jump / space jump ... how many does this take?
+			and effectiveEnergyCount() >= 4 
+			and (req.hijump 
+				or req.spacejump 
+				-- without high jump and without suits it takes about 7 energy tanks
+				or (canUseBombs() and effectiveEnergyCount() >= 7)
+			)
+		)
+	) 
+	-- idk that you need these ... maybe you need some e-tanks, but otherwise ...
+	--and (req.spacejump or req.hijump) 
 end
 
-local function EffectiveEnergyCount() 
-	return (req.energy or 0) + math.min((req.energy or 0) + 1, req.reserve or 0) 
+locations:insert{name="Missile (lava room)", addr=0x78AE4, access=accessHeatedNorfair}
+
+local function accessIce()
+	return accessKraid() 
+	-- super missile door
+	and req.supermissile
+	-- speed / lowering barriers
+	and (skills.mockball or req.speed)
+	-- get through the heat
+	and (req.gravity 
+		or req.varia
+		or (skills.hellrun and effectiveEnergyCount() >= 4)
+	)
 end
 
-local function CanAccessOuterMaridia() 
+locations:insert{name="Ice Beam", addr=0x78B24, access=accessIce} 
+
+local function accessMissilesUnderIce()
+	return accessIce() and canUsePowerBombs() 
+end
+
+locations:insert{name="Missile (below Ice Beam)", addr=0x78B46, access=accessMissilesUnderIce}
+
+-- crocomire takes either wave on the rhs or speed booster and power bombs on the lhs
+local function accessCrocomire() 
+	-- access crocomire from lhs
+	return (accessMissilesUnderIce() and req.speed)
+	-- access crocomire from flea run
+	or (req.speed and req.wave)
+	-- access crocomire from hell run / bubble room
+	or (accessHeatedNorfair() and req.wave)
+end
+
+locations:insert{name="Energy Tank (Crocomire)", addr=0x78BA4, access=accessCrocomire}
+locations:insert{name="Missile (above Crocomire)", addr=0x78BC0, access=accessCrocomire}
+
+locations:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() 
+	return accessCrocomire() 
+	and (
+		req.spacejump 
+		or req.grappling
+		or req.speed
+		or req.ice
+		or skills.bombTechnique
+	)
+end}
+
+locations:insert{name="Missile (below Crocomire)", addr=0x78C14, access=accessCrocomire}
+
+locations:insert{name="Missile (Grappling Beam)", addr=0x78C2A, access=function() 
+	return accessCrocomire() 
+	and (
+		req.spacejump 
+		or req.grappling 
+		or req.speed
+		or skills.bombTechnique
+	)
+end}
+
+locations:insert{name="Grappling Beam", addr=0x78C36, access=function() 
+	return accessCrocomire() 
+	and (
+		req.spacejump 
+		or (req.speed and req.hijump)
+		or skills.bombTechnique
+	) 
+end}
+
+locations:insert{name="Missile (bubble Norfair)", addr=0x78C66, access=accessHeatedNorfair}
+locations:insert{name="Missile (Speed Booster)", addr=0x78C74, access=accessHeatedNorfair}
+locations:insert{name="Speed Booster", addr=0x78C82, access=accessHeatedNorfair}
+locations:insert{name="Missile (Wave Beam)", addr=0x78CBC, access=accessHeatedNorfair}
+
+locations:insert{
+	name = "Wave Beam",
+	addr = 0x78CCA, 
+	access = function()
+		return accessHeatedNorfair() 
+		-- or take some damange and use touch and go ...
+		--and (req.spacejump or req.grappling)
+	end,
+	-- on the way back, you need to go thruogh the top gate, or morph to go through the bottom ...
+	escape = function()
+		return canGetBackThroughBlueGates() or req.morph
+	end,
+}
+
+local function accessNorfairReserve()
+	return accessHeatedNorfair() 
+	and (req.spacejump 
+		or req.grappling
+		or (skills.touchAndGo and (req.hijump or req.ice))
+	)
+end
+
+-- upper bubble room ... probably needs high jump or ice ... 
+locations:insert{name="Missile (bubble Norfair green door)", addr=0x78C52, access=accessNorfairReserve}
+locations:insert{name="Reserve Tank (Norfair)", addr=0x78C3E, access=accessNorfairReserve}
+locations:insert{name="Missile (Norfair Reserve Tank)", addr=0x78C44, access=accessNorfairReserve}
+
+
+-- lower Norfair
+
+
+local function accessLowerNorfair() 
+	return accessHeatedNorfair() 
+	-- powerbomb door
+	and req.powerbomb 
+	and (
+		-- gravity and space jump is the default option
+		(req.gravity and req.spacejump)
+		-- you can do it without gravity, but you need precise touch and go, and you need high jump, and enough energy
+		or (skills.preciseTouchAndGoLowerNorfair and req.hijump and effectiveEnergyCount() >= 7)
+		-- you can do without space jump if you have gravity and high jump -- suit swap
+		or (req.gravity and skills.lowerNorfairSuitSwap)
+	)
+end
+
+locations:insert{name="Missile (Gold Torizo)", addr=0x78E6E, access=accessLowerNorfair}
+locations:insert{name="Super Missile (Gold Torizo)", addr=0x78E74, access=accessLowerNorfair}
+locations:insert{name="Screw Attack", addr=0x79110, access=accessLowerNorfair}
+
+locations:insert{name="Missile (Mickey Mouse room)", addr=0x78F30, access=accessLowerNorfair}
+
+locations:insert{name="Energy Tank (lower Norfair fire flea room)", addr=0x79184, access=accessLowerNorfair}
+locations:insert{name="Missile (lower Norfair above fire flea room)", addr=0x78FCA, access=accessLowerNorfair}
+locations:insert{name="Power Bomb (lower Norfair above fire flea room)", addr=0x78FD2, access=accessLowerNorfair}
+
+-- spade shaped room?
+locations:insert{name="Missile (lower Norfair near Wave Beam)", addr=0x79100, access=accessLowerNorfair}
+
+locations:insert{name="Power Bomb (above Ridley)", addr=0x790C0, access=accessLowerNorfair}
+
+-- these constraints are really for what it takes to kill Ridley
+locations:insert{name="Energy Tank (Ridley)", addr=0x79108, access=function() 
+	return accessLowerNorfair() 
+	and effectiveEnergyCount() >= 4 
+	-- you don't need charge.  you can also kill him with a few hundred missiles
+	and (req.charge or effectiveMissileCount() >= 250)
+end}
+
+
+-- Wrecked Ship
+
+
+-- on the way to wrecked ship
+locations:insert{name="Missile (Crateria moat)", addr=0x78248, access=function() 
+	-- you just need to get through the doors, from there you can jump across
+	return req.supermissile and req.powerbomb 
+end}
+
+local function accessWreckedShip() 
+	return 
+	-- super missile door from crateria surface
+	-- ... or super missile door through pink Brinstar
+	req.supermissile 
+	-- power bomb door with the flying space pirates in it
+	and canUsePowerBombs() 
+	-- getting across the water
+	and (skills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
+end
+
+locations:insert{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=accessWreckedShip}
+locations:insert{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=accessWreckedShip}
+
+local function canDefeatPhantoon() 
+	return accessWreckedShip() 
+	and req.charge 
+	and (req.gravity or req.varia or effectiveEnergyCount() >= 2) 
+end
+
+locations:insert{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=canDefeatPhantoon}
+locations:insert{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=canDefeatPhantoon}
+locations:insert{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return canDefeatPhantoon() and req.speed end}
+locations:insert{name="Missile (Gravity Suit)", addr=0x7C2EF, access=canDefeatPhantoon}
+locations:insert{name="Missile (Wrecked Ship top)", addr=0x7C319, access=canDefeatPhantoon}
+
+locations:insert{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() 
+	return canDefeatPhantoon() 
+	and (req.grappling or req.spacejump
+		or effectiveEnergyCount() >= 2
+	) 
+	--and req.gravity 
+end}
+
+locations:insert{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=canDefeatPhantoon}
+locations:insert{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=canDefeatPhantoon}
+locations:insert{name="Gravity Suit", addr=0x7C36D, access=canDefeatPhantoon}
+
+
+-- Maridia
+
+
+local function accessOuterMaridia() 
 	-- get to red brinstar
-	return CanAccessRedBrinstar() 
+	return accessRedBrinstar() 
 	-- break through the tube
 	and req.powerbomb 
 	-- now to get up ...
 	and (
 		-- if you have gravity, you can get up with touch-and-go, spacejump, hijump, or bomb technique
-		(req.gravity and (skills.touchAndGo or req.spacejump or req.hijump or (skills.bombTechnique and CanUseBombs())))
+		(req.gravity and (
+			-- you need touch-and-go to get to the balooon grappling room ... but you need suit-swap to get past it ...
+			skills.maridiaSuitSwap --skills.touchAndGo 
+			or req.spacejump 
+			or req.hijump or (skills.bombTechnique and canUseBombs())))
 		-- if you don't have gravity then you need high jump and ice.  without gravity you do need high jump just to jump up from the tube that you break, into the next room.
 		or (skills.suitlessMaridiaFreezeCrabs and req.hijump and req.ice)
 		
@@ -147,13 +837,23 @@ local function CanAccessOuterMaridia()
 	)
 end
 
-local function CanAccessInnerMaridia() 
-	return CanAccessOuterMaridia() 
-	and (req.spacejump or req.grappling or req.speed) 
+locations:insert{name="Missile (green Maridia shinespark)", addr=0x7C437, access=function() return accessOuterMaridia() and req.speed end}
+locations:insert{name="Super Missile (green Maridia)", addr=0x7C43D, access=accessOuterMaridia}
+locations:insert{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return accessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end}
+locations:insert{name="Missile (green Maridia tatori)", addr=0x7C483, access=accessOuterMaridia}
+
+local function accessInnerMaridia() 
+	return accessOuterMaridia() 
+	and (req.spacejump or req.grappling or req.speed or (req.gravity and skills.touchAndGo)) 
 end
 
-local function CanDefeatBotwoon() 
-	return CanAccessInnerMaridia() 
+-- top of maridia
+locations:insert{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=accessInnerMaridia}
+locations:insert{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=accessInnerMaridia}
+locations:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=accessInnerMaridia}
+
+local function canDefeatBotwoon() 
+	return accessInnerMaridia() 
 	and (
 		(skills.botwoonFreezeGlitch and req.ice) 
 		-- need to speed boost underwater
@@ -162,498 +862,85 @@ local function CanDefeatBotwoon()
 	)
 end
 
-local function CanDefeatDraygon() 
-	return CanDefeatBotwoon() 
-	and EffectiveEnergyCount() >= 3 
+local function canDefeatDraygon() 
+	return canDefeatBotwoon() 
+	and effectiveEnergyCount() >= 3 
 	-- can't use space jump or bombs underwater without gravity
 	and req.gravity
-	and (CanUseBombs() or req.spacejump)
+	and (canUseBombs() or req.spacejump)
 end
 
-local function CanAccessHeatedNorfair() 
-	return CanAccessRedBrinstar() 
-	and (
-		-- you either need a suit
-		req.varia 
-		or req.gravity
-		-- or, if you want to do hellrun ...
-		or (skills.hellrun 
-			-- ... with high jump / space jump ... how many does this take?
-			and EffectiveEnergyCount() >= 4 
-			and (req.hijump 
-				or req.spacejump 
-				-- without high jump and without suits it takes about 7 energy tanks
-				or (CanUseBombs() and EffectiveEnergyCount() >= 7)
-			)
-		)
-	) 
-	-- idk that you need these ... maybe you need some e-tanks, but otherwise ...
-	--and (req.spacejump or req.hijump) 
-end
-
--- crocomire takes either wave on the rhs or speed booster and power bombs on the lhs
-local function CanAccessCrocomire() 
-	return CanAccessHeatedNorfair() and ((req.speed and CanUsePowerBombs()) or req.wave) 
-end
-
-local function CanAccessLowerNorfair() 
-	return CanAccessHeatedNorfair() 
-	-- powerbomb door
-	and req.powerbomb 
-	and (
-		-- gravity and space jump is the default option
-		(req.gravity and req.spacejump)
-		-- you can do it without gravity, but you need precise touch and go, and you need high jump, and enough energy
-		or (skills.preciseTouchAndGoLowerNorfair and req.hijump and EffectiveEnergyCount() >= 7)
-		-- you can do without space jump if you have gravity and high jump -- suit swap
-		or (skills.lowerNorfairSuitSwap and req.gravity)
-	)
-end
-
-local function CanOpenMissileDoors() return req.missile or req.supermissile end
-
-local function CanEnterAndLeaveGauntlet() 
-	return CanUseBombs()
-	or ((req.powerbomb or 0) >= 2 and req.morph) 
-	or req.screwattack 
-end
-
-local function CanAccessWreckedShip() 
-	return 
-	-- super missile door from crateria surface
-	-- ... or super missile door through pink Brinstar
-	req.supermissile 
-	-- power bomb door with the flying space pirates in it
-	and CanUsePowerBombs() 
-	-- getting across the water
-	and (skills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed) 
-end
-
-local function CanDefeatPhantoon() 
-	return CanAccessWreckedShip() 
-	and req.charge 
-	and (req.gravity or req.varia or EffectiveEnergyCount() >= 2) 
-end
-
-local locations = table{
-
-
-	-- start run
-
-
-	{name="Morphing Ball", addr=0x786DE, access=function() return true end},
-
-	-- first missile tank you get
-	{name="Missile (blue Brinstar bottom)", addr=0x78802, access=function() 
-		return req.morph 
-	end},
-
-	-- second missile tank you get
-	{name="Missile (blue Brinstar middle)", addr=0x78798, access=function() 
-		return CanOpenMissileDoors() and req.morph 
-	end},
-
-	-- missile behind the rock-fall water room
-	{name="Missile (blue Brinstar top)", addr=0x78836, access=function() 
-		return CanOpenMissileDoors() and CanUsePowerBombs() 
-		-- if you can already use powerbombs then you can get up the top.  touch and go replaces spacejump / speed boost
-		and (skills.touchAndGo or req.speed or req.spacejump) 
-	end},
-
-	-- hidden missile behind rock-fall water room
-	{name="Missile (blue Brinstar behind missile)", addr=0x7883C, access=function() 
-		return CanOpenMissileDoors() and CanUsePowerBombs() 
-		and (skills.touchAndGo or req.speed or req.spacejump) 
-	end},
-
-	-- technically you can use a damage boost, so all you really need is missiles
-	--  however this doesn't work until after security is activated ...
-	{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
-		return CanOpenMissileDoors() 
-		and (req.hijump or req.speed or req.spacejump
-			-- or CanActivateAlarm()
-		) 
-	end},
-
-	-- power bombs behind power bomb wall near the morph ball 
-	{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=CanUsePowerBombs},
-
-	-- this is the missile tank under old mother brain 
-	-- here's one that, if you choose morph => screw attack, then your first missiles could end up here
-	--  however ... unless security is activated, this item will not appear
-	-- so either (a) deactivate security or (b) require morph and 1 missile tank for every item after security
-	{name="Missile (Crateria bottom)", addr=0x783EE, access=CanDestroyBombWalls},
-
-	-- this is another one of those, like plasma and the spore spawn super missiles, where there's no harm if we cut it off, because you need the very item to leave its own area
-	{name="Bomb", addr=0x78404, access=function() return CanOpenMissileDoors() and CanPassBombPassages() end},
-	
-	{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432, access=CanDestroyBombWalls},
-	
-
-	-- Crateria surface
-
-
-	-- upper right of the first room on the surface
-	{name="Power Bomb (Crateria surface)", addr=0x781CC, access=function() 
-		return CanUsePowerBombs() -- to get in the door
-		-- to get up there
-		and (req.speed or req.spacejump or (CanUseBombs() and skills.bombTechnique)) 
-	end},
-
-	-- upper left of the first room on the surface
-	{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump or req.speed) end},
-
-	{name="Missile (Crateria gauntlet right)", addr=0x78464, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump or req.speed) and CanPassBombPassages() end},
-	{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=function() return CanEnterAndLeaveGauntlet() and (req.spacejump or req.speed) and CanPassBombPassages() end},
-
-	{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=CanAccessWreckedShip},
-	{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=CanDefeatPhantoon},
-	{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=CanDefeatPhantoon},
-
-	-- on the way to wrecked ship
-	{name="Missile (Crateria moat)", addr=0x78248, access=function() 
-		-- you just need to get through the doors, from there you can jump across
-		return req.supermissile and req.powerbomb 
-	end},
-	
-	-- speed boost area ... don't you need ice?
-	{name="Super Missile (Crateria)", addr=0x78478, access=function() 
-		return CanUsePowerBombs() 
-		and req.speed 
-		and (EffectiveEnergyCount() >= 1 or req.varia or req.gravity) 
-	end},
-	
-	{name="Missile (Crateria middle)", addr=0x78486, access=CanPassBombPassages},
-
-
-	-- green Brinstar
-
-
-	{name="Missile (green Brinstar below super missile)", addr=0x78518, access=function() return CanPassBombPassages() and CanOpenMissileDoors() end},
-
-	{name="Super Missile (green Brinstar top)", addr=0x7851E, access=function() 
-		return CanDestroyBombWalls() and CanOpenMissileDoors() 
-		and (skills.mockball or req.speed)
-	end},
-
-	{name="Reserve Tank (Brinstar)", addr=0x7852C, access=function() 
-		return CanDestroyBombWalls() and CanOpenMissileDoors() 
-		and (skills.mockball or req.speed)
-	end},
-
-	{name="Missile (green Brinstar behind missile)", addr=0x78532, access=function() 
-		return CanPassBombPassages() and CanOpenMissileDoors() 
-		and (skills.mockball or req.speed)
-	end},
-
-	{name="Missile (green Brinstar behind Reserve Tank)", addr=0x78538, access=function() 
-		return CanDestroyBombWalls() and CanOpenMissileDoors() and req.morph 
-		and (skills.mockball or req.speed)
-	end},
-
-	-- next to walljump creatures
-	{name="Energy Tank (green Brinstar bottom)", addr=0x787C2, access=CanUsePowerBombs},
-
-	-- next to walljump creatures
-	{name="Super Missile (green Brinstar bottom)", addr=0x787D0, access=function() return CanUsePowerBombs() and req.supermissile end},
-	
-	-- next to walljump creatures
-	{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=CanUsePowerBombs},
-
-
-	-- pink Brinstar
-
-
-	-- super missile after spore spawn.
-	-- this is a potential trap, if it is swapped with something other than super missiles, because you can't get out without them
-	{
-		name = "Super Missile (pink Brinstar)", 
-		addr = 0x784E4, 
-		access=function() 
-			return CanPassBombPassages() 
-		end,
-		escape = function()
-			return req.supermissile
-		end
-	},
-	
-	{name="Missile (pink Brinstar top)", addr=0x78608, access=function() 
-		return CanDestroyBombWalls() and CanOpenMissileDoors() 
-		-- doesn't really need these.  you can just use touch-and-go
-		and (skills.touchAndGo or req.grappling or req.spacejump or req.speed) 
-	end},
-	
-	{name="Missile (pink Brinstar bottom)", addr=0x7860E, access=function() 
-		return (CanDestroyBombWalls() and CanOpenMissileDoors()) 
-	end},
-	
-	{name="Charge Beam", addr=0x78614, access=function() 
-		return (CanPassBombPassages() and CanOpenMissileDoors()) 
-	end},
-	
-	{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=function() 
-		return CanUsePowerBombs() and req.supermissile 
-		-- this one has grappling blocks before it, but honestly you can just touch-and-go up there 
-		and (skills.touchAndGo or req.grappling or req.spacejump or req.speed) 
-	end},
-
-	-- doesn't really need gravity, just helps
-	{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() 
-		return CanUsePowerBombs() 
-		and CanOpenMissileDoors() 
-		and req.speed 
-		and (skills.shortSpeedBoost or req.gravity)
-	end},
-
-	-- the only thing that needs wave:
-	{name="Energy Tank (pink Brinstar top)", addr=0x78824, access=function() 
-		return CanUsePowerBombs() 
-		and CanGetBackThroughBlueGates()
-	end},
-
-
-	-- right side of Brinstar (lower green, red, Kraid, etc)
-	
-
-	{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
-		return ((CanPassBombPassages() and req.supermissile) 
-			or CanUsePowerBombs()
-		) 
-		and (skills.touchAndGo or req.hijump or req.spacejump) 
-	end},
-
-	{name="X-Ray Visor", addr=0x78876, access=function()
-		return CanAccessRedBrinstar() 
-		and CanUsePowerBombs() 
-		and (req.grappling or req.spacejump) 
-	end},
-
-	-- red Brinstar top:
-
-	-- behind a super missile door
-	-- you don't need power bombs to get this, but you need power bombs to escape this area
-	{
-		name = "Power Bomb (red Brinstar spike room)", 
-		addr = 0x7890E, 
-		access = function() 
-			return CanAccessUpperRedBrinstar() and req.supermissile
-		end,
-		escape = function()
-			return CanUsePowerBombs()
-		end,
-	},
-
-	-- behind a powerbomb wall 
-	{name="Missile (red Brinstar spike room)", addr=0x78914, access=function() 
-		return CanAccessUpperRedBrinstar() and CanUsePowerBombs() 
-	end},
-
-	-- super missile door, power bomb floor
-	{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() 
-		return CanAccessUpperRedBrinstar() and req.supermissile and CanUsePowerBombs() 
-	end},
-
-	-- red Brinstar bottom:
-	
-	{name="Spazer", addr=0x7896E, access=function() 
-		return CanAccessRedBrinstar() 
-		and CanPassBombPassages() 
-		and (skills.touchAndGo or req.spacejump or req.hijump) 
-	end},
-	
-	{name="Missile (Kraid)", addr=0x789EC, access=function() 
-		return CanAccessKraid() and CanUsePowerBombs() 
-	end},
-
-	-- accessible only after kraid is killed
-	{name="Energy Tank (Kraid)", addr=0x7899C, access=CanAccessKraid},
-	
-	{name="Varia Suit", addr=0x78ACA, access=CanAccessKraid},
-
-	
-	-- Norfair
-
-	
-	{name="Missile (lava room)", addr=0x78AE4, access=CanAccessHeatedNorfair},
-	
-	{name="Ice Beam", addr=0x78B24, access=function() 
-		return CanAccessKraid() 
-		and (req.gravity or req.varia
-			or EffectiveEnergyCount() >= 4	-- my addition, because you don't need gravity
-		)
-		and req.speed 
-		and (CanUsePowerBombs() or req.ice) 
-	end},
-
-	-- TODO give this a different restriction
-	-- it doesn't need 7 tanks, like bubble rooms, but maybe just 5
-	{name="Missile (below Ice Beam)", addr=0x78B46, access=function() 
-		return CanAccessHeatedNorfair() and CanUsePowerBombs() and req.speed 
-	end},
-	
-	{name="Energy Tank (Crocomire)", addr=0x78BA4, access=CanAccessCrocomire},
-	{name="Hi-Jump Boots", addr=0x78BAC, access=CanAccessRedBrinstar},
-	{name="Missile (above Crocomire)", addr=0x78BC0, access=function() return CanAccessCrocomire() and (req.spacejump or req.grappling) end},
-	{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=CanAccessRedBrinstar},
-	{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=CanAccessRedBrinstar},
-	{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() return CanAccessCrocomire() and (req.spacejump or req.grappling) end},
-	{name="Missile (below Crocomire)", addr=0x78C14, access=CanAccessCrocomire},
-	{name="Missile (Grappling Beam)", addr=0x78C2A, access=function() return CanAccessCrocomire() and (req.spacejump or req.grappling or req.speed) end},
-	{name="Grappling Beam", addr=0x78C36, access=function() return CanAccessCrocomire() and (req.spacejump or (req.speed and req.hijump)) end},
-
-	-- upper bubble room ... probably needs high jump or ice ... 
-	{name="Reserve Tank (Norfair)", addr=0x78C3E, access=function() return CanAccessHeatedNorfair() and (req.spacejump or req.grappling) end},
-	{name="Missile (Norfair Reserve Tank)", addr=0x78C44, access=function() return CanAccessHeatedNorfair() and (req.spacejump or req.grappling) end},
-	{name="Missile (bubble Norfair green door)", addr=0x78C52, access=function() return CanAccessHeatedNorfair() and (req.spacejump or req.grappling) end},
-	{name="Missile (bubble Norfair)", addr=0x78C66, access=CanAccessHeatedNorfair},
-	{name="Missile (Speed Booster)", addr=0x78C74, access=CanAccessHeatedNorfair},
-	{name="Speed Booster", addr=0x78C82, access=CanAccessHeatedNorfair},
-	{name="Missile (Wave Beam)", addr=0x78CBC, access=CanAccessHeatedNorfair},
-	
-	{
-		name = "Wave Beam",
-		addr = 0x78CCA, 
-		access = function()
-			return CanAccessHeatedNorfair() 
-			-- or take some damange and use touch and go ...
-			--and (req.spacejump or req.grappling)
-		end,
-		-- on the way back, you need to go thruogh the top gate, or morph to go through the bottom ...
-		escape = function()
-			return CanGetBackThroughBlueGates() or req.morph
-		end,
-	},
-
-
-	-- lower Norfair
-
-
-	{name="Missile (Gold Torizo)", addr=0x78E6E, access=CanAccessLowerNorfair},
-	{name="Super Missile (Gold Torizo)", addr=0x78E74, access=CanAccessLowerNorfair},
-	{name="Screw Attack", addr=0x79110, access=CanAccessLowerNorfair},
-	
-	{name="Missile (Mickey Mouse room)", addr=0x78F30, access=CanAccessLowerNorfair},
-
-	{name="Energy Tank (lower Norfair fire flea room)", addr=0x79184, access=CanAccessLowerNorfair},
-	{name="Missile (lower Norfair above fire flea room)", addr=0x78FCA, access=CanAccessLowerNorfair},
-	{name="Power Bomb (lower Norfair above fire flea room)", addr=0x78FD2, access=CanAccessLowerNorfair},
-	
-	-- spade shaped room?
-	{name="Missile (lower Norfair near Wave Beam)", addr=0x79100, access=CanAccessLowerNorfair},
-	
-	{name="Power Bomb (above Ridley)", addr=0x790C0, access=CanAccessLowerNorfair},
-	
-	-- these constraints are really for what it takes to kill Ridley
-	{name="Energy Tank (Ridley)", addr=0x79108, access=function() 
-		return CanAccessLowerNorfair() 
-		and EffectiveEnergyCount() >= 4 
-		-- you don't need charge.  you can also kill him with a few hundred missiles
-		and (req.charge or EffectiveMissileCount() >= 250)
-	end},
-	
-	
-	-- Wrecked Ship
-	
-	
-	{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=CanAccessWreckedShip},
-	{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return CanDefeatPhantoon() and req.speed end},
-	{name="Missile (Gravity Suit)", addr=0x7C2EF, access=CanDefeatPhantoon},
-	{name="Missile (Wrecked Ship top)", addr=0x7C319, access=CanDefeatPhantoon},
-
-	{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() 
-		return CanDefeatPhantoon() 
-		and (req.grappling or req.spacejump
-			or EffectiveEnergyCount() >= 2
-		) 
-		--and req.gravity 
-	end},
-	
-	{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=CanDefeatPhantoon},
-	{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=CanDefeatPhantoon},
-	{name="Gravity Suit", addr=0x7C36D, access=CanDefeatPhantoon},
-	
-	
-	-- Maridia
-	
-	
-	{name="Missile (green Maridia shinespark)", addr=0x7C437, access=function() return CanAccessOuterMaridia() and req.speed end},
-	{name="Super Missile (green Maridia)", addr=0x7C43D, access=CanAccessOuterMaridia},
-	{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return CanAccessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end},
-	{name="Missile (green Maridia tatori)", addr=0x7C483, access=CanAccessOuterMaridia},
-
-	-- top of maridia
-	{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=CanAccessInnerMaridia},
-	{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=CanAccessInnerMaridia},
-	{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=CanAccessInnerMaridia},
-
-	-- This item requires plasma *to exit*
-	--  but this is no different from the super missile after spore spawn requiring super missile *to exit*
-	-- so I propose to use a different constraint for items in these situations.
-	-- Maybe I should make the randomizer to only put worthless items in these locations?
-	--  Otherwise I can't make randomizations that don't include the plasma item. 
-	{
-		name = "Plasma Beam",
-		addr = 0x7C559,
-		access = function() 
-			-- draygon must be defeated to unlock the door to plasma
-			return CanDefeatDraygon() 
-		end,
-		escape = function()
-			-- either one of these to kill the space pirates and unlock the door
-			return (req.screwattack or req.plasma)
-			-- getting in and getting out ...
-			and (skills.touchAndGo or skills.bombTechnique or req.spacejump)
-		end,
-	},
-	
-	{name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() 
-		return CanAccessOuterMaridia() 
-		and (CanUseBombs() or CanUseSpringBall())
-	end},
-
-	-- also left sand pit room 
-	{name="Reserve Tank (Maridia)", addr=0x7C5E3, access=function() 
-		return CanAccessOuterMaridia() and (CanUseBombs() or CanUseSpringBall()) 
-	end},
-	
-	{name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=CanAccessOuterMaridia},
-	
-	{name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=CanAccessOuterMaridia},
-
-	-- room with the shell things
-	{name="Missile (pink Maridia)", addr=0x7C603, access=function() return CanAccessOuterMaridia() and req.speed end},
-	{name="Super Missile (pink Maridia)", addr=0x7C609, access=function() return CanAccessOuterMaridia() and req.speed end},
-
-	-- here's another fringe item
-	-- requires grappling, but what if we put something unimportant there? who cares about it then?
-	{name="Spring Ball", addr=0x7C6E5, access=function() 
-		return CanAccessOuterMaridia() 
-		and req.grappling 
-		and (skills.touchAndGo or req.spacejump)
-	end},
-
-	-- missile right before draygon?
-	{name="Missile (Draygon)", addr=0x7C74D, access=CanDefeatDraygon},
-
-	-- energy tank right after botwoon
-	{name="Energy Tank (Botwoon)", addr=0x7C755, access=CanDefeatBotwoon},
-	
-	-- technically you don't need gravity to get to this item 
-	-- ... but you need it to escape Draygon's area
-	{
-		name = "Space Jump", 
-		addr = 0x7C7A7, 
-		access = function() 
-			return CanDefeatDraygon() 
-		end,
-		escape = function()
-			-- if the player knows the crystal-flash-whatever trick then fine
-			return skills.DraygonCrystalFlashBlueSparkWhatever
-			-- otherwise they will need both gravity and either spacejump or bombs
-			or (req.gravity and (req.spacejump or CanUseBombs()))
-		end,
-	},
+-- This item requires plasma *to exit*
+--  but this is no different from the super missile after spore spawn requiring super missile *to exit*
+-- so I propose to use a different constraint for items in these situations.
+-- Maybe I should make the randomizer to only put worthless items in these locations?
+--  Otherwise I can't make randomizations that don't include the plasma item. 
+locations:insert{
+	name = "Plasma Beam",
+	addr = 0x7C559,
+	access = function() 
+		-- draygon must be defeated to unlock the door to plasma
+		return canDefeatDraygon() 
+	end,
+	escape = function()
+		-- either one of these to kill the space pirates and unlock the door
+		return (req.screwattack or req.plasma)
+		-- getting in and getting out ...
+		and (skills.touchAndGo or skills.bombTechnique or req.spacejump)
+	end,
 }
+
+local function canUseSpringBall()
+	return req.morph and req.springball
+end
+
+locations:insert{name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() 
+	return accessOuterMaridia() 
+	and (canUseBombs() or canUseSpringBall())
+end}
+
+-- also left sand pit room 
+locations:insert{name="Reserve Tank (Maridia)", addr=0x7C5E3, access=function() 
+	return accessOuterMaridia() and (canUseBombs() or canUseSpringBall()) 
+end}
+
+locations:insert{name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=accessOuterMaridia}
+locations:insert{name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=accessOuterMaridia}
+
+-- room with the shell things
+locations:insert{name="Missile (pink Maridia)", addr=0x7C603, access=function() return accessOuterMaridia() and req.speed end}
+locations:insert{name="Super Missile (pink Maridia)", addr=0x7C609, access=function() return accessOuterMaridia() and req.speed end}
+
+-- here's another fringe item
+-- requires grappling, but what if we put something unimportant there? who cares about it then?
+locations:insert{name="Spring Ball", addr=0x7C6E5, access=function() 
+	return accessOuterMaridia() 
+	and req.grappling 
+	and (skills.touchAndGo or req.spacejump)
+end}
+
+-- missile right before draygon?
+locations:insert{name="Missile (Draygon)", addr=0x7C74D, access=canDefeatDraygon}
+
+-- energy tank right after botwoon
+locations:insert{name="Energy Tank (Botwoon)", addr=0x7C755, access=canDefeatBotwoon}
+
+-- technically you don't need gravity to get to this item 
+-- ... but you need it to escape Draygon's area
+locations:insert{
+	name = "Space Jump", 
+	addr = 0x7C7A7, 
+	access = function() 
+		return canDefeatDraygon() 
+	end,
+	escape = function()
+		-- if the player knows the crystal-flash-whatever trick then fine
+		return skills.DraygonCrystalFlashBlueSparkWhatever
+		-- otherwise they will need both gravity and either spacejump or bombs
+		or (req.gravity and (req.spacejump or canUseBombs()))
+	end,
+}
+
 --]]
 
 
@@ -805,6 +1092,19 @@ itemInsts = locations:map(function(loc)
 end)
 --]]
 
+--[[ filter out bombs and morph ball, so we know the run is possible 
+itemInsts = itemInsts:filter(function(item)
+	if item.addr ~= 0x786de		-- morph ball -- must be morph ball
+	and item.addr ~= 0x78802	-- blue brinstar bottom -- must be either missiles or super missiles
+	--and item.addr ~= 0x78798	-- blue brinstar middle -- if blue brinstar bottom isn't missiles then this must be missiles
+	and item.addr ~= 0x78404	-- chozo bombs
+	then
+		return true
+	end
+end)
+--]]
+
+
 
 --[[
 item restrictions...
@@ -850,7 +1150,10 @@ local function change(changes, args)
 	end
 end
 
--- [[ 
+
+--[[  change items around
+
+
 change({supermissile='missile'}, {leave=1})		-- turn all (but one) super missiles into missiles
 change({powerbomb='missile'}, {leave=1}) 	-- turn all (but one) power bombs into missiles
 change({energy='missile'}, {leave=6})
@@ -859,8 +1162,6 @@ change{spazer='missile'}
 change{hijump='missile'}
 change{xray='missile'}
 change{springball='missile'}
-
--- beyond this point is retarded
 
 local function removeLocation(locName, with)
 	local loc = locations:remove(locations:find(nil, function(loc) 
@@ -893,13 +1194,14 @@ removeLocation("Spring Ball", 'missile')
 
 -- only possible if you have enough e-tanks before hell runs
 -- what this means is ... if the randomizer doesn't come up with a varia suit before hell run ... then it will be forced to place *all* energy tanks before hell run ... which might make a game that's too easy
---change{varia='missile'}
+change{varia='missile'}
 
 -- if you're replacing plasma item and screw attack item then you must remove plasma location ...
 change{screwattack='missile'}
 removeLocation('Plasma Beam', 'missile')
 
 change{spacejump='missile'}
+
 
 --]]
 --[[
@@ -922,18 +1224,6 @@ end
 local itemInstValues = itemInsts:map(function(item) return item.value end)
 shuffle(itemInstValues)
 for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
---]]
-
---[[ filter out bombs and morph ball, so we know the run is possible 
-itemInsts = itemInsts:filter(function(item)
-	if item.addr ~= 0x786de		-- morph ball -- must be morph ball
-	and item.addr ~= 0x78802	-- blue brinstar bottom -- must be either missiles or super missiles
-	--and item.addr ~= 0x78798	-- blue brinstar middle -- if blue brinstar bottom isn't missiles then this must be missiles
-	and item.addr ~= 0x78404	-- chozo bombs
-	then
-		return true
-	end
-end)
 --]]
 
 
