@@ -1,5 +1,7 @@
 #!/usr/bin/env luajit
 require 'ext'
+local ffi = require 'ffi'
+local template = require 'template'
 
 local seed = select(1, ...)
 if seed then
@@ -16,6 +18,8 @@ math.randomseed(seed)
 local infilename = select(2, ...) or 'sm.sfc'
 local outfilename = select(3, ...) or 'sm-random.sfc'
 
+
+local randomizeWeaknesses = true
 
 -- what skills does the player know?
 local skills = {
@@ -80,6 +84,14 @@ end
 
 
 
+--[[
+locations fields:
+	name = name of the *location* (unrelated to item name)
+	addr = address of the item
+	access = callback to determine what is required to access the item
+	escape = callback to determine what is required to escape the room after accessing the item
+	filter = callback to determine which items to allow here
+--]]
 local locations = table()
 
 
@@ -88,9 +100,13 @@ local locations = table()
 
 	-- morph ball room:
 
-locations:insert{name="Morphing Ball", addr=0x786DE, access=function() 
-	return true 
-end}
+locations:insert{
+	name = "Morphing Ball", 
+	addr = 0x786DE, 
+	access = function() return true end, 
+	-- looks like you always need morph in morph...
+	--filter = function(name) return name ~= 'morph' end,
+}
 
 local function canUsePowerBombs() 
 	return req.morph and req.powerbomb
@@ -101,9 +117,13 @@ locations:insert{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=canUseP
 
 	-- first missile room:
 
-locations:insert{name="Missile (blue Brinstar bottom)", addr=0x78802, access=function() 
-	return req.morph 
-end}
+locations:insert{
+	name = "Missile (blue Brinstar bottom)", 
+	addr = 0x78802, 
+	access = function() return req.morph end,
+	-- but this doesn't have to be a missile =D
+	--filter = function(name) return name ~= 'missile' end,
+}
 
 local function canOpenMissileDoors() 
 	return req.missile 
@@ -117,10 +137,16 @@ local function accessBlueBrinstarEnergyTankRoom()
 end
 
 -- second missile tank you get
-locations:insert{name="Missile (blue Brinstar middle)", addr=0x78798, access=function() 
-	return accessBlueBrinstarEnergyTankRoom() 
-	and req.morph 
-end}
+locations:insert{
+	name="Missile (blue Brinstar middle)", 
+	addr=0x78798, 
+	access=function() 
+		return accessBlueBrinstarEnergyTankRoom() 
+		and req.morph 
+	end,
+	-- also doesn't have to be a missile =D
+	--filter = function(name) return name ~= 'missile' end,
+}
 
 	-- blue brinstar double missile room (behind boulder room):
 
@@ -243,11 +269,46 @@ locations:insert{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432,
 -- Crateria surface
 
 
+local function accessPinkBrinstarFromLeft()
+	return
+	-- get into terminator
+	accessTerminator() 
+	-- get through missile door of green brinstar main shaft
+	and canOpenMissileDoors()
+	-- use bombs, power bombs, screw attack, or speed booster to enter pink Brinstar
+	and canDestroyBombWallsWithRunway()
+end
+
+-- notice, you can enter pink brinstar from the right with only power bombs
+-- ... but you can't leave without getting super missiles ...
+local function accessPinkBrinstarFromRight()
+	-- power bomb from the morph ball room
+	return canUsePowerBombs()
+end
+
+
+local function accessLandingRoom()
+	-- going up the normal way
+	return canActivateAlarm()
+	-- or going up the power bomb way
+		-- get to pink brinstar from the right side...
+	or (accessPinkBrinstarFromRight()
+		-- then get through the bombable wall to the left
+		and canDestroyBombWallsWithRunway()
+		-- go up the elevator ...
+		-- then up terminator
+		-- then through the terminator wall
+		-- and tata, you're at the surface
+	)
+end
+
 	-- Crateria power bomb room:
 
 locations:insert{name="Power Bomb (Crateria surface)", addr=0x781CC, access=function() 
+	-- get back to the surface
+	return accessLandingRoom()
 	-- to get up there
-	return canGetUpWithRunway()
+	and canGetUpWithRunway()
 	-- to get in the door
 	and canUsePowerBombs()
 end}
@@ -258,8 +319,10 @@ end}
 -- you need either bombs, or you need speed + 5 powerbombs to enter ...
 -- then you need either bombs or another 5 power bombs to exit
 local function accessGauntlet()
+	-- getting (back from morph) to the start room
+	return accessLandingRoom()
 	-- getting up
-	return canGetUpWithRunway()
+	and canGetUpWithRunway()
 	-- getting through the bombable walls
 	and (
 		-- either something to destroy it while standing...
@@ -382,23 +445,6 @@ end}
 
 -- pink Brinstar
 
-
-local function accessPinkBrinstarFromLeft()
-	return
-	-- get into terminator
-	accessTerminator() 
-	-- get through missile door of green brinstar main shaft
-	and canOpenMissileDoors()
-	-- use bombs, power bombs, screw attack, or speed booster to enter pink Brinstar
-	and canDestroyBombWallsWithRunway()
-end
-
--- notice, you can enter pink brinstar from the right with only power bombs
--- ... but you can't leave without getting super missiles ...
-local function accessPinkBrinstarFromRight()
-	-- power bomb from the morph ball room
-	return canUsePowerBombs()
-end
 
 -- this is for accessing post-bomb-wall pink-brinstar
 local function accessPinkBrinstar()
@@ -956,6 +1002,10 @@ especially those that require certain items to escape from.
 ... choose item placement based on what the *least* number of future possibilities will be (i.e. lean away from placing items that open up the game quicker)
 --]]
 
+local function pickRandom(t)
+	return t[math.random(#t)]
+end
+
 local function shuffle(x)
 	local y = {}
 	while #x > 0 do table.insert(y, table.remove(x, math.random(#x))) end
@@ -964,23 +1014,19 @@ local function shuffle(x)
 end
 
 
-
-local rom = file[infilename]
+local romstr = file[infilename]
 local header = ''
---header = rom:sub(1,512)
---rom = rom:sub(513)
+--header = romstr:sub(1,512)
+--romstr = romstr:sub(513)
 
-local function rd2b(addr)
-	return bit.bor(
-		rom:sub(addr+1,addr+1):byte(),
-		bit.lshift( rom:sub(addr+2,addr+2):byte(), 8))
+local rom = ffi.cast('uint8_t*', romstr) 
+
+local function readShort(addr)
+	return ffi.cast('uint16_t*', rom+addr)[0]
 end
 
-local function wr2b(addr, value)
-	rom = rom:sub(1, addr)
-		.. string.char( bit.band(0xff, value) )
-		.. string.char( bit.band(0xff, bit.rshift(value, 8)) )
-		.. rom:sub(addr+3)
+local function writeShort(addr, value)
+	ffi.cast('uint16_t*', rom+addr)[0] = value
 end
 
 
@@ -1070,7 +1116,7 @@ local doorInsts = table()
 
 -- [[ build from object memory range
 local function check(addr)
-	local value = rd2b(addr)
+	local value = readShort(addr)
 	local name = objNameForValue[value]
 	if name then
 		countsForType[name] = (countsForType[name] or 0) + 1
@@ -1087,7 +1133,7 @@ for addr=0x7c215,0x7c7bb,2 do check(addr) end
 --[[ build from the loc database
 itemInsts = locations:map(function(loc)
 	local addr = loc.addr
-	local value = rd2b(addr)
+	local value = readShort(addr)
 	return {addr=addr, value=value, name=objNameForValue[value]}
 end)
 --]]
@@ -1170,7 +1216,7 @@ local function removeLocation(locName, with)
 	local inst = itemInsts:remove(itemInsts:find(nil, function(inst) 
 		return inst.addr == loc.addr 
 	end))
-	wr2b(inst.addr, itemTypes[with])
+	writeShort(inst.addr, itemTypes[with])
 end
 
 -- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
@@ -1227,7 +1273,9 @@ for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
 --]]
 
 
--- [[
+-- [[ placement algorithm:
+
+
 local sofar = table{}
 -- I could just change the 'req' references to 'sofar' references ...
 -- notice I'm not using __index = sofar, because sofar itself is push'd / pop'd, so its pointer changes
@@ -1247,7 +1295,7 @@ local itemInstIndexesLeft = range(#origItems)
 local currentLocs = table(locations)
 
 for _,loc in ipairs(locations) do
-	loc.defaultValue = itemTypeBaseForType[rd2b(loc.addr)]
+	loc.defaultValue = itemTypeBaseForType[readShort(loc.addr)]
 	loc.defaultName = objNameForValue[loc.defaultValue]
 end
 
@@ -1289,32 +1337,37 @@ local function iterate(depth)
 	
 	for _,i in ipairs(shuffle(range(#itemInstIndexesLeft))) do
 		local push_itemInstIndexesLeft = table(itemInstIndexesLeft)
-		
 		local replaceInstIndex = itemInstIndexesLeft:remove(i)
+		
 		local value = origItems[replaceInstIndex]
 		local name = objNameForValue[value]
-		dprint('...replacing '..chooseLoc.name..' with '..name)
-				
-		-- plan to write it 
-		replaceMap[chooseLoc.addr] = {value=value, sofar=table(sofar)}
-	
-		-- now replace it with an item
-		local push_sofar = table(sofar)
-		sofar[name] = (sofar[name] or 0) + 1
-	
-		local push_currentLocs = table(currentLocs)
-		currentLocs = nextLocs
-
-		-- if the chooseLoc has an escape req, and it isn't satisfied, then don't iterate
-		if chooseLoc.escape and not chooseLoc.escape() then
-			dprint('...escape condition not met!')
-		else
-			dprint('iterating...')
-			if iterate(depth + 1) then return true end	-- return 'true' when finished to exit out of all recursion
-		end
 		
-		currentLocs = push_currentLocs
-		sofar = push_sofar
+		if not chooseLoc.filter
+		or chooseLoc.filter(name)
+		then
+			dprint('...replacing '..chooseLoc.name..' with '..name)
+					
+			-- plan to write it 
+			replaceMap[chooseLoc.addr] = {value=value, sofar=table(sofar)}
+		
+			-- now replace it with an item
+			local push_sofar = table(sofar)
+			sofar[name] = (sofar[name] or 0) + 1
+		
+			local push_currentLocs = table(currentLocs)
+			currentLocs = nextLocs
+
+			-- if the chooseLoc has an escape req, and it isn't satisfied, then don't iterate
+			if chooseLoc.escape and not chooseLoc.escape() then
+				dprint('...escape condition not met!')
+			else
+				dprint('iterating...')
+				if iterate(depth + 1) then return true end	-- return 'true' when finished to exit out of all recursion
+			end
+			
+			currentLocs = push_currentLocs
+			sofar = push_sofar
+		end
 		itemInstIndexesLeft = push_itemInstIndexesLeft
 	end
 end	
@@ -1340,18 +1393,135 @@ end):map(function(loc)
 		..'\t'..tolua(sofar))
 	select(2, itemInsts:find(nil, function(inst) return inst.addr == addr end)).value = value
 end)
+
+
 --]]
+
+local addrbase = 0xf8000
+
+-- one array is from 0xf8000 +0xcebf to +0xf0ff
+local enemyStart = addrbase + 0xcebf
+local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
+-- another is from +0xf153 to +0xf793 (TODO)
+local enemy2Start = addrbase + 0xf153
+local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
+ffi.cdef[[
+typedef uint8_t uint24_t[3];
+]]
+local enemyFields = {
+	{tileDataSize = 'uint16_t'},
+	{palette = 'uint16_t'},
+	{health = 'uint16_t'},
+	{damage = 'uint16_t'},
+	{width = 'uint16_t'},
+	{height = 'uint16_t'},
+	{bank = 'uint8_t'},
+	{hurtAITime = 'uint8_t'},
+	{sound = 'uint16_t'},
+	{bossValue = 'uint16_t'},
+	{initiationAI = 'uint16_t'},
+	{numParts = 'uint16_t'},
+	{unused = 'uint16_t'},
+	{graphAI = 'uint16_t'},
+	{grappleAI = 'uint16_t'},
+	{specialEnemyShot = 'uint16_t'},
+	{frozenAI = 'uint16_t'},
+	{xrayAI = 'uint16_t'},
+	{deathAnimation = 'uint16_t'},
+	{unused = 'uint32_t'},
+	{powerBombReaction = 'uint16_t'},
+	{unknown = 'uint16_t'},
+	{unused2 = 'uint32_t'},
+	{enemyTouch = 'uint16_t'},
+	{enemyShot = 'uint16_t'},
+	{unknown2 = 'uint16_t'},
+	{tileData = 'uint24_t'},
+	{layer = 'uint8_t'},
+	{itemdrop = 'uint16_t'},
+	-- pointer 
+	{weakness = 'uint16_t'},
+	{name = 'uint16_t'},
+}
+
+local code = template([[
+struct enemy_s {
+<? for _,kv in ipairs(enemyFields) do
+	local name,ctype = next(kv)
+?>	<?=ctype?> <?=name?>;
+<? end
+?>} __attribute__((packed));
+typedef struct enemy_s enemy_t;
+]], {enemyFields=enemyFields})
+ffi.cdef(code)
+
+local enemyAddrs = range(0,enemyCount-1):map(function(i)
+	return enemyStart + ffi.sizeof'enemy_t' * i
+end):append(range(0,enemy2Count-1):map(function(i)
+	return enemy2Start + ffi.sizeof'enemy_t' * i
+end))
+
+
+local weaknessAddrs
+if randomizeWeaknesses then
+	weaknessAddrs = enemyAddrs:map(function(addr)
+		return true, ffi.cast('enemy_t*', rom+addr)[0].weakness
+	end):keys():sort()
+	
+	print('weakness addrs:')
+	for _,addr in ipairs(weaknessAddrs) do
+		io.write('  '..('0x%04x'):format(addr)..' ')
+		if addr ~= 0 then
+			for i=0,21 do
+				local ptr = 0x198000+addr+i
+				
+				--- I only see 0,1,2,4,8,f per nibble
+				rom[ptr] = math.random(0,255)
+				
+				io.write( (' %02x'):format(rom[ptr]) )
+			end
+		end
+		print()
+	end
+end
+
+
+print'enemies:'
+for i,addr in ipairs(enemyAddrs) do
+	local enemy = ffi.cast('enemy_t*', rom + addr)
+	print('enemy '..i)
+	print(' addr: '..('0x%04x'):format(addr - 0xf8000))
+	print(' health='..enemy[0].health)
+	print(' damage='..enemy[0].damage)
+	io.write(' weakness='..('0x%04x'):format(enemy[0].weakness))
+	
+	-- points to 22 bytes that has weakness info
+	if randomizeWeaknesses then
+		enemy[0].weakness = pickRandom(weaknessAddrs)
+	end
+	local weaknessAddr = enemy[0].weakness
+	if weaknessAddr ~= 0 then
+		weaknessAddr = weaknessAddr + 0x198000
+		io.write('  ')
+		for i=0,21 do
+			io.write( (' %02x'):format(rom[weaknessAddr+i]) )
+		end
+	end
+	print()
+	
+	print(' itemdrop='..('0x%04x'):format(enemy[0].itemdrop))
+	
+end
 
 
 for i,item in ipairs(itemInsts) do
-	wr2b(item.addr, item.value)
+	writeShort(item.addr, item.value)
 end
 --[[
 for i,door in ipairs(doorInsts) do
-	wr2b(door.addr, door.value)
+	writeShort(door.addr, door.value)
 end
 --]]
 
-file[outfilename] = header .. rom
+file[outfilename] = header .. ffi.string(rom, #romstr)
 
 print('done converting '..infilename..' => '..outfilename)
