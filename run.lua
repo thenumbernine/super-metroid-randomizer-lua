@@ -1,4 +1,13 @@
 #!/usr/bin/env luajit
+
+--[[
+useful pages:
+http://wiki.metroidconstruction.com/doku.php?id=super:enemy:list_of_enemies
+http://wiki.metroidconstruction.com/doku.php?id=super:technical_information:list_of_enemies
+http://metroidconstruction.com/SMMM/
+https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
+--]]
+
 require 'ext'
 local ffi = require 'ffi'
 local template = require 'template'
@@ -15,11 +24,18 @@ end
 print('seed', ('%x'):format(seed))
 math.randomseed(seed)
 
+
 local infilename = select(2, ...) or 'sm.sfc'
 local outfilename = select(3, ...) or 'sm-random.sfc'
 
 
-local randomizeWeaknesses = true
+local randomizeEnemyWeaknesses = true
+local enemyWeaknessImmunityChance = .75
+
+
+local randomizeEnemyItemDrops = true
+local enemyItemDropZeroChance = .75	-- 75% of item drop percentages are 0%
+
 
 -- what skills does the player know?
 local skills = {
@@ -1395,6 +1411,29 @@ end):map(function(loc)
 end)
 
 
+local function defineFields(name)
+	return function(fields)
+		local code = template([[
+typedef union {
+	struct {
+<? 
+local ffi = require 'ffi'
+local size = 0
+for _,kv in ipairs(fields) do
+	local name, ctype = next(kv)
+	size = size + ffi.sizeof(ctype)
+?>		<?=ctype?> <?=name?>;
+<? 
+end
+?>	} __attribute__((packed));
+	uint8_t ptr[<?=size?>];
+} <?=name?>;
+]], {name=name, fields=fields})
+		ffi.cdef(code)
+	end
+end
+
+
 --]]
 
 local addrbase = 0xf8000
@@ -1405,10 +1444,12 @@ local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
 local enemy2Start = addrbase + 0xf153
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
+
 ffi.cdef[[
 typedef uint8_t uint24_t[3];
 ]]
-local enemyFields = {
+
+defineFields'enemy_t'{
 	{tileDataSize = 'uint16_t'},
 	{palette = 'uint16_t'},
 	{health = 'uint16_t'},
@@ -1437,22 +1478,10 @@ local enemyFields = {
 	{unknown2 = 'uint16_t'},
 	{tileData = 'uint24_t'},
 	{layer = 'uint8_t'},
-	{itemdrop = 'uint16_t'},
-	-- pointer 
-	{weakness = 'uint16_t'},
+	{itemdrop = 'uint16_t'},	-- pointer 
+	{weakness = 'uint16_t'},	-- pointer 
 	{name = 'uint16_t'},
 }
-
-local code = template([[
-struct enemy_s {
-<? for _,kv in ipairs(enemyFields) do
-	local name,ctype = next(kv)
-?>	<?=ctype?> <?=name?>;
-<? end
-?>} __attribute__((packed));
-typedef struct enemy_s enemy_t;
-]], {enemyFields=enemyFields})
-ffi.cdef(code)
 
 local enemyAddrs = range(0,enemyCount-1):map(function(i)
 	return enemyStart + ffi.sizeof'enemy_t' * i
@@ -1460,29 +1489,130 @@ end):append(range(0,enemy2Count-1):map(function(i)
 	return enemy2Start + ffi.sizeof'enemy_t' * i
 end))
 
+local bank_b4 = 0x198000
 
-local weaknessAddrs
-if randomizeWeaknesses then
-	weaknessAddrs = enemyAddrs:map(function(addr)
-		return true, ffi.cast('enemy_t*', rom+addr)[0].weakness
+local itemDropCount = 6
+local enemyItemDropAddrs
+if randomizeEnemyItemDrops then
+	enemyItemDropAddrs = enemyAddrs:map(function(addr)
+		return true, ffi.cast('enemy_t*', rom+addr)[0].itemdrop
 	end):keys():sort()
-	
-	print('weakness addrs:')
-	for _,addr in ipairs(weaknessAddrs) do
+
+	local distr = table()
+	print()
+	print('enemy item drop table:')
+	for _,addr in ipairs(enemyItemDropAddrs) do
 		io.write('  '..('0x%04x'):format(addr)..' ')
 		if addr ~= 0 then
-			for i=0,21 do
-				local ptr = 0x198000+addr+i
+			-- 6 percentages (of 0xff):
+			-- small energy, large energy, missile, nothing, super missile, power bomb
+			local values = range(itemDropCount):map(function()
+				return math.random() <= enemyItemDropZeroChance and 0 or math.random()
+			end)
+			-- now normalize
+			local sum = values:sum()
+			values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
+			--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
+			for i,value in ipairs(values) do
+				local ptr = bank_b4 + addr + i-1
 				
-				--- I only see 0,1,2,4,8,f per nibble
-				rom[ptr] = math.random(0,255)
+				rom[ptr] = value
+
+				local k = rom[ptr]
+				distr[k] = (distr[k] or 0) + 1
 				
 				io.write( (' %02x'):format(rom[ptr]) )
 			end
 		end
 		print()
 	end
+	print'...distribution of values (for all item types):'
+	for _,k in ipairs(distr:keys():sort()) do
+		print('  '..k..' x'..distr[k])
+	end
+	print()
 end
+
+local weaknessFields = table{
+	{normal = 'uint8_t'},
+	{wave = 'uint8_t'},
+	{ice = 'uint8_t'},
+	{ice_wave = 'uint8_t'},
+	{spazer = 'uint8_t'},
+	{wave_spazer = 'uint8_t'},
+	{ice_spazer = 'uint8_t'},
+	{wave_ice_spazer = 'uint8_t'},
+	{plasma = 'uint8_t'},
+	{wave_plasma = 'uint8_t'},
+	{ice_plasma = 'uint8_t'},
+	{wave_ice_plasma = 'uint8_t'},
+	{missile = 'uint8_t'},
+	{supermissile = 'uint8_t'},
+	{bomb = 'uint8_t'},
+	{powerbomb = 'uint8_t'},
+	{speed = 'uint8_t'},
+	{sparkcharge = 'uint8_t'},
+	{screwattack = 'uint8_t'},
+	{hyper = 'uint8_t'},
+	{pseudo_screwattack = 'uint8_t'},
+	{unknown = 'uint8_t'},
+}
+defineFields'weakness_t'(weaknessFields)
+local weaknessCount = ffi.sizeof'weakness_t'
+
+local weaknessMaxNameLen = weaknessFields:map(function(kv)
+	return #next(kv)
+end):sup()
+
+local enemyWeaknessAddrs
+if randomizeEnemyWeaknesses then
+	enemyWeaknessAddrs = enemyAddrs:map(function(addr)
+		return true, ffi.cast('enemy_t*', rom+addr)[0].weakness
+	end):keys():sort()
+
+	local distr = table()
+	print()
+	print('enemy weakness data:')
+	for _,addr in ipairs(enemyWeaknessAddrs) do
+		print(('0x%04x'):format(addr))
+		if addr ~= 0 then
+			for i,field in ipairs(weaknessFields) do
+				local ptr = bank_b4 + addr + i-1
+				
+				--[[
+				I only see 0,1,2,4,8,f per nibble in the original
+				and here's the distribution of their use:
+				  0 x1577
+				  1 x25
+				  2 x640
+				  4 x93
+				  8 x421
+				  15 x104
+				--]]
+				rom[ptr] = math.random() <= enemyWeaknessImmunityChance and 0 or math.random(0,255)
+
+				local k = rom[ptr]
+				distr[k] = (distr[k] or 0) + 1
+				
+				local name = next(field)
+				print('  '..name..' '.. ('.'):rep(weaknessMaxNameLen-#name+5)..' '..('0x%02x'):format(rom[ptr]))
+			end
+		end
+	end
+	print'...distribution:'
+	for _,k in ipairs(distr:keys():sort()) do
+		print('  '..k..' x'..distr[k])
+	end
+	print()
+end
+
+-- kraid is at 0xe2bf
+-- and has a weakness address 0xf15a <-> 0x1a715a :  
+-- 82 82 82 82 82 
+-- 82 82 82 82 82 
+-- 82 82 82 82 80 
+-- 80 80 80 80 02 
+-- 80 80
 
 
 print'enemies:'
@@ -1492,24 +1622,33 @@ for i,addr in ipairs(enemyAddrs) do
 	print(' addr: '..('0x%04x'):format(addr - 0xf8000))
 	print(' health='..enemy[0].health)
 	print(' damage='..enemy[0].damage)
-	io.write(' weakness='..('0x%04x'):format(enemy[0].weakness))
 	
-	-- points to 22 bytes that has weakness info
-	if randomizeWeaknesses then
-		enemy[0].weakness = pickRandom(weaknessAddrs)
+	if randomizeEnemyWeaknesses then
+		enemy[0].weakness = pickRandom(enemyWeaknessAddrs)
 	end
+	io.write(' weakness='..('0x%04x'):format(enemy[0].weakness))
 	local weaknessAddr = enemy[0].weakness
 	if weaknessAddr ~= 0 then
-		weaknessAddr = weaknessAddr + 0x198000
 		io.write('  ')
-		for i=0,21 do
-			io.write( (' %02x'):format(rom[weaknessAddr+i]) )
+		for i=0,weaknessCount-1 do
+			io.write( (' %02x'):format(rom[bank_b4+weaknessAddr+i]) )
 		end
 	end
 	print()
-	
-	print(' itemdrop='..('0x%04x'):format(enemy[0].itemdrop))
-	
+
+	if randomizeEnemyItemDrops then
+		enemy[0].itemdrop = pickRandom(enemyItemDropAddrs)
+	end
+	io.write(' itemdrop='..('0x%04x'):format(enemy[0].itemdrop))
+	local itemDropAddr = enemy[0].itemdrop
+	if itemDropAddr ~= 0 then
+		io.write('  ')
+		for i=0,itemDropCount-1 do
+			io.write( (' %02x'):format(rom[bank_b4+itemDropAddr+i]) )
+		end
+	end
+	print()
+
 end
 
 
