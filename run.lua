@@ -1491,49 +1491,136 @@ end))
 
 local bank_b4 = 0x198000
 
-local itemDropCount = 6
-local enemyItemDropAddrs
-if randomizeEnemyItemDrops then
-	enemyItemDropAddrs = enemyAddrs:map(function(addr)
-		return true, ffi.cast('enemy_t*', rom+addr)[0].itemdrop
+
+local ROMTable = class()
+
+function ROMTable:init()
+	defineFields(self.structName)(self.fields)
+	self.structSize = ffi.sizeof(self.structName)
+	self.fieldNameMaxLen = self.fields:map(function(kv)
+		return #next(kv)
+	end):sup()
+end
+
+
+-- this is a table that the Enemy table uses .. like weaknesses or item drops
+local EnemyAuxTable = class(ROMTable)
+
+EnemyAuxTable.showDistribution = true
+
+function EnemyAuxTable:randomize()
+	self.addrsUsed = enemyAddrs:map(function(addr)
+		return true, ffi.cast('enemy_t*', rom+addr)[0][self.enemyField]
 	end):keys():sort()
 
-	local distr = table()
+	local distr
+	if self.showDistribution then
+		distr = table()
+	end
+	
 	print()
-	print('enemy item drop table:')
-	for _,addr in ipairs(enemyItemDropAddrs) do
-		io.write('  '..('0x%04x'):format(addr)..' ')
+	print(self.name..':')
+	for _,addr in ipairs(self.addrsUsed) do
+		-- concise:
+		--io.write('  '..('0x%04x'):format(addr)..' ')
+		-- verbose:
+		print(('0x%04x'):format(addr)..' ')
 		if addr ~= 0 then
-			-- 6 percentages (of 0xff):
-			-- small energy, large energy, missile, nothing, super missile, power bomb
-			local values = range(itemDropCount):map(function()
-				return math.random() <= enemyItemDropZeroChance and 0 or math.random()
-			end)
-			-- now normalize
-			local sum = values:sum()
-			values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
-			--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
-			for i,value in ipairs(values) do
-				local ptr = bank_b4 + addr + i-1
+			local values = self:getRandomizedValues()
+			assert(#values == #self.fields)
+		
+			local ptrtype = self.structName..'*'
+			local entry = ffi.cast(ptrtype, rom + bank_b4 + addr)
+			
+			for i,field in ipairs(self.fields) do
+				local name = next(field)
+				local value = values[i]
 				
-				rom[ptr] = value
-
-				local k = rom[ptr]
-				distr[k] = (distr[k] or 0) + 1
+				entry[0][name] = value
+				value = entry[0][name]
 				
-				io.write( (' %02x'):format(rom[ptr]) )
+				if self.showDistribution then
+					distr[value] = (distr[value] or 0) + 1
+				end
+				-- concise:
+				--io.write( (' %02x'):format(value) )
+				-- verbose:
+				print('  '..name..' '.. ('.'):rep(self.fieldNameMaxLen-#name+5)..' '..('0x%02x'):format(value))
 			end
+		end
+		-- concise:
+		--print()
+	end
+
+	if self.showDistribution then
+		print'...distribution of values:'
+		for _,k in ipairs(distr:keys():sort()) do
+			print('  '..k..' x'..distr[k])
 		end
 		print()
 	end
-	print'...distribution of values (for all item types):'
-	for _,k in ipairs(distr:keys():sort()) do
-		print('  '..k..' x'..distr[k])
+end
+
+function EnemyAuxTable:randomizeEnemy(enemy)
+	local field = self.enemyField
+	enemy[0][field] = pickRandom(self.addrsUsed)
+	io.write(' '..field..'='..('0x%04x'):format(enemy[0][field]))
+	local addr = enemy[0][field]
+	if addr ~= 0 then
+		io.write('  ')
+		for i=0,self.structSize-1 do
+			io.write( (' %02x'):format(rom[bank_b4+addr+i]) )
+		end
 	end
 	print()
 end
 
-local weaknessFields = table{
+
+local EnemyItemDropTable = class(EnemyAuxTable)
+
+EnemyItemDropTable.name = 'enemy item drop table'
+EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemy_t to get addresses from
+EnemyItemDropTable.structName = 'itemDrop_t'	-- structure at the address
+EnemyItemDropTable.fields = table{
+	{smallEnergy = 'uint8_t'},
+	{largeEnergy = 'uint8_t'},
+	{missile = 'uint8_t'},
+	{nothing = 'uint8_t'},
+	{superMissile = 'uint8_t'},
+	{powerBomb = 'uint8_t'},
+}
+
+-- returns a list of bytes that are written to the structure
+-- TODO I could use the ffi info and return arbitrary values that are correctly cast into the structure ...
+function EnemyItemDropTable:getRandomizedValues()
+	-- 6 percentages (of 0xff):
+	-- small energy, large energy, missile, nothing, super missile, power bomb
+	local values = range(self.structSize):map(function()
+		return math.random() <= enemyItemDropZeroChance and 0 or math.random()
+	end)
+	-- now normalize
+	local sum = values:sum()
+	-- ... should I allow for monsters to not drop anything?
+	-- ... should I have special exception for bosses?
+	if sum > 0 then
+		values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
+	end
+	--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
+	return values
+end
+
+local enemyItemDropTable = EnemyItemDropTable()
+if randomizeEnemyItemDrops then
+	enemyItemDropTable:randomize()
+end
+
+
+local EnemyWeaknessTable = class(EnemyAuxTable)
+
+EnemyWeaknessTable.name = 'enemy weakness table'
+EnemyWeaknessTable.enemyField = 'weakness'
+EnemyWeaknessTable.structName = 'weakness_t'
+EnemyWeaknessTable.fields = table{
 	{normal = 'uint8_t'},
 	{wave = 'uint8_t'},
 	{ice = 'uint8_t'},
@@ -1557,98 +1644,54 @@ local weaknessFields = table{
 	{pseudo_screwattack = 'uint8_t'},
 	{unknown = 'uint8_t'},
 }
-defineFields'weakness_t'(weaknessFields)
-local weaknessCount = ffi.sizeof'weakness_t'
 
-local weaknessMaxNameLen = weaknessFields:map(function(kv)
-	return #next(kv)
-end):sup()
-
-local enemyWeaknessAddrs
-if randomizeEnemyWeaknesses then
-	enemyWeaknessAddrs = enemyAddrs:map(function(addr)
-		return true, ffi.cast('enemy_t*', rom+addr)[0].weakness
-	end):keys():sort()
-
-	local distr = table()
-	print()
-	print('enemy weakness data:')
-	for _,addr in ipairs(enemyWeaknessAddrs) do
-		print(('0x%04x'):format(addr))
-		if addr ~= 0 then
-			for i,field in ipairs(weaknessFields) do
-				local ptr = bank_b4 + addr + i-1
-				
-				--[[
-				I only see 0,1,2,4,8,f per nibble in the original
-				and here's the distribution of their use:
-				  0 x1577
-				  1 x25
-				  2 x640
-				  4 x93
-				  8 x421
-				  15 x104
-				--]]
-				rom[ptr] = math.random() <= enemyWeaknessImmunityChance and 0 or math.random(0,255)
-
-				local k = rom[ptr]
-				distr[k] = (distr[k] or 0) + 1
-				
-				local name = next(field)
-				print('  '..name..' '.. ('.'):rep(weaknessMaxNameLen-#name+5)..' '..('0x%02x'):format(rom[ptr]))
-			end
-		end
-	end
-	print'...distribution:'
-	for _,k in ipairs(distr:keys():sort()) do
-		print('  '..k..' x'..distr[k])
-	end
-	print()
+function EnemyWeaknessTable:getRandomizedValues()
+	return range(#self.fields):map(function()
+		return math.random() <= enemyWeaknessImmunityChance 
+			and 0 or math.random(0,255)
+	end)
 end
 
--- kraid is at 0xe2bf
--- and has a weakness address 0xf15a <-> 0x1a715a :  
--- 82 82 82 82 82 
--- 82 82 82 82 82 
--- 82 82 82 82 80 
--- 80 80 80 80 02 
--- 80 80
+local enemyWeaknessTable = EnemyWeaknessTable()
+if randomizeEnemyWeaknesses then
+	enemyWeaknessTable:randomize()
+end
+
+
+--[[
+I only see 0,1,2,4,8,f per nibble in the original
+and here's the distribution of their use:
+  0 x1577
+  1 x25
+  2 x640
+  4 x93
+  8 x421
+  15 x104
+
+kraid is at 0xe2bf
+and has a weakness address 0xf15a <-> 0x1a715a :  
+82 82 82 82 82 
+82 82 82 82 82 
+82 82 82 82 80 
+80 80 80 80 02 
+80 80
+--]]
 
 
 print'enemies:'
 for i,addr in ipairs(enemyAddrs) do
 	local enemy = ffi.cast('enemy_t*', rom + addr)
-	print('enemy '..i)
-	print(' addr: '..('0x%04x'):format(addr - 0xf8000))
+	print('enemy '..('0x%04x'):format(addr - 0xf8000))
 	print(' health='..enemy[0].health)
 	print(' damage='..enemy[0].damage)
 	
 	if randomizeEnemyWeaknesses then
-		enemy[0].weakness = pickRandom(enemyWeaknessAddrs)
+		enemyWeaknessTable:randomizeEnemy(enemy)
 	end
-	io.write(' weakness='..('0x%04x'):format(enemy[0].weakness))
-	local weaknessAddr = enemy[0].weakness
-	if weaknessAddr ~= 0 then
-		io.write('  ')
-		for i=0,weaknessCount-1 do
-			io.write( (' %02x'):format(rom[bank_b4+weaknessAddr+i]) )
-		end
-	end
-	print()
 
 	if randomizeEnemyItemDrops then
-		enemy[0].itemdrop = pickRandom(enemyItemDropAddrs)
+		enemyItemDropTable:randomizeEnemy(enemy)
 	end
-	io.write(' itemdrop='..('0x%04x'):format(enemy[0].itemdrop))
-	local itemDropAddr = enemy[0].itemdrop
-	if itemDropAddr ~= 0 then
-		io.write('  ')
-		for i=0,itemDropCount-1 do
-			io.write( (' %02x'):format(rom[bank_b4+itemDropAddr+i]) )
-		end
-	end
-	print()
-
 end
 
 
