@@ -32,6 +32,18 @@ end
 } <?=name?>;
 ]], {name=name, fields=fields})
 		ffi.cdef(code)
+
+		local mt = ffi.metatype(name, {
+			__tostring = function(ptr)
+				local t = table()
+				for _,field in ipairs(fields) do
+					local name, ctype = next(field)
+					t:insert(name..'='..tostring(ptr[name]))
+				end
+				return '{'..t:concat', '..'}'
+			end,
+			__concat = function(a,b) return tostring(a) .. tostring(b) end,
+		})
 	end
 end
 
@@ -350,13 +362,20 @@ function EnemyAuxTable:randomize()
 	end
 end
 
-function EnemyAuxTable:randomizeEnemy(enemy, disableWrite)
+-- preserveZeros means if an enemy[field] has a zero before then it will have a zero after
+function EnemyAuxTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
 	local field = self.enemyField
 	
 	if randomizeEnemyProps[field] 
 	and not disableWrite
 	then
-		enemy.ptr[0][field] = pickRandom(self.addrsUsed)
+		if not preserveZeros then
+			enemy.ptr[0][field] = pickRandom(self.addrsUsed)
+		else
+			if enemy.ptr[0][field] ~= 0 then
+				enemy.ptr[0][field] = self.addrsUsed[math.random(#self.addrsUsed-1)+1]
+			end	
+		end
 	end
 
 	io.write(' '..field..'='..('0x%04x'):format(enemy.ptr[0][field]))
@@ -463,7 +482,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	return values
 end
 
-function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
+function EnemyWeaknessTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
 	-- NOTICE
 	-- if (for item placement to get past canKill constraints)
 	-- we choose to allow re-rolling of weaknesses
@@ -472,11 +491,19 @@ function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
 	-- don't randomize Kraid's weaknesses ... for now
 	-- leave this at 0
 	disableWrite = disableWrite or (enemy == enemyForName["Kraid (body)"]) 
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (body)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (arm)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (top belly spike)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (middle belly spike)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (bottom belly spike)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (leg)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (claw)"])
+	disableWrite = disableWrite or (enemy == enemyForName["Kraid (??? belly spike)"])
 
 	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
 	disableWrite = disableWrite or (enemy == enemyForName.Shaktool)
 
-	EnemyWeaknessTable.super.randomizeEnemy(self, enemy, disableWrite)
+	EnemyWeaknessTable.super.randomizeEnemy(self, enemy, preserveZeros, disableWrite)
 end
 
 --[[
@@ -613,11 +640,22 @@ for i,enemy in ipairs(enemies) do
 		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
 	end
 
-	enemyWeaknessTable:randomizeEnemy(enemy)
+	-- TODO for this one, null ptr means doesn't take damage ...
+	-- so I should preserve nulls to nulls and non-nulls to non-nulls
+	-- ...and bosses should never be null
+	enemyWeaknessTable:randomizeEnemy(enemy, true)
+	
 	enemyItemDropTable:randomizeEnemy(enemy)
 end
 
 -- TODO make sure bosses can be killed 
 -- ... especially Kraid from the looks of it
 -- TODO make sure the monster outside the sand outside springball canNOT be powerbomb'd
+
+
+-- while we're here, make sure 'Grey Zebesian' and 'Grey Zebesian (Wall)' have a weakness of either normal shot or missiles ...
+-- ... or something else?
+--enemyForName['Grey Zebesian'].ptr[0].weakness = 0
+--enemyForName['Grey Zebesian (Wall)'].ptr[0].weakness = 0
+
 end

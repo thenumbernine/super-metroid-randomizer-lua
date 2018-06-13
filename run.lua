@@ -72,13 +72,18 @@ local playerSkills = config.playerSkills
 
 
 local function canKill(enemyName)
+io.write('canKill '..enemyName)
 	local enemy = assert(enemyForName[enemyName], "failed to find enemy named "..enemyName)
 	local weak = enemy:getWeakness()
-	if weak == nil then return true end
+	
+	-- null weak means ... ?
+	if weak == nil then 
+print('...is empty')	
+		return false
+	end
 	weak = weak[0]
 
-	-- null weak means ... ?
-	if not weak then return true end
+	print(' weakness '..weak..' vs sofar '..tolua(sofar))
 
 	if bit.band(0xf, weak.normal) ~= 0 then return true end
 	if bit.band(0xf, weak.wave) ~= 0 and req.wave then return true end
@@ -180,9 +185,9 @@ end
 
 -- second missile tank you get
 locations:insert{
-	name="Missile (blue Brinstar middle)", 
-	addr=0x78798, 
-	access=function() 
+	name = "Missile (blue Brinstar middle)", 
+	addr = 0x78798, 
+	access = function() 
 		return accessBlueBrinstarEnergyTankRoom() 
 		and req.morph 
 	end,
@@ -224,9 +229,19 @@ local function canGetUpWithRunway()
 	or canBombTechnique()
 end
 
--- in order for the alarm to activate, you need to collect morph and a missile tank and go to some room in crateria.
+local function canLeaveOldMotherBrainRoom()
+	-- to escape the room, you have to kill the grey space pirates
+	return canKill'Grey Zebesian (Wall)'
+	and canKill'Grey Zebesian'
+end
+
 local function canActivateAlarm()
+	-- in order for the alarm to activate, you need to collect morph and a missile tank and go to some room in crateria.
 	return req.morph and req.missile
+	-- and you have to go through the old mother brain room
+	and (canLeaveOldMotherBrainRoom()
+		-- TODO *or* you can go through power bomb brinstar then access some other certain room in crateria ... I think it's the crab room or something
+	)
 end
 
 locations:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
@@ -268,22 +283,26 @@ locations:insert{
 		and canDestroyBombWallsStanding()
 	end,
 	escape = function()
-		-- to escape the room, you have to kill the grey space pirates
-		return canKill'Grey Zebesian (Wall)'
-		and canKill'Grey Zebesian'
+		return canLeaveOldMotherBrainRoom()
 	end,
 }
 
 
 	-- Bomb Torizo room:
 
+-- getting back to the bomb area after getting morph ...
+local function accessUpperCrateriaAfterMorph()
+	return canActivateAlarm()
+	-- or going through pink Brinstar from the right to the left ... all you need is powerbombs ...
+	or req.powerbomb
+end
 
 -- this is another one of those, like plasma and the spore spawn super missiles, where there's no harm if we cut it off, because you need the very item to leave its own area
 locations:insert{
 	name = "Bomb",
 	addr = 0x78404, 
 	access = function() 
-		return canActivateAlarm()
+		return accessUpperCrateriaAfterMorph()
 		and canOpenMissileDoors() 
 	end,
 	escape = function()
@@ -295,9 +314,11 @@ locations:insert{
 	-- Final missile bombway:
 
 locations:insert{name="Missile (Crateria middle)", addr=0x78486, access=function()
-	return canDestroyBombWallsMorphed()
 	-- without the alarm, this item is replaced with a security scanner
-	and canActivateAlarm()
+	return canActivateAlarm()
+	and accessUpperCrateriaAfterMorph()
+	-- behind some bombable blocks in a morph passageway
+	and canDestroyBombWallsMorphed()
 end}
 
 	-- Terminator room:
@@ -691,7 +712,7 @@ end}
 
 local function canKillKraid()
 	return accessKraid()
-	-- and whatever kraid's weaknesses is
+	and canKill'Kraid (body)'
 end
 
 -- accessible only after kraid is killed
@@ -1327,7 +1348,7 @@ for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
 -- [[ placement algorithm:
 
 
-local sofar = table{}
+sofar = table{}
 -- I could just change the 'req' references to 'sofar' references ...
 -- notice I'm not using __index = sofar, because sofar itself is push'd / pop'd, so its pointer changes
 req = setmetatable({}, {
