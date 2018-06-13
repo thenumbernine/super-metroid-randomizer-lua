@@ -332,7 +332,8 @@ function EnemyAuxTable:randomize()
 			
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
-			
+		
+				-- if we are randomizing the enemy field ... then randomize the table associated with it
 				if randomizeEnemyProps[self.enemyField] then
 					local value = values[i]
 					entry[0][name] = value
@@ -362,20 +363,13 @@ function EnemyAuxTable:randomize()
 	end
 end
 
--- preserveZeros means if an enemy[field] has a zero before then it will have a zero after
-function EnemyAuxTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
+function EnemyAuxTable:randomizeEnemy(enemy, disableWrite)
 	local field = self.enemyField
 	
 	if randomizeEnemyProps[field] 
 	and not disableWrite
 	then
-		if not preserveZeros then
-			enemy.ptr[0][field] = pickRandom(self.addrs)
-		else
-			if enemy.ptr[0][field] ~= 0 then
-				enemy.ptr[0][field] = self.addrs[math.random(#self.addrs-1)+1]
-			end	
-		end
+		enemy.ptr[0][field] = pickRandom(self.addrs)
 	end
 
 	io.write(' '..field..'='..('0x%04x'):format(enemy.ptr[0][field]))
@@ -454,6 +448,7 @@ EnemyWeaknessTable.fields = table{
 	{unknown = 'uint8_t'},
 }
 
+-- keep this one intact
 local ShaktoolWeaknessAddr = 0xef1e
 
 function EnemyWeaknessTable:getRandomizedValues(addr)
@@ -474,7 +469,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 		values[math.random(20)] = math.random(1,255)
 	end
 
-	-- make sure Shaktool is immune to powerbombs
+	-- make sure Shaktool weakness entry is immune to powerbombs
 	if addr == ShaktoolWeaknessAddr then
 		values[16] = 0
 	end
@@ -482,7 +477,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	return values
 end
 
-function EnemyWeaknessTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
+function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
 	-- NOTICE
 	-- if (for item placement to get past canKill constraints)
 	-- we choose to allow re-rolling of weaknesses
@@ -490,20 +485,24 @@ function EnemyWeaknessTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
 	
 	-- don't randomize Kraid's weaknesses ... for now
 	-- leave this at 0
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (body)"]) 
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (body)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (arm)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (top belly spike)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (middle belly spike)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (bottom belly spike)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (leg)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (claw)"])
-	disableWrite = disableWrite or (enemy == enemyForName["Kraid (??? belly spike)"])
+	if ({
+		["Kraid (body)"] = true, 
+		["Kraid (body)"] = true,
+		["Kraid (arm)"] = true,
+		["Kraid (top belly spike)"] = true,
+		["Kraid (middle belly spike)"] = true,
+		["Kraid (bottom belly spike)"] = true,
+		["Kraid (leg)"] = true,
+		["Kraid (claw)"] = true,
+		["Kraid (??? belly spike)"] = true,
 
-	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
-	disableWrite = disableWrite or (enemy == enemyForName.Shaktool)
+		-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
+		Shaktool = true,
+	})[enemy.name] then
+		disableWrite = true
+	end
 
-	EnemyWeaknessTable.super.randomizeEnemy(self, enemy, preserveZeros, disableWrite)
+	EnemyWeaknessTable.super.randomizeEnemy(self, enemy, disableWrite)
 end
 
 --[[
@@ -640,16 +639,8 @@ for i,enemy in ipairs(enemies) do
 		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
 	end
 
-	-- TODO for this one, null ptr means doesn't take damage ...
-	-- so I should preserve nulls to nulls and non-nulls to non-nulls
-	-- ...and bosses should never be null
 	enemyWeaknessTable:randomizeEnemy(enemy)
-	
 	enemyItemDropTable:randomizeEnemy(enemy)
 end
-
--- TODO make sure bosses can be killed 
--- ... especially Kraid from the looks of it
--- TODO make sure the monster outside the sand outside springball canNOT be powerbomb'd
 
 end

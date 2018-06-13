@@ -1,6 +1,9 @@
 return {
 	randomizeEnemies = true,
-	--randomizeItems = true,
+	
+	randomizeItems = true,
+	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
+	-- ... to make sure enemies aren't impossible
 
 	-- used by enemy randomization
 	randomizeEnemyProps = {

@@ -5,6 +5,8 @@ local ffi = require 'ffi'
 local config = require 'config'
 local playerSkills = config.playerSkills
 
+-- item requirements we've fulfilled so far
+local req
 
 local function canKill(enemyName)
 io.write('canKill '..enemyName)
@@ -18,7 +20,7 @@ print('...is empty')
 	end
 	weak = weak[0]
 
-	print(' weakness '..weak..' vs sofar '..tolua(sofar))
+	print(' weakness '..weak..' vs items so far '..tolua(req))
 
 	if bit.band(0xf, weak.normal) ~= 0 then return true end
 	if bit.band(0xf, weak.wave) ~= 0 and req.wave then return true end
@@ -67,14 +69,14 @@ end
 
 
 --[[
-locations fields:
+items fields:
 	name = name of the *location* (unrelated to item name)
 	addr = address of the item
 	access = callback to determine what is required to access the item
 	escape = callback to determine what is required to escape the room after accessing the item
 	filter = callback to determine which items to allow here
 --]]
-local locations = table()
+local items = table()
 
 
 -- start run / pre-alarm items ...
@@ -82,7 +84,7 @@ local locations = table()
 
 	-- morph ball room:
 
-locations:insert{
+items:insert{
 	name = "Morphing Ball", 
 	addr = 0x786DE, 
 	access = function() return true end, 
@@ -95,11 +97,11 @@ local function canUsePowerBombs()
 end
 
 -- power bombs behind power bomb wall near the morph ball 
-locations:insert{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=canUsePowerBombs}
+items:insert{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=canUsePowerBombs}
 
 	-- first missile room:
 
-locations:insert{
+items:insert{
 	name = "Missile (blue Brinstar bottom)", 
 	addr = 0x78802, 
 	access = function() return req.morph end,
@@ -119,7 +121,7 @@ local function accessBlueBrinstarEnergyTankRoom()
 end
 
 -- second missile tank you get
-locations:insert{
+items:insert{
 	name = "Missile (blue Brinstar middle)", 
 	addr = 0x78798, 
 	access = function() 
@@ -146,8 +148,8 @@ local function accessBlueBrinstarDoubleMissileRoom()
 	)
 end
 
-locations:insert{name="Missile (blue Brinstar top)", addr=0x78836, access=accessBlueBrinstarDoubleMissileRoom}
-locations:insert{name="Missile (blue Brinstar behind missile)", addr=0x7883C, access=accessBlueBrinstarDoubleMissileRoom}
+items:insert{name="Missile (blue Brinstar top)", addr=0x78836, access=accessBlueBrinstarDoubleMissileRoom}
+items:insert{name="Missile (blue Brinstar behind missile)", addr=0x7883C, access=accessBlueBrinstarDoubleMissileRoom}
 
 local function canUseBombs() 
 	return req.morph and req.bomb
@@ -179,7 +181,7 @@ local function canActivateAlarm()
 	)
 end
 
-locations:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
+items:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
 	return accessBlueBrinstarEnergyTankRoom() 
 	and (
 		-- how to get up?
@@ -209,7 +211,7 @@ end
 -- here's one that, if you choose morph => screw attack, then your first missiles could end up here
 --  however ... unless security is activated, this item will not appear
 -- so either (a) deactivate security or (b) require morph and 1 missile tank for every item after security
-locations:insert{
+items:insert{
 	name = "Missile (Crateria bottom)", 
 	addr = 0x783EE, 
 	access = function()
@@ -233,7 +235,7 @@ local function accessUpperCrateriaAfterMorph()
 end
 
 -- this is another one of those, like plasma and the spore spawn super missiles, where there's no harm if we cut it off, because you need the very item to leave its own area
-locations:insert{
+items:insert{
 	name = "Bomb",
 	addr = 0x78404, 
 	access = function() 
@@ -248,7 +250,7 @@ locations:insert{
 
 	-- Final missile bombway:
 
-locations:insert{name="Missile (Crateria middle)", addr=0x78486, access=function()
+items:insert{name="Missile (Crateria middle)", addr=0x78486, access=function()
 	-- without the alarm, this item is replaced with a security scanner
 	return canActivateAlarm()
 	and accessUpperCrateriaAfterMorph()
@@ -270,7 +272,7 @@ local function accessTerminator()
 	and canDestroyBombWallsWithRunway()
 end
 
-locations:insert{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432, access=accessTerminator}
+items:insert{name="Energy Tank (Crateria tunnel to Brinstar)", addr=0x78432, access=accessTerminator}
 
 
 -- Crateria surface
@@ -311,7 +313,7 @@ end
 
 	-- Crateria power bomb room:
 
-locations:insert{name="Power Bomb (Crateria surface)", addr=0x781CC, access=function() 
+items:insert{name="Power Bomb (Crateria surface)", addr=0x781CC, access=function() 
 	-- get back to the surface
 	return accessLandingRoom()
 	-- to get up there
@@ -365,15 +367,15 @@ local function escapeGreenPirateShaftItems()
 	return req.morph
 end
 
-locations:insert{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=accessGauntlet, escape=escapeGauntletFirstRoom}
+items:insert{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=accessGauntlet, escape=escapeGauntletFirstRoom}
 
 	-- Green pirate shaft
 
-locations:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
-locations:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
+items:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
+items:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 
 -- speed boost area 
-locations:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
+items:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
 	-- power bomb doors
 	return canUsePowerBombs() 
 	-- speed boost blocks
@@ -393,7 +395,7 @@ local accessEnterGreenBrinstar = accessTerminator
 
 	-- early supers room:
 
-locations:insert{name="Missile (green Brinstar below super missile)", addr=0x78518, access=function() 
+items:insert{name="Missile (green Brinstar below super missile)", addr=0x78518, access=function() 
 	return accessEnterGreenBrinstar()
 	-- missile door to enter room
 	and canOpenMissileDoors() 
@@ -412,11 +414,11 @@ local function accessEarlySupersRoomItems()
 	and (playerSkills.touchAndGo or req.hijump)
 end
 
-locations:insert{name="Super Missile (green Brinstar top)", addr=0x7851E, access=accessEarlySupersRoomItems}
+items:insert{name="Super Missile (green Brinstar top)", addr=0x7851E, access=accessEarlySupersRoomItems}
 
 	-- Brinstar reserve tank room:
 
-locations:insert{name="Reserve Tank (Brinstar)", addr=0x7852C, access=accessEarlySupersRoomItems}
+items:insert{name="Reserve Tank (Brinstar)", addr=0x7852C, access=accessEarlySupersRoomItems}
 
 local function accessBrinstarReserveMissile()
 	return accessEarlySupersRoomItems()
@@ -424,9 +426,9 @@ local function accessBrinstarReserveMissile()
 	and req.morph 
 end
 
-locations:insert{name="Missile (green Brinstar behind Reserve Tank)", addr=0x78538, access=accessBrinstarReserveMissile}
+items:insert{name="Missile (green Brinstar behind Reserve Tank)", addr=0x78538, access=accessBrinstarReserveMissile}
 
-locations:insert{name="Missile (green Brinstar behind missile)", addr=0x78532, access=function()
+items:insert{name="Missile (green Brinstar behind missile)", addr=0x78532, access=function()
 	return accessBrinstarReserveMissile()
 	-- takes morph + power/bombs to get to this item ...
 	and canDestroyBombWallsMorphed()
@@ -436,15 +438,15 @@ end}
 local accessEtecoons = canUsePowerBombs
 
 -- takes power bombs to get through the floor
-locations:insert{name="Energy Tank (green Brinstar bottom)", addr=0x787C2, access=accessEtecoons}
+items:insert{name="Energy Tank (green Brinstar bottom)", addr=0x787C2, access=accessEtecoons}
 
-locations:insert{name="Super Missile (green Brinstar bottom)", addr=0x787D0, access=function() 
+items:insert{name="Super Missile (green Brinstar bottom)", addr=0x787D0, access=function() 
 	return accessEtecoons() 
 	-- it's behind one more super missile door
 	and req.supermissile 
 end}
 
-locations:insert{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=function()
+items:insert{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=function()
 	return accessEtecoons()
 	-- technically ...
 	-- and playerSkills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
@@ -465,7 +467,7 @@ end
 
 	-- Spore Spawn super room
 
-locations:insert{
+items:insert{
 	name = "Super Missile (pink Brinstar)", 
 	addr = 0x784E4, 
 	access=function() 
@@ -493,9 +495,9 @@ local function accessMissilesAtTopOfPinkBrinstar()
 	)
 end
 
-locations:insert{name="Missile (pink Brinstar top)", addr=0x78608, access=accessMissilesAtTopOfPinkBrinstar}
+items:insert{name="Missile (pink Brinstar top)", addr=0x78608, access=accessMissilesAtTopOfPinkBrinstar}
 
-locations:insert{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=function() 
+items:insert{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=function() 
 	return accessMissilesAtTopOfPinkBrinstar()
 	-- behind power bomb blocks
 	and canUsePowerBombs() 
@@ -503,7 +505,7 @@ locations:insert{name="Power Bomb (pink Brinstar)", addr=0x7865C, access=functio
 	and req.supermissile 
 end}
 
-locations:insert{name="Missile (pink Brinstar bottom)", addr=0x7860E, access=function() 
+items:insert{name="Missile (pink Brinstar bottom)", addr=0x7860E, access=function() 
 	return accessPinkBrinstar() 
 end}
 
@@ -511,10 +513,10 @@ local function accessCharge()
 	return accessPinkBrinstar() and canDestroyBombWallsMorphed()
 end
 
-locations:insert{name="Charge Beam", addr=0x78614, access=accessCharge}
+items:insert{name="Charge Beam", addr=0x78614, access=accessCharge}
 
 -- doesn't really need gravity, just helps
-locations:insert{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() 
+items:insert{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access=function() 
 	-- get to the charge room
 	return accessCharge()
 	-- power bomb block
@@ -532,7 +534,7 @@ local function canGetBackThroughBlueGates()
 end
 
 -- the only thing that needs wave:
-locations:insert{name="Energy Tank (pink Brinstar top)", addr=0x78824, access=function() 
+items:insert{name="Energy Tank (pink Brinstar top)", addr=0x78824, access=function() 
 	return accessPinkBrinstar()
 	and canUsePowerBombs() 
 	and canGetBackThroughBlueGates()
@@ -550,7 +552,7 @@ local function accessLowerGreenBrinstar()
 	or accessPinkBrinstarFromRight()
 end
 
-locations:insert{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
+items:insert{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
 	return accessLowerGreenBrinstar()
 	and (playerSkills.touchAndGo or req.hijump or req.spacejump) 
 end}
@@ -564,7 +566,7 @@ local function accessRedBrinstar()
 	and (req.supermissile or canUsePowerBombs())
 end
 
-locations:insert{name="X-Ray Visor", addr=0x78876, access=function()
+items:insert{name="X-Ray Visor", addr=0x78876, access=function()
 	return accessRedBrinstar() 
 	and canUsePowerBombs() 
 	and (
@@ -601,7 +603,7 @@ end
 -- behind a super missile door
 -- you don't need power bombs to get this, but you need power bombs to escape this area
 -- another shared exit constraint...
-locations:insert{
+items:insert{
 	name = "Power Bomb (red Brinstar spike room)", 
 	addr = 0x7890E, 
 	access = function() 
@@ -613,18 +615,18 @@ locations:insert{
 }
 
 -- behind a powerbomb wall 
-locations:insert{name="Missile (red Brinstar spike room)", addr=0x78914, access=function() 
+items:insert{name="Missile (red Brinstar spike room)", addr=0x78914, access=function() 
 	return accessUpperRedBrinstar() and canUsePowerBombs() 
 end}
 
 -- super missile door, power bomb floor
-locations:insert{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() 
+items:insert{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() 
 	return accessUpperRedBrinstar() and req.supermissile and canUsePowerBombs() 
 end}
 
 -- red Brinstar bottom:
 
-locations:insert{name="Spazer", addr=0x7896E, access=function() 
+items:insert{name="Spazer", addr=0x7896E, access=function() 
 	-- getting there:
 	return accessRedBrinstar() 
 	-- getting up:
@@ -641,7 +643,7 @@ local function accessKraid()
 	and canDestroyBombWallsMorphed() 
 end
 
-locations:insert{name="Missile (Kraid)", addr=0x789EC, access=function() 
+items:insert{name="Missile (Kraid)", addr=0x789EC, access=function() 
 	return accessKraid() and canUsePowerBombs() 
 end}
 
@@ -651,9 +653,9 @@ local function canKillKraid()
 end
 
 -- accessible only after kraid is killed
-locations:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=canKillKraid}
+items:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=canKillKraid}
 
-locations:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
+items:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
 
 
 -- Norfair
@@ -661,9 +663,9 @@ locations:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
 
 local accessEnterNorfair = accessRedBrinstar
 
-locations:insert{name="Hi-Jump Boots", addr=0x78BAC, access=function() return accessEnterNorfair() end}
-locations:insert{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=accessEnterNorfair}
-locations:insert{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=accessEnterNorfair}
+items:insert{name="Hi-Jump Boots", addr=0x78BAC, access=function() return accessEnterNorfair() end}
+items:insert{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=accessEnterNorfair}
+items:insert{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=accessEnterNorfair}
 
 local function accessHeatedNorfair() 
 	return accessEnterNorfair() 
@@ -686,7 +688,7 @@ local function accessHeatedNorfair()
 	--and (req.spacejump or req.hijump) 
 end
 
-locations:insert{name="Missile (lava room)", addr=0x78AE4, access=accessHeatedNorfair}
+items:insert{name="Missile (lava room)", addr=0x78AE4, access=accessHeatedNorfair}
 
 local function accessIce()
 	return accessKraid() 
@@ -701,13 +703,13 @@ local function accessIce()
 	)
 end
 
-locations:insert{name="Ice Beam", addr=0x78B24, access=accessIce} 
+items:insert{name="Ice Beam", addr=0x78B24, access=accessIce} 
 
 local function accessMissilesUnderIce()
 	return accessIce() and canUsePowerBombs() 
 end
 
-locations:insert{name="Missile (below Ice Beam)", addr=0x78B46, access=accessMissilesUnderIce}
+items:insert{name="Missile (below Ice Beam)", addr=0x78B46, access=accessMissilesUnderIce}
 
 -- crocomire takes either wave on the rhs or speed booster and power bombs on the lhs
 local function accessCrocomire() 
@@ -719,10 +721,10 @@ local function accessCrocomire()
 	or (accessHeatedNorfair() and req.wave)
 end
 
-locations:insert{name="Energy Tank (Crocomire)", addr=0x78BA4, access=accessCrocomire}
-locations:insert{name="Missile (above Crocomire)", addr=0x78BC0, access=accessCrocomire}
+items:insert{name="Energy Tank (Crocomire)", addr=0x78BA4, access=accessCrocomire}
+items:insert{name="Missile (above Crocomire)", addr=0x78BC0, access=accessCrocomire}
 
-locations:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() 
+items:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() 
 	return accessCrocomire() 
 	and (
 		req.spacejump 
@@ -733,9 +735,9 @@ locations:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function()
 	)
 end}
 
-locations:insert{name="Missile (below Crocomire)", addr=0x78C14, access=accessCrocomire}
+items:insert{name="Missile (below Crocomire)", addr=0x78C14, access=accessCrocomire}
 
-locations:insert{name="Missile (Grappling Beam)", addr=0x78C2A, access=function() 
+items:insert{name="Missile (Grappling Beam)", addr=0x78C2A, access=function() 
 	return accessCrocomire() 
 	and (
 		req.spacejump 
@@ -745,7 +747,7 @@ locations:insert{name="Missile (Grappling Beam)", addr=0x78C2A, access=function(
 	)
 end}
 
-locations:insert{name="Grappling Beam", addr=0x78C36, access=function() 
+items:insert{name="Grappling Beam", addr=0x78C36, access=function() 
 	return accessCrocomire() 
 	and (
 		req.spacejump 
@@ -754,12 +756,12 @@ locations:insert{name="Grappling Beam", addr=0x78C36, access=function()
 	) 
 end}
 
-locations:insert{name="Missile (bubble Norfair)", addr=0x78C66, access=accessHeatedNorfair}
-locations:insert{name="Missile (Speed Booster)", addr=0x78C74, access=accessHeatedNorfair}
-locations:insert{name="Speed Booster", addr=0x78C82, access=accessHeatedNorfair}
-locations:insert{name="Missile (Wave Beam)", addr=0x78CBC, access=accessHeatedNorfair}
+items:insert{name="Missile (bubble Norfair)", addr=0x78C66, access=accessHeatedNorfair}
+items:insert{name="Missile (Speed Booster)", addr=0x78C74, access=accessHeatedNorfair}
+items:insert{name="Speed Booster", addr=0x78C82, access=accessHeatedNorfair}
+items:insert{name="Missile (Wave Beam)", addr=0x78CBC, access=accessHeatedNorfair}
 
-locations:insert{
+items:insert{
 	name = "Wave Beam",
 	addr = 0x78CCA, 
 	access = function()
@@ -782,9 +784,9 @@ local function accessNorfairReserve()
 end
 
 -- upper bubble room ... probably needs high jump or ice ... 
-locations:insert{name="Missile (bubble Norfair green door)", addr=0x78C52, access=accessNorfairReserve}
-locations:insert{name="Reserve Tank (Norfair)", addr=0x78C3E, access=accessNorfairReserve}
-locations:insert{name="Missile (Norfair Reserve Tank)", addr=0x78C44, access=accessNorfairReserve}
+items:insert{name="Missile (bubble Norfair green door)", addr=0x78C52, access=accessNorfairReserve}
+items:insert{name="Reserve Tank (Norfair)", addr=0x78C3E, access=accessNorfairReserve}
+items:insert{name="Missile (Norfair Reserve Tank)", addr=0x78C44, access=accessNorfairReserve}
 
 
 -- lower Norfair
@@ -804,23 +806,23 @@ local function accessLowerNorfair()
 	)
 end
 
-locations:insert{name="Missile (Gold Torizo)", addr=0x78E6E, access=accessLowerNorfair}
-locations:insert{name="Super Missile (Gold Torizo)", addr=0x78E74, access=accessLowerNorfair}
-locations:insert{name="Screw Attack", addr=0x79110, access=accessLowerNorfair}
+items:insert{name="Missile (Gold Torizo)", addr=0x78E6E, access=accessLowerNorfair}
+items:insert{name="Super Missile (Gold Torizo)", addr=0x78E74, access=accessLowerNorfair}
+items:insert{name="Screw Attack", addr=0x79110, access=accessLowerNorfair}
 
-locations:insert{name="Missile (Mickey Mouse room)", addr=0x78F30, access=accessLowerNorfair}
+items:insert{name="Missile (Mickey Mouse room)", addr=0x78F30, access=accessLowerNorfair}
 
-locations:insert{name="Energy Tank (lower Norfair fire flea room)", addr=0x79184, access=accessLowerNorfair}
-locations:insert{name="Missile (lower Norfair above fire flea room)", addr=0x78FCA, access=accessLowerNorfair}
-locations:insert{name="Power Bomb (lower Norfair above fire flea room)", addr=0x78FD2, access=accessLowerNorfair}
+items:insert{name="Energy Tank (lower Norfair fire flea room)", addr=0x79184, access=accessLowerNorfair}
+items:insert{name="Missile (lower Norfair above fire flea room)", addr=0x78FCA, access=accessLowerNorfair}
+items:insert{name="Power Bomb (lower Norfair above fire flea room)", addr=0x78FD2, access=accessLowerNorfair}
 
 -- spade shaped room?
-locations:insert{name="Missile (lower Norfair near Wave Beam)", addr=0x79100, access=accessLowerNorfair}
+items:insert{name="Missile (lower Norfair near Wave Beam)", addr=0x79100, access=accessLowerNorfair}
 
-locations:insert{name="Power Bomb (above Ridley)", addr=0x790C0, access=accessLowerNorfair}
+items:insert{name="Power Bomb (above Ridley)", addr=0x790C0, access=accessLowerNorfair}
 
 -- these constraints are really for what it takes to kill Ridley
-locations:insert{name="Energy Tank (Ridley)", addr=0x79108, access=function() 
+items:insert{name="Energy Tank (Ridley)", addr=0x79108, access=function() 
 	return accessLowerNorfair() 
 	and effectiveEnergyCount() >= 4 
 	-- you don't need charge.  you can also kill him with a few hundred missiles
@@ -832,7 +834,7 @@ end}
 
 
 -- on the way to wrecked ship
-locations:insert{name="Missile (Crateria moat)", addr=0x78248, access=function() 
+items:insert{name="Missile (Crateria moat)", addr=0x78248, access=function() 
 	-- you just need to get through the doors, from there you can jump across
 	return req.supermissile and req.powerbomb 
 end}
@@ -848,8 +850,8 @@ local function accessWreckedShip()
 	and (playerSkills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
 end
 
-locations:insert{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=accessWreckedShip}
-locations:insert{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=accessWreckedShip}
+items:insert{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=accessWreckedShip}
+items:insert{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=accessWreckedShip}
 
 local function canDefeatPhantoon() 
 	return accessWreckedShip() 
@@ -857,13 +859,13 @@ local function canDefeatPhantoon()
 	and (req.gravity or req.varia or effectiveEnergyCount() >= 2) 
 end
 
-locations:insert{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=canDefeatPhantoon}
-locations:insert{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=canDefeatPhantoon}
-locations:insert{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return canDefeatPhantoon() and req.speed end}
-locations:insert{name="Missile (Gravity Suit)", addr=0x7C2EF, access=canDefeatPhantoon}
-locations:insert{name="Missile (Wrecked Ship top)", addr=0x7C319, access=canDefeatPhantoon}
+items:insert{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=canDefeatPhantoon}
+items:insert{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=canDefeatPhantoon}
+items:insert{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return canDefeatPhantoon() and req.speed end}
+items:insert{name="Missile (Gravity Suit)", addr=0x7C2EF, access=canDefeatPhantoon}
+items:insert{name="Missile (Wrecked Ship top)", addr=0x7C319, access=canDefeatPhantoon}
 
-locations:insert{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() 
+items:insert{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() 
 	return canDefeatPhantoon() 
 	and (req.grappling or req.spacejump
 		or effectiveEnergyCount() >= 2
@@ -871,9 +873,9 @@ locations:insert{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=functio
 	--and req.gravity 
 end}
 
-locations:insert{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=canDefeatPhantoon}
-locations:insert{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=canDefeatPhantoon}
-locations:insert{name="Gravity Suit", addr=0x7C36D, access=canDefeatPhantoon}
+items:insert{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=canDefeatPhantoon}
+items:insert{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=canDefeatPhantoon}
+items:insert{name="Gravity Suit", addr=0x7C36D, access=canDefeatPhantoon}
 
 
 -- Maridia
@@ -899,10 +901,10 @@ local function accessOuterMaridia()
 	)
 end
 
-locations:insert{name="Missile (green Maridia shinespark)", addr=0x7C437, access=function() return accessOuterMaridia() and req.speed end}
-locations:insert{name="Super Missile (green Maridia)", addr=0x7C43D, access=accessOuterMaridia}
-locations:insert{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return accessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end}
-locations:insert{name="Missile (green Maridia tatori)", addr=0x7C483, access=accessOuterMaridia}
+items:insert{name="Missile (green Maridia shinespark)", addr=0x7C437, access=function() return accessOuterMaridia() and req.speed end}
+items:insert{name="Super Missile (green Maridia)", addr=0x7C43D, access=accessOuterMaridia}
+items:insert{name="Energy Tank (green Maridia)", addr=0x7C47D, access=function() return accessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end}
+items:insert{name="Missile (green Maridia tatori)", addr=0x7C483, access=accessOuterMaridia}
 
 local function accessInnerMaridia() 
 	return accessOuterMaridia() 
@@ -910,9 +912,9 @@ local function accessInnerMaridia()
 end
 
 -- top of maridia
-locations:insert{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=accessInnerMaridia}
-locations:insert{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=accessInnerMaridia}
-locations:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=accessInnerMaridia}
+items:insert{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=accessInnerMaridia}
+items:insert{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=accessInnerMaridia}
+items:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=accessInnerMaridia}
 
 local function canDefeatBotwoon() 
 	return accessInnerMaridia() 
@@ -935,9 +937,9 @@ end
 -- This item requires plasma *to exit*
 --  but this is no different from the super missile after spore spawn requiring super missile *to exit*
 -- so I propose to use a different constraint for items in these situations.
--- Maybe I should make the randomizer to only put worthless items in these locations?
+-- Maybe I should make the randomizer to only put worthless items in these places?
 --  Otherwise I can't make randomizations that don't include the plasma item. 
-locations:insert{
+items:insert{
 	name = "Plasma Beam",
 	addr = 0x7C559,
 	access = function() 
@@ -965,40 +967,40 @@ local function canUseSpringBall()
 	return req.morph and req.springball
 end
 
-locations:insert{name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() 
+items:insert{name="Missile (left Maridia sand pit room)", addr=0x7C5DD, access=function() 
 	return accessOuterMaridia() 
 	and (canUseBombs() or canUseSpringBall())
 end}
 
 -- also left sand pit room 
-locations:insert{name="Reserve Tank (Maridia)", addr=0x7C5E3, access=function() 
+items:insert{name="Reserve Tank (Maridia)", addr=0x7C5E3, access=function() 
 	return accessOuterMaridia() and (canUseBombs() or canUseSpringBall()) 
 end}
 
-locations:insert{name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=accessOuterMaridia}
-locations:insert{name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=accessOuterMaridia}
+items:insert{name="Missile (right Maridia sand pit room)", addr=0x7C5EB, access=accessOuterMaridia}
+items:insert{name="Power Bomb (right Maridia sand pit room)", addr=0x7C5F1, access=accessOuterMaridia}
 
 -- room with the shell things
-locations:insert{name="Missile (pink Maridia)", addr=0x7C603, access=function() return accessOuterMaridia() and req.speed end}
-locations:insert{name="Super Missile (pink Maridia)", addr=0x7C609, access=function() return accessOuterMaridia() and req.speed end}
+items:insert{name="Missile (pink Maridia)", addr=0x7C603, access=function() return accessOuterMaridia() and req.speed end}
+items:insert{name="Super Missile (pink Maridia)", addr=0x7C609, access=function() return accessOuterMaridia() and req.speed end}
 
 -- here's another fringe item
 -- requires grappling, but what if we put something unimportant there? who cares about it then?
-locations:insert{name="Spring Ball", addr=0x7C6E5, access=function() 
+items:insert{name="Spring Ball", addr=0x7C6E5, access=function() 
 	return accessOuterMaridia() 
 	and req.grappling 
 	and (playerSkills.touchAndGo or req.spacejump)
 end}
 
 -- missile right before draygon?
-locations:insert{name="Missile (Draygon)", addr=0x7C74D, access=canDefeatDraygon}
+items:insert{name="Missile (Draygon)", addr=0x7C74D, access=canDefeatDraygon}
 
 -- energy tank right after botwoon
-locations:insert{name="Energy Tank (Botwoon)", addr=0x7C755, access=canDefeatBotwoon}
+items:insert{name="Energy Tank (Botwoon)", addr=0x7C755, access=canDefeatBotwoon}
 
 -- technically you don't need gravity to get to this item 
 -- ... but you need it to escape Draygon's area
-locations:insert{
+items:insert{
 	name = "Space Jump", 
 	addr = 0x7C7A7, 
 	access = function() 
@@ -1012,11 +1014,23 @@ locations:insert{
 	end,
 }
 
+
 --]]
+
+local itemsForName = items:map(function(item) return item, item.name end)
+local itemsForAddr = items:map(function(item) return item, item.addr end)
+
+for _,item in ipairs(items) do
+	-- ptr to the item type
+	-- ANOTHER TODO: enemies[] addr is 16-bit, while items[] addr is PC /  24-bit. pick one method and stick with it.
+	-- TODO I bet this is part of a bigger structure, maybe with position, etc
+	item.ptr = ffi.cast('uint16_t*', rom + item.addr)
+end
+
 
 
 --[[
-TODO prioritize placement of certain item locations last.
+TODO prioritize placement of certain items last.
 especially those that require certain items to escape from.
 1) the super missile tank behind spore spawn that requires super missiles.  place that one last, or not at all, or else it will cause an early super missile placement.
 2) plasma beam, will require a plasma beam placement
@@ -1071,82 +1085,10 @@ for _,k in ipairs(itemTypes:keys()) do
 	itemTypeBaseForType[v + 2*0x54] = v
 end
 
--- not completely working just yet
-local doorTypes = table{
-	door_blue_left = 0xc82a,
-	door_blue_right = 0xc830,
-	door_blue_up = 0xc836,
-	door_blue_down = 0xc83c,
-	
-	door_grey_left = 0xc842,
-	door_grey_right = 0xc848,
-	door_grey_up = 0xc84e,
-	door_grey_down = 0xc854,
-	
-	door_yellow_left = 0xc85a,
-	door_yellow_right = 0xc860,
-	door_yellow_up = 0xc866,
-	door_yellow_down = 0xc86c,
-	
-	door_green_left = 0xc872,
-	door_green_right = 0xc878,
-	door_green_up = 0xc87e,
-	door_green_down = 0xc884,
-	
-	door_red_left = 0xc88a,
-	door_red_right = 0xc890,
-	door_red_up = 0xc896,
-	door_red_down = 0xc89c,
-	
-	door_blue_opening_left = 0xc8a2,
-	door_blue_opening_right = 0xc8a8,
-	door_blue_opening_up = 0xc8b4,
-	door_blue_opening_down = 0xc8ae,
-	
-	door_blue_closing_left = 0xc8ba,
-	door_blue_closing_right = 0xc8be,
-	door_blue_closing_up = 0xc8c6,
-	door_blue_closing_down = 0xc8c2,
-}
-
-local objNameForValue = table(
-	itemTypes:map(function(v,k) return k,v end),
-	doorTypes:map(function(v,k) return k,v end)
-)
---local itemTypeValues = itemTypes:map(function(v,k,t) return v,#t+1 end)
-
-local countsForType = table()
-local itemInsts = table()
-local doorInsts = table()
-
--- [[ build from object memory range
--- TODO get rid of itemInsts and just use locations ... and maybe rename it to itemLocs or something 
-local function check(addr)
-	local value = ffi.cast('uint16_t*', rom+addr)[0]
-	local name = objNameForValue[value]
-	if name then
-		countsForType[name] = (countsForType[name] or 0) + 1
-		if itemTypes[name] then
-			itemInsts:insert{addr=addr, value=value, name=name}
-		elseif doorTypes[name] then
-			doorInsts:insert{addr=addr, value=value, name=name}
-		end	
-	end
-end
-for addr=0x78000,0x79192,2 do check(addr) end
-for addr=0x7c215,0x7c7bb,2 do check(addr) end
---]]
-
---[[ build from the loc database
-itemInsts = locations:map(function(loc)
-	local addr = loc.addr
-	local value = ffi.cast('uint16_t*', rom+addr)[0]
-	return {addr=addr, value=value, name=objNameForValue[value]}
-end)
---]]
+local itemTypeNameForValue = itemTypes:map(function(v,k) return k,v end)
 
 --[[ filter out bombs and morph ball, so we know the run is possible 
-itemInsts = itemInsts:filter(function(item)
+items = items:filter(function(item)
 	if item.addr ~= 0x786de		-- morph ball -- must be morph ball
 	and item.addr ~= 0x78802	-- blue brinstar bottom -- must be either missiles or super missiles
 	--and item.addr ~= 0x78798	-- blue brinstar middle -- if blue brinstar bottom isn't missiles then this must be missiles
@@ -1169,36 +1111,43 @@ blue brinstar bottom must be either missiles
 --]]
 
 -- [[ reveal all items
-for _,item in ipairs(itemInsts) do
-	local name = objNameForValue[item.value]
-	name = name:gsub('_chozo', ''):gsub('_hidden', '')	-- remove all chozo and hidden status
-	item.value = itemTypes[name]
+for _,item in ipairs(items) do
+	local name = itemTypeNameForValue[item.ptr[0]]
+
+	-- save it as a flag for later -- whether this used to be chozo or hidden
+	item.isChozo = not not name:match'_chozo$' 
+	item.isHidden = not not name:match'_hidden$' 
+	-- remove all chozo and hidden status
+	name = name:gsub('_chozo', ''):gsub('_hidden', '')	
+
+	-- write back our change
+	item.ptr[0] = itemTypes[name]
 end
 --]]
 
-print('found '..#itemInsts..' items')
-print('found '..#doorInsts..' doors')
-print(tolua(countsForType):gsub(', ', ',\n\t'))
+print('found '..#items..' items')
 
 
 --[[
+changes around the original values that are to be randomized
+in case you want to try a lean run, with less items, or something
 args:
-	changes = {[from] => [to]} key/value pairs
+	changes = {[from type] => [to type]} key/value pairs
 	args = extra args:
 		leave = how many to leave
 --]]
 local function change(changes, args)
 	local leave = (args and args.leave) or 0
 	for from, to in pairs(changes) do
-		local insts = itemInsts:filter(function(item) 
-			return objNameForValue[item.value]:match('^'..from) 
+		local found = items:filter(function(item) 
+			return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
 		end)
 		for i=1,leave do
-			if #insts == 0 then break end
-			insts:remove(math.random(#insts))	-- leave a single inst 
+			if #found == 0 then break end
+			found:remove(math.random(#found))	-- leave as many as the caller wants
 		end
-		for _,item in ipairs(insts) do 
-			item.value = itemTypes[to] 
+		for _,item in ipairs(found) do 
+			item.ptr[0] = itemTypes[to] 
 		end
 	end
 end
@@ -1216,14 +1165,12 @@ change{hijump='missile'}
 change{xray='missile'}
 change{springball='missile'}
 
-local function removeLocation(locName, with)
-	local loc = locations:remove(locations:find(nil, function(loc) 
-		return loc.name == locName 
-	end))
-	local inst = itemInsts:remove(itemInsts:find(nil, function(inst) 
-		return inst.addr == loc.addr 
-	end))
-	ffi.cast('uint16_t*', rom + inst.addr)[0] = itemTypes[with] 
+local function removeItem(itemName, withType)
+	local item = assert(itemsForName[itemName], "couldn't find item "..itemName)
+	item.ptr[0] = itemTypes[withType]
+	
+	items:removeObject(item)
+	itemsForName[itemName] = nil
 end
 
 -- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
@@ -1233,11 +1180,11 @@ change{plasma='missile'}
 -- this will stall the randomizer because of pink Brinstar energy tank
 -- so lets remove it and write it as a missile
 change{wave='missile'}
-removeLocation("Energy Tank (pink Brinstar top)", 'missile')
+removeItem("Energy Tank (pink Brinstar top)", 'missile')
 
 -- grappling is only absolutely required to get into springball...
 change{grappling='missile'}
-removeLocation("Spring Ball", 'missile')
+removeItem("Spring Ball", 'missile')
 
 -- is this possible?  maybe you can't kill the golden chozo without charge, or a lot of super missiles ... or a lot of restocking on 5 super missiles and shooting them all off at him
 --change{charge='missile'}
@@ -1251,7 +1198,7 @@ change{varia='missile'}
 
 -- if you're replacing plasma item and screw attack item then you must remove plasma location ...
 change{screwattack='missile'}
-removeLocation('Plasma Beam', 'missile')
+removeItem('Plasma Beam', 'missile')
 
 change{spacejump='missile'}
 
@@ -1264,47 +1211,35 @@ change{spazer='supermissile', hijump='supermissile', springball='supermissile', 
 change({energy='supermissile'}, {leave=7})
 --]]
 
---[[ change all doors to blue
-for _,door in ipairs(doorInsts) do
-	--door.value = 
+
+
+--[[ boring randomization:
+for i,value in ipairs(shuffle(items:map(function(item) return item.ptr[0] end))) do
+	items[i].ptr[0] = value
 end
---]]
-
-
-
-
---[[
-local itemInstValues = itemInsts:map(function(item) return item.value end)
-shuffle(itemInstValues)
-for i=1,#itemInsts do itemInsts[i].value = itemInstValues[i] end
 --]]
 
 
 -- [[ placement algorithm:
 
 
-sofar = table{}
--- I could just change the 'req' references to 'sofar' references ...
--- notice I'm not using __index = sofar, because sofar itself is push'd / pop'd, so its pointer changes
-req = setmetatable({}, {
-	__index = function(t,k)
-		return sofar[k]
-	end,
-})
+-- defined above so item constraints can see it 
+req = {}
 
--- deep copy, so the orginal itemInsts is intact
-local origItems = itemInsts:map(function(inst) return inst.value end)
--- feel free to modify origItems to your hearts content ... like replacing all reserve tanks with missiles, etc
+-- deep copy, so the orginal items is intact
+local origItemValues = items:map(function(item) return item.ptr[0] end)
+-- feel free to modify origItemValues to your hearts content ... like replacing all reserve tanks with missiles, etc
+-- I guess I'm doing this above alread with the change() and removeItem() functions
+
 
 -- keep track of the remaining items to place -- via indexes into the original array
-local itemInstIndexesLeft = range(#origItems)
+local itemValueIndexesLeft = range(#origItemValues)
 
-local currentLocs = table(locations)
+local currentItems = table(items)
 
-for _,loc in ipairs(locations) do
-	local value = ffi.cast('uint16_t*', rom+loc.addr)[0]
-	loc.defaultValue = itemTypeBaseForType[value]
-	loc.defaultName = objNameForValue[loc.defaultValue]
+for _,item in ipairs(items) do
+	local value = item.ptr[0]
+	item.defaultTypeName = itemTypeNameForValue[itemTypeBaseForType[value]]
 end
 
 local replaceMap = {}
@@ -1316,67 +1251,67 @@ local function iterate(depth)
 		return print(...)
 	end
 
-	if #currentLocs == 0 then
+	if #currentItems == 0 then
 		dprint'done!'
 		return true
 	end
 
-	local chooseLocs = currentLocs:filter(function(loc)
+	local chooseLocs = currentItems:filter(function(loc)
 		return loc.access()
 	end)
-	dprint('options to replace: '..tolua(chooseLocs:map(function(loc,i,t) return (t[loc.defaultName] or 0) + 1, loc.defaultName end)))
+	dprint('options to replace: '..tolua(chooseLocs:map(function(loc,i,t) return (t[loc.defaultTypeName] or 0) + 1, loc.defaultTypeName end)))
 
 	-- pick an item to replace
 	if #chooseLocs == 0 then 
-		dprint('we ran out of options with '..#currentLocs..' items unplaced!')
+		dprint('we ran out of options with '..#currentItems..' items unplaced!')
 		return
 	end
-	local chooseLoc = chooseLocs[math.random(#chooseLocs)]
-	dprint('choosing to replace '..chooseLoc.name)
+	local chooseItem = chooseLocs[math.random(#chooseLocs)]
+	dprint('choosing to replace '..chooseItem.name)
 	
-	-- remove it from the currentLocs list 
-	local nextLocs = currentLocs:filter(function(loc) return chooseLoc ~= loc end)
+	-- remove it from the currentItems list 
+	local nextItems = currentItems:filter(function(loc) return chooseItem ~= loc end)
 	
 	-- find an item to replace it with
-	if #itemInstIndexesLeft == 0 then 
+	if #itemValueIndexesLeft == 0 then 
 		dprint('we have no items left to replace it with!')
 		os.exit()
 	end
 	
-	for _,i in ipairs(shuffle(range(#itemInstIndexesLeft))) do
-		local push_itemInstIndexesLeft = table(itemInstIndexesLeft)
-		local replaceInstIndex = itemInstIndexesLeft:remove(i)
+	for _,i in ipairs(shuffle(range(#itemValueIndexesLeft))) do
+		local push_itemValueIndexesLeft = table(itemValueIndexesLeft)
+		local replaceInstIndex = itemValueIndexesLeft:remove(i)
 		
-		local value = origItems[replaceInstIndex]
-		local name = objNameForValue[value]
+		local value = origItemValues[replaceInstIndex]
+		local name = itemTypeNameForValue[value]
 		
-		if not chooseLoc.filter
-		or chooseLoc.filter(name)
+		if not chooseItem.filter
+		or chooseItem.filter(name)
 		then
-			dprint('...replacing '..chooseLoc.name..' with '..name)
+			dprint('...replacing '..chooseItem.name..' with '..name)
 					
 			-- plan to write it 
-			replaceMap[chooseLoc.addr] = {value=value, sofar=table(sofar)}
+			replaceMap[chooseItem.addr] = {value=value, req=table(req)}
 		
 			-- now replace it with an item
-			local push_sofar = table(sofar)
-			sofar[name] = (sofar[name] or 0) + 1
+			local push_req = setmetatable(table(req), nil)
+			req[name] = (req[name] or 0) + 1
 		
-			local push_currentLocs = table(currentLocs)
-			currentLocs = nextLocs
+			local push_currentItems = table(currentItems)
+			currentItems = nextItems
 
-			-- if the chooseLoc has an escape req, and it isn't satisfied, then don't iterate
-			if chooseLoc.escape and not chooseLoc.escape() then
+			-- if the chooseItem has an escape req, and it isn't satisfied, then don't iterate
+			if chooseItem.escape and not chooseItem.escape() then
 				dprint('...escape condition not met!')
 			else
 				dprint('iterating...')
 				if iterate(depth + 1) then return true end	-- return 'true' when finished to exit out of all recursion
 			end
 			
-			currentLocs = push_currentLocs
-			sofar = push_sofar
+			currentItems = push_currentItems
+			req = push_req
 		end
-		itemInstIndexesLeft = push_itemInstIndexesLeft
+		itemValueIndexesLeft = push_itemValueIndexesLeft
 	end
 end	
 
@@ -1385,32 +1320,24 @@ iterate()
 print()
 print()
 print'summary:'
-local longestName = locations:map(function(loc) return #loc.name end):sup()
-local function score(loc)
-	return table.values(replaceMap[loc.addr].sofar):sum() or 0
+local longestName = items:map(function(item) return #item.name end):sup()
+-- sort by # of constraints, so first item expected to get is listed first
+local function score(item)
+	return table.values(replaceMap[item.addr].req):sum() or 0
 end
-table(locations):sort(function(a,b) 
+table(items):sort(function(a,b) 
 	return score(a) < score(b) 
-end):map(function(loc)
-	local addr = loc.addr
+end):map(function(item)
+	local addr = item.addr
 	local value = replaceMap[addr].value
-	local sofar = replaceMap[addr].sofar
-	print(loc.name
-		..('.'):rep(longestName - #loc.name + 10)
-		..objNameForValue[value]
-		..'\t'..tolua(sofar))
-	select(2, itemInsts:find(nil, function(inst) return inst.addr == addr end)).value = value
+	local req = replaceMap[addr].req
+	print(item.name
+		..('.'):rep(longestName - #item.name + 10)
+		..itemTypeNameForValue[value]
+		..'\t'..tolua(req))
+	-- do the writing:
+	itemsForAddr[addr].ptr[0] = value
 end)
 
-
-
-for i,item in ipairs(itemInsts) do
-	ffi.cast('uint16_t*', rom + item.addr)[0] = item.value
-end
---[[
-for i,door in ipairs(doorInsts) do
-	ffi.cast('uint16_t*', rom + door.addr)[0] = door.value
-end
---]]
 
 end
