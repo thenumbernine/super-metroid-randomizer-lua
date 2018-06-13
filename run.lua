@@ -10,9 +10,32 @@ https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
 
 require 'ext'
 local ffi = require 'ffi'
-local template = require 'template'
 
-local seed = select(1, ...)
+
+local cmdline = {}
+for i=1,#arg do
+	local s = arg[i]
+	local j = s:find'=' 
+	if j then 
+		local k = s:sub(1,j-1)
+		local v = s:sub(j+1)
+		cmdline[k] = v
+	else
+		cmdline[s] = true
+	end
+end
+for k,v in pairs(cmdline) do
+	if not ({
+		seed=1,
+		['in']=1,
+		out=1,
+	})[k] then
+		error("got unknown cmdline argument "..k)
+	end
+end
+
+
+local seed = cmdline.seed
 if seed then
 	seed = tonumber(seed, 16)
 else
@@ -25,69 +48,72 @@ print('seed', ('%x'):format(seed))
 math.randomseed(seed)
 
 
-local infilename = select(2, ...) or 'sm.sfc'
-local outfilename = select(3, ...) or 'sm-random.sfc'
+local infilename = cmdline['in'] or 'sm.sfc'
+local outfilename = cmdline['out'] or 'sm-random.sfc'
 
 
-local randomizeEnemyWeaknesses = true
-local enemyWeaknessImmunityChance = .75
+local romstr = file[infilename]
+local header = ''
+--header = romstr:sub(1,512)
+--romstr = romstr:sub(513)
+
+-- global so enemies.lua can see it
+rom = ffi.cast('uint8_t*', romstr) 
 
 
-local randomizeEnemyItemDrops = true
-local enemyItemDropZeroChance = .75	-- 75% of item drop percentages are 0%
-
-
--- what skills does the player know?
-local skills = {
-	
-	-- this one covers a wide range
-	-- there's the lower green Brinstar power bomb item, which has always required touch-and-go
-	-- but there are several other locations which requier different degrees of skill of touch-and-go:
-	-- 1) accessing upper red Brinstar, you need either hijump, spacejump, ice ... or you can just use touch-and-go (super missiles help, for clearing the monsters out of the way)
-	-- 2) accessing Kraid without hijump or spacejump
-	-- 3) lots more
-	touchAndGo = true,
-	touchAndGoToBoulderRoom = true,
-	touchAndGoUpAlcatraz = true,
-
-	bombTechnique = true,
-
-	damageBoostToBrinstarEnergy = true,
-
-	-- whether the player knows to use mockball to get into the green Brinstar item area
-	-- I think that's the only place it's really necessary
-	mockball = true,
-
-	maridiaSuitSwap = true,
-
-	-- if you want to bother freeze the crab to jump up the maridia start area
-	suitlessMaridiaFreezeCrabs = true,
-	
-	-- speed boost by tapping 'a' at first, cuts off a block or two. maybe this isn't the right name.
-	shortSpeedBoost = true,
-
-	-- whether you want to run through the lava rooms of norfair without a suit
-	hellrun = true,
-	
-	-- if you want to bother do that stupid freeze-the-mocktroid glitch to jump through the wall
-	botwoonFreezeGlitch = false,
-
-	-- I've seen people do this in reverse boss videos ...
-	DraygonCrystalFlashBlueSparkWhatever = false,
-
-	-- whether you know how to get through gates using super missiles
-	superMissileGateGlitch = false,
-
-	-- I've seen this done ... does it require high jump? either way...
-	canJumpAcrossEntranceToWreckedShip = false,
-	
-	-- how to get out of lower norfair
-	preciseTouchAndGoLowerNorfair = false,
-	lowerNorfairSuitSwap = true,
-}
+-- do the enemy randomization
+require 'enemies'(rom)
 
 
 -- [[
+
+local config = require 'config'
+local playerSkills = config.playerSkills
+
+
+local function canKill(enemyName)
+	local enemy = assert(enemyForName[enemyName], "failed to find enemy named "..enemyName)
+	local weak = enemy:getWeakness()
+	if weak == nil then return true end
+	weak = weak[0]
+
+	-- null weak means ... ?
+	if not weak then return true end
+
+	if bit.band(0xf, weak.normal) ~= 0 then return true end
+	if bit.band(0xf, weak.wave) ~= 0 and req.wave then return true end
+	if bit.band(0xf, weak.ice) ~= 0 and req.ice then return true end
+	if bit.band(0xf, weak.ice_wave) ~= 0 and req.ice and req.wave then return true end
+	if bit.band(0xf, weak.spazer) ~= 0 and req.spazer then return true end
+	if bit.band(0xf, weak.wave_spazer) ~= 0 and req.wave and req.spazer then return true end
+	if bit.band(0xf, weak.ice_spazer) ~= 0 and req.ice and req.spazer then return true end
+	if bit.band(0xf, weak.wave_ice_spazer) ~= 0 and req.wave and req.ice and req.spazer then return true end
+	if bit.band(0xf, weak.plasma) ~= 0 and req.plasma then return true end
+	if bit.band(0xf, weak.wave_plasma) ~= 0 and req.wave and req.plasma then return true end
+	if bit.band(0xf, weak.ice_plasma) ~= 0 and req.ice and req.plasma then return true end
+	if bit.band(0xf, weak.wave_ice_plasma) ~= 0 and req.wave and req.ice and req.plasma then return true end
+	
+	if bit.band(0xf, weak.missile) ~= 0 and req.missile
+	-- TODO and the missile count vs the weakness can possibly kill the boss
+	then return true end
+	
+	if bit.band(0xf, weak.supermissile) ~= 0 and req.supermissile
+	-- TODO and the supermissile count vs the weakness can possibly kill the boss
+	then return true end
+
+	if bit.band(0xf, weak.bomb) ~= 0 and req.bomb then return true end
+	if bit.band(0xf, weak.powerbomb) ~= 0 and req.powerbomb then return true end
+	if bit.band(0xf, weak.speed) ~= 0 and req.speed then return true end
+	
+	if bit.band(0xf, weak.sparkcharge) ~= 0 and req.speed
+	-- TODO and we have a runway ...
+	then return true end
+	
+	if bit.band(0xf, weak.screwattack) ~= 0 and req.screwattack then return true end
+	--if bit.band(0xf, weak.hyper) ~= 0 and req.hyper then return true end
+	
+	if bit.band(0xf, weak.pseudo_screwattack) ~= 0 and req.charge then return true end
+end
 
 
 local function effectiveMissileCount()
@@ -174,7 +200,7 @@ local function accessBlueBrinstarDoubleMissileRoom()
 	-- if you can already use powerbombs then you can get up the top.  touch and go replaces spacejump / speed boost
 	and (
 		-- get upstrairs
-		skills.touchAndGoToBoulderRoom
+		playerSkills.touchAndGoToBoulderRoom
 		or req.speed
 		or req.spacejump
 	)
@@ -188,7 +214,7 @@ local function canUseBombs()
 end
 
 local function canBombTechnique()
-	return skills.bombTechnique and canUseBombs()
+	return playerSkills.bombTechnique and canUseBombs()
 end
 
 -- can you get up to high areas using a runway
@@ -211,7 +237,7 @@ locations:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=functi
 		or canGetUpWithRunway()
 		-- technically you can use a damage boost, so all you really need is missiles
 		--  however this doesn't work until after security is activated ...
-		or (skills.damageBoostToBrinstarEnergy and canActivateAlarm())
+		or (playerSkills.damageBoostToBrinstarEnergy and canActivateAlarm())
 	)
 end}
 
@@ -233,11 +259,20 @@ end
 -- here's one that, if you choose morph => screw attack, then your first missiles could end up here
 --  however ... unless security is activated, this item will not appear
 -- so either (a) deactivate security or (b) require morph and 1 missile tank for every item after security
-locations:insert{name="Missile (Crateria bottom)", addr=0x783EE, access=function()
-	-- alarm needs to be activated or the missile won't appear
-	return canActivateAlarm() 
-	and canDestroyBombWallsStanding()
-end}
+locations:insert{
+	name = "Missile (Crateria bottom)", 
+	addr = 0x783EE, 
+	access = function()
+		-- alarm needs to be activated or the missile won't appear
+		return canActivateAlarm() 
+		and canDestroyBombWallsStanding()
+	end,
+	escape = function()
+		-- to escape the room, you have to kill the grey space pirates
+		return canKill'Grey Zebesian (Wall)'
+		and canKill'Grey Zebesian'
+	end,
+}
 
 
 	-- Bomb Torizo room:
@@ -252,7 +287,7 @@ locations:insert{
 		and canOpenMissileDoors() 
 	end,
 	escape = function()
-		return skills.touchAndGoUpAlcatraz 
+		return playerSkills.touchAndGoUpAlcatraz 
 		or canDestroyBombWallsMorphed()
 	end,
 }
@@ -314,7 +349,7 @@ local function accessLandingRoom()
 		-- go up the elevator ...
 		-- then up terminator
 		-- then through the terminator wall
-		-- and tata, you're at the surface
+		-- and tada, you're at the surface
 	)
 end
 
@@ -381,7 +416,7 @@ locations:insert{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=ac
 locations:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 locations:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 
--- speed boost area ... don't you need ice? nahhh, but you might need to destroy the jumping monsters if you don't have ice 
+-- speed boost area 
 locations:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
 	-- power bomb doors
 	return canUsePowerBombs() 
@@ -389,7 +424,9 @@ locations:insert{name="Super Missile (Crateria)", addr=0x78478, access=function(
 	and req.speed 
 	-- escaping over the spikes
 	and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
-	-- killing / freezing the monsters? ... well, you already need power bombs 
+	-- killing / freezing the monsters
+	and ((req.ice -- TODO make sure you can freeze the boyon 
+		) or canKill'Boyon')
 end}
 
 
@@ -414,9 +451,9 @@ local function accessEarlySupersRoomItems()
 	return accessEnterGreenBrinstar()
 	and canOpenMissileDoors() 
 	-- missiles and mockball/speed to get up to it ...
-	and (skills.mockball or req.speed)
+	and (playerSkills.mockball or req.speed)
 	-- getting up to exit ...
-	and (skills.touchAndGo or req.hijump)
+	and (playerSkills.touchAndGo or req.hijump)
 end
 
 locations:insert{name="Super Missile (green Brinstar top)", addr=0x7851E, access=accessEarlySupersRoomItems}
@@ -454,7 +491,7 @@ end}
 locations:insert{name="Power Bomb (green Brinstar bottom)", addr=0x784AC, access=function()
 	return accessEtecoons()
 	-- technically ...
-	-- and skills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
+	-- and playerSkills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
 	-- and technically you need morph, but you already need it to power bomb through the floor to get into etecoon area
 end}
 
@@ -480,6 +517,8 @@ locations:insert{
 		return accessPinkBrinstar() 
 		-- getting into spore spawn
 		and canOpenMissileDoors()
+		-- killing spore spawn
+		and canKill'Spore Spawn'
 	end,
 	escape = function()
 		return req.supermissile
@@ -490,7 +529,7 @@ locations:insert{
 local function accessMissilesAtTopOfPinkBrinstar()
 	return accessPinkBrinstar()
 	and (
-		skills.touchAndGo 
+		playerSkills.touchAndGo 
 		or canBombTechnique()
 		or req.grappling 
 		or req.spacejump 
@@ -529,11 +568,11 @@ locations:insert{name="Energy Tank (pink Brinstar bottom)", addr=0x787FA, access
 	-- speed booster
 	and req.speed 
 	-- maybe gravity to get through the water
-	and (skills.shortSpeedBoost or req.gravity)
+	and (playerSkills.shortSpeedBoost or req.gravity)
 end}
 
 local function canGetBackThroughBlueGates()
-	return (skills.superMissileGateGlitch and req.supermissile) or req.wave
+	return (playerSkills.superMissileGateGlitch and req.supermissile) or req.wave
 end
 
 -- the only thing that needs wave:
@@ -557,7 +596,7 @@ end
 
 locations:insert{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
 	return accessLowerGreenBrinstar()
-	and (skills.touchAndGo or req.hijump or req.spacejump) 
+	and (playerSkills.touchAndGo or req.hijump or req.spacejump) 
 end}
 
 -- what it takes to get into lower green Brinstar, and subsequently red Brinstar
@@ -575,7 +614,7 @@ locations:insert{name="X-Ray Visor", addr=0x78876, access=function()
 	and (
 		req.grappling 
 		or req.spacejump 
-		or (effectiveEnergyCount() >= 5 and canUseBombs() and skills.bombTechnique)
+		or (effectiveEnergyCount() >= 5 and canUseBombs() and playerSkills.bombTechnique)
 	)
 end}
 
@@ -594,11 +633,11 @@ local function accessUpperRedBrinstar()
 		-- you can freeze the monsters and jump off of them
 		req.ice 
 		-- or you can super missile them and touch-and-go up
-		or (skills.touchAndGo and req.supermissile) 
+		or (playerSkills.touchAndGo and req.supermissile) 
 		-- or you can destroy them (with super missiles or screw attack) and either bomb technique or spacejump up
 		or (
 			(req.screwattack or req.supermissile) 
-			and (skills.bombTechnique or req.spacejump)
+			and (playerSkills.bombTechnique or req.spacejump)
 		)
 	)
 end
@@ -633,7 +672,7 @@ locations:insert{name="Spazer", addr=0x7896E, access=function()
 	-- getting there:
 	return accessRedBrinstar() 
 	-- getting up:
-	and (skills.touchAndGo or skills.bombTechnique or req.spacejump or req.hijump) 
+	and (playerSkills.touchAndGo or playerSkills.bombTechnique or req.spacejump or req.hijump) 
 	-- getting over:
 	and canDestroyBombWallsMorphed() 
 	-- supermissile door:
@@ -642,7 +681,7 @@ end}
 
 local function accessKraid() 
 	return accessRedBrinstar() 
-	and (skills.touchAndGo or req.spacejump or req.hijump) 
+	and (playerSkills.touchAndGo or req.spacejump or req.hijump) 
 	and canDestroyBombWallsMorphed() 
 end
 
@@ -650,10 +689,15 @@ locations:insert{name="Missile (Kraid)", addr=0x789EC, access=function()
 	return accessKraid() and canUsePowerBombs() 
 end}
 
--- accessible only after kraid is killed
-locations:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=accessKraid}
+local function canKillKraid()
+	return accessKraid()
+	-- and whatever kraid's weaknesses is
+end
 
-locations:insert{name="Varia Suit", addr=0x78ACA, access=accessKraid}
+-- accessible only after kraid is killed
+locations:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=canKillKraid}
+
+locations:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
 
 
 -- Norfair
@@ -672,7 +716,7 @@ local function accessHeatedNorfair()
 		req.varia 
 		or req.gravity
 		-- or, if you want to do hellrun ...
-		or (skills.hellrun 
+		or (playerSkills.hellrun 
 			-- ... with high jump / space jump ... how many does this take?
 			and effectiveEnergyCount() >= 4 
 			and (req.hijump 
@@ -693,11 +737,11 @@ local function accessIce()
 	-- super missile door
 	and req.supermissile
 	-- speed / lowering barriers
-	and (skills.mockball or req.speed)
+	and (playerSkills.mockball or req.speed)
 	-- get through the heat
 	and (req.gravity 
 		or req.varia
-		or (skills.hellrun and effectiveEnergyCount() >= 4)
+		or (playerSkills.hellrun and effectiveEnergyCount() >= 4)
 	)
 end
 
@@ -729,7 +773,7 @@ locations:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function()
 		or req.grappling
 		or req.speed
 		or req.ice
-		or skills.bombTechnique
+		or playerSkills.bombTechnique
 	)
 end}
 
@@ -741,7 +785,7 @@ locations:insert{name="Missile (Grappling Beam)", addr=0x78C2A, access=function(
 		req.spacejump 
 		or req.grappling 
 		or req.speed
-		or skills.bombTechnique
+		or playerSkills.bombTechnique
 	)
 end}
 
@@ -750,7 +794,7 @@ locations:insert{name="Grappling Beam", addr=0x78C36, access=function()
 	and (
 		req.spacejump 
 		or (req.speed and req.hijump)
-		or skills.bombTechnique
+		or playerSkills.bombTechnique
 	) 
 end}
 
@@ -777,7 +821,7 @@ local function accessNorfairReserve()
 	return accessHeatedNorfair() 
 	and (req.spacejump 
 		or req.grappling
-		or (skills.touchAndGo and (req.hijump or req.ice))
+		or (playerSkills.touchAndGo and (req.hijump or req.ice))
 	)
 end
 
@@ -798,9 +842,9 @@ local function accessLowerNorfair()
 		-- gravity and space jump is the default option
 		(req.gravity and req.spacejump)
 		-- you can do it without gravity, but you need precise touch and go, and you need high jump, and enough energy
-		or (skills.preciseTouchAndGoLowerNorfair and req.hijump and effectiveEnergyCount() >= 7)
+		or (playerSkills.preciseTouchAndGoLowerNorfair and req.hijump and effectiveEnergyCount() >= 7)
 		-- you can do without space jump if you have gravity and high jump -- suit swap
-		or (req.gravity and skills.lowerNorfairSuitSwap)
+		or (req.gravity and playerSkills.lowerNorfairSuitSwap)
 	)
 end
 
@@ -845,7 +889,7 @@ local function accessWreckedShip()
 	-- power bomb door with the flying space pirates in it
 	and canUsePowerBombs() 
 	-- getting across the water
-	and (skills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
+	and (playerSkills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
 end
 
 locations:insert{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=accessWreckedShip}
@@ -889,11 +933,11 @@ local function accessOuterMaridia()
 		-- if you have gravity, you can get up with touch-and-go, spacejump, hijump, or bomb technique
 		(req.gravity and (
 			-- you need touch-and-go to get to the balooon grappling room ... but you need suit-swap to get past it ...
-			skills.maridiaSuitSwap --skills.touchAndGo 
+			playerSkills.maridiaSuitSwap --playerSkills.touchAndGo 
 			or req.spacejump 
-			or req.hijump or (skills.bombTechnique and canUseBombs())))
+			or req.hijump or (playerSkills.bombTechnique and canUseBombs())))
 		-- if you don't have gravity then you need high jump and ice.  without gravity you do need high jump just to jump up from the tube that you break, into the next room.
-		or (skills.suitlessMaridiaFreezeCrabs and req.hijump and req.ice)
+		or (playerSkills.suitlessMaridiaFreezeCrabs and req.hijump and req.ice)
 		
 		-- suitless is possible so long as the space jump item is replaced with gravity suit to get out of Draygon's room ... or you do the crystal spark + blue spark + whatever move that I don't know how to do
 	)
@@ -906,7 +950,7 @@ locations:insert{name="Missile (green Maridia tatori)", addr=0x7C483, access=acc
 
 local function accessInnerMaridia() 
 	return accessOuterMaridia() 
-	and (req.spacejump or req.grappling or req.speed or (req.gravity and skills.touchAndGo)) 
+	and (req.spacejump or req.grappling or req.speed or (req.gravity and playerSkills.touchAndGo)) 
 end
 
 -- top of maridia
@@ -917,10 +961,10 @@ locations:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, acces
 local function canDefeatBotwoon() 
 	return accessInnerMaridia() 
 	and (
-		(skills.botwoonFreezeGlitch and req.ice) 
+		(playerSkills.botwoonFreezeGlitch and req.ice) 
 		-- need to speed boost underwater
 		or (req.gravity and req.speed)
-		or skills.DraygonCrystalFlashBlueSparkWhatever
+		or playerSkills.DraygonCrystalFlashBlueSparkWhatever
 	)
 end
 
@@ -946,9 +990,18 @@ locations:insert{
 	end,
 	escape = function()
 		-- either one of these to kill the space pirates and unlock the door
-		return (req.screwattack or req.plasma)
+		return (
+			-- make sure req matches the weaknesses of the climbing & standing pink space pirates
+			canKill'Pink Zebesian (Wall)'
+			and canKill'Pink Zebesian'
+		)
 		-- getting in and getting out ...
-		and (skills.touchAndGo or skills.bombTechnique or req.spacejump)
+		and (
+			-- do you need hijump with touch-and-go?
+			playerSkills.touchAndGo 
+			or playerSkills.bombTechnique 
+			or req.spacejump
+		)
 	end,
 }
 
@@ -978,7 +1031,7 @@ locations:insert{name="Super Missile (pink Maridia)", addr=0x7C609, access=funct
 locations:insert{name="Spring Ball", addr=0x7C6E5, access=function() 
 	return accessOuterMaridia() 
 	and req.grappling 
-	and (skills.touchAndGo or req.spacejump)
+	and (playerSkills.touchAndGo or req.spacejump)
 end}
 
 -- missile right before draygon?
@@ -997,7 +1050,7 @@ locations:insert{
 	end,
 	escape = function()
 		-- if the player knows the crystal-flash-whatever trick then fine
-		return skills.DraygonCrystalFlashBlueSparkWhatever
+		return playerSkills.DraygonCrystalFlashBlueSparkWhatever
 		-- otherwise they will need both gravity and either spacejump or bombs
 		or (req.gravity and (req.spacejump or canUseBombs()))
 	end,
@@ -1018,31 +1071,11 @@ especially those that require certain items to escape from.
 ... choose item placement based on what the *least* number of future possibilities will be (i.e. lean away from placing items that open up the game quicker)
 --]]
 
-local function pickRandom(t)
-	return t[math.random(#t)]
-end
-
 local function shuffle(x)
 	local y = {}
 	while #x > 0 do table.insert(y, table.remove(x, math.random(#x))) end
 	while #y > 0 do table.insert(x, table.remove(y, math.random(#y))) end
 	return x
-end
-
-
-local romstr = file[infilename]
-local header = ''
---header = romstr:sub(1,512)
---romstr = romstr:sub(513)
-
-local rom = ffi.cast('uint8_t*', romstr) 
-
-local function readShort(addr)
-	return ffi.cast('uint16_t*', rom+addr)[0]
-end
-
-local function writeShort(addr, value)
-	ffi.cast('uint16_t*', rom+addr)[0] = value
 end
 
 
@@ -1131,8 +1164,9 @@ local itemInsts = table()
 local doorInsts = table()
 
 -- [[ build from object memory range
+-- TODO get rid of itemInsts and just use locations ... and maybe rename it to itemLocs or something 
 local function check(addr)
-	local value = readShort(addr)
+	local value = ffi.cast('uint16_t*', rom+addr)[0]
 	local name = objNameForValue[value]
 	if name then
 		countsForType[name] = (countsForType[name] or 0) + 1
@@ -1146,10 +1180,11 @@ end
 for addr=0x78000,0x79192,2 do check(addr) end
 for addr=0x7c215,0x7c7bb,2 do check(addr) end
 --]]
+
 --[[ build from the loc database
 itemInsts = locations:map(function(loc)
 	local addr = loc.addr
-	local value = readShort(addr)
+	local value = ffi.cast('uint16_t*', rom+addr)[0]
 	return {addr=addr, value=value, name=objNameForValue[value]}
 end)
 --]]
@@ -1232,7 +1267,7 @@ local function removeLocation(locName, with)
 	local inst = itemInsts:remove(itemInsts:find(nil, function(inst) 
 		return inst.addr == loc.addr 
 	end))
-	writeShort(inst.addr, itemTypes[with])
+	ffi.cast('uint16_t*', rom + inst.addr)[0] = itemTypes[with] 
 end
 
 -- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
@@ -1311,7 +1346,8 @@ local itemInstIndexesLeft = range(#origItems)
 local currentLocs = table(locations)
 
 for _,loc in ipairs(locations) do
-	loc.defaultValue = itemTypeBaseForType[readShort(loc.addr)]
+	local value = ffi.cast('uint16_t*', rom+loc.addr)[0]
+	loc.defaultValue = itemTypeBaseForType[value]
 	loc.defaultName = objNameForValue[loc.defaultValue]
 end
 
@@ -1411,296 +1447,13 @@ end):map(function(loc)
 end)
 
 
-local function defineFields(name)
-	return function(fields)
-		local code = template([[
-typedef union {
-	struct {
-<? 
-local ffi = require 'ffi'
-local size = 0
-for _,kv in ipairs(fields) do
-	local name, ctype = next(kv)
-	size = size + ffi.sizeof(ctype)
-?>		<?=ctype?> <?=name?>;
-<? 
-end
-?>	} __attribute__((packed));
-	uint8_t ptr[<?=size?>];
-} <?=name?>;
-]], {name=name, fields=fields})
-		ffi.cdef(code)
-	end
-end
-
-
---]]
-
-local addrbase = 0xf8000
-
--- one array is from 0xf8000 +0xcebf to +0xf0ff
-local enemyStart = addrbase + 0xcebf
-local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
--- another is from +0xf153 to +0xf793 (TODO)
-local enemy2Start = addrbase + 0xf153
-local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
-
-ffi.cdef[[
-typedef uint8_t uint24_t[3];
-]]
-
-defineFields'enemy_t'{
-	{tileDataSize = 'uint16_t'},
-	{palette = 'uint16_t'},
-	{health = 'uint16_t'},
-	{damage = 'uint16_t'},
-	{width = 'uint16_t'},
-	{height = 'uint16_t'},
-	{bank = 'uint8_t'},
-	{hurtAITime = 'uint8_t'},
-	{sound = 'uint16_t'},
-	{bossValue = 'uint16_t'},
-	{initiationAI = 'uint16_t'},
-	{numParts = 'uint16_t'},
-	{unused = 'uint16_t'},
-	{graphAI = 'uint16_t'},
-	{grappleAI = 'uint16_t'},
-	{specialEnemyShot = 'uint16_t'},
-	{frozenAI = 'uint16_t'},
-	{xrayAI = 'uint16_t'},
-	{deathAnimation = 'uint16_t'},
-	{unused = 'uint32_t'},
-	{powerBombReaction = 'uint16_t'},
-	{unknown = 'uint16_t'},
-	{unused2 = 'uint32_t'},
-	{enemyTouch = 'uint16_t'},
-	{enemyShot = 'uint16_t'},
-	{unknown2 = 'uint16_t'},
-	{tileData = 'uint24_t'},
-	{layer = 'uint8_t'},
-	{itemdrop = 'uint16_t'},	-- pointer 
-	{weakness = 'uint16_t'},	-- pointer 
-	{name = 'uint16_t'},
-}
-
-local enemyAddrs = range(0,enemyCount-1):map(function(i)
-	return enemyStart + ffi.sizeof'enemy_t' * i
-end):append(range(0,enemy2Count-1):map(function(i)
-	return enemy2Start + ffi.sizeof'enemy_t' * i
-end))
-
-local bank_b4 = 0x198000
-
-
-local ROMTable = class()
-
-function ROMTable:init()
-	defineFields(self.structName)(self.fields)
-	self.structSize = ffi.sizeof(self.structName)
-	self.fieldNameMaxLen = self.fields:map(function(kv)
-		return #next(kv)
-	end):sup()
-end
-
-
--- this is a table that the Enemy table uses .. like weaknesses or item drops
-local EnemyAuxTable = class(ROMTable)
-
-EnemyAuxTable.showDistribution = true
-
-function EnemyAuxTable:randomize()
-	self.addrsUsed = enemyAddrs:map(function(addr)
-		return true, ffi.cast('enemy_t*', rom+addr)[0][self.enemyField]
-	end):keys():sort()
-
-	local distr
-	if self.showDistribution then
-		distr = table()
-	end
-	
-	print()
-	print(self.name..':')
-	for _,addr in ipairs(self.addrsUsed) do
-		-- concise:
-		--io.write('  '..('0x%04x'):format(addr)..' ')
-		-- verbose:
-		print(('0x%04x'):format(addr)..' ')
-		if addr ~= 0 then
-			local values = self:getRandomizedValues()
-			assert(#values == #self.fields)
-		
-			local ptrtype = self.structName..'*'
-			local entry = ffi.cast(ptrtype, rom + bank_b4 + addr)
-			
-			for i,field in ipairs(self.fields) do
-				local name = next(field)
-				local value = values[i]
-				
-				entry[0][name] = value
-				value = entry[0][name]
-				
-				if self.showDistribution then
-					distr[value] = (distr[value] or 0) + 1
-				end
-				-- concise:
-				--io.write( (' %02x'):format(value) )
-				-- verbose:
-				print('  '..name..' '.. ('.'):rep(self.fieldNameMaxLen-#name+5)..' '..('0x%02x'):format(value))
-			end
-		end
-		-- concise:
-		--print()
-	end
-
-	if self.showDistribution then
-		print'...distribution of values:'
-		for _,k in ipairs(distr:keys():sort()) do
-			print('  '..k..' x'..distr[k])
-		end
-		print()
-	end
-end
-
-function EnemyAuxTable:randomizeEnemy(enemy)
-	local field = self.enemyField
-	enemy[0][field] = pickRandom(self.addrsUsed)
-	io.write(' '..field..'='..('0x%04x'):format(enemy[0][field]))
-	local addr = enemy[0][field]
-	if addr ~= 0 then
-		io.write('  ')
-		for i=0,self.structSize-1 do
-			io.write( (' %02x'):format(rom[bank_b4+addr+i]) )
-		end
-	end
-	print()
-end
-
-
-local EnemyItemDropTable = class(EnemyAuxTable)
-
-EnemyItemDropTable.name = 'enemy item drop table'
-EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemy_t to get addresses from
-EnemyItemDropTable.structName = 'itemDrop_t'	-- structure at the address
-EnemyItemDropTable.fields = table{
-	{smallEnergy = 'uint8_t'},
-	{largeEnergy = 'uint8_t'},
-	{missile = 'uint8_t'},
-	{nothing = 'uint8_t'},
-	{superMissile = 'uint8_t'},
-	{powerBomb = 'uint8_t'},
-}
-
--- returns a list of bytes that are written to the structure
--- TODO I could use the ffi info and return arbitrary values that are correctly cast into the structure ...
-function EnemyItemDropTable:getRandomizedValues()
-	-- 6 percentages (of 0xff):
-	-- small energy, large energy, missile, nothing, super missile, power bomb
-	local values = range(self.structSize):map(function()
-		return math.random() <= enemyItemDropZeroChance and 0 or math.random()
-	end)
-	-- now normalize
-	local sum = values:sum()
-	-- ... should I allow for monsters to not drop anything?
-	-- ... should I have special exception for bosses?
-	if sum > 0 then
-		values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
-	end
-	--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
-	return values
-end
-
-local enemyItemDropTable = EnemyItemDropTable()
-if randomizeEnemyItemDrops then
-	enemyItemDropTable:randomize()
-end
-
-
-local EnemyWeaknessTable = class(EnemyAuxTable)
-
-EnemyWeaknessTable.name = 'enemy weakness table'
-EnemyWeaknessTable.enemyField = 'weakness'
-EnemyWeaknessTable.structName = 'weakness_t'
-EnemyWeaknessTable.fields = table{
-	{normal = 'uint8_t'},
-	{wave = 'uint8_t'},
-	{ice = 'uint8_t'},
-	{ice_wave = 'uint8_t'},
-	{spazer = 'uint8_t'},
-	{wave_spazer = 'uint8_t'},
-	{ice_spazer = 'uint8_t'},
-	{wave_ice_spazer = 'uint8_t'},
-	{plasma = 'uint8_t'},
-	{wave_plasma = 'uint8_t'},
-	{ice_plasma = 'uint8_t'},
-	{wave_ice_plasma = 'uint8_t'},
-	{missile = 'uint8_t'},
-	{supermissile = 'uint8_t'},
-	{bomb = 'uint8_t'},
-	{powerbomb = 'uint8_t'},
-	{speed = 'uint8_t'},
-	{sparkcharge = 'uint8_t'},
-	{screwattack = 'uint8_t'},
-	{hyper = 'uint8_t'},
-	{pseudo_screwattack = 'uint8_t'},
-	{unknown = 'uint8_t'},
-}
-
-function EnemyWeaknessTable:getRandomizedValues()
-	return range(#self.fields):map(function()
-		return math.random() <= enemyWeaknessImmunityChance 
-			and 0 or math.random(0,255)
-	end)
-end
-
-local enemyWeaknessTable = EnemyWeaknessTable()
-if randomizeEnemyWeaknesses then
-	enemyWeaknessTable:randomize()
-end
-
-
---[[
-I only see 0,1,2,4,8,f per nibble in the original
-and here's the distribution of their use:
-  0 x1577
-  1 x25
-  2 x640
-  4 x93
-  8 x421
-  15 x104
-
-kraid is at 0xe2bf
-and has a weakness address 0xf15a <-> 0x1a715a :  
-82 82 82 82 82 
-82 82 82 82 82 
-82 82 82 82 80 
-80 80 80 80 02 
-80 80
---]]
-
-
-print'enemies:'
-for i,addr in ipairs(enemyAddrs) do
-	local enemy = ffi.cast('enemy_t*', rom + addr)
-	print('enemy '..('0x%04x'):format(addr - 0xf8000))
-	print(' health='..enemy[0].health)
-	print(' damage='..enemy[0].damage)
-	
-	if randomizeEnemyWeaknesses then
-		enemyWeaknessTable:randomizeEnemy(enemy)
-	end
-
-	if randomizeEnemyItemDrops then
-		enemyItemDropTable:randomizeEnemy(enemy)
-	end
-end
-
 
 for i,item in ipairs(itemInsts) do
-	writeShort(item.addr, item.value)
+	ffi.cast('uint16_t*', rom + item.addr)[0] = item.value
 end
 --[[
 for i,door in ipairs(doorInsts) do
-	writeShort(door.addr, door.value)
+	ffi.cast('uint16_t*', rom + door.addr)[0] = door.value
 end
 --]]
 
