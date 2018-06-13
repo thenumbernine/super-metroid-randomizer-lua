@@ -6,9 +6,11 @@ http://wiki.metroidconstruction.com/doku.php?id=super:enemy:list_of_enemies
 http://wiki.metroidconstruction.com/doku.php?id=super:technical_information:list_of_enemies
 http://metroidconstruction.com/SMMM/
 https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
+http://deanyd.net/sm/index.php?title=List_of_rooms
 --]]
 
 require 'ext'
+function I(...) return ... end
 local ffi = require 'ffi'
 
 

@@ -324,9 +324,12 @@ function EnemyAuxTable:randomize()
 		-- verbose:
 		print(('0x%04x'):format(addr)..' ')
 		if addr ~= 0 then
+			-- return nil to not randomize this entry
 			local values = self:getRandomizedValues(addr)
-			assert(#values == #self.fields)
-		
+			if values then
+				assert(#values == #self.fields)
+			end
+
 			local ptrtype = self.structName..'*'
 			local entry = ffi.cast(ptrtype, rom + bank_b4 + addr)
 			
@@ -334,7 +337,9 @@ function EnemyAuxTable:randomize()
 				local name = next(field)
 		
 				-- if we are randomizing the enemy field ... then randomize the table associated with it
-				if randomizeEnemyProps[self.enemyField] then
+				if randomizeEnemyProps[self.enemyField] 
+				and values 
+				then
 					local value = values[i]
 					entry[0][name] = value
 				end
@@ -372,13 +377,10 @@ function EnemyAuxTable:randomizeEnemy(enemy, disableWrite)
 		enemy.ptr[0][field] = pickRandom(self.addrs)
 	end
 
-	io.write(' '..field..'='..('0x%04x'):format(enemy.ptr[0][field]))
+	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
-		io.write('  ')
-		for i=0,self.structSize-1 do
-			io.write( (' %02x'):format(rom[bank_b4+addr+i]) )
-		end
+		io.write(' ',tostring(ffi.cast(self.structName..'*', rom+bank_b4+addr) ))	
 	end
 	print()
 end
@@ -451,10 +453,59 @@ EnemyWeaknessTable.fields = table{
 -- keep this one intact
 local ShaktoolWeaknessAddr = 0xef1e
 
+--[[
+t is value => percentage
+returns a value at random, weighted by percentage
+--]]
+local function pickWeighted(t)
+	local r = math.random() * table.sum(t)
+	for value,prob in pairs(t) do
+		r = r - prob
+		if r <= 0 then
+			return value
+		end
+	end
+	error("shouldn't get here")
+end
+
+local kraidPartNames = {
+	["Kraid (body)"] = true, 
+	["Kraid (body)"] = true,
+	["Kraid (arm)"] = true,
+	["Kraid (top belly spike)"] = true,
+	["Kraid (middle belly spike)"] = true,
+	["Kraid (bottom belly spike)"] = true,
+	["Kraid (leg)"] = true,
+	["Kraid (claw)"] = true,
+	["Kraid (??? belly spike)"] = true,
+}
+
 function EnemyWeaknessTable:getRandomizedValues(addr)
 	local values = range(#self.fields):map(function()
 		return math.random() <= randomizeEnemyProps.weaknessImmunityChance 
-			and 0 or math.random(0,255)
+			and 0 
+--[[
+here's possible values:    
+	0 = no damage to enemy.
+    1 = 0.5x damage to enemy.
+    2 = default (1x) damage to enemy.
+    3 = 1.5x damage to enemy.
+    4 = 2x damage to enemy.
+    5 = 2.5x damage to enemy.
+    4-F = higher damage to enemy.
+
+in addition, the 0x80 bitflag is used for something
+--]]
+		
+		
+		-- instead of 0-255 ... 0 is
+			or bit.bor(
+				bit.lshift(math.random(0,15), 4),
+				
+				-- exp(-x/7) has the following values for 0-15:
+				-- 1.0, 0.86687789975018, 0.75147729307529, 0.65143905753106, 0.56471812200776, 0.48954165955695, 0.42437284567695, 0.36787944117144, 0.31890655732397, 0.27645304662956, 0.23965103644178, 0.2077481871436, 0.18009231214795, 0.15611804531597, 0.13533528323661, 0.11731916609425
+				pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
+			)
 	end)
 	
 	-- make sure there's at least one nonzero weakness within the first 20
@@ -467,6 +518,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	end
 	if not found then
 		values[math.random(20)] = math.random(1,255)
+	end
+
+	-- don't change kraid's part's weaknesses
+	-- until I know how to keep the game from crashing
+	for name,_ in pairs(kraidPartNames) do
+		if enemyForName[name].ptr[0].weakness == addr then
+			return
+		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
@@ -485,20 +544,11 @@ function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
 	
 	-- don't randomize Kraid's weaknesses ... for now
 	-- leave this at 0
-	if ({
-		["Kraid (body)"] = true, 
-		["Kraid (body)"] = true,
-		["Kraid (arm)"] = true,
-		["Kraid (top belly spike)"] = true,
-		["Kraid (middle belly spike)"] = true,
-		["Kraid (bottom belly spike)"] = true,
-		["Kraid (leg)"] = true,
-		["Kraid (claw)"] = true,
-		["Kraid (??? belly spike)"] = true,
-
-		-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
-		Shaktool = true,
-	})[enemy.name] then
+	if kraidPartNames[enemy.name] 
+	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
+	or enemy.name == Shaktool
+	then
+		print('NOT WRITING WEAKNESS OF '..enemy.name)
 		disableWrite = true
 	end
 

@@ -374,7 +374,7 @@ items:insert{name="Energy Tank (Crateria gauntlet)", addr=0x78264, access=access
 items:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 items:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 
--- speed boost area 
+-- freeze boyon and speed boost and duck and jump up shaft, then grappling / space jump back 
 items:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
 	-- power bomb doors
 	return canUsePowerBombs() 
@@ -479,6 +479,7 @@ items:insert{
 		and canKill'Spore Spawn'
 	end,
 	escape = function()
+		-- super missile door, super missile block, morph passage
 		return req.supermissile
 		and req.morph
 	end
@@ -600,14 +601,16 @@ local function accessUpperRedBrinstar()
 	)
 end
 
--- behind a super missile door
--- you don't need power bombs to get this, but you need power bombs to escape this area
--- another shared exit constraint...
+-- you don't need power bombs to get this, 
+-- but you need power bombs to escape the overall area
+-- another exit constraint shared between multiple items ...
 items:insert{
 	name = "Power Bomb (red Brinstar spike room)", 
 	addr = 0x7890E, 
 	access = function() 
-		return accessUpperRedBrinstar() and req.supermissile
+		return accessUpperRedBrinstar() 
+		-- behind a super missile door
+		and req.supermissile
 	end,
 	escape = function()
 		return canUsePowerBombs()
@@ -619,10 +622,21 @@ items:insert{name="Missile (red Brinstar spike room)", addr=0x78914, access=func
 	return accessUpperRedBrinstar() and canUsePowerBombs() 
 end}
 
--- super missile door, power bomb floor
-items:insert{name="Power Bomb (red Brinstar sidehopper room)", addr=0x788CA, access=function() 
-	return accessUpperRedBrinstar() and req.supermissile and canUsePowerBombs() 
-end}
+items:insert{
+	name = "Power Bomb (red Brinstar sidehopper room)", 
+	addr = 0x788CA, 
+	access = function() 
+		return accessUpperRedBrinstar() 
+		-- super missile door
+		and req.supermissile 
+		-- power bomb floor
+		and canUsePowerBombs() 
+	end,
+	escape = function()
+		-- can't leave until you kill all of your side hoppers 
+		return canKill'Big Sidehopper'
+	end,
+}
 
 -- red Brinstar bottom:
 
@@ -637,15 +651,37 @@ items:insert{name="Spazer", addr=0x7896E, access=function()
 	and req.supermissile
 end}
 
-local function accessKraid() 
+local function accessWarehouseKihunterRoom()
 	return accessRedBrinstar() 
+	-- warehouse entrance
 	and (playerSkills.touchAndGo or req.spacejump or req.hijump) 
+	-- warehouse zeela room
 	and canDestroyBombWallsMorphed() 
 end
 
-items:insert{name="Missile (Kraid)", addr=0x789EC, access=function() 
-	return accessKraid() and canUsePowerBombs() 
-end}
+items:insert
+	{name = "Missile (Kraid)", 
+	addr = 0x789EC, 
+	access = function() 
+		return accessWarehouseKihunterRoom() 
+		and canUsePowerBombs()
+		and (playerSkills.jumpAndMorph or req.springball)
+	end,
+}
+
+local function accessBabyKraidRoom()
+	return accessWarehouseKihunterRoom()
+end
+
+local function escapeBabyKraidRoom()
+	return canKill'Mini-Kraid'
+	and canKill'Green Zebesian'
+end
+
+local function accessKraid() 
+	return accessBabyKraidRoom()
+	and escapeBabyKraidRoom()
+end
 
 local function canKillKraid()
 	return accessKraid()
@@ -663,9 +699,24 @@ items:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
 
 local accessEnterNorfair = accessRedBrinstar
 
-items:insert{name="Hi-Jump Boots", addr=0x78BAC, access=function() return accessEnterNorfair() end}
-items:insert{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=accessEnterNorfair}
-items:insert{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=accessEnterNorfair}
+local function escapeRoomBeforeHiJumpItem()
+	return canKill'Norfair Geemer'
+	and req.morph
+	and canDestroyBombWallsMorphed()
+end
+
+items:insert{name="Missile (Hi-Jump Boots)", addr=0x78BE6, access=accessEnterNorfair, escape=escapeRoomBeforeHiJumpItem}
+items:insert{name="Energy Tank (Hi-Jump Boots)", addr=0x78BEC, access=accessEnterNorfair, escape=escapeRoomBeforeHiJumpItem}
+items:insert{
+	name="Hi-Jump Boots", 
+	addr=0x78BAC, 
+	access=accessEnterNorfair, 
+	escape=function()
+		return escapeRoomBeforeHiJumpItem()
+		-- and you need to jump out
+		and (playerSkills.touchAndGo or canBombTechnique() or req.hijump or req.spacejump)
+	end,
+}
 
 local function accessHeatedNorfair() 
 	return accessEnterNorfair() 
@@ -853,29 +904,29 @@ end
 items:insert{name="Missile (outside Wrecked Ship bottom)", addr=0x781E8, access=accessWreckedShip}
 items:insert{name="Missile (Wrecked Ship middle)", addr=0x7C265, access=accessWreckedShip}
 
-local function canDefeatPhantoon() 
+local function canKillPhantoon() 
 	return accessWreckedShip() 
 	and req.charge 
 	and (req.gravity or req.varia or effectiveEnergyCount() >= 2) 
 end
 
-items:insert{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=canDefeatPhantoon}
-items:insert{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=canDefeatPhantoon}
-items:insert{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return canDefeatPhantoon() and req.speed end}
-items:insert{name="Missile (Gravity Suit)", addr=0x7C2EF, access=canDefeatPhantoon}
-items:insert{name="Missile (Wrecked Ship top)", addr=0x7C319, access=canDefeatPhantoon}
+items:insert{name="Missile (outside Wrecked Ship top)", addr=0x781EE, access=canKillPhantoon}
+items:insert{name="Missile (outside Wrecked Ship middle)", addr=0x781F4, access=canKillPhantoon}
+items:insert{name="Reserve Tank (Wrecked Ship)", addr=0x7C2E9, access=function() return canKillPhantoon() and req.speed end}
+items:insert{name="Missile (Gravity Suit)", addr=0x7C2EF, access=canKillPhantoon}
+items:insert{name="Missile (Wrecked Ship top)", addr=0x7C319, access=canKillPhantoon}
 
 items:insert{name="Energy Tank (Wrecked Ship)", addr=0x7C337, access=function() 
-	return canDefeatPhantoon() 
+	return canKillPhantoon() 
 	and (req.grappling or req.spacejump
 		or effectiveEnergyCount() >= 2
 	) 
 	--and req.gravity 
 end}
 
-items:insert{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=canDefeatPhantoon}
-items:insert{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=canDefeatPhantoon}
-items:insert{name="Gravity Suit", addr=0x7C36D, access=canDefeatPhantoon}
+items:insert{name="Super Missile (Wrecked Ship left)", addr=0x7C357, access=canKillPhantoon}
+items:insert{name="Super Missile (Wrecked Ship right)", addr=0x7C365, access=canKillPhantoon}
+items:insert{name="Gravity Suit", addr=0x7C36D, access=canKillPhantoon}
 
 
 -- Maridia
@@ -916,22 +967,23 @@ items:insert{name="Super Missile (yellow Maridia)", addr=0x7C4AF, access=accessI
 items:insert{name="Missile (yellow Maridia super missile)", addr=0x7C4B5, access=accessInnerMaridia}
 items:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=accessInnerMaridia}
 
-local function canDefeatBotwoon() 
+local function accessBotwoon()
 	return accessInnerMaridia() 
 	and (
-		(playerSkills.botwoonFreezeGlitch and req.ice) 
+		(playerSkills.freezeTheMocktroidToGetToBotwoon and req.ice) 
 		-- need to speed boost underwater
 		or (req.gravity and req.speed)
-		or playerSkills.DraygonCrystalFlashBlueSparkWhatever
 	)
 end
 
-local function canDefeatDraygon() 
-	return canDefeatBotwoon() 
-	and effectiveEnergyCount() >= 3 
-	-- can't use space jump or bombs underwater without gravity
-	and req.gravity
-	and (canUseBombs() or req.spacejump)
+local function canKillBotwoon() 
+	return accessBotwoon()
+	and canKill'Botwoon'
+end
+
+local function canKillDraygon() 
+	return canKillBotwoon() 
+	and canKill'Draygon (body)'
 end
 
 -- This item requires plasma *to exit*
@@ -942,10 +994,7 @@ end
 items:insert{
 	name = "Plasma Beam",
 	addr = 0x7C559,
-	access = function() 
-		-- draygon must be defeated to unlock the door to plasma
-		return canDefeatDraygon() 
-	end,
+	access = canKillDraygon,
 	escape = function()
 		-- either one of these to kill the space pirates and unlock the door
 		return (
@@ -993,19 +1042,17 @@ items:insert{name="Spring Ball", addr=0x7C6E5, access=function()
 end}
 
 -- missile right before draygon?
-items:insert{name="Missile (Draygon)", addr=0x7C74D, access=canDefeatDraygon}
+items:insert{name="Missile (Draygon)", addr=0x7C74D, access=canKillDraygon}
 
 -- energy tank right after botwoon
-items:insert{name="Energy Tank (Botwoon)", addr=0x7C755, access=canDefeatBotwoon}
+items:insert{name="Energy Tank (Botwoon)", addr=0x7C755, access=canKillBotwoon}
 
 -- technically you don't need gravity to get to this item 
 -- ... but you need it to escape Draygon's area
 items:insert{
 	name = "Space Jump", 
 	addr = 0x7C7A7, 
-	access = function() 
-		return canDefeatDraygon() 
-	end,
+	access = canKillDraygon,
 	escape = function()
 		-- if the player knows the crystal-flash-whatever trick then fine
 		return playerSkills.DraygonCrystalFlashBlueSparkWhatever
@@ -1335,8 +1382,9 @@ end):map(function(item)
 		..('.'):rep(longestName - #item.name + 10)
 		..itemTypeNameForValue[value]
 		..'\t'..tolua(req))
+	
 	-- do the writing:
-	itemsForAddr[addr].ptr[0] = value
+	item.ptr[0] = value
 end)
 
 

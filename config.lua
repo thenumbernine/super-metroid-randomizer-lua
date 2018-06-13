@@ -55,6 +55,8 @@ return {
 
 		bombTechnique = true,
 
+		jumpAndMorph = true,
+
 		damageBoostToBrinstarEnergy = true,
 
 		-- whether the player knows to use mockball to get into the green Brinstar item area
@@ -73,7 +75,7 @@ return {
 		hellrun = true,
 		
 		-- if you want to bother do that stupid freeze-the-mocktroid glitch to jump through the wall
-		botwoonFreezeGlitch = false,
+		freezeTheMocktroidToGetToBotwoon = false,
 
 		-- I've seen people do this in reverse boss videos ...
 		DraygonCrystalFlashBlueSparkWhatever = false,
