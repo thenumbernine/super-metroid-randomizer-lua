@@ -1,6 +1,10 @@
 return {
+	randomizeEnemies = true,
+	--randomizeItems = true,
+
 	-- used by enemy randomization
 	randomizeEnemyProps = {
+		
 		weakness = true,
 		weaknessImmunityChance = .75,
 

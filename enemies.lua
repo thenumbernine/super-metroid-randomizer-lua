@@ -307,7 +307,7 @@ local EnemyAuxTable = class(ROMTable)
 EnemyAuxTable.showDistribution = true
 
 function EnemyAuxTable:randomize()
-	self.addrsUsed = enemies:map(function(enemy)
+	self.addrs = enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
 
@@ -318,7 +318,7 @@ function EnemyAuxTable:randomize()
 	
 	print()
 	print(self.name..':')
-	for _,addr in ipairs(self.addrsUsed) do
+	for _,addr in ipairs(self.addrs) do
 		-- concise:
 		--io.write('  '..('0x%04x'):format(addr)..' ')
 		-- verbose:
@@ -370,10 +370,10 @@ function EnemyAuxTable:randomizeEnemy(enemy, preserveZeros, disableWrite)
 	and not disableWrite
 	then
 		if not preserveZeros then
-			enemy.ptr[0][field] = pickRandom(self.addrsUsed)
+			enemy.ptr[0][field] = pickRandom(self.addrs)
 		else
 			if enemy.ptr[0][field] ~= 0 then
-				enemy.ptr[0][field] = self.addrsUsed[math.random(#self.addrsUsed-1)+1]
+				enemy.ptr[0][field] = self.addrs[math.random(#self.addrs-1)+1]
 			end	
 		end
 	end
@@ -643,7 +643,7 @@ for i,enemy in ipairs(enemies) do
 	-- TODO for this one, null ptr means doesn't take damage ...
 	-- so I should preserve nulls to nulls and non-nulls to non-nulls
 	-- ...and bosses should never be null
-	enemyWeaknessTable:randomizeEnemy(enemy, true)
+	enemyWeaknessTable:randomizeEnemy(enemy)
 	
 	enemyItemDropTable:randomizeEnemy(enemy)
 end
@@ -651,11 +651,5 @@ end
 -- TODO make sure bosses can be killed 
 -- ... especially Kraid from the looks of it
 -- TODO make sure the monster outside the sand outside springball canNOT be powerbomb'd
-
-
--- while we're here, make sure 'Grey Zebesian' and 'Grey Zebesian (Wall)' have a weakness of either normal shot or missiles ...
--- ... or something else?
---enemyForName['Grey Zebesian'].ptr[0].weakness = 0
---enemyForName['Grey Zebesian (Wall)'].ptr[0].weakness = 0
 
 end
