@@ -875,7 +875,13 @@ items:insert{name="Power Bomb (above Ridley)", addr=0x790C0, access=accessLowerN
 -- these constraints are really for what it takes to kill Ridley
 items:insert{name="Energy Tank (Ridley)", addr=0x79108, access=function() 
 	return accessLowerNorfair() 
+	-- and you can get through the black zebesian rooms
+	and canKill'Black Zebesian (Fighter)'
+	-- how much health should we give?
 	and effectiveEnergyCount() >= 4 
+	-- and you can kill ridley
+	and canKill'Ridley'
+	-- TODO mix canKill flags with damage, health, etc
 	-- you don't need charge.  you can also kill him with a few hundred missiles
 	and (req.charge or effectiveMissileCount() >= 250)
 end}

@@ -50,13 +50,13 @@ end
 
 --]]
 
-local addrbase = 0xf8000
+local bank_9f = 0xf8000
 
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
-local enemyStart = addrbase + 0xcebf
+local enemyStart = bank_9f + 0xcebf
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
-local enemy2Start = addrbase + 0xf153
+local enemy2Start = bank_9f + 0xf153
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
 
 ffi.cdef[[
@@ -285,7 +285,7 @@ enemyForName = enemies:map(function(enemy)
 end)
 
 for _,enemy in ipairs(enemies) do
-	enemy.ptr = ffi.cast('enemy_t*', rom + enemy.addr + addrbase)
+	enemy.ptr = ffi.cast('enemy_t*', rom + enemy.addr + bank_9f)
 end
 
 
@@ -468,7 +468,7 @@ local function pickWeighted(t)
 	error("shouldn't get here")
 end
 
-local kraidPartNames = {
+local dontChangeWeaknessSet = {
 	["Kraid (body)"] = true, 
 	["Kraid (body)"] = true,
 	["Kraid (arm)"] = true,
@@ -478,6 +478,7 @@ local kraidPartNames = {
 	["Kraid (leg)"] = true,
 	["Kraid (claw)"] = true,
 	["Kraid (??? belly spike)"] = true,
+	Metroid = true,
 }
 
 function EnemyWeaknessTable:getRandomizedValues(addr)
@@ -500,7 +501,7 @@ in addition, the 0x80 bitflag is used for something
 		
 		-- instead of 0-255 ... 0 is
 			or bit.bor(
-				bit.lshift(math.random(0,15), 4),
+				pickRandom{0, 0x80},	--bit.lshift(math.random(0,15), 4),
 				
 				-- exp(-x/7) has the following values for 0-15:
 				-- 1.0, 0.86687789975018, 0.75147729307529, 0.65143905753106, 0.56471812200776, 0.48954165955695, 0.42437284567695, 0.36787944117144, 0.31890655732397, 0.27645304662956, 0.23965103644178, 0.2077481871436, 0.18009231214795, 0.15611804531597, 0.13533528323661, 0.11731916609425
@@ -522,7 +523,7 @@ in addition, the 0x80 bitflag is used for something
 
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
-	for name,_ in pairs(kraidPartNames) do
+	for name,_ in pairs(dontChangeWeaknessSet) do
 		if enemyForName[name].ptr[0].weakness == addr then
 			return
 		end
@@ -544,7 +545,7 @@ function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
 	
 	-- don't randomize Kraid's weaknesses ... for now
 	-- leave this at 0
-	if kraidPartNames[enemy.name] 
+	if dontChangeWeaknessSet[enemy.name] 
 	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
 	or enemy.name == Shaktool
 	then
@@ -602,7 +603,6 @@ local function expRand(min, max)
 	local logmin, logmax = math.log(min), math.log(max)
 	return math.exp(math.random() * (logmax - logmin) + logmin)
 end
-
 
 
 local enemyItemDropTable = EnemyItemDropTable()
@@ -691,6 +691,133 @@ for i,enemy in ipairs(enemies) do
 
 	enemyWeaknessTable:randomizeEnemy(enemy)
 	enemyItemDropTable:randomizeEnemy(enemy)
+end
+
+defineFields'enemyShot_t'{
+	{initAI = 'uint16_t'},
+	{firstAI = 'uint16_t'},
+	{graphicsAI = 'uint16_t'},
+	{halfWidth = 'uint8_t'},
+	{halfHeight = 'uint8_t'},
+	
+	{damageAndFlags = 'uint16_t'},
+--[[ flags:
+0x8000 = can be shot by samus
+0x4000 = shot doesn't die when it hits samus
+0x2000 = don't collide with samus
+0x1000 = invisible
+0x0fff = damage
+--]]
+
+	{touchAI = 'uint16_t'},	-- AI to run when samus gets hit
+	{shootAI = 'uint16_t'},	-- AI to run if samus shoots the shot
+}
+-- addr is bank $86
+local enemyShots = table{
+	{addr=0xD02E, name="Kago's bugs (enemy $E7FF)"},
+	{addr=0xA17B, name="Space pirate's eye lasers"},
+	{addr=0xA189, name="Claws that fighting space pirates throw at Samus"},
+	{addr=0xCF26, name="Kihunter acid, going right (enemies $EABF, $EB3F, $EBBF)"},
+	{addr=0xCF18, name="Kihunter acid, going left (enemies $EABF, $EB3F, $EBBF)"},
+	{addr=0x9E90, name="Walking dragon's fireballs (enemy $E9BF)"},
+	{addr=0xB5CB, name="Lava dragon's fireballs (enemy $D4BF)"},
+	{addr=0x8BC2, name="Skree's debris #1 (enemy $DB7F)"},
+	{addr=0x8BD0, name="Skree's debris #2 (enemy $DB7F)"},
+	{addr=0x8BDE, name="Skree's debris #3 (enemy $DB7F)"},
+	{addr=0x8BEC, name="Skree's debris #4 (enemy $DB7F)"},
+	{addr=0x8BFA, name="Metalee's debris #1 (enemy $D67F)"},
+	{addr=0x8C08, name="Metalee's debris #2 (enemy $D67F)"},
+	{addr=0x8C16, name="Metalee's debris #3 (enemy $D67F)"},
+	{addr=0x8C24, name="Metalee's debris #4 (enemy $D67F)"},
+	{addr=0xDAFE, name="Cactus' needles, projectile runs once for each of the five needles (enemy $CFFF)"},
+	{addr=0xDFBC, name="Eyed version of Name & Fune's fireball (enemy $E73F)"},
+	{addr=0xDFCA, name="Eyeless version of Name & Fune's fireball (enemy $E6FF)"},
+	{addr=0xE0E0, name="Lava clumps thrown by lavaman (enemy $E83F)"},
+	{addr=0xD298, name="Puu's debris when it explodes (enemy $E8BF)"},
+	{addr=0xD2D0, name="Wrecked ship robot's ring lasers, travelling up right (enemy $E8FF)"},
+	{addr=0xD2B4, name="Wrecked ship robot's ring lasers, travelling left (enemy $E8FF)"},
+	{addr=0xD2A6, name="Wrecked ship robot's ring lasers, travelling up left (enemy $E8FF)"},
+	{addr=0xD2C2, name="Wrecked ship robot's ring lasers, travelling down right (enemy $E8FF)"},
+	{addr=0xD2DE, name="Wrecked ship robot's ring lasers, travelling down left (enemy $E8FF)"},
+	{addr=0xF498, name="Wrecked ship's falling green sparks (enemy $EA3F)"},
+	{addr=0xBD5A, name="Flying rocky debris in Norfair (enemy $D1FF)"},
+	{addr=0x9DB0, name="Rocks that mini Kraid spits (enemy $E0FF)"},
+	{addr=0x9DBE, name="Mini Kraid's belly spikes, facing left (enemy $E0FF)"},
+	{addr=0x9DCC, name="Mini Kraid's belly spikes, facing right (enemy $E0FF)"},
+	{addr=0xA985, name="Bomb Torizo's explosive hand swipe (enemy $EEFF)"},
+	{addr=0xAEA8, name="Bomb Torizo's crescent projectile (enemy $EEFF)"},
+	{addr=0xAD5E, name="Orbs that Bomb Torizo spits (enemy $EEFF)"},
+	{addr=0xDE6C, name="Spore spawners? (enemy $DF3F)"},
+	{addr=0xDE88, name="Spore spawners? (enemy $DF3F)"},
+	{addr=0xDE7A, name="Spore Spawn's spores (enemy $DF3F)"},
+	{addr=0x9C6F, name="Rocks when Kraid rises (enemy $E2BF)"},
+	{addr=0x9C61, name="Rocks when Kraid rises again (enemy $E2BF)"},
+	{addr=0x9C45, name="Rocks that Kraid spits (enemy $E2BF)"},
+	{addr=0x9C53, name="Rocks that fall when Kraid's ceiling crumbles (enemy $E2BF) (Kraid's flying claws and belly spike platforms aren't enemy projectiles.)"},
+	{addr=0x8F8F, name="Glowing orbs that Crocomire spits (enemy $DDBF)"},
+	{addr=0x8F9D, name="Blocks crumbling underneath Crocomire (enemy $DDBF)"},
+	{addr=0x90C1, name="Crocomire's spike wall when it crumbles (enemy $DDBF)"},
+	{addr=0x9C37, name="Phantoon's starting fireballs (enemy $E4BF)"},
+	{addr=0x9C29, name="All of Phantoon's other fireballs (enemy $E4BF)"},
+	{addr=0xEBA0, name="Botwoon's wall? (enemy $F293)"},
+	{addr=0xEC48, name="Botwoon's green spit (enemy $F293)"},
+	{addr=0x8E5E, name="Draygon's wall turret projectiles (enemy $DE3F)"},
+	{addr=0x8E50, name="Draygon gunk (enemy $DE3F)"},
+	{addr=0xB428, name="Golden Torizo's eye beam (enemy $EF7F)"},
+	{addr=0xAFE5, name="Golden Torizo preparing to attack; equipment check? (enemy $EF7F)"},
+	{addr=0xAFF3, name="Golden Torizo preparing to attack; equipment check? (enemy $EF7F)"},
+	{addr=0xAD7A, name="Orbs that Golden Torizo spits  (enemy $EF7F)"},
+	{addr=0xAEB6, name="Golden Torizo's crescent projectile; doesn't run if Samus's ammo is too low (enemy $EF7F)"},
+	{addr=0xB31A, name="Super missile that Golden Torizo throws at Samus (enemy $EF7F)"},
+	{addr=0xB1C0, name="Hatchlings that Golden Torizo uses when it's almost dead (enemy $EF7F)"},
+	{addr=0x9642, name="Ridley's fireball (enemy $E17F)"},
+	{addr=0x965E, name="Something for Ridley (enemy $E17F)"},
+	{addr=0x9688, name="Something for Ridley (enemy $E17F)"},
+	{addr=0x9696, name="Something for Ridley (enemy $E17F)"},
+	{addr=0xC17E, name="Something for Mother Brain; spawning turrets? (enemy $EC3F)"},
+	{addr=0xC18C, name="Mother Brain's turret bullets (enemy $EC3F)"},
+	{addr=0xCEFC, name="Mother Brain's glass shattering (enemy $EC3F)"},
+	{addr=0xCF0A, name="Mother Brain's glass shards falling (enemy $EC3F)"},
+	{addr=0xCB91, name="Mother Brain's mother brain's saliva (enemy $EC3F)"},
+	{addr=0xCB2F, name="Mother Brain's purple breath, larger puff (enemy $EC3F)"},
+	{addr=0xCB3D, name="Mother Brain's purple breath, smaller puff (enemy $EC3F)"},
+	{addr=0xCB4B, name="Mother Brain's blue ring lasers (enemy $EC3F)"},
+	{addr=0xA17B, name="Mother Brain's space pirate eye laser (enemy $EC3F)"},
+	{addr=0xCB59, name="Mother Brain's bomb as it spawns from her mouth (enemy $EC3F)"},
+	{addr=0x9650, name="Mother Brain's bomb as it bounces on ground (enemy $EC3F)"},
+	{addr=0x966C, name="Mother Brain's bomb as it explodes (enemy $EC3F)"},
+	{addr=0x967A, name="Mother Brain's bomb as it explodes again (enemy $EC3F)"},
+	{addr=0xCB67, name="Mother Brain's orange chain explosion beam starting (enemy $EC3F)"},
+	{addr=0xCB75, name="Mother Brain's orange chain explosion beam running (enemy $EC3F)"},
+	{addr=0xCB83, name="Animated graphics in front of Mother Brain's eye while rainbow beam attack charges (enemy $EC3F)"},
+	{addr=0xCBAD, name="Mother Brain's rainbow beam firing, runs while beam is active (enemy $EC3F)"},
+	{addr=0xB743, name="Eye door projectiles (PLMs $DB48 and $DB56)"},
+	{addr=0xD904, name="Created by the glass Maridia tube exploding (PLM $D70C, enemy $F0BF)"},
+	{addr=0xD912, name="Created by the glass Maridia tube exploding (PLM $D70C, enemy $F0BF)"},
+	{addr=0xD920, name="Created by the glass Maridia tube exploding (PLM $D70C, enemy $F0BF)"},
+	{addr=0xF345, name="Enemy death graphics (different types of explosions, particles, etc.)"},
+	{addr=0xF337, name="Unknown/varies. Spawning larger quantities of energy/ammo drops?"},
+	{addr=0xE509, name="Unknown/varies. Used by boulder enemies, Kraid, Crocomire, Ridley, Mother Brain."},
+	{addr=0xEC95, name="Unknown/varies. Runs when rooms with acid are loaded."},
+}
+local bank_86 = 0x28000
+for _,shot in ipairs(enemyShots) do
+	shot.ptr = ffi.cast('enemyShot_t*', rom + bank_86 + shot.addr)
+end
+
+print'enemy shot table:'
+for _,shot in ipairs(enemyShots) do
+	
+	if randomizeEnemyProps.shotDamage then
+		local value = shot.ptr[0].damageAndFlags
+		local flags = bit.band(0xf000, value)
+		local damage = bit.band(0xfff, value)
+		damage = expRand(table.unpack(randomizeEnemyProps.shotDamageScaleRange)) * damage
+		damage = math.clamp(damage, 0, 0xfff)
+		shot.ptr[0].damageAndFlags = bit.bor(damage, flags)
+	end
+	
+	print(shot.addr, shot.ptr[0])
 end
 
 end

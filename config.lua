@@ -1,4 +1,5 @@
 return {
+	-- you can't really disable this right now.   TODO fix that.
 	randomizeEnemies = true,
 	
 	randomizeItems = true,
@@ -37,6 +38,9 @@ return {
 		frozenAI = true,
 		xrayAI = true,
 		--]]
+	
+		shotDamage = true,
+		shotDamageScaleRange = {1/3, 3},
 	},
 
 	-- used by item randomization
