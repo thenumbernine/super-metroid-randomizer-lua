@@ -1,4 +1,3 @@
-return function(rom)
 -- [[
 
 local ffi = require 'ffi'
@@ -9,18 +8,18 @@ local playerSkills = config.playerSkills
 local req
 
 local function canKill(enemyName)
-io.write('canKill '..enemyName)
+--io.write('canKill '..enemyName)
 	local enemy = assert(enemyForName[enemyName], "failed to find enemy named "..enemyName)
 	local weak = enemy:getWeakness()
 	
 	-- null weak means ... ?
 	if weak == nil then 
-print('...is empty')	
+--print('...is empty')	
 		return false
 	end
 	weak = weak[0]
 
-	print(' weakness '..weak..' vs items so far '..tolua(req))
+--print(' weakness '..weak..' vs items so far '..tolua(req))
 
 	if bit.band(0xf, weak.normal) ~= 0 then return true end
 	if bit.band(0xf, weak.wave) ~= 0 and req.wave then return true end
@@ -1392,6 +1391,3 @@ end):map(function(item)
 	-- do the writing:
 	item.ptr[0] = value
 end)
-
-
-end

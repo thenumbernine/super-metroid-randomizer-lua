@@ -1,5 +1,4 @@
 return {
-	-- you can't really disable this right now.   TODO fix that.
 	randomizeEnemies = true,
 	
 	randomizeItems = true,

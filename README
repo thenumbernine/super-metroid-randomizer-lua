@@ -1,11 +1,15 @@
 Super Metroid item randomizer
-Based on https://github.com/Dessyreqt/smrandomizer
-But spun off to add a lot more features.
 
 Depends on LuaJIT
 
-Item spawn choices are based on enter and exit dependencies.
+randomizes the following:
+- item placement
+- enemy item drops 
+- enemy health
+- enemy touch damage
+- enemy shot damage
+- enemy weaknesses
 
-Possible routes those that don't always start out going back up through the old mother brain room and Crateria
+The item placement algorithm does a depth-first search to make sure that there is at least one possible run that will result in the game being won.
 
-Added randomization of item drops and monster weaknesses
+This doesn't mean that you can't get permanently stuck in a room.  It just means that somewhere you can access the item that you need to get unstuck.  So save often.

@@ -1,4 +1,3 @@
-return function(rom)
 local ffi = require 'ffi'
 local template = require 'template'
 
@@ -6,6 +5,8 @@ local config = require 'config'
 local randomizeEnemyProps = config.randomizeEnemyProps
 
 
+local bank_86 = 0x28000
+local bank_9f = 0xf8000
 local bank_b4 = 0x198000
 
 
@@ -50,7 +51,6 @@ end
 
 --]]
 
-local bank_9f = 0xf8000
 
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
 local enemyStart = bank_9f + 0xcebf
@@ -306,23 +306,18 @@ local EnemyAuxTable = class(ROMTable)
 
 EnemyAuxTable.showDistribution = true
 
-function EnemyAuxTable:randomize()
+function EnemyAuxTable:init()
+	EnemyAuxTable.super.init(self)
+	
 	self.addrs = enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
+end
 
-	local distr
-	if self.showDistribution then
-		distr = table()
-	end
+function EnemyAuxTable:randomize()
+	local ptrtype = self.structName..'*'
 	
-	print()
-	print(self.name..':')
 	for _,addr in ipairs(self.addrs) do
-		-- concise:
-		--io.write('  '..('0x%04x'):format(addr)..' ')
-		-- verbose:
-		print(('0x%04x'):format(addr)..' ')
 		if addr ~= 0 then
 			-- return nil to not randomize this entry
 			local values = self:getRandomizedValues(addr)
@@ -330,7 +325,6 @@ function EnemyAuxTable:randomize()
 				assert(#values == #self.fields)
 			end
 
-			local ptrtype = self.structName..'*'
 			local entry = ffi.cast(ptrtype, rom + bank_b4 + addr)
 			
 			for i,field in ipairs(self.fields) do
@@ -343,12 +337,42 @@ function EnemyAuxTable:randomize()
 					local value = values[i]
 					entry[0][name] = value
 				end
-				
+			end
+		end
+	end
+end
+
+function EnemyAuxTable:print()
+	local ptrtype = self.structName..'*'
+
+	local distr
+	if self.showDistribution then
+		distr = table()
+	end
+	
+	print()
+	print(self.name..':')
+	for _,addr in ipairs(self.addrs) do
+		-- concise:
+		--io.write('  '..('0x%04x'):format(addr)..' ')
+		-- verbose:
+		print(('0x%04x'):format(addr))
+		print('used by: '..enemies:filter(function(enemy)
+			return enemy.ptr[0][self.enemyField] == addr
+		end):map(function(enemy)
+			return enemy.name
+		end):concat', ')
+		if addr ~= 0 then
+			local entry = ffi.cast(ptrtype, rom + bank_b4 + addr)
+			for i,field in ipairs(self.fields) do
+				local name = next(field)
 				local value = entry[0][name]
 				
 				if self.showDistribution then
+					local value = entry[0][name]
 					distr[value] = (distr[value] or 0) + 1
 				end
+				
 				-- concise:
 				--io.write( (' %02x'):format(value) )
 				-- verbose:
@@ -358,7 +382,7 @@ function EnemyAuxTable:randomize()
 		-- concise:
 		--print()
 	end
-
+	
 	if self.showDistribution then
 		print'...distribution of values:'
 		for _,k in ipairs(distr:keys():sort()) do
@@ -368,15 +392,15 @@ function EnemyAuxTable:randomize()
 	end
 end
 
-function EnemyAuxTable:randomizeEnemy(enemy, disableWrite)
+function EnemyAuxTable:randomizeEnemy(enemy)
+	local field = self.enemyField
+	if not randomizeEnemyProps[field] then return end
+	enemy.ptr[0][field] = pickRandom(self.addrs)
+end
+
+function EnemyAuxTable:printEnemy(enemy)
 	local field = self.enemyField
 	
-	if randomizeEnemyProps[field] 
-	and not disableWrite
-	then
-		enemy.ptr[0][field] = pickRandom(self.addrs)
-	end
-
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
@@ -450,8 +474,6 @@ EnemyWeaknessTable.fields = table{
 	{unknown = 'uint8_t'},
 }
 
--- keep this one intact
-local ShaktoolWeaknessAddr = 0xef1e
 
 --[[
 t is value => percentage
@@ -530,14 +552,15 @@ in addition, the 0x80 bitflag is used for something
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
-	if addr == ShaktoolWeaknessAddr then
+	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
+	if addr == enemyForName.Shaktool.ptr[0].weakness then
 		values[16] = 0
 	end
 
 	return values
 end
 
-function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
+function EnemyWeaknessTable:randomizeEnemy(enemy)
 	-- NOTICE
 	-- if (for item placement to get past canKill constraints)
 	-- we choose to allow re-rolling of weaknesses
@@ -550,10 +573,10 @@ function EnemyWeaknessTable:randomizeEnemy(enemy, disableWrite)
 	or enemy.name == Shaktool
 	then
 		print('NOT WRITING WEAKNESS OF '..enemy.name)
-		disableWrite = true
+		return
 	end
 
-	EnemyWeaknessTable.super.randomizeEnemy(self, enemy, disableWrite)
+	EnemyWeaknessTable.super.randomizeEnemy(self, enemy)
 end
 
 --[[
@@ -606,10 +629,7 @@ end
 
 
 local enemyItemDropTable = EnemyItemDropTable()
-enemyItemDropTable:randomize()
-
 local enemyWeaknessTable = EnemyWeaknessTable()
-enemyWeaknessTable:randomize()
 
 
 local allEnemyFieldValues = {}
@@ -643,7 +663,7 @@ for _,field in ipairs{
 			values.distr[value] = (values.distr[value] or 0) + 1
 		end
 		values.values = table.keys(values.distr):sort()
-		-- [[ TODO print distribution *after* randomization
+		--[[ TODO print distribution *after* randomization
 		print('enemy '..field..' distribution:')
 		for _,value in ipairs(values.values) do
 			print('  '..value..' x'..values.distr[value])
@@ -657,40 +677,15 @@ local typeinfo = {
 	uint16_t = {range={0,0xffff}},
 }
 
-local function randomizeFieldExp(enemy, fieldname)
+local function randomizeFieldExp(enemyPtr, fieldname)
 	if randomizeEnemyProps[fieldname] then
-		local value = expRand(table.unpack(randomizeEnemyProps[fieldname..'ScaleRange'])) * enemy[0][fieldname]
+		local value = expRand(table.unpack(randomizeEnemyProps[fieldname..'ScaleRange'])) * enemyPtr[0][fieldname]
 		local field = select(2, enemyFields:find(nil, function(field) return next(field) == fieldname end))
 		local fieldtype = select(2, next(field))
 		local fieldrange = typeinfo[fieldtype].range
 		value = math.clamp(value, fieldrange[1], fieldrange[2])
-		enemy[0][fieldname] = value
+		enemyPtr[0][fieldname] = value
 	end
-	print(' '..fieldname..'='..enemy[0][fieldname])
-end
-
-print'enemies:'
-for i,enemy in ipairs(enemies) do
-	print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
-
-	if randomizeEnemyProps.deathEffect then
-		enemy.ptr[0].deathEffect = math.random(0,4)
-	end
-	print(' deathEffect='..enemy.ptr[0].deathEffect)
-
-	randomizeFieldExp(enemy.ptr, 'hurtTime')
-	randomizeFieldExp(enemy.ptr, 'health')
-	randomizeFieldExp(enemy.ptr, 'damage')
-
-	for field,values in pairs(allEnemyFieldValues) do
-		if randomizeEnemyProps[field] then
-			enemy.ptr[0][field] = pickRandom(values.values)
-		end
-		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
-	end
-
-	enemyWeaknessTable:randomizeEnemy(enemy)
-	enemyItemDropTable:randomizeEnemy(enemy)
 end
 
 defineFields'enemyShot_t'{
@@ -800,24 +795,75 @@ local enemyShots = table{
 	{addr=0xE509, name="Unknown/varies. Used by boulder enemies, Kraid, Crocomire, Ridley, Mother Brain."},
 	{addr=0xEC95, name="Unknown/varies. Runs when rooms with acid are loaded."},
 }
-local bank_86 = 0x28000
 for _,shot in ipairs(enemyShots) do
 	shot.ptr = ffi.cast('enemyShot_t*', rom + bank_86 + shot.addr)
 end
 
-print'enemy shot table:'
-for _,shot in ipairs(enemyShots) do
-	
-	if randomizeEnemyProps.shotDamage then
-		local value = shot.ptr[0].damageAndFlags
-		local flags = bit.band(0xf000, value)
-		local damage = bit.band(0xfff, value)
-		damage = expRand(table.unpack(randomizeEnemyProps.shotDamageScaleRange)) * damage
-		damage = math.clamp(damage, 0, 0xfff)
-		shot.ptr[0].damageAndFlags = bit.bor(damage, flags)
+
+-- do the randomizing
+
+
+if config.randomizeEnemies then
+	enemyItemDropTable:randomize()
+	enemyWeaknessTable:randomize()
+
+	for i,enemy in ipairs(enemies) do
+		if randomizeEnemyProps.deathEffect then
+			enemy.ptr[0].deathEffect = math.random(0,4)
+		end
+
+		randomizeFieldExp(enemy.ptr, 'hurtTime')
+		randomizeFieldExp(enemy.ptr, 'health')
+		randomizeFieldExp(enemy.ptr, 'damage')
+
+		for field,values in pairs(allEnemyFieldValues) do
+			if randomizeEnemyProps[field] then
+				enemy.ptr[0][field] = pickRandom(values.values)
+			end
+		end
+
+		enemyWeaknessTable:randomizeEnemy(enemy)
+		enemyItemDropTable:randomizeEnemy(enemy)
 	end
-	
-	print(shot.addr, shot.ptr[0])
+
+	if randomizeEnemyProps.shotDamage then
+		for _,shot in ipairs(enemyShots) do
+			local value = shot.ptr[0].damageAndFlags
+			local flags = bit.band(0xf000, value)
+			local damage = bit.band(0xfff, value)
+			damage = expRand(table.unpack(randomizeEnemyProps.shotDamageScaleRange)) * damage
+			damage = math.clamp(damage, 0, 0xfff)
+			shot.ptr[0].damageAndFlags = bit.bor(damage, flags)
+		end
+	end
 end
 
+
+-- do the printing
+
+
+enemyItemDropTable:print()
+enemyWeaknessTable:print()
+
+print'enemies:'
+for i,enemy in ipairs(enemies) do
+	print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
+	print(' deathEffect='..enemy.ptr[0].deathEffect)
+
+	for _,field in ipairs{'hurtTime', 'health', 'damage'} do
+		print(' '..field..'='..enemy.ptr[0][field])
+	end
+	
+	for field,values in pairs(allEnemyFieldValues) do
+		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
+	end
+	
+	enemyWeaknessTable:printEnemy(enemy)
+	enemyItemDropTable:printEnemy(enemy)
+end
+
+
+print'enemy shot table:'
+for _,shot in ipairs(enemyShots) do
+	print(shot.addr, shot.ptr[0])
 end

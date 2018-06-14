@@ -65,13 +65,11 @@ rom = ffi.cast('uint8_t*', romstr)
 local config = require 'config'
 
 -- do the enemy randomization
-if config.randomizeEnemies then
-	require 'enemies'(rom)
-end
+require 'enemies'
 
 -- do the item randomization
 if config.randomizeItems then
-	require 'items'(rom)
+	require 'items'
 end
 
 -- write back out
