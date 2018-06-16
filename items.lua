@@ -95,8 +95,38 @@ local function canUsePowerBombs()
 	return req.morph and req.powerbomb
 end
 
+local function canLeaveOldMotherBrainRoom()
+	-- to escape the room, you have to kill the grey space pirates
+	return canKill'Grey Zebesian (Wall)'
+	and canKill'Grey Zebesian'
+end
+
+local function canActivateAlarm()
+	-- in order for the alarm to activate, you need to collect morph and a missile tank and go to some room in crateria.
+	return req.morph and req.missile
+	-- and you have to go through the old mother brain room
+	and (canLeaveOldMotherBrainRoom()
+		-- TODO *or* you can go through power bomb brinstar then access some other certain room in crateria ... I think it's the crab room or something
+	)
+end
+
 -- power bombs behind power bomb wall near the morph ball 
-items:insert{name="Power Bomb (blue Brinstar)", addr=0x7874C, access=canUsePowerBombs}
+items:insert{
+	name="Power Bomb (blue Brinstar)", 
+	addr=0x7874C, 
+	access=function()
+		-- this item doesn't appear until you activate the alarm
+		return canActivateAlarm() 
+		and canUsePowerBombs()
+		and (
+		-- also notice, to access it from the ship, you need to either
+		-- 1) go down from crateria through the old mother brain room (and be able to kill the zebesians)
+			canLeaveOldMotherBrainRoom()
+		-- or 2) go back through pink brinstar, which requires super missiles and power bombs
+			or req.supermissile
+		)
+	end,
+}
 
 	-- first missile room:
 
@@ -165,21 +195,6 @@ local function canGetUpWithRunway()
 	or canBombTechnique()
 end
 
-local function canLeaveOldMotherBrainRoom()
-	-- to escape the room, you have to kill the grey space pirates
-	return canKill'Grey Zebesian (Wall)'
-	and canKill'Grey Zebesian'
-end
-
-local function canActivateAlarm()
-	-- in order for the alarm to activate, you need to collect morph and a missile tank and go to some room in crateria.
-	return req.morph and req.missile
-	-- and you have to go through the old mother brain room
-	and (canLeaveOldMotherBrainRoom()
-		-- TODO *or* you can go through power bomb brinstar then access some other certain room in crateria ... I think it's the crab room or something
-	)
-end
-
 items:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function() 
 	return accessBlueBrinstarEnergyTankRoom() 
 	and (
@@ -242,8 +257,12 @@ items:insert{
 		and canOpenMissileDoors() 
 	end,
 	escape = function()
-		return playerSkills.touchAndGoUpAlcatraz 
-		or canDestroyBombWallsMorphed()
+		return 
+		-- fighting the chozo ... or if you don't have bombs, he doesn't fight you
+		(not req.bomb or canKill'Grey Torizo')
+		-- leaving Alkatraz
+		and (playerSkills.touchAndGoUpAlcatraz 
+			or canDestroyBombWallsMorphed())
 	end,
 }
 
@@ -330,7 +349,11 @@ local function accessGauntlet()
 	-- getting (back from morph) to the start room
 	return accessLandingRoom()
 	-- getting up
-	and canGetUpWithRunway()
+	and (
+		-- turns out you can touch and go up, if you disable hijump
+		playerSkills.touchAndGoUpToGauntlet
+		or canGetUpWithRunway()
+	)
 	-- getting through the bombable walls
 	and (
 		-- either something to destroy it while standing...
@@ -474,6 +497,8 @@ items:insert{
 		return accessPinkBrinstar() 
 		-- getting into spore spawn
 		and canOpenMissileDoors()
+		-- getting into spore spawn room ...
+		and canKill'Green Kihunter (wing)'
 		-- killing spore spawn
 		and canKill'Spore Spawn'
 	end,
@@ -1369,6 +1394,7 @@ end
 
 iterate()
 
+
 print()
 print()
 print'summary:'
@@ -1391,3 +1417,9 @@ end):map(function(item)
 	-- do the writing:
 	item.ptr[0] = value
 end)
+
+--[[
+todo generalize this to arbitrary obstacles: 
+fixed obstacles like vertical areas that cannot be re-rolled
+randomizeable obstacles like blocked walls, doors, grey doors + enemy weaknesses, items
+--]]

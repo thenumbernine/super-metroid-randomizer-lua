@@ -55,6 +55,7 @@ return {
 		touchAndGo = true,
 		touchAndGoToBoulderRoom = true,
 		touchAndGoUpAlcatraz = true,
+		touchAndGoUpToGauntlet = true,	-- you can do this with high jump disabled
 
 		bombTechnique = true,
 

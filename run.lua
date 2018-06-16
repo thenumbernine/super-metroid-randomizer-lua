@@ -59,8 +59,11 @@ local header = ''
 --header = romstr:sub(1,512)
 --romstr = romstr:sub(513)
 
--- global so enemies.lua can see it
+-- global so other files can see it
 rom = ffi.cast('uint8_t*', romstr) 
+
+--require 'rooms'
+--os.exit()
 
 local config = require 'config'
 

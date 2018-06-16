@@ -1,6 +1,4 @@
 local ffi = require 'ffi'
-local template = require 'template'
-
 local config = require 'config'
 local randomizeEnemyProps = config.randomizeEnemyProps
 
@@ -14,40 +12,7 @@ local function pickRandom(t)
 	return t[math.random(#t)]
 end
 
-local function defineFields(name)
-	return function(fields)
-		local code = template([[
-typedef union {
-	struct {
-<? 
-local ffi = require 'ffi'
-local size = 0
-for _,kv in ipairs(fields) do
-	local name, ctype = next(kv)
-	size = size + ffi.sizeof(ctype)
-?>		<?=ctype?> <?=name?>;
-<? 
-end
-?>	} __attribute__((packed));
-	uint8_t ptr[<?=size?>];
-} <?=name?>;
-]], {name=name, fields=fields})
-		ffi.cdef(code)
-
-		local mt = ffi.metatype(name, {
-			__tostring = function(ptr)
-				local t = table()
-				for _,field in ipairs(fields) do
-					local name, ctype = next(field)
-					t:insert(name..'='..tostring(ptr[name]))
-				end
-				return '{'..t:concat', '..'}'
-			end,
-			__concat = function(a,b) return tostring(a) .. tostring(b) end,
-		})
-	end
-end
-
+local makestruct = require 'makestruct'
 
 --]]
 
@@ -98,7 +63,7 @@ local enemyFields = table{
 	{weakness = 'uint16_t'},	-- pointer 
 	{name = 'uint16_t'},		-- pointer
 }
-defineFields'enemy_t'(enemyFields)
+makestruct'enemy_t'(enemyFields)
 
 local Enemy = class()
 
@@ -293,7 +258,7 @@ end
 local ROMTable = class()
 
 function ROMTable:init()
-	defineFields(self.structName)(self.fields)
+	makestruct(self.structName)(self.fields)
 	self.structSize = ffi.sizeof(self.structName)
 	self.fieldNameMaxLen = self.fields:map(function(kv)
 		return #next(kv)
@@ -312,6 +277,9 @@ function EnemyAuxTable:init()
 	self.addrs = enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
+
+	print(self.name..' has '..#self.addrs..' unique addrs:')
+	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
 end
 
 function EnemyAuxTable:randomize()
@@ -688,7 +656,7 @@ local function randomizeFieldExp(enemyPtr, fieldname)
 	end
 end
 
-defineFields'enemyShot_t'{
+makestruct'enemyShot_t'{
 	{initAI = 'uint16_t'},
 	{firstAI = 'uint16_t'},
 	{graphicsAI = 'uint16_t'},
