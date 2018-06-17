@@ -10,6 +10,8 @@ return {
 		
 		weakness = true,
 		weaknessImmunityChance = .75,
+		chanceToFreeze = 2/3,
+		chanceToInstaFreeze = .05,
 
 		itemdrop = true,
 		itemDropZeroChance = .75,	-- % of item drop percentage fields that are 0%

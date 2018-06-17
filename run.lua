@@ -62,10 +62,44 @@ local header = ''
 -- global so other files can see it
 rom = ffi.cast('uint8_t*', romstr) 
 
---require 'rooms'
---os.exit()
+
+-- global stuff
+
+ffi.cdef[[
+typedef uint8_t uint24_t[3];
+]]
+
+function pickRandom(t)
+	return t[math.random(#t)]
+end
+
+
+
+-- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
+function bank(i)
+	return ({
+		[0x83] = 0x018000,
+		[0x86] = 0x030000,
+		[0x8e] = 0x070000,
+		[0x8f] = 0x078000,
+		[0x9f] = 0x0f8000,
+		[0xa1] = 0x108000,
+		[0xb4] = 0x198000,
+	})[i] or error("need bank "..('%02x'):format(i))
+end
+
 
 local config = require 'config'
+
+-- build enemies table / type info
+-- do this before rooms, enemies, items
+require 'enemies_data'
+
+-- randomize rooms?  still working on this
+-- *) enemy placement
+-- *) door placement
+-- *) refinancin
+require 'rooms'
 
 -- do the enemy randomization
 require 'enemies'

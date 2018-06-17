@@ -7,53 +7,88 @@ local playerSkills = config.playerSkills
 -- item requirements we've fulfilled so far
 local req
 
+-- TODO this is all a lot more complex than this
+-- flags work on some enemies and not on others
+
+local function beamCanFreeze(weak, field)
+	local value = weak[field]
+	if value == 0xff then return true end
+	if bit.band(value, 0xf) == 0 then return false end	-- immune to beam, so... can't freeze, right?
+	if bit.band(value, 0x80) ~= 0 then return false end	-- can't freeze flag is set
+	-- by here we know we aren't immune (can damage) and we don't have can't freeze set, so it should freeze
+	return true
+end
+
+local function canFreeze(enemyName)
+	local enemy = assert(enemyForName[enemyName], "failed to find enemy named "..enemyName)
+	local weak = enemy:getWeakness()
+	
+	if weak == nil then return false end
+	weak = weak[0]
+	
+	if beamCanFreeze(weak, 'ice') and req.ice then return true end
+	if beamCanFreeze(weak, 'ice_wave') and req.ice and req.wave then return true end
+	if beamCanFreeze(weak, 'ice_spazer') and req.ice and req.spazer then return true end
+	if beamCanFreeze(weak, 'wave_ice_spazer') and req.wave and req.ice and req.spazer then return true end
+	if beamCanFreeze(weak, 'ice_plasma') and req.ice and req.plasma then return true end
+	if beamCanFreeze(weak, 'wave_ice_plasma') and req.wave and req.ice and req.plasma then return true end
+
+	return true
+end
+
+local function notImmune(weak, field)
+	local value = weak[field]
+	-- 0xff means freeze don't kill ..
+	-- does it also mean this for non-ice / non-beam weapons?
+	if value == 0xff then return false end
+	return bit.band(value, 0xf) ~= 0
+end
+
 local function canKill(enemyName)
 --io.write('canKill '..enemyName)
 	local enemy = assert(enemyForName[enemyName], "failed to find enemy named "..enemyName)
 	local weak = enemy:getWeakness()
 	
-	-- null weak means ... ?
-	if weak == nil then 
---print('...is empty')	
-		return false
-	end
+	-- null weak means invincible
+	if weak == nil then return false end
 	weak = weak[0]
 
 --print(' weakness '..weak..' vs items so far '..tolua(req))
 
-	if bit.band(0xf, weak.normal) ~= 0 then return true end
-	if bit.band(0xf, weak.wave) ~= 0 and req.wave then return true end
-	if bit.band(0xf, weak.ice) ~= 0 and req.ice then return true end
-	if bit.band(0xf, weak.ice_wave) ~= 0 and req.ice and req.wave then return true end
-	if bit.band(0xf, weak.spazer) ~= 0 and req.spazer then return true end
-	if bit.band(0xf, weak.wave_spazer) ~= 0 and req.wave and req.spazer then return true end
-	if bit.band(0xf, weak.ice_spazer) ~= 0 and req.ice and req.spazer then return true end
-	if bit.band(0xf, weak.wave_ice_spazer) ~= 0 and req.wave and req.ice and req.spazer then return true end
-	if bit.band(0xf, weak.plasma) ~= 0 and req.plasma then return true end
-	if bit.band(0xf, weak.wave_plasma) ~= 0 and req.wave and req.plasma then return true end
-	if bit.band(0xf, weak.ice_plasma) ~= 0 and req.ice and req.plasma then return true end
-	if bit.band(0xf, weak.wave_ice_plasma) ~= 0 and req.wave and req.ice and req.plasma then return true end
+	if notImmune(weak, 'normal') then return true end
+	if notImmune(weak, 'wave') and req.wave then return true end
+	if notImmune(weak, 'ice') and req.ice then return true end
+	if notImmune(weak, 'ice_wave') and req.ice and req.wave then return true end
+	if notImmune(weak, 'spazer') and req.spazer then return true end
+	if notImmune(weak, 'wave_spazer') and req.wave and req.spazer then return true end
+	if notImmune(weak, 'ice_spazer') and req.ice and req.spazer then return true end
+	if notImmune(weak, 'wave_ice_spazer') and req.wave and req.ice and req.spazer then return true end
+	if notImmune(weak, 'plasma') and req.plasma then return true end
+	if notImmune(weak, 'wave_plasma') and req.wave and req.plasma then return true end
+	if notImmune(weak, 'ice_plasma') and req.ice and req.plasma then return true end
+	if notImmune(weak, 'wave_ice_plasma') and req.wave and req.ice and req.plasma then return true end
 	
-	if bit.band(0xf, weak.missile) ~= 0 and req.missile
+	if notImmune(weak, 'missile') and req.missile
 	-- TODO and the missile count vs the weakness can possibly kill the boss
 	then return true end
 	
-	if bit.band(0xf, weak.supermissile) ~= 0 and req.supermissile
+	if notImmune(weak, 'supermissile') and req.supermissile
 	-- TODO and the supermissile count vs the weakness can possibly kill the boss
 	then return true end
 
-	if bit.band(0xf, weak.bomb) ~= 0 and req.bomb then return true end
-	if bit.band(0xf, weak.powerbomb) ~= 0 and req.powerbomb then return true end
-	if bit.band(0xf, weak.speed) ~= 0 and req.speed then return true end
+	if notImmune(weak, 'bomb') and req.bomb then return true end
+	if notImmune(weak, 'powerbomb') and req.powerbomb then return true end
+	if notImmune(weak, 'speed') and req.speed then return true end
 	
-	if bit.band(0xf, weak.sparkcharge) ~= 0 and req.speed
+	if notImmune(weak, 'sparkcharge') and req.speed
 	-- TODO and we have a runway ...
 	then return true end
 	
-	if bit.band(0xf, weak.screwattack) ~= 0 and req.screwattack then return true end
-	--if bit.band(0xf, weak.hyper) ~= 0 and req.hyper then return true end
-	
-	if bit.band(0xf, weak.pseudo_screwattack) ~= 0 and req.charge then return true end
+	if notImmune(weak, 'screwattack') and req.screwattack then return true end
+	--if notImmune(weak, 'hyper') and req.hyper then return true end
+
+	-- charge-based screw attack
+	if notImmune(weak, 'pseudo_screwattack') and req.charge then return true end
 end
 
 
@@ -159,6 +194,7 @@ items:insert{
 	end,
 	-- also doesn't have to be a missile =D
 	--filter = function(name) return name ~= 'missile' end,
+--filter = function(name) return name == 'powerbomb' end,
 }
 
 	-- blue brinstar double missile room (behind boulder room):
@@ -203,7 +239,9 @@ items:insert{name="Energy Tank (blue Brinstar)", addr=0x7879E, access=function()
 		or canGetUpWithRunway()
 		-- technically you can use a damage boost, so all you really need is missiles
 		--  however this doesn't work until after security is activated ...
-		or (playerSkills.damageBoostToBrinstarEnergy and canActivateAlarm())
+		or (playerSkills.damageBoostToBrinstarEnergy 
+			and canActivateAlarm()
+		)
 	)
 end}
 
@@ -397,18 +435,20 @@ items:insert{name="Missile (Crateria gauntlet right)", addr=0x78464, access=acce
 items:insert{name="Missile (Crateria gauntlet left)", addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
 
 -- freeze boyon and speed boost and duck and jump up shaft, then grappling / space jump back 
-items:insert{name="Super Missile (Crateria)", addr=0x78478, access=function() 
-	-- power bomb doors
-	return canUsePowerBombs() 
-	-- speed boost blocks
-	and req.speed 
-	-- escaping over the spikes
-	and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
-	-- killing / freezing the monsters
-	and ((req.ice -- TODO make sure you can freeze the boyon 
-		) or canKill'Boyon')
-end}
-
+items:insert{
+	name="Super Missile (Crateria)",
+	addr=0x78478,
+	access=function() 
+		-- power bomb doors
+		return canUsePowerBombs() 
+		-- speed boost blocks
+		and req.speed 
+		-- escaping over the spikes
+		and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
+		-- killing / freezing the boyons... 
+		and (canFreeze'Boyon' or canKill'Boyon')
+	end,
+}
 
 -- green Brinstar
 
@@ -577,10 +617,15 @@ local function accessLowerGreenBrinstar()
 	or accessPinkBrinstarFromRight()
 end
 
-items:insert{name="Missile (green Brinstar pipe)", addr=0x78676, access=function() 
-	return accessLowerGreenBrinstar()
-	and (playerSkills.touchAndGo or req.hijump or req.spacejump) 
-end}
+items:insert{
+	name = "Missile (green Brinstar pipe)",
+	addr = 0x78676,
+	access = function() 
+		return accessLowerGreenBrinstar()
+		and (playerSkills.touchAndGo or req.hijump or req.spacejump) 
+	end,
+--filter = function(name) return name == 'ice' end,
+}
 
 -- what it takes to get into lower green Brinstar, and subsequently red Brinstar
 -- either a supermissile through the pink Brinstar door
@@ -613,14 +658,16 @@ end}
 local function accessUpperRedBrinstar()
 	return accessRedBrinstar()
 	and (
-		-- you can freeze the monsters and jump off of them
-		req.ice 
-		-- or you can super missile them and touch-and-go up
-		or (playerSkills.touchAndGo and req.supermissile) 
-		-- or you can destroy them (with super missiles or screw attack) and either bomb technique or spacejump up
+		-- you can freeze the rippers and jump off of them
+		canFreeze'Ripper'
+		-- or you can kill the rippers and get up somehow (touch and go, space jump, bomb technique)
 		or (
-			(req.screwattack or req.supermissile) 
-			and (playerSkills.bombTechnique or req.spacejump)
+			canKill'Ripper' 
+			and (
+				playerSkills.touchAndGo
+				or playerSkills.bombTechnique 
+				or req.spacejump
+			)
 		)
 	)
 end
@@ -799,16 +846,18 @@ end
 items:insert{name="Energy Tank (Crocomire)", addr=0x78BA4, access=accessCrocomire}
 items:insert{name="Missile (above Crocomire)", addr=0x78BC0, access=accessCrocomire}
 
-items:insert{name="Power Bomb (Crocomire)", addr=0x78C04, access=function() 
-	return accessCrocomire() 
-	and (
-		req.spacejump 
-		or req.grappling
-		or req.speed
-		or req.ice
-		or playerSkills.bombTechnique
-	)
-end}
+items:insert{
+	name="Power Bomb (Crocomire)",
+	addr=0x78C04,
+	access=function() 
+		return accessCrocomire() 
+		and (
+			req.spacejump 
+			or req.grappling
+			or playerSkills.bombTechnique
+		)
+	end,
+}
 
 items:insert{name="Missile (below Crocomire)", addr=0x78C14, access=accessCrocomire}
 
@@ -854,7 +903,7 @@ local function accessNorfairReserve()
 	return accessHeatedNorfair() 
 	and (req.spacejump 
 		or req.grappling
-		or (playerSkills.touchAndGo and (req.hijump or req.ice))
+		or (playerSkills.touchAndGo and (req.hijump or canFreeze'Waver'))
 	)
 end
 
@@ -976,7 +1025,7 @@ local function accessOuterMaridia()
 			or req.spacejump 
 			or req.hijump or (playerSkills.bombTechnique and canUseBombs())))
 		-- if you don't have gravity then you need high jump and ice.  without gravity you do need high jump just to jump up from the tube that you break, into the next room.
-		or (playerSkills.suitlessMaridiaFreezeCrabs and req.hijump and req.ice)
+		or (playerSkills.suitlessMaridiaFreezeCrabs and req.hijump and canFreeze'Sciser')
 		
 		-- suitless is possible so long as the space jump item is replaced with gravity suit to get out of Draygon's room ... or you do the crystal spark + blue spark + whatever move that I don't know how to do
 	)
@@ -1000,7 +1049,7 @@ items:insert{name="Missile (yellow Maridia false wall)", addr=0x7C533, access=ac
 local function accessBotwoon()
 	return accessInnerMaridia() 
 	and (
-		(playerSkills.freezeTheMocktroidToGetToBotwoon and req.ice) 
+		(playerSkills.freezeTheMocktroidToGetToBotwoon and canFreeze'Mochtroid') 
 		-- need to speed boost underwater
 		or (req.gravity and req.speed)
 	)

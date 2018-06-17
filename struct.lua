@@ -1,6 +1,17 @@
 local ffi = require 'ffi'
 local template = require 'template'
 
+local function hextostr(digits)
+	return function(value)
+		return ('%0'..digits..'x'):format(value)
+	end
+end
+
+local typeToString = {
+	uint8_t = hextostr(2),
+	uint16_t = hextostr(4),
+}
+
 local function defineFields(name)
 	return function(fields)
 		local code = template([[
@@ -26,7 +37,10 @@ end
 				local t = table()
 				for _,field in ipairs(fields) do
 					local name, ctype = next(field)
-					t:insert(name..'='..tostring(ptr[name]))
+					
+					local s = (typeToString[ctype] or tostring)(ptr[name])
+					
+					t:insert(name..'='..s)
 				end
 				return '{'..t:concat', '..'}'
 			end,
