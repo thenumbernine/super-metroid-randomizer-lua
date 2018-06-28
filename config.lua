@@ -1,9 +1,20 @@
 return {
 	randomizeEnemies = true,
-	
+  
 	randomizeItems = true,
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
+
+	-- skips the intro cutscene
+	skipIntro = true,
+
+	-- wake zebes when you go through the room to the right.
+	-- but experimenting with this when I got morph ball -> power bombs, 
+	-- it seems I did wake up the monsters in the rooms in blue brinstar, 
+	-- but the space pirates in old mother brain are still not there.  hmm.
+	-- it did allow the item left of morph ball behind the power bomb wall to be spawned fwiw.
+	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
+	wakeZebesEarly = true,
 
 	-- used by enemy randomization
 	randomizeEnemyProps = {
@@ -26,11 +37,13 @@ return {
 		hurtTime = true,
 		hurtTimeScaleRange = {1/3, 3},
 
-		-- effetcs
+		-- effects
 		deathEffect = true,
 		sound = true,
 		
-		--[[ AI stuff
+		--[[ randomize the AI 
+		-- hmm, mixing and matching individaul routines causes lots of crashes
+		-- but what if I randomize the sets of routines, to completely swap out one monster with another?
 		aiBank = true,	
 		initiationAI = true,
 		mainAI = true,

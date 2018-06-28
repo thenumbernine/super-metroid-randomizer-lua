@@ -12,6 +12,7 @@ http://deanyd.net/sm/index.php?title=List_of_rooms
 require 'ext'
 function I(...) return ... end
 local ffi = require 'ffi'
+local config = require 'config'
 
 
 local cmdline = {}
@@ -54,7 +55,23 @@ local infilename = cmdline['in'] or 'sm.sfc'
 local outfilename = cmdline['out'] or 'sm-random.sfc'
 
 
+-- [[ apply patches
+file.__tmp = file[infilename]
+local function applyPatch(patchfilename)
+	local results = {os.execute('../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')}
+	print('results', table.unpack(results))
+	file.__tmp = file.__tmp2
+	file.__tmp2 = nil
+end
+if config.skipIntro then applyPatch'introskip_doorflags.ips' end
+if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
+local romstr = file.__tmp
+file.__tmp = nil
+--]]
+--[[
 local romstr = file[infilename]
+--]]
+
 local header = ''
 --header = romstr:sub(1,512)
 --romstr = romstr:sub(513)
@@ -89,8 +106,6 @@ function bank(i)
 end
 
 
-local config = require 'config'
-
 -- build enemies table / type info
 -- do this before rooms, enemies, items
 require 'enemies_data'
@@ -99,7 +114,7 @@ require 'enemies_data'
 -- *) enemy placement
 -- *) door placement
 -- *) refinancin
-require 'rooms'
+--require 'rooms'
 
 -- do the enemy randomization
 require 'enemies'
@@ -113,3 +128,16 @@ end
 file[outfilename] = header .. ffi.string(rom, #romstr)
 
 print('done converting '..infilename..' => '..outfilename)
+
+if not config.randomizeEnemies then
+	print()
+	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+	print'!!!!!!!!!!! NOT RANDOMIZING ENEMIES !!!!!!!!!'
+	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+end
+if not config.randomizeItems then
+	print()
+	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+	print'!!!!!!!!!!!! NOT RANDOMIZING IEMS !!!!!!!!!!!'
+	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+end

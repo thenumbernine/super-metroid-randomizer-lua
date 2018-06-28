@@ -46,6 +46,12 @@ end
 			end,
 			__concat = function(a,b) return tostring(a) .. tostring(b) end,
 		})
+
+		local sizeOfFields = table.map(fields, function(kv)
+			local name,ctype = next(kv)
+			return ffi.sizeof(ctype)
+		end):sum()
+		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
 	end
 end
 

@@ -6,6 +6,45 @@ local ffi = require 'ffi'
 local struct = require 'struct'
 local config = require 'config'
 
+structFields = {}
+
+structFields.itemDrop_t = table{
+	{smallEnergy = 'uint8_t'},
+	{largeEnergy = 'uint8_t'},
+	{missile = 'uint8_t'},
+	{nothing = 'uint8_t'},
+	{superMissile = 'uint8_t'},
+	{powerBomb = 'uint8_t'},
+}
+itemDrop_t = struct'itemDrop_t'(structFields.itemDrop_t)
+
+structFields.weakness_t = table{
+	{normal = 'uint8_t'},
+	{wave = 'uint8_t'},
+	{ice = 'uint8_t'},
+	{ice_wave = 'uint8_t'},
+	{spazer = 'uint8_t'},
+	{wave_spazer = 'uint8_t'},
+	{ice_spazer = 'uint8_t'},
+	{wave_ice_spazer = 'uint8_t'},
+	{plasma = 'uint8_t'},
+	{wave_plasma = 'uint8_t'},
+	{ice_plasma = 'uint8_t'},
+	{wave_ice_plasma = 'uint8_t'},
+	{missile = 'uint8_t'},
+	{supermissile = 'uint8_t'},
+	{bomb = 'uint8_t'},
+	{powerbomb = 'uint8_t'},
+	{speed = 'uint8_t'},
+	{sparkcharge = 'uint8_t'},
+	{screwattack = 'uint8_t'},
+	{hyper = 'uint8_t'},
+	{pseudo_screwattack = 'uint8_t'},
+	{unknown = 'uint8_t'},
+}
+weakness_t = struct'weakness_t'(structFields.weakness_t)
+
+
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
 local enemyStart = bank(0x9f) + 0xcebf
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
@@ -244,400 +283,3 @@ end)
 for _,enemy in ipairs(enemies) do
 	enemy.ptr = ffi.cast('enemy_t*', rom + enemy.addr + bank(0x9f))
 end
-
-
-local ROMTable = class()
-
-function ROMTable:init()
-	struct(self.structName)(self.fields)
-	self.structSize = ffi.sizeof(self.structName)
-	self.fieldNameMaxLen = self.fields:map(function(kv)
-		return #next(kv)
-	end):sup()
-end
-
-
--- this is a table that the Enemy table uses .. like weaknesses or item drops
-local EnemyAuxTable = class(ROMTable)
-
-EnemyAuxTable.showDistribution = true
-
-function EnemyAuxTable:init()
-	EnemyAuxTable.super.init(self)
-	
-	self.addrs = enemies:map(function(enemy)
-		return true, enemy.ptr[0][self.enemyField]
-	end):keys():sort()
-
-	print(self.name..' has '..#self.addrs..' unique addrs:')
-	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
-end
-
-function EnemyAuxTable:randomize()
-	local randomizeEnemyProps = config.randomizeEnemyProps
-	local ptrtype = self.structName..'*'
-	
-	for _,addr in ipairs(self.addrs) do
-		if addr ~= 0 then
-			-- return nil to not randomize this entry
-			local values = self:getRandomizedValues(addr)
-			if values then
-				assert(#values == #self.fields)
-			end
-
-			local entry = ffi.cast(ptrtype, rom + bank(0xb4) + addr)
-			
-			for i,field in ipairs(self.fields) do
-				local name = next(field)
-		
-				-- if we are randomizing the enemy field ... then randomize the table associated with it
-				if randomizeEnemyProps[self.enemyField] 
-				and values 
-				then
-					local value = values[i]
-					entry[0][name] = value
-				end
-			end
-		end
-	end
-end
-
-function EnemyAuxTable:print()
-	local ptrtype = self.structName..'*'
-
-	local distr
-	if self.showDistribution then
-		distr = table()
-	end
-	
-	print()
-	print(self.name..':')
-	for _,addr in ipairs(self.addrs) do
-		-- concise:
-		--io.write('  '..('0x%04x'):format(addr)..' ')
-		-- verbose:
-		print(('0x%04x'):format(addr))
-		print('used by: '..enemies:filter(function(enemy)
-			return enemy.ptr[0][self.enemyField] == addr
-		end):map(function(enemy)
-			return enemy.name
-		end):concat', ')
-		if addr ~= 0 then
-			local entry = ffi.cast(ptrtype, rom + bank(0xb4) + addr)
-			for i,field in ipairs(self.fields) do
-				local name = next(field)
-				local value = entry[0][name]
-				
-				if self.showDistribution then
-					local value = entry[0][name]
-					distr[value] = (distr[value] or 0) + 1
-				end
-				
-				-- concise:
-				--io.write( (' %02x'):format(value) )
-				-- verbose:
-				print('  '..name..' '.. ('.'):rep(self.fieldNameMaxLen-#name+5)..' '..('0x%02x'):format(value))
-			end
-		end
-		-- concise:
-		--print()
-	end
-	
-	if self.showDistribution then
-		print'...distribution of values:'
-		for _,k in ipairs(distr:keys():sort()) do
-			print('  '..('0x%x'):format(k)..' x'..distr[k])
-		end
-		print()
-	end
-end
-
-function EnemyAuxTable:randomizeEnemy(enemy)
-	local randomizeEnemyProps = config.randomizeEnemyProps
-	local field = self.enemyField
-	if not randomizeEnemyProps[field] then return end
-	enemy.ptr[0][field] = pickRandom(self.addrs)
-end
-
-function EnemyAuxTable:printEnemy(enemy)
-	local field = self.enemyField
-	
-	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
-	local addr = enemy.ptr[0][field]
-	if addr ~= 0 then
-		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + bank(0xb4) + addr) ))	
-	end
-	print()
-end
-
-
-local EnemyItemDropTable = class(EnemyAuxTable)
-
-EnemyItemDropTable.name = 'enemy item drop table'
-EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemy_t to get addresses from
-EnemyItemDropTable.structName = 'itemDrop_t'	-- structure at the address
-EnemyItemDropTable.fields = table{
-	{smallEnergy = 'uint8_t'},
-	{largeEnergy = 'uint8_t'},
-	{missile = 'uint8_t'},
-	{nothing = 'uint8_t'},
-	{superMissile = 'uint8_t'},
-	{powerBomb = 'uint8_t'},
-}
-
--- returns a list of bytes that are written to the structure
--- TODO I could use the ffi info and return arbitrary values that are correctly cast into the structure ...
-function EnemyItemDropTable:getRandomizedValues(addr)
-	local randomizeEnemyProps = config.randomizeEnemyProps
-	-- 6 percentages (of 0xff):
-	-- small energy, large energy, missile, nothing, super missile, power bomb
-	local values = range(self.structSize):map(function()
-		return math.random() <= randomizeEnemyProps.itemDropZeroChance and 0 or math.random()
-	end)
-	-- now normalize
-	local sum = values:sum()
-	-- ... should I allow for monsters to not drop anything?
-	-- ... should I have special exception for bosses?
-	if sum > 0 then
-		values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
-	end
-	--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
-	return values
-end
-
-
-local EnemyWeaknessTable = class(EnemyAuxTable)
-
-EnemyWeaknessTable.name = 'enemy weakness table'
-EnemyWeaknessTable.enemyField = 'weakness'
-EnemyWeaknessTable.structName = 'weakness_t'
-EnemyWeaknessTable.fields = table{
-	{normal = 'uint8_t'},
-	{wave = 'uint8_t'},
-	{ice = 'uint8_t'},
-	{ice_wave = 'uint8_t'},
-	{spazer = 'uint8_t'},
-	{wave_spazer = 'uint8_t'},
-	{ice_spazer = 'uint8_t'},
-	{wave_ice_spazer = 'uint8_t'},
-	{plasma = 'uint8_t'},
-	{wave_plasma = 'uint8_t'},
-	{ice_plasma = 'uint8_t'},
-	{wave_ice_plasma = 'uint8_t'},
-	{missile = 'uint8_t'},
-	{supermissile = 'uint8_t'},
-	{bomb = 'uint8_t'},
-	{powerbomb = 'uint8_t'},
-	{speed = 'uint8_t'},
-	{sparkcharge = 'uint8_t'},
-	{screwattack = 'uint8_t'},
-	{hyper = 'uint8_t'},
-	{pseudo_screwattack = 'uint8_t'},
-	{unknown = 'uint8_t'},
-}
-
---[[
-t is value => percentage
-returns a value at random, weighted by percentage
---]]
-local function pickWeighted(t)
-	local r = math.random() * table.sum(t)
-	for value,prob in pairs(t) do
-		r = r - prob
-		if r <= 0 then
-			return value
-		end
-	end
-	error("shouldn't get here")
-end
-
-local dontChangeWeaknessSet = {
-	["Kraid (body)"] = true, 
-	["Kraid (body)"] = true,
-	["Kraid (arm)"] = true,
-	["Kraid (top belly spike)"] = true,
-	["Kraid (middle belly spike)"] = true,
-	["Kraid (bottom belly spike)"] = true,
-	["Kraid (leg)"] = true,
-	["Kraid (claw)"] = true,
-	["Kraid (??? belly spike)"] = true,
-	Metroid = true,
-}
-
---[[
-here's possible values:    
-	0 = no damage to enemy.
-    1 = 0.5x damage to enemy.
-    2 = default (1x) damage to enemy.
-    3 = 1.5x damage to enemy.
-    4 = 2x damage to enemy.
-    5 = 2.5x damage to enemy.
-    4-F = higher damage to enemy.
-
-in addition, the 0x80 bitflag is used for whether it can be frozen or not
---]]
---[[
-here's the distribution of original values:
-  0x00 x385	<- can freeze / immune
-  0x01 x17
-  0x02 x488
-  0x04 x67
- 
-can't freeze flag:
-  0x80 x235	<- can't freeze / immune flag
-  0x81 x8
-  0x82 x152
-  0x84 x26
-
-insta freeze & no damage flag:
-  0xff x52
-OOPS this still allows monsters to be damaged by non-beams (since 0x0f is the low nibble value)
-so what's going on ... what's the insta freeze flag?
-
-total: 1409
-can freeze (0,1,2,4): 936 = 66%
-can't freeze (80,81,82,84): 421 = 30%
-instafreeze (ff): 52 = 4%
-
-I'm suspicious the last 0x80 is a bitflag of some sort
-and who knows what 0xff is ...
-
-kraid is at 0xe2bf
-and has a weakness address 0xf15a <-> 0x1a715a :  
-82 82 82 82 82 
-82 82 82 82 82 
-82 82 82 82 80 
-80 80 80 80 02 
-80 80
-
-looks like all beams/missiles have 82 (hyper has 02)
-and all else has 80
-I'm thinking 0x80 must be a bitflag
-otherwise 2 = normal damage, 0 = no damage
-
-metroidconstruction.com says:
-
-    0 = no damage to enemy.
-    1 = 0.5x damage to enemy.
-    2 = default (1x) damage to enemy.
-    3 = 1.5x damage to enemy.
-    4 = 2x damage to enemy.
-    5 = 2.5x damage to enemy.
-    4-F = higher damage to enemy.
---]]
-
---[[
-value effects:
-
-0
-makes monsters immune to everything
-...except grappling still kills some minor enemies
-
-1
-should be 50%
-looks like it
-
-0x10
-0x20
-0x40
-0x42
-insta-freezes then insta-kills
-
-0x80 
-seems to make monsters immune to all beams
-however for the red flies that come out of pipes, grappling still kill them
-the high 8 should mean can't freeze, and the low 0 should mean immune
-
-0x81
-should be 50% and can't freeze
-looks like it
-
-0xff
-insta freeze 
-speed booster still kills green zebesians
-screw attack kills mini kraid
-screw attack kils
-grappling still kills too, but not mini kraid or green zebesians 
-
-soooo ... it all looks very conditional
-
---]]
-
-function EnemyWeaknessTable:getRandomizedValues(addr)
-	local randomizeEnemyProps = config.randomizeEnemyProps
-	local values = range(#self.fields):map(function()
-
-		if math.random() < randomizeEnemyProps.chanceToInstaFreeze then return 0xff end
-	
-		local value
-		if math.random() <= randomizeEnemyProps.weaknessImmunityChance then
-			value = 0
-		else
-			-- exp(-x/7) has the following values for 0-15:
-			-- 1.0, 0.86687789975018, 0.75147729307529, 0.65143905753106, 0.56471812200776, 0.48954165955695, 0.42437284567695, 0.36787944117144, 0.31890655732397, 0.27645304662956, 0.23965103644178, 0.2077481871436, 0.18009231214795, 0.15611804531597, 0.13533528323661, 0.11731916609425
-			value = pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
-		end	
-
-		if math.random() > randomizeEnemyProps.chanceToFreeze then
-			value = bit.bor(value, 0x80)	-- can't freeze flag
-		end
-
-		return value
-	end)
-
---[[ debugging
-	-- make sure there's at least one nonzero weakness within the first 20
-	local found
-	for i=1,20 do
-		if values[i] ~= 0 then
-			found = true
-			break
-		end
-	end
-	if not found then
-		values[math.random(20)] = math.random(1,255)
-	end
-
-	-- don't change kraid's part's weaknesses
-	-- until I know how to keep the game from crashing
-	for name,_ in pairs(dontChangeWeaknessSet) do
-		if enemyForName[name].ptr[0].weakness == addr then
-			return
-		end
-	end
-
-	-- make sure Shaktool weakness entry is immune to powerbombs
-	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == enemyForName.Shaktool.ptr[0].weakness then
-		values[16] = 0
-	end
---]]
-	return values
-end
-
-function EnemyWeaknessTable:randomizeEnemy(enemy)
-	-- NOTICE
-	-- if (for item placement to get past canKill constraints)
-	-- we choose to allow re-rolling of weaknesses
-	-- then they will have to work around the fact that these certain enemies shouldn't re-roll
-	
-	-- don't randomize Kraid's weaknesses ... for now
-	-- leave this at 0
-	if dontChangeWeaknessSet[enemy.name] 
-	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
-	or enemy.name == Shaktool
-	then
-		print('NOT WRITING WEAKNESS OF '..enemy.name)
-		return
-	end
-
-	EnemyWeaknessTable.super.randomizeEnemy(self, enemy)
-end
-
--- globals because ...
--- 1) the ctor is what builds the weakness_t type
--- 2) enemies.lua needs this for randomization
--- TODO put the type info here, and move the classes back to enemies.lua => randomize_enemies.lua
-enemyItemDropTable = EnemyItemDropTable()
-enemyWeaknessTable = EnemyWeaknessTable()
-

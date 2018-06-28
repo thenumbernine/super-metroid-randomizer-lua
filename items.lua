@@ -760,7 +760,14 @@ local function canKillKraid()
 end
 
 -- accessible only after kraid is killed
-items:insert{name="Energy Tank (Kraid)", addr=0x7899C, access=canKillKraid}
+items:insert{
+	name = "Energy Tank (Kraid)", 
+	addr = 0x7899C, 
+	access = canKillKraid,
+	escape = function()
+		return canKill'Beetom'
+	end,
+}
 
 items:insert{name="Varia Suit", addr=0x78ACA, access=canKillKraid}
 

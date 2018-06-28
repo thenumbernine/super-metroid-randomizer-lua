@@ -108,8 +108,7 @@ end
 local mdbs = table()
 
 for x=0x8000,0xffff do
-	local addr = bank(0x8e) + x
-	local data = rom + addr
+	local data = rom + bank(0x8e) + x
 	local function read(ctype)
 		local result = ffi.cast(ctype..'*', data)
 		data = data + ffi.sizeof(ctype)
@@ -135,14 +134,16 @@ for x=0x8000,0xffff do
 
 		local testCode
 		while true do
+			-- this overlaps with m.ptr[0].doors
 			testCode = read'uint16_t'
+			
 			if testCode == 0xe5e6 then break end
 			if testCode == 0xffff then break end
 
 			local testValue = 0
 			local testValueDoor = 0
-			if testCode == 0xE612 
-			or testCode == 0xE629 
+			if testCode == 0xE612
+			or testCode == 0xE629
 			then
 				testValue = read'uint8_t'
 			elseif testCode == 0xE5EB then
@@ -150,13 +151,22 @@ for x=0x8000,0xffff do
 			end
 
 			local roomStateAddr = read'uint16_t'
-			m.roomStates:insert(RoomState{
+			-- if this room's addr is 0xe5e6 then it won't get a pointer later
+			-- and will never have one
+			--assert(roomStateAddr ~= 0xe5e6, "found a room addr with 0xe5e6")
+
+			local rs = RoomState{
 				testCode = testCode,
 				testValue = testValue,
 				testValueDoor = testValueDoor,
 				addr = assert(roomStateAddr),
-			})
-			print(' room:'..tolua(m.roomStates:last()))
+			}
+			m.roomStates:insert(rs)
+			io.write(' adding room after mdb_t:')
+			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
+				io.write(' ',k,'=',('%04x'):format(rs[k]))
+			end
+			print()
 		end
 
 		if testCode ~= 0xffff then
@@ -166,12 +176,20 @@ for x=0x8000,0xffff do
 			-- why does the loading code insert two kinds of structs into this array?
 			-- looks like the rooms added 5 lines up are excluded in the next loop
 			-- should these be two separate loops and arrays?  they're two separate structures after all
-			m.roomStates:insert(RoomState{
-				TestCode = 0xe5e6,
-				TestValue = 0,
+			local rs = RoomState{
+				testCode = 0xe5e6,
+				testValue = 0,
+				testValueDoor = 0,
 				addr = 0xe5e6,
 				ptr = roomState,
-			})
+			}
+			m.roomStates:insert(rs)
+			io.write(' adding room at 0xe5e6:')
+			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
+				io.write(' ',k,'=',('%04x'):format(rs[k]))
+			end
+			print()
+
 
 			for _,rs in ipairs(m.roomStates) do
 				assert(rs.addr)
@@ -184,11 +202,10 @@ for x=0x8000,0xffff do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
 				if not roomState.ptr then
-					print('found roomState without a pointer '..('%04x'):format(roomState.addr))
+					print('  !! found roomState without a pointer '..('%04x'):format(roomState.addr))
 				else
 					if roomState.ptr[0].scroll > 0x0001 and roomState.scroll ~= 0x8000 then
-						local addr = bank(scrollBank) + roomState.ptr[0].scroll
-						roomState.scrollDataPtr = rom + addr
+						roomState.scrollDataPtr = rom + bank(scrollBank) + roomState.ptr[0].scroll
 						-- sized mdb width x height
 					end
 					if roomState.ptr[0].plm ~= 0 then
@@ -234,7 +251,6 @@ for x=0x8000,0xffff do
 					end
 		
 					-- TODO these enemyAddr's aren't lining up with any legitimate enemies ...
-					-- so something is off ...
 					data = rom + bank(0xa1) + roomState.ptr[0].enemyPop
 					while true do
 						local ptr = ffi.cast('enemyPop_t*', data)
@@ -242,9 +258,11 @@ for x=0x8000,0xffff do
 							roomState.enemiesToKill = read'uint8_t'
 							break
 						end
-						--print('  enemyPop '
-						--	..(enemyForAddr[ptr[0].enemyAddr] or {}).name
-						--	..': '..ptr[0])
+						--[[
+						print('  enemyPop '
+							..(enemyForAddr[ptr[0].enemyAddr] or {}).name
+							..': '..ptr[0])
+						--]]
 						roomState.enemyPops:insert(ptr)
 						data = data + ffi.sizeof'enemyPop_t'
 					end
@@ -253,11 +271,18 @@ for x=0x8000,0xffff do
 					while true do
 						local ptr = ffi.cast('enemySet_t*', data)
 						if ptr[0].enemyAddr == 0xffff then break end
-					
+				
+						--[[
 						local enemy = enemyForAddr[ptr[0].enemyAddr]
 						if enemy then
 							print('  enemySet: '..enemy.name..': '..ptr[0])
 						end
+						--]]
+						--[[
+						print('  enemySet '
+							..(enemyForAddr[ptr[0].enemyAddr] or {}).name
+							..': '..ptr[0])
+						--]]
 
 						roomState.enemySets:insert(ptr)
 						data = data + ffi.sizeof'enemySet_t'
@@ -294,7 +319,6 @@ for x=0x8000,0xffff do
 		
 			mdbs:insert(m)
 			print()
---do break end
 		end
 	end
 end
