@@ -94,6 +94,93 @@ local door_t = struct'door_t'{
 	{code = 'uint16_t'},				-- A
 }
 
+-- based on http://www.romhacking.net/documents/243/
+ffi.cdef[[
+typedef union {
+	uint8_t v;
+	struct {
+		uint8_t len : 5;
+		uint8_t cmd : 3;
+	};
+} compressCmd_t;
+typedef union {
+	uint16_t v;
+	struct {
+		uint16_t len : 10;
+		uint16_t cmd : 3;
+		uint16_t cmd2 : 3;
+	};
+} compressExtraCmd_t;
+]]
+assert(ffi.sizeof'compressCmd_t' == 1)
+local function decompress(addr, maxlen)
+	local startaddr = addr
+	local bank = bit.band(0xff0000, addr)
+	local buffer = table()
+	
+	local function exec(cmd, len, recurse)
+		if cmd == 0 then	-- direct copy
+			for i=0,len do	-- len+1 bytes are copied
+				buffer:insert(rom[addr]) addr=addr+1
+			end
+		elseif cmd == 1 then	-- byte fill
+			local v = rom[addr] addr=addr+1
+			for i=0,len do
+				buffer:insert(v)
+			end
+		elseif cmd == 2 then	-- word fill
+			local v1 = rom[addr] addr=addr+1
+			local v2 = rom[addr] addr=addr+1
+			for i=0,len do
+				buffer:insert(v1)
+				buffer:insert(v2)
+			end
+		elseif cmd == 3 then	-- sigma fill
+			local v = rom[addr] addr=addr+1
+			for i=0,len do
+				buffer:insert(v)
+				v = ffi.cast('uint8_t', v+1)
+			end
+		elseif cmd == 4 then	-- library fill
+			local srcaddr = bank + ffi.cast('uint16_t*', rom+addr)[0] addr=addr+2
+			for i=0,len do
+				buffer:insert( rom[srcaddr] ) srcaddr=srcaddr+1
+			end
+		elseif cmd == 5 then	-- eor fill
+			local srcaddr = bank + ffi.cast('uint16_t*', rom+addr)[0] addr=addr+2
+			for i=0,len do
+				buffer:insert( bit.bxor(rom[srcaddr], 0xff) ) srcaddr=srcaddr+1
+			end
+		elseif cmd == 6 then	-- minus copy
+			local v = rom[addr] addr=addr+1
+			for i=0,len do
+				buffer:insert(buffer[#buffer-1-v]) addr=addr+1
+			end
+		elseif cmd == 7 then	-- extended command or terminator
+			if ptr[-1]  == 0xff then -- terminator
+				return true
+			end
+			assert(not recurse, "I found two ecmds in a row")
+			local c = ffi.cast('compressExtraCmd_t*', rom + addr-1) addr=addr+1
+			local cmd = c[0].cmd
+			local len = c[0].len
+			return exec(cmd, len, true)
+		end
+	end
+
+	local done
+	repeat 
+		local c = ffi.cast('compressCmd_t*', rom + addr) addr=addr+1
+		local cmd = c[0].cmd
+		local len = c[0].len
+		done = exec(cmd, len)
+		assert(addr < startaddr + maxlen, "compressed data exceeded boundary")
+	until done
+
+	return buffer
+end
+
+
 local RoomState = class()
 function RoomState:init(args)
 	for k,v in pairs(args) do
@@ -293,8 +380,20 @@ for x=0x8000,0xffff do
 				-- TODO still - fx1, bg, layerhandling
 				
 				if roomState.ptr then
---					data = rom + bank(roomState.ptr[0].roomData[2]) + ffi.cast('uint16_t*', roomState.ptr[0].roomData)[0]
+					local roomaddr = ffi.cast('uint16_t*', roomState.ptr[0].roomData)[0]
+print('roomaddr '
+	..('0x%02x'):format(roomState.ptr[0].roomData[2])
+	..('%02x'):format(roomState.ptr[0].roomData[1])
+	..('%02x'):format(roomState.ptr[0].roomData[0]))
+--[[					
+					-- hmm, my room is 0000bd ... is the first byte the page?
+					local addr = bank(roomState.ptr[0].roomData[2]) + roomaddr
 					-- then we decompress the next 0x10000 bytes ...
+print('decompressing address '..('0x%06x'):format(addr))
+					local data = decompress(addr, 0x10000)
+print('got:\n'..data:map(function(i) return string.char(tonumber(i)) end):concat():hexdump())
+os.exit()
+--]]				
 				end
 			end
 			

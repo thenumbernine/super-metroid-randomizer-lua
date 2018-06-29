@@ -115,6 +115,7 @@ require 'enemies_data'
 -- *) door placement
 -- *) refinancin
 --require 'rooms'
+--os.exit()
 
 -- do the enemy randomization
 require 'enemies'
