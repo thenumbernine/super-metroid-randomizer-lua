@@ -175,29 +175,30 @@ return {
 
 	-- every item type priority defaults to 0
 	-- however you can override any you want to see sooner
-	-- NOTICE this is a hard limit.  I could do a weighted option.
-	-- but for now, if priority(a) > priority(b) then the randomizer will *always* choose a over b
 	itemPlacementPriority = {
-		supermissile = 1,
-		energy 		= 0,
+		supermissile = .1,
+		energy 		= -.1,
 		missile 	= 0,
-		powerbomb	= 0,
-		bomb		= 0,
-		charge		= 0,
-		ice			= 0,
-		hijump		= 0,
-		speed		= 0,
-		wave		= 0,
-		spazer 		= 0,
-		springball	= 0,
-		varia		= 0,
-		plasma		= 0,
-		grappling	= 0,
-		morph		= 0,
-		reserve		= 0,
-		gravity		= 0,
-		xray		= 0,
-		spacejump 	= 0,
-		screwattack	= 0,
+		powerbomb	= .1,
+		bomb		= -1,
+		charge		= .1,
+		ice			= .1,
+		hijump		= -1,
+		speed		= -1,
+		wave		= .1,
+		spazer 		= .1,
+		springball	= -1,
+		varia		= .1,
+		plasma		= -.1,
+		grappling	= .1,
+		morph		= -.5,
+		reserve		= .5,
+		gravity		= -1,
+		xray		= 10,
+		spacejump 	= -1,
+		screwattack	= .1,
 	},
+	-- 10^ to get percent of chance of placement
+	-- the higher this is, the stronger the priority influences the placement
+	itemPlacementPriorityPower = 100,
 }

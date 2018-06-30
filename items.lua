@@ -1208,6 +1208,24 @@ local function shuffle(x)
 	return x
 end
 
+-- weighted shuffle, p[i] is the weight of x[i]
+local function weightedShuffle(x, p)
+	x = table(x)
+	p = table(p)
+	local y = table()
+	while #x > 0 do
+		local r = math.random() * p:sum()
+		for i=1,#x do
+			r = r - p[i]
+			if r <= 0 then
+				y:insert(x:remove(i))
+				p:remove(i)
+				break
+			end
+		end
+	end
+	return y
+end
 
 
 local itemTypes = table{
@@ -1389,14 +1407,12 @@ local function iterate(depth)
 		os.exit(1)
 	end
 
-	-- TODO weighted shuffle, higher priorities placed at the beginning
+	-- weighted shuffle, higher priorities placed at the beginning
 	local function priority(i)
-		return assert(config.itemPlacementPriority[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]])
+		return config.itemPlacementPriorityPower^(config.itemPlacementPriority[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]] or 0)
 	end
-	for _,i in ipairs(
-		shuffle(range(#itemValueIndexesLeft))
-		:sort(function(a,b) return priority(a) > priority(b) end)
-	) do
+	local is = range(#itemValueIndexesLeft)
+	for _,i in ipairs(weightedShuffle(is, is:map(priority))) do
 		local push_itemValueIndexesLeft = table(itemValueIndexesLeft)
 		local replaceInstIndex = itemValueIndexesLeft:remove(i)
 		
