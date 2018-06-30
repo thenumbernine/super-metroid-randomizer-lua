@@ -14,6 +14,7 @@ return {
 	-- but the space pirates in old mother brain are still not there.  hmm.
 	-- it did allow the item left of morph ball behind the power bomb wall to be spawned fwiw.
 	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
+	-- note: I just did another run and the space pirates did spawn.  hmm.
 	wakeZebesEarly = true,
 
 	-- used by enemy randomization
@@ -97,6 +98,7 @@ return {
 		freezeTheMocktroidToGetToBotwoon = false,
 
 		-- I've seen people do this in reverse boss videos ...
+		-- to get out of draygon's chamber without gravity suit - you can get a blue spark from a crystal flash, or something
 		DraygonCrystalFlashBlueSparkWhatever = false,
 
 		-- whether you know how to get through gates using super missiles
@@ -108,5 +110,94 @@ return {
 		-- how to get out of lower norfair
 		preciseTouchAndGoLowerNorfair = false,
 		lowerNorfairSuitSwap = true,
+	},
+
+--[[ list of items to change (and how many to leave)
+	-- in case you want a tougher challenge ... get rid of a few of the items
+	itemChanges = {
+		{from='supermissile', to='missile', leave=1},	-- turn all (but one) super missiles into missiles
+		{from='powerbomb', to='missile', leave=1},	 	-- turn all (but one) power bombs into missiles
+		{from='energy', to='missile', leave=6},
+		{from='reserve', to='missile'},
+-- [=[ this makes for an interesting challenge...
+		-- is this possible?  you will have a hard time escaping Draygon's room
+		--{from='gravity', to='missile'},
+
+		-- only possible if you have enough e-tanks before hell runs
+		-- what this means is ... if the randomizer doesn't come up with a varia suit before hell run ... then it will be forced to place *all* energy tanks before hell run ... which might make a game that's too easy
+		{from='varia', to='missile'},
+		
+		{from='xray', to='missile'},
+		{from='hijump', to='missile'},
+		{from='bomb', to='missile'},
+		{from='springball', to='missile'},
+		{from='spacejump', to='missile'},
+
+		-- speed?  needed in maridia before botwoon, or you can freeze glitch ...
+--]=]
+--[=[ these items are a bit more necessary
+		-- grappling is only absolutely required to get into springball...
+		{from='grappling', to='missile'},
+		{fromLoc='Spring Ball', to='missile'},
+		{from='screwattack', to='missile'},
+--]=]
+--[=[ this is more dangerous / might not randomize, since enemies have so few weakness rolls...
+		{from='spazer', to='missile'},
+
+		-- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
+		-- the other fix is to just not consider the plasma location, and put something innocuous there ...
+		{from='plasma', to='missile'},
+		
+		-- this will stall the randomizer because of pink Brinstar energy tank
+		-- so lets remove it and write it as a missile
+		{from='wave', to='missile'},
+		{fromLoc='Energy Tank (pink Brinstar top)', to='missile'},
+		
+		-- is this possible?  maybe you can't kill the golden chozo without charge, or a lot of super missiles ... or a lot of restocking on 5 super missiles and shooting them all off at him
+		--{from='charge', to='missile'},
+
+		-- ice isn't possible without changing around metroids damage ...
+--]=]
+	},
+--]]
+--[[
+	itemChanges = {
+		{from='missile', to='supermissile'},						-- turn all missiles into super missiles (one is already left -- the first missile tank)
+		{from='powerbomb', to='supermissile', leave=1}, 		-- turn all but one power bombs into super missiles
+		{from='spazer', to='supermissile'},
+		{from='hijump', to='supermissile'},
+		{from='springball', to='supermissile'},
+		{from='reserve', to='supermissile'},
+		{from='xray', to='supermissile'},	-- no need for these
+		{from='energy' to='supermissile', leave=7},
+	},
+--]]
+
+	-- every item type priority defaults to 0
+	-- however you can override any you want to see sooner
+	-- NOTICE this is a hard limit.  I could do a weighted option.
+	-- but for now, if priority(a) > priority(b) then the randomizer will *always* choose a over b
+	itemPlacementPriority = {
+		supermissile = 1,
+		energy 		= 0,
+		missile 	= 0,
+		powerbomb	= 0,
+		bomb		= 0,
+		charge		= 0,
+		ice			= 0,
+		hijump		= 0,
+		speed		= 0,
+		wave		= 0,
+		spazer 		= 0,
+		springball	= 0,
+		varia		= 0,
+		plasma		= 0,
+		grappling	= 0,
+		morph		= 0,
+		reserve		= 0,
+		gravity		= 0,
+		xray		= 0,
+		spacejump 	= 0,
+		screwattack	= 0,
 	},
 }
