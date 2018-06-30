@@ -173,32 +173,29 @@ return {
 	},
 --]]
 
-	-- every item type priority defaults to 0
+	-- every item type probability defaults to 1
 	-- however you can override any you want to see sooner
-	itemPlacementPriority = {
-		supermissile = .1,
-		energy 		= -.1,
-		missile 	= 0,
-		powerbomb	= .1,
-		bomb		= -1,
-		charge		= .1,
-		ice			= .1,
-		hijump		= -1,
-		speed		= -1,
-		wave		= .1,
-		spazer 		= .1,
-		springball	= -1,
-		varia		= .1,
-		plasma		= -.1,
-		grappling	= .1,
-		morph		= -.5,
-		reserve		= .5,
-		gravity		= -1,
-		xray		= 10,
-		spacejump 	= -1,
-		screwattack	= .1,
+	itemPlacementProbability = {
+		bomb = .01,
+		charge = 1.5848931924611,
+		energy = .63095734448019,
+		grappling = 1.5848931924611,
+		gravity = .01,
+		hijump = .01,
+		ice = 1.5848931924611,
+		missile = 1,
+		morph = .01,
+		plasma = .63095734448019,
+		powerbomb = .01,
+		reserve = 10,
+		screwattack = .01,
+		spacejump = .01,
+		spazer = 1.5848931924611,
+		speed = .01,
+		springball = .01,
+		supermissile = .01,
+		varia = 1.5848931924611,
+		wave = 1.0471285480509,
+		xray = 1e+20,
 	},
-	-- 10^ to get percent of chance of placement
-	-- the higher this is, the stronger the priority influences the placement
-	itemPlacementPriorityPower = 100,
 }

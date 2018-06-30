@@ -44,6 +44,14 @@ local function notImmune(weak, field)
 	return bit.band(value, 0xf) ~= 0
 end
 
+local function canUsePowerBombs() 
+	return req.morph and req.powerbomb
+end
+
+local function canUseBombs() 
+	return req.morph and req.bomb
+end
+
 local function canKill(enemyName)
 --io.write('canKill '..enemyName)
 	local enemy = assert(enemyForName[enemyName], 'failed to find enemy named '..enemyName)
@@ -76,8 +84,8 @@ local function canKill(enemyName)
 	-- TODO and the supermissile count vs the weakness can possibly kill the boss
 	then return true end
 
-	if notImmune(weak, 'bomb') and req.bomb then return true end
-	if notImmune(weak, 'powerbomb') and req.powerbomb then return true end
+	if notImmune(weak, 'bomb') and canUseBombs() then return true end
+	if notImmune(weak, 'powerbomb') and canUsePowerBombs() then return true end
 	if notImmune(weak, 'speed') and req.speed then return true end
 	
 	if notImmune(weak, 'sparkcharge') and req.speed
@@ -125,10 +133,6 @@ items:insert{
 	-- looks like you always need morph in morph...
 	--filter = function(name) return name ~= 'morph' end,
 }
-
-local function canUsePowerBombs() 
-	return req.morph and req.powerbomb
-end
 
 local function canLeaveOldMotherBrainRoom()
 	-- to escape the room, you have to kill the grey space pirates
@@ -215,10 +219,6 @@ end
 
 items:insert{name='Missile (blue Brinstar top)', addr=0x78836, access=accessBlueBrinstarDoubleMissileRoom}
 items:insert{name='Missile (blue Brinstar behind missile)', addr=0x7883C, access=accessBlueBrinstarDoubleMissileRoom}
-
-local function canUseBombs() 
-	return req.morph and req.bomb
-end
 
 local function canBombTechnique()
 	return playerSkills.bombTechnique and canUseBombs()
@@ -931,7 +931,7 @@ items:insert{name='Missile (Norfair Reserve Tank)', addr=0x78C44, access=accessN
 local function accessLowerNorfair() 
 	return accessHeatedNorfair() 
 	-- powerbomb door
-	and req.powerbomb 
+	and canUsePowerBombs()
 	and (
 		-- gravity and space jump is the default option
 		(req.gravity and req.spacejump)
@@ -999,8 +999,10 @@ end}
 
 -- on the way to wrecked ship
 items:insert{name='Missile (Crateria moat)', addr=0x78248, access=function() 
+	-- you need to access the landing room
+	return accessLandingRoom()
 	-- you just need to get through the doors, from there you can jump across
-	return req.supermissile and req.powerbomb 
+	and req.supermissile and canUsePowerBombs()
 end}
 
 local function accessWreckedShip() 
@@ -1049,7 +1051,7 @@ local function accessOuterMaridia()
 	-- get to red brinstar
 	return accessRedBrinstar() 
 	-- break through the tube
-	and req.powerbomb 
+	and canUsePowerBombs()
 	-- now to get up ...
 	and (
 		-- if you have gravity, you can get up with touch-and-go, spacejump, hijump, or bomb technique
@@ -1408,11 +1410,11 @@ local function iterate(depth)
 	end
 
 	-- weighted shuffle, higher priorities placed at the beginning
-	local function priority(i)
-		return config.itemPlacementPriorityPower^(config.itemPlacementPriority[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]] or 0)
+	local function probability(i)
+		return config.itemPlacementProbability[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]]
 	end
 	local is = range(#itemValueIndexesLeft)
-	for _,i in ipairs(weightedShuffle(is, is:map(priority))) do
+	for _,i in ipairs(weightedShuffle(is, is:map(probability))) do
 		local push_itemValueIndexesLeft = table(itemValueIndexesLeft)
 		local replaceInstIndex = itemValueIndexesLeft:remove(i)
 		
