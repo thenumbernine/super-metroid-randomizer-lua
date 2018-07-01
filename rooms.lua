@@ -4,14 +4,26 @@
 
 local ffi = require 'ffi'
 local struct = require 'struct'
+local decompress = require 'decompress'
 
 -- check where the PLM bank is
 local plmBank = rom[0x204ac]
 
 local scrollBank = 0x8f
 
-local name = ffi.string(rom + 0x7fc0, 0x15)
-print(name)
+local svg = require 'svg'
+local svgfile = assert(io.open('map.svg', 'w'))
+svgfile:write([[
+<?xml version='1.0' encoding='utf-8'?>
+<svg
+	version='1.0'
+	id='layer1'
+	xmlns='http://www.w3.org/2000/svg'
+	width='3600'
+	height='5400'
+>
+	<g id='layer1' transform='matrix(1 0 0 1 0 0)'>
+]])
 
 
 -- defined in section 6
@@ -29,7 +41,8 @@ local mdb_t = struct'mdb_t'{
 }
 
 local roomstate_t = struct'roomstate_t'{
-	{roomData = 'uint24_t'},
+	{roomAddr = 'uint16_t'},
+	{roomBank = 'uint8_t'},
 	{gfxSet = 'uint8_t'},
 	{music = 'uint16_t'},
 	{fx1 = 'uint16_t'},
@@ -38,7 +51,7 @@ local roomstate_t = struct'roomstate_t'{
 	{layer2scrollData = 'uint16_t'},
 	{scroll = 'uint16_t'},
 	{unused = 'uint16_t'},
-	{fx2 = 'uint16_t'},
+	{fx2 = 'uint16_t'},	--aka 'main asm ptr'
 	{plm = 'uint16_t'},
 	{bgDataPtr = 'uint16_t'},
 	{layerHandling = 'uint16_t'},
@@ -94,92 +107,6 @@ local door_t = struct'door_t'{
 	{code = 'uint16_t'},				-- A
 }
 
--- based on http://www.romhacking.net/documents/243/
-ffi.cdef[[
-typedef union {
-	uint8_t v;
-	struct {
-		uint8_t len : 5;
-		uint8_t cmd : 3;
-	};
-} compressCmd_t;
-typedef union {
-	uint16_t v;
-	struct {
-		uint16_t len : 10;
-		uint16_t cmd : 3;
-		uint16_t cmd2 : 3;
-	};
-} compressExtraCmd_t;
-]]
-assert(ffi.sizeof'compressCmd_t' == 1)
-local function decompress(addr, maxlen)
-	local startaddr = addr
-	local bank = bit.band(0xff0000, addr)
-	local buffer = table()
-	
-	local function exec(cmd, len, recurse)
-		if cmd == 0 then	-- direct copy
-			for i=0,len do	-- len+1 bytes are copied
-				buffer:insert(rom[addr]) addr=addr+1
-			end
-		elseif cmd == 1 then	-- byte fill
-			local v = rom[addr] addr=addr+1
-			for i=0,len do
-				buffer:insert(v)
-			end
-		elseif cmd == 2 then	-- word fill
-			local v1 = rom[addr] addr=addr+1
-			local v2 = rom[addr] addr=addr+1
-			for i=0,len do
-				buffer:insert(v1)
-				buffer:insert(v2)
-			end
-		elseif cmd == 3 then	-- sigma fill
-			local v = rom[addr] addr=addr+1
-			for i=0,len do
-				buffer:insert(v)
-				v = ffi.cast('uint8_t', v+1)
-			end
-		elseif cmd == 4 then	-- library fill
-			local srcaddr = bank + ffi.cast('uint16_t*', rom+addr)[0] addr=addr+2
-			for i=0,len do
-				buffer:insert( rom[srcaddr] ) srcaddr=srcaddr+1
-			end
-		elseif cmd == 5 then	-- eor fill
-			local srcaddr = bank + ffi.cast('uint16_t*', rom+addr)[0] addr=addr+2
-			for i=0,len do
-				buffer:insert( bit.bxor(rom[srcaddr], 0xff) ) srcaddr=srcaddr+1
-			end
-		elseif cmd == 6 then	-- minus copy
-			local v = rom[addr] addr=addr+1
-			for i=0,len do
-				buffer:insert(buffer[#buffer-1-v]) addr=addr+1
-			end
-		elseif cmd == 7 then	-- extended command or terminator
-			if ptr[-1]  == 0xff then -- terminator
-				return true
-			end
-			assert(not recurse, "I found two ecmds in a row")
-			local c = ffi.cast('compressExtraCmd_t*', rom + addr-1) addr=addr+1
-			local cmd = c[0].cmd
-			local len = c[0].len
-			return exec(cmd, len, true)
-		end
-	end
-
-	local done
-	repeat 
-		local c = ffi.cast('compressCmd_t*', rom + addr) addr=addr+1
-		local cmd = c[0].cmd
-		local len = c[0].len
-		done = exec(cmd, len)
-		assert(addr < startaddr + maxlen, "compressed data exceeded boundary")
-	until done
-
-	return buffer
-end
-
 
 local RoomState = class()
 function RoomState:init(args)
@@ -195,7 +122,7 @@ end
 local mdbs = table()
 
 for x=0x8000,0xffff do
-	local data = rom + bank(0x8e) + x
+	local data = rom + topc(0x8e, x)
 	local function read(ctype)
 		local result = ffi.cast(ctype..'*', data)
 		data = data + ffi.sizeof(ctype)
@@ -216,14 +143,26 @@ for x=0x8000,0xffff do
 		and m.ptr[0].gfxFlags < 0x10 
 		and m.ptr[0].doors > 0x7F00
 	) then
-		print('mdb '..m.ptr[0])
-		data = data + 9
+		print()
+		print(
+			('0x%06x '):format(data - rom)
+			..'mdb '..m.ptr[0])
+		data = data + 11
+		
+svgfile:write(svg.rect{
+	x = 20 * m.ptr[0].x,
+	y = 20 * m.ptr[0].y + 600 * m.ptr[0].region,
+	width = 20 * m.ptr[0].width - 1,
+	height = 20 * m.ptr[0].height - 1,
+	style = 'stroke-width:1; stroke:rgb(0,0,0); fill:none;',
+}, '\n')
+		
 
+		-- events
 		local testCode
 		while true do
 			-- this overlaps with m.ptr[0].doors
 			testCode = read'uint16_t'
-			
 			if testCode == 0xe5e6 then break end
 			if testCode == 0xffff then break end
 
@@ -249,11 +188,14 @@ for x=0x8000,0xffff do
 				addr = assert(roomStateAddr),
 			}
 			m.roomStates:insert(rs)
+			-- [[
 			io.write(' adding room after mdb_t:')
 			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
 				io.write(' ',k,'=',('%04x'):format(rs[k]))
 			end
 			print()
+			if rs.ptr then print('  '..rs.ptr[0]) end
+			--]]
 		end
 
 		if testCode ~= 0xffff then
@@ -271,17 +213,19 @@ for x=0x8000,0xffff do
 				ptr = roomState,
 			}
 			m.roomStates:insert(rs)
+			-- [[			
 			io.write(' adding room at 0xe5e6:')
 			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
 				io.write(' ',k,'=',('%04x'):format(rs[k]))
 			end
 			print()
-
+			if rs.ptr then print('  '..rs.ptr[0]) end
+			--]]
 
 			for _,rs in ipairs(m.roomStates) do
 				assert(rs.addr)
 				if rs.addr ~= 0xe5e6 then
-					rs.ptr = ffi.cast('roomstate_t*', rom + bank(0x8e) + rs.addr)
+					rs.ptr = ffi.cast('roomstate_t*', rom + topc(0x8e, rs.addr))
 				end
 			end
 		
@@ -292,11 +236,11 @@ for x=0x8000,0xffff do
 					print('  !! found roomState without a pointer '..('%04x'):format(roomState.addr))
 				else
 					if roomState.ptr[0].scroll > 0x0001 and roomState.scroll ~= 0x8000 then
-						roomState.scrollDataPtr = rom + bank(scrollBank) + roomState.ptr[0].scroll
+						roomState.scrollDataPtr = rom + topc(scrollBank, roomState.ptr[0].scroll)
 						-- sized mdb width x height
 					end
 					if roomState.ptr[0].plm ~= 0 then
-						local plmPtr = ffi.cast('plm_t*', rom + bank(plmBank) + roomState.ptr[0].plm)
+						local plmPtr = ffi.cast('plm_t*', rom + topc(plmBank, roomState.ptr[0].plm))
 						while true do
 							if plmPtr[0].cmd == 0 then break end
 							roomState.plms:insert(plmPtr)
@@ -338,7 +282,7 @@ for x=0x8000,0xffff do
 					end
 		
 					-- TODO these enemyAddr's aren't lining up with any legitimate enemies ...
-					data = rom + bank(0xa1) + roomState.ptr[0].enemyPop
+					data = rom + topc(0xa1, roomState.ptr[0].enemyPop)
 					while true do
 						local ptr = ffi.cast('enemyPop_t*', data)
 						if ptr[0].enemyAddr == 0xffff then
@@ -354,7 +298,7 @@ for x=0x8000,0xffff do
 						data = data + ffi.sizeof'enemyPop_t'
 					end
 				
-					data = rom + bank(0xb4) + roomState.ptr[0].enemySet
+					data = rom + topc(0xb4, roomState.ptr[0].enemySet)
 					while true do
 						local ptr = ffi.cast('enemySet_t*', data)
 						if ptr[0].enemyAddr == 0xffff then break end
@@ -379,20 +323,23 @@ for x=0x8000,0xffff do
 			
 				-- TODO still - fx1, bg, layerhandling
 				
-				if roomState.ptr then
-					local roomaddr = ffi.cast('uint16_t*', roomState.ptr[0].roomData)[0]
+				if roomState.ptr 
+and #mdbs == 1				
+				then
+					local roomaddr = roomState.ptr[0].roomAddr
+-- [[
 print('roomaddr '
-	..('0x%02x'):format(roomState.ptr[0].roomData[2])
-	..('%02x'):format(roomState.ptr[0].roomData[1])
-	..('%02x'):format(roomState.ptr[0].roomData[0]))
---[[					
-					-- hmm, my room is 0000bd ... is the first byte the page?
-					local addr = bank(roomState.ptr[0].roomData[2]) + roomaddr
+	..('0x%02x'):format(roomState.ptr[0].roomBank)
+	..('%04x'):format(roomState.ptr[0].roomAddr))
+--]]
+-- [[
+					local addr = topc(roomState.ptr[0].roomBank, roomaddr)
 					-- then we decompress the next 0x10000 bytes ...
 print('decompressing address '..('0x%06x'):format(addr))
 					local data = decompress(addr, 0x10000)
-print('got:\n'..data:map(function(i) return string.char(tonumber(i)) end):concat():hexdump())
-os.exit()
+print('decompressed data length: '..#data)
+--print(data:map(function(i) return string.byte(tonumber(i)) end):concat():hexdump())
+print(data:map(function(i) return ('%02x'):format(tonumber(i)) end):concat())
 --]]				
 				end
 			end
@@ -407,17 +354,24 @@ os.exit()
 			end
 
 			for _,ddb in ipairs(m.ddbs) do
-				data = rom + bank(0x83) + ddb.addr
+				data = rom + topc(0x83, ddb.addr)
 				ddb.ptr = ffi.cast('door_t*', data)
 				if ddb.ptr[0].code > 0x8000 then
-					ddb.doorCodePtr = rom + bank(0x8f) + ddb.ptr[0].code
+					ddb.doorCodePtr = rom + topc(0x8f, ddb.ptr[0].code)
 					-- the next 0x1000 bytes have the door asm code
 				end
-				print('  doors: '..ddb.ptr[0])
+				print(' doors: '..ddb.ptr[0])
 			end
 		
 			mdbs:insert(m)
-			print()
+if #mdbs == 2 then break end
 		end
 	end
 end
+
+svgfile:write([[
+	</g>
+</svg>
+]])
+svgfile:close()
+

@@ -19,6 +19,7 @@ end
 local EnemyAuxTable = class(ROMTable)
 
 EnemyAuxTable.showDistribution = true
+EnemyAuxTable.bank = 0xb4
 
 function EnemyAuxTable:init()
 	EnemyAuxTable.super.init(self)
@@ -43,7 +44,7 @@ function EnemyAuxTable:randomize()
 				assert(#values == #self.fields)
 			end
 
-			local entry = ffi.cast(ptrtype, rom + bank(0xb4) + addr)
+			local entry = ffi.cast(ptrtype, rom + topc(self.bank, addr))
 			
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
@@ -81,7 +82,7 @@ function EnemyAuxTable:print()
 			return enemy.name
 		end):concat', ')
 		if addr ~= 0 then
-			local entry = ffi.cast(ptrtype, rom + bank(0xb4) + addr)
+			local entry = ffi.cast(ptrtype, rom + topc(self.bank, addr))
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
 				local value = entry[0][name]
@@ -123,7 +124,7 @@ function EnemyAuxTable:printEnemy(enemy)
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
-		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + bank(0xb4) + addr) ))
+		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + topc(self.bank, addr))))
 	end
 	print()
 end
@@ -181,14 +182,6 @@ end
 
 local dontChangeWeaknessSet = {
 	["Kraid (body)"] = true, 
-	["Kraid (body)"] = true,
-	["Kraid (arm)"] = true,
-	["Kraid (top belly spike)"] = true,
-	["Kraid (middle belly spike)"] = true,
-	["Kraid (bottom belly spike)"] = true,
-	["Kraid (leg)"] = true,
-	["Kraid (claw)"] = true,
-	["Kraid (??? belly spike)"] = true,
 	Metroid = true,
 }
 
@@ -272,13 +265,9 @@ looks like it
 insta-freezes then insta-kills
 
 0x80 
-seems to make monsters immune to all beams
-however for the red flies that come out of pipes, grappling still kill them
-the high 8 should mean can't freeze, and the low 0 should mean immune
+After writing 'freeze' everywhere, 
+I'm now pretty sure this bit is for whether charge+beam can damage it
 
-0x81
-should be 50% and can't freeze
-looks like it
 
 0xff
 insta freeze 
@@ -289,14 +278,31 @@ grappling still kills too, but not mini kraid or green zebesians
 
 soooo ... it all looks very conditional
 
---]]
 
+some exceptions to the rule:
+Spore Spawn can't be hurt by power bombs or non-charge beams no matter what
+--]]
+local iceFieldSet = {
+	ice=1,
+	ice_wave=1,
+	ice_spazer=1,
+	wave_ice_spazer=1,
+	wave_ice_plasma=1,
+}
 function EnemyWeaknessTable:getRandomizedValues(addr)
 	local randomizeEnemyProps = config.randomizeEnemyProps
-	local values = range(#self.fields):map(function()
+	local values = self.fields:map(function(field)
+		local fieldName, fieldType = next(field)
 
-		if math.random() < randomizeEnemyProps.chanceToInstaFreeze then return 0xff end
-	
+		local freezeField = iceFieldSet[fieldName]
+		
+		-- only if it's a freeze field 
+		if freezeField  then
+			if math.random() < randomizeEnemyProps.chanceToInstaFreeze then 
+				return 0xff 
+			end
+		end
+
 		local value
 		if math.random() <= randomizeEnemyProps.weaknessImmunityChance then
 			value = 0
@@ -306,8 +312,10 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 			value = pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
 		end	
 
-		if math.random() > randomizeEnemyProps.chanceToFreeze then
-			value = bit.bor(value, 0x80)	-- can't freeze flag
+		if freezeField  then
+			if math.random() > randomizeEnemyProps.chanceToFreeze then
+				value = bit.bor(value, 0x80)	-- can't freeze flag
+			end
 		end
 
 		return value
@@ -316,13 +324,13 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- make sure there's at least one nonzero weakness within the first 20
 	local found
 	for i=1,20 do
-		if values[i] ~= 0 then
+		if bit.band(values[i], 0xf) ~= 0 then
 			found = true
 			break
 		end
 	end
 	if not found then
-		values[math.random(20)] = math.random(1,255)
+		values[math.random(20)] = math.random(1,0xf)
 	end
 
 	-- don't change kraid's part's weaknesses
@@ -379,6 +387,9 @@ end
 local allEnemyFieldValues = {}
 for _,field in ipairs{
 	'sound',
+
+-- doesn't look so great.
+--	'palette',	
 	
 	-- don't pick from previous values here
 	--  because only 0,2,3,4 are used, but 1 is valid
@@ -540,25 +551,52 @@ local enemyShots = table{
 	{addr=0xEC95, name="Unknown/varies. Runs when rooms with acid are loaded."},
 }
 for _,shot in ipairs(enemyShots) do
-	shot.ptr = ffi.cast('enemyShot_t*', rom + bank(0x86) + shot.addr)
+	shot.ptr = ffi.cast('enemyShot_t*', rom + topc(0x86, shot.addr))
 end
 
 
 -- do the randomizing
 
-
 if config.randomizeEnemies then
 	enemyItemDropTable:randomize()
 	enemyWeaknessTable:randomize()
 
+-- [[ still working on this ...
+	if randomizeEnemyProps.palette then
+		print()
+		print'palettes:'
+		-- 1) gather unique palette addrs
+		local addrs = enemies:map(function(enemy)
+			return true, topc(enemy.ptr[0].aiBank, enemy.ptr[0].palette)
+		end):keys()
+		-- 2) get the rgb data
+		-- permute them in some way. rotation around (1,1,1) axis or something
+		for _,addr in ipairs(addrs) do
+			print('addr: '..('0x%06x'):format(addr))
+			local rgb = ffi.cast('rgb_t*', rom + addr)
+			for i=0,15 do
+				print(' '..rgb[0].a
+					..' '..rgb[0].r
+					..' '..rgb[0].g
+					..' '..rgb[0].b)
+			
+-- this is crashing us ... hmm ... 
+--rgb[0].r, rgb[0].g, rgb[0].b = rgb[0].g, rgb[0].b, rgb[0].r
+				
+				rgb = rgb + 1
+			end
+		end
+	end
+--]]
+
 	for i,enemy in ipairs(enemies) do
+		randomizeFieldExp(enemy.ptr, 'health')
+		randomizeFieldExp(enemy.ptr, 'damage')
+		randomizeFieldExp(enemy.ptr, 'hurtTime')
+		
 		if randomizeEnemyProps.deathEffect then
 			enemy.ptr[0].deathEffect = math.random(0,4)
 		end
-
-		randomizeFieldExp(enemy.ptr, 'hurtTime')
-		randomizeFieldExp(enemy.ptr, 'health')
-		randomizeFieldExp(enemy.ptr, 'damage')
 
 		for field,values in pairs(allEnemyFieldValues) do
 			if randomizeEnemyProps[field] then
@@ -592,11 +630,21 @@ enemyWeaknessTable:print()
 print'enemies:'
 for i,enemy in ipairs(enemies) do
 	print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
-	print(' deathEffect='..enemy.ptr[0].deathEffect)
 
-	for _,field in ipairs{'hurtTime', 'health', 'damage'} do
+	print(' tileDataSize='..('0x%04x'):format(enemy.ptr[0].tileDataSize))
+	
+	print(' palette='
+		..('$%02x'):format(enemy.ptr[0].aiBank)
+		..(':%04x'):format(enemy.ptr[0].palette))
+--	local ptr = rom + topc(enemy.ptr[0].aiBank, enemy.ptr[0].palette)
+--	local str = ffi.string(ptr, 32)
+--	print('  '..str:gsub('.', function(c) return ('%02x '):format(c:byte()) end))
+
+	for _,field in ipairs{'health', 'damage', 'hurtTime', 'bossValue'} do
 		print(' '..field..'='..enemy.ptr[0][field])
 	end
+
+	print(' deathEffect='..enemy.ptr[0].deathEffect)
 	
 	for field,values in pairs(allEnemyFieldValues) do
 		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
@@ -604,6 +652,16 @@ for i,enemy in ipairs(enemies) do
 	
 	enemyWeaknessTable:printEnemy(enemy)
 	enemyItemDropTable:printEnemy(enemy)
+	
+	io.write(' debug name: '
+		..('0x%04x'):format(enemy.ptr[0].name))
+	if enemy.ptr[0].name ~= 0 then
+		local betaname = ffi.string(rom + topc(0xb4, enemy.ptr[0].name), 10)
+		io.write(': '..betaname)
+		--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
+	end
+	print()
+
 end
 
 

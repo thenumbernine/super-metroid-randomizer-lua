@@ -52,6 +52,15 @@ local function canUseBombs()
 	return req.morph and req.bomb
 end
 
+--[[
+some TODO's...
+* if you can't powerbomb left and the first old mother brain space pirates are weak to missiles
+  then you have to make sure missiles are a dropped item before this point
+* same with powerbombs?  nah, because, you should be able to save enough 
+* also, if they're weak to speed, and the randomization gives you speed beforehand, well,
+  canKill needs to make sure there's an accessible runway nearby
+* non-solid enemies are only hurt by power bomb, screw attack, etc ... not beams or missiles or bombs
+--]]
 local function canKill(enemyName)
 --io.write('canKill '..enemyName)
 	local enemy = assert(enemyForName[enemyName], 'failed to find enemy named '..enemyName)
@@ -448,8 +457,11 @@ items:insert{
 		return canUsePowerBombs() 
 		-- speed boost blocks
 		and req.speed 
+		-- you need at least 1 extra e-tank for the spark charge jump
+		-- (maybe with the exception of being able to freeze the Boyons...)
+		and (req.energy or 0) >= 1
 		-- escaping over the spikes
-		and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
+		--and (effectiveEnergyCount() >= 1 or req.varia or req.gravity or req.grappling)
 		-- killing / freezing the boyons... 
 		and (canFreeze'Boyon' or canKill'Boyon')
 	end,
@@ -944,7 +956,7 @@ end
 
 local function accessGoldTorizo()
 	return accessLowerNorfair()
-	--and (req.spacejump or playerSkills.superMissileGateGlitch)
+	and (req.spacejump or playerSkills.superMissileGateGlitch)
 end
 
 items:insert{
@@ -1041,6 +1053,18 @@ end}
 
 items:insert{name='Super Missile (Wrecked Ship left)', addr=0x7C357, access=canKillPhantoon}
 items:insert{name='Super Missile (Wrecked Ship right)', addr=0x7C365, access=canKillPhantoon}
+
+local function accessCrateriaAboveWreckedShip()
+	-- first you have to kill phantoon
+	return canKillPhantoon()
+	-- next you have to get through that room with the grey doors
+	-- that have atomics and kihunters ...
+	and canKill'Atomic' 
+	and canKill'Greenish Kihunter'
+	-- or canKill'Sparks (Wrecked Ship)'
+end
+
+
 items:insert{name='Gravity Suit', addr=0x7C36D, access=canKillPhantoon}
 
 
@@ -1316,19 +1340,18 @@ args:
 	args = extra args:
 		leave = how many to leave
 --]]
-local function change(changes, args)
-	local leave = (args and args.leave) or 0
-	for from, to in pairs(changes) do
-		local found = items:filter(function(item) 
-			return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
-		end)
+local function change(from, to, leave)
+	local found = items:filter(function(item) 
+		return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
+	end)
+	if leave then
 		for i=1,leave do
 			if #found == 0 then break end
 			found:remove(math.random(#found))	-- leave as many as the caller wants
 		end
-		for _,item in ipairs(found) do 
-			item.ptr[0] = itemTypes[to] 
-		end
+	end
+	for _,item in ipairs(found) do 
+		item.ptr[0] = itemTypes[to] 
 	end
 end
 
@@ -1343,11 +1366,11 @@ end
 -- process item changes
 for _,entry in ipairs(config.itemChanges or {}) do
 	if entry.from and entry.to then 
-		assert(not entry.fromLoc)
-		change({[entry.from] = entry.to}, {leave=entry.leave}) 
-	elseif entry.fromLoc and entry.to then
+		assert(not entry.remove)
+		change(entry.from, entry.to, entry.leave) 
+	elseif entry.remove and entry.to then
 		assert(not entry.from)
-		removeItem(entry.fromLoc, entry.to)
+		removeItem(entry.remove, entry.to)
 	end
 end
 
@@ -1394,7 +1417,7 @@ local function iterate(depth)
 
 	-- pick an item to replace
 	if #chooseLocs == 0 then 
-		dprint('we ran out of options with '..#currentItems..' items unplaced!')
+		dprint('we ran out of options with '..#currentItems..' items unplaced! '..tolua(currentItems:map(function(loc,i,t) return (t[loc.defaultTypeName] or 0)+1, loc.defaultTypeName end)))
 		return
 	end
 	local chooseItem = chooseLocs[math.random(#chooseLocs)]
@@ -1411,7 +1434,8 @@ local function iterate(depth)
 
 	-- weighted shuffle, higher priorities placed at the beginning
 	local function probability(i)
-		return config.itemPlacementProbability[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]]
+		if not config.itemPlacementProbability then return 1 end
+		return config.itemPlacementProbability[itemTypeNameForValue[origItemValues[itemValueIndexesLeft[i]]]] or 1
 	end
 	local is = range(#itemValueIndexesLeft)
 	for _,i in ipairs(weightedShuffle(is, is:map(probability))) do

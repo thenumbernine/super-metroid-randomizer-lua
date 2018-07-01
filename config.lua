@@ -19,7 +19,9 @@ return {
 
 	-- used by enemy randomization
 	randomizeEnemyProps = {
-		
+	
+		palette = true,
+
 		weakness = true,
 		weaknessImmunityChance = .75,
 		chanceToFreeze = 2/3,
@@ -104,7 +106,7 @@ return {
 		-- whether you know how to get through gates using super missiles
 		superMissileGateGlitch = false,
 
-		-- I've seen this done ... does it require high jump? either way...
+		-- touch and go across the moat.  I've seen this done ... does it require high jump? either way...
 		canJumpAcrossEntranceToWreckedShip = false,
 		
 		-- how to get out of lower norfair
@@ -138,7 +140,7 @@ return {
 --[=[ these items are a bit more necessary
 		-- grappling is only absolutely required to get into springball...
 		{from='grappling', to='missile'},
-		{fromLoc='Spring Ball', to='missile'},
+		{remove='Spring Ball', to='missile'},
 		{from='screwattack', to='missile'},
 --]=]
 --[=[ this is more dangerous / might not randomize, since enemies have so few weakness rolls...
@@ -151,7 +153,7 @@ return {
 		-- this will stall the randomizer because of pink Brinstar energy tank
 		-- so lets remove it and write it as a missile
 		{from='wave', to='missile'},
-		{fromLoc='Energy Tank (pink Brinstar top)', to='missile'},
+		{remove='Energy Tank (pink Brinstar top)', to='missile'},
 		
 		-- is this possible?  maybe you can't kill the golden chozo without charge, or a lot of super missiles ... or a lot of restocking on 5 super missiles and shooting them all off at him
 		--{from='charge', to='missile'},
@@ -162,19 +164,26 @@ return {
 --]]
 --[[
 	itemChanges = {
-		{from='missile', to='supermissile'},						-- turn all missiles into super missiles (one is already left -- the first missile tank)
+		{from='missile', to='supermissile'},						-- turn all missiles into super missiles
 		{from='powerbomb', to='supermissile', leave=1}, 		-- turn all but one power bombs into super missiles
 		{from='spazer', to='supermissile'},
 		{from='hijump', to='supermissile'},
-		{from='springball', to='supermissile'},
 		{from='reserve', to='supermissile'},
 		{from='xray', to='supermissile'},	-- no need for these
-		{from='energy' to='supermissile', leave=7},
+		{from='energy', to='supermissile', leave=7},
+		
+		-- get rid of unaccessible items -- remove them from the search:
+--		{remove='Spring Ball', to='supermissile'},
+--		{remove='Plasma Beam', to='supermissile'},
+--		{remove='Missile (Gold Torizo)', to='supermissile'},
+--		{remove='Super Missile (Gold Torizo)', to='supermissile'},
+--		{remove='Screw Attack', to='supermissile'},
 	},
 --]]
 
 	-- every item type probability defaults to 1
 	-- however you can override any you want to see sooner
+--[[	
 	itemPlacementProbability = {
 		bomb = .01,
 		charge = 1.5848931924611,
@@ -198,4 +207,56 @@ return {
 		wave = 1.0471285480509,
 		xray = 1e+20,
 	},
+--]]	
+
+
+--[=[ here's an item scheme I'm working on:
+	itemChanges = {
+		{from='missile', to='morph', leave=1},
+		{from='powerbomb', to='morph', leave=1},
+		{from='supermissile', to='morph', leave=1},
+		{from='reserve', to='morph'},
+		{from='xray', to='morph'},	-- no need for these
+		{from='energy', to='morph', leave=7},
+		{from='springball', to='morph'},
+--		{from='spacejump', to='morph'},
+-- why can't I remove hijump? it is exclusive with spacejump or grappling
+		{from='hijump', to='morph'},
+
+		-- without space jump, these aren't accessible:
+		{remove='Missile (Gold Torizo)', to='morph'},
+		{remove='Super Missile (Gold Torizo)', to='morph'},
+		{remove='Screw Attack', to='morph'},
+
+-- if you also want to get rid of grappling:	
+--		{from='grappling', to='morph'},
+		-- without spring ball, grappling isn't essential
+--		{remove='Spring Ball', to='morph'},
+	},
+	itemPlacementProbability = {
+		bomb = .01,
+		charge = .01,
+		energy = .01,
+		grappling = .01,
+		gravity = .01,
+		hijump = .01,	-- replaced
+		ice = .01,
+		missile = .01,
+		morph = 1,
+		plasma = .01,
+		powerbomb = .01,
+		reserve = .01,	-- replaced
+		screwattack = .01,	-- replaced
+		spacejump = 0,
+		spazer = .01,
+		speed = .01,
+		springball = .01,
+		supermissile = .01,
+		varia = .01,
+		wave = .01,
+		xray = 1000,	-- replaced
+	},
+--]=]
+
+
 }

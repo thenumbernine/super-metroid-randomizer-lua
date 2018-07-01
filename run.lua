@@ -84,7 +84,19 @@ rom = ffi.cast('uint8_t*', romstr)
 
 ffi.cdef[[
 typedef uint8_t uint24_t[3];
+
+typedef union {
+	uint16_t v;
+	struct {
+		uint16_t r : 5;
+		uint16_t g : 5;
+		uint16_t b : 5;
+		uint16_t a : 1;
+	};
+} rgb_t;
 ]]
+
+
 
 function pickRandom(t)
 	return t[math.random(#t)]
@@ -93,17 +105,27 @@ end
 
 
 -- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
-function bank(i)
-	return ({
-		[0x83] = 0x018000,
-		[0x86] = 0x030000,
-		[0x8e] = 0x070000,
-		[0x8f] = 0x078000,
-		[0x9f] = 0x0f8000,
-		[0xa1] = 0x108000,
-		[0xb4] = 0x198000,
-	})[i] or error("need bank "..('%02x'):format(i))
+-- http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
+-- why is it that some banks need a subtract of 0x8000?
+-- it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
+-- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
+function topc(bank, offset)
+--	assert(bit.band(0x8000, offset) ~= 0)
+
+	-- why?
+	if bank == 0xb4 
+	or bank == 0xc2
+	then 
+		offset = offset + 0x8000 
+	end
+
+	return bit.lshift(bank - 0x80, 15) 
+	+ bit.band(0xffff, offset)
 end
+
+
+local name = ffi.string(rom + 0x7fc0, 0x15)
+print(name)
 
 
 -- build enemies table / type info
@@ -114,8 +136,8 @@ require 'enemies_data'
 -- *) enemy placement
 -- *) door placement
 -- *) refinancin
---require 'rooms'
---os.exit()
+require 'rooms'
+os.exit()
 
 -- do the enemy randomization
 require 'enemies'

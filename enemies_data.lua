@@ -46,10 +46,10 @@ weakness_t = struct'weakness_t'(structFields.weakness_t)
 
 
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
-local enemyStart = bank(0x9f) + 0xcebf
+local enemyStart = topc(0x9f, 0xcebf)
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
-local enemy2Start = bank(0x9f) + 0xf153
+local enemy2Start = topc(0x9f, 0xf153)
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
 
 enemyFields = table{
@@ -74,7 +74,7 @@ enemyFields = table{
 	{deathEffect = 'uint16_t'},	-- explosions upon death. valued 0-4
 	{unused_extraAI_2 = 'uint16_t'},
 	{unused_extraAI_3 = 'uint16_t'},
-	{powerbombAI = 'uint16_t'},	-- aka 'power bomb reaction'
+	{powerbombAI = 'uint16_t'},
 	{unused_extraAI_4 = 'uint16_t'},
 	{unused_extraAI_5 = 'uint16_t'},
 	{unused_extraAI_6 = 'uint16_t'},
@@ -98,7 +98,7 @@ local Enemy = class()
 function Enemy:getWeakness()
 	local addr = self.ptr[0].weakness
 	if addr == 0 then return end
-	local ptr = rom + bank(0xb4) + addr
+	local ptr = rom + topc(0xb4, addr)
 	return ffi.cast('weakness_t*', ptr)
 end
 
@@ -281,5 +281,5 @@ enemyForAddr = enemies:map(function(enemy)
 end)
 
 for _,enemy in ipairs(enemies) do
-	enemy.ptr = ffi.cast('enemy_t*', rom + enemy.addr + bank(0x9f))
+	enemy.ptr = ffi.cast('enemy_t*', rom + topc(0x9f, enemy.addr))
 end
