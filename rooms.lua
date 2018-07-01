@@ -1,6 +1,7 @@
--- port of SMLib/ROMHandler.cs
--- https://github.com/tewtal/smlib
--- with some extra from metroidconstruction.com/SMMM
+-- https://github.com/tewtal/smlib especially SMLib/ROMHandler.cs
+-- metroidconstruction.com/SMMM
+-- https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.hpp
+-- http://forum.metroidconstruction.com/index.php?topic=2476.0
 
 local ffi = require 'ffi'
 local struct = require 'struct'
@@ -44,7 +45,8 @@ local roomstate_t = struct'roomstate_t'{
 	{roomAddr = 'uint16_t'},
 	{roomBank = 'uint8_t'},
 	{gfxSet = 'uint8_t'},
-	{music = 'uint16_t'},
+	{musicTrack = 'uint8_t'},
+	{musicControl = 'uint8_t'},
 	{fx1 = 'uint16_t'},
 	{enemyPop = 'uint16_t'},
 	{enemySet = 'uint16_t'},
@@ -324,7 +326,7 @@ svgfile:write(svg.rect{
 				-- TODO still - fx1, bg, layerhandling
 				
 				if roomState.ptr 
-and #mdbs == 1				
+--and #mdbs == 1				
 				then
 					local roomaddr = roomState.ptr[0].roomAddr
 -- [[
@@ -339,7 +341,12 @@ print('decompressing address '..('0x%06x'):format(addr))
 					local data = decompress(addr, 0x10000)
 print('decompressed data length: '..#data)
 --print(data:map(function(i) return string.byte(tonumber(i)) end):concat():hexdump())
-print(data:map(function(i) return ('%02x'):format(tonumber(i)) end):concat())
+--print(data:map(function(i) return ('%02x'):format(tonumber(i)) end):concat())
+for i=1,#data do
+	io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+	if (i-2) % (32 * m.ptr[0].width) == 0 then print() end 
+end
+print()
 --]]				
 				end
 			end

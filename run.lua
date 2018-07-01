@@ -72,9 +72,12 @@ file.__tmp = nil
 local romstr = file[infilename]
 --]]
 
+
 local header = ''
---header = romstr:sub(1,512)
---romstr = romstr:sub(513)
+if bit.band(#romstr, 0x7fff) ~= 0 then
+	header = romstr:sub(1,512)
+	romstr = romstr:sub(513)
+end
 
 -- global so other files can see it
 rom = ffi.cast('uint8_t*', romstr) 
@@ -109,18 +112,21 @@ end
 -- why is it that some banks need a subtract of 0x8000?
 -- it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
 -- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
+local banksRequested = table()
 function topc(bank, offset)
+	assert(offset >= 0 and offset < 0x10000)
 --	assert(bit.band(0x8000, offset) ~= 0)
-
-	-- why?
+banksRequested[bank] = true 
+	-- why only these banks?
 	if bank == 0xb4 
 	or bank == 0xc2
+	-- it's not all even banks ...
+	--if bit.band(bank, 1) == 0 
 	then 
 		offset = offset + 0x8000 
+		offset = bit.band(offset, 0xffff)
 	end
-
-	return bit.lshift(bank - 0x80, 15) 
-	+ bit.band(0xffff, offset)
+	return bit.lshift(bank - 0x80, 15) + offset
 end
 
 
@@ -164,3 +170,5 @@ if not config.randomizeItems then
 	print'!!!!!!!!!!!! NOT RANDOMIZING IEMS !!!!!!!!!!!'
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 end
+
+print('banks requested: '..banksRequested:keys():map(function(bank) return ('$%02x'):format(bank) end):concat', ')
