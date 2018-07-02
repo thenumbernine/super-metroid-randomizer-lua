@@ -22,7 +22,7 @@ Item placement also allows for changing the probability of placing an item.  In 
 
 ## I've got rooms decompressing correctly.  Here's proof:
 
-![map of Super Metroid][map.png]
+![map of Super Metroid](map.png)
 
 ## I have also added a dump of all memory ranges that I am using -- in an attempt to better chart out the ROM:
 
