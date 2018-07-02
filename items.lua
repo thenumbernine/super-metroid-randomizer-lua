@@ -1,3 +1,5 @@
+-- items are from 0781cc to 079184, then from 07c265 to 07c7a7  
+-- but both of these ranges overlap dooraddrs ... hmm ...
 -- [[
 
 local ffi = require 'ffi'
@@ -1213,7 +1215,15 @@ for _,item in ipairs(items) do
 	item.ptr = ffi.cast('uint16_t*', rom + item.addr)
 end
 
-
+--[[
+items:sort(function(a,b) return a.addr < b.addr end)
+print('item addrs')
+for _,item in ipairs(items) do
+	print((' %06x'):format(item.addr)..' = '..('%04x'):format(item.ptr[0]))
+end
+print()
+os.exit()
+--]]
 
 --[[
 TODO prioritize placement of certain items last.

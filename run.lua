@@ -217,36 +217,40 @@ do
 		end
 	end
 
-	print()
-	io.write('memory ranges:')
+	local f = assert(io.open('memorymap.txt', 'w'))
+	local function fwrite(...)
+		f:write(...)
+		io.write(...)
+	end
+	fwrite('memory ranges:')
 	for i,range in ipairs(memoryRanges) do
 		local prevRange
 		if i>1 then
 			local prevname = range.name
-			io.write(' ('..prevname..') ')
+			fwrite(' ('..prevname..') ')
 			prevRange = memoryRanges[i-1]
 			local padding = range.addr - (prevRange.addr + prevRange.len)
 			if padding ~= 0 then
-				io.write('... '..padding..' bytes of padding ...')
+				fwrite('... '..padding..' bytes of padding ...')
 			end
 		end
-		print()
+		fwrite'\n'
 		if prevRange and bit.band(prevRange.addr, 0x7f8000) ~= bit.band(range.addr, 0x7f8000) then
-			print'--------------'			
+			fwrite'--------------\n'
 		end
 		
 		local m = range.m
 		if m then
-			io.write( 
+			fwrite( 
 				('%2d'):format(tonumber(m.ptr[0].region))..'/'..
 				('%2d'):format(tonumber(m.ptr[0].index)))
 		else
-			io.write('     ')
+			fwrite('     ')
 		end
-		io.write(': '..('$%06x'):format(range.addr)..'-'..('$%06x'):format(range.addr+range.len-1))
+		fwrite(': '..('$%06x'):format(range.addr)..'-'..('$%06x'):format(range.addr+range.len-1))
 	end
-	io.write(' ('..memoryRanges:last().name..') ')
-	print()
+	fwrite(' ('..memoryRanges:last().name..')\n')
+	f:close()
 end
 
 

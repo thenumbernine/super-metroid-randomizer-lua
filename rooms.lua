@@ -357,7 +357,9 @@ for x=0x8000,0xffff do
 			for _,rs in ipairs(m.roomStates) do
 				assert(rs.addr)
 				if rs.addr ~= 0xe5e6 then
-					rs.ptr = ffi.cast('roomstate_t*', rom + topc(0x8e, rs.addr))
+					local addr = topc(0x8e, rs.addr)
+					rs.ptr = ffi.cast('roomstate_t*', rom + addr)
+					insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 				end
 			end
 
@@ -368,8 +370,10 @@ for x=0x8000,0xffff do
 					print('  !! found roomState without a pointer '..('%04x'):format(roomState.addr))
 				else
 					if roomState.ptr[0].scroll > 0x0001 and roomState.scroll ~= 0x8000 then
-						roomState.scrollDataPtr = rom + topc(scrollBank, roomState.ptr[0].scroll)
+						local addr = topc(scrollBank, roomState.ptr[0].scroll)
+						roomState.scrollDataPtr = rom + addr 
 						-- sized mdb width x height
+						insertUniqueMemoryRange(addr, m.ptr[0].width * m.ptr[0].height, 'scrolldata', m)
 					end
 
 print(' roomstate '..('%04x'):format(roomState.addr))
