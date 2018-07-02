@@ -5,7 +5,7 @@
 
 local ffi = require 'ffi'
 local struct = require 'struct'
-local decompress = require 'decompress'
+local lz = require 'lz'
 
 -- check where the PLM bank is
 local plmBank = rom[0x204ac]
@@ -16,10 +16,10 @@ local image = require 'image'
 local tilesize = 4
 local tilesPerRoom = 16
 local roomsize = tilesPerRoom * tilesize
-local mapimg = image(roomsize*69, roomsize*58, 3, 'unsigned char')
+local mapimg = image(roomsize*68, roomsize*58, 3, 'unsigned char')
 
-
-local colormap = shuffle(range(254))
+local colormap = range(254)
+--colormap = shuffle(colormap)
 colormap[0] = 0
 colormap[255] = 255
 -- data is sized 32*m.width x 16*m.width
@@ -34,7 +34,7 @@ local ofsPerRegion = {
 	{7,47},	-- testing
 }
 
-local function writeRoom(m, solids, tiletypes)
+local function drawRoom(m, solids, tiletypes)
 	local ofsx, ofsy = table.unpack(ofsPerRegion[m.region+1])
 	
 	-- special case for crateria
@@ -179,6 +179,11 @@ function RoomState:init(args)
 end
 
 local mdbs = table()
+local roomMemoryRanges = table()
+
+
+xpcall(function()
+
 
 for x=0x8000,0xffff do
 	local data = rom + topc(0x8e, x)
@@ -375,46 +380,69 @@ for x=0x8000,0xffff do
 				
 				if roomState.ptr 
 and roomStateIndex == 1
---and #mdbs < 7	-- the 5th room (1-based) is screwing up on decompression. ... it's a save room
+--and #mdbs == 9	-- 9 has extra data after the room blocks, and when I recompress the whole thing, for some reason it only compresses the room blocks
 				then
 					local roomaddr = roomState.ptr[0].roomAddr
--- [[
-local roomaddrstr = ('0x%02x'):format(roomState.ptr[0].roomBank)
-				..('%04x'):format(roomState.ptr[0].roomAddr)
+					local roomaddrstr = ('0x%02x'):format(roomState.ptr[0].roomBank)
+						..('%04x'):format(roomState.ptr[0].roomAddr)
 print('roomaddr '..roomaddrstr)
---]]
--- [[
 					local addr = topc(roomState.ptr[0].roomBank, roomaddr)
 					-- then we decompress the next 0x10000 bytes ...
 print('decompressing address '..('0x%06x'):format(addr))
-					local success, data = pcall(decompress, addr, 0x10000)
-					if not success then
-						error("failed when decompressing roomaddr "..roomaddrstr)
+					local data, compressedSize = lz.decompress(addr, 0x10000)
+
+print('decompressed from '..compressedSize..' to '..#data)
+					
+					roomMemoryRanges:insert{addr, compressedSize, m}
+					local function printblock(data, width)
+						for i=1,#data do
+							io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+							if i % width == 0 then print() end 
+						end
+						print()
 					end
-print('decompressed data length: '..#data)
---print(data:map(function(i) return string.byte(tonumber(i)) end):concat():hexdump())
---print(data:map(function(i) return ('%02x'):format(tonumber(i)) end):concat())
+					local ofs = 0
+					local id = data:sub(ofs+1,ofs + 2) ofs=ofs+2
+					local w = m.ptr[0].width * 32
+					local h = m.ptr[0].height * 16
+					local solids = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
+					local w2 = m.ptr[0].width * 16
+					local tiletypes = data:sub(ofs+1, ofs + w2*h) ofs=ofs+w2*h
+					printblock(id, 2) 
+					printblock(solids, w) 
+					printblock(tiletypes, w2)
+					assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
+					print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
+					
+					drawRoom(m.ptr[0], solids, tiletypes)
+
+-- now to change the doors around ... or something
+-- and then re-compress and re-write
+
 -- [=[
-local function printblock(data, width)
+if doneonce then
 	for i=1,#data do
-		io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
-		if i % width == 0 then print() end 
+		assert(lastdata[i] == data[i], "found an error in the decompression at offset "..i
+			..': '..data[i]..' should be '..lastdata[i])
 	end
-	print()
+	assert(#lastdata == #data, "decompressions have different lengths: original "..#lastdata.." vs recompressed "..#data)
 end
-local i = 0
-local id = data:sub(i+1,i + 2) i=i+2
-local w = m.ptr[0].width * 32
-local h = m.ptr[0].height * 16
-local solids = data:sub(i+1, i + w*h) i=i+w*h
-local w2 = m.ptr[0].width * 16
-local tiletypes = data:sub(i+1, i + w2*h) i=i+w2*h
---printblock(id, 2) 
---printblock(solids, w) 
---printblock(tiletypes, w2)
---assert(i <= #data, "expected "..i.." <= "..#data)
 --]=]
-writeRoom(m.ptr[0], solids, tiletypes)
+
+if not doneonce then 
+lastdata = data
+	local recompressed = lz.compress(data)
+	print('recompressed size: '..#recompressed..' vs original compressed size '..compressedSize)
+	assert(#recompressed <= compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..compressedSize)
+	print('recompressed data: '..recompressed:map(function(i) return ('%02x'):format(tonumber(i)) end):concat' ')
+	compressedSize = #recompressed
+	-- now write back to the original location at addr
+	for i,v in ipairs(recompressed) do
+		rom[addr+i-1] = ffi.cast('uint8_t', v)
+	end
+end
+--]=]
+
 --]]
 				end
 			end
@@ -443,5 +471,27 @@ writeRoom(m.ptr[0], solids, tiletypes)
 	end
 end
 
+
+end, function(err)
+	io.stderr:write(err..'\n'..debug.traceback())
+end)
+
 mapimg:save'map.png'
+
+roomMemoryRanges:sort(function(a,b)
+	return a[1] < b[1]
+end)
+print()
+io.write('room memory ranges:')
+for i,range in ipairs(roomMemoryRanges) do
+	if i>1 then
+		local prevRange = roomMemoryRanges[i-1]
+		io.write(' ... '..(range[1]-(prevRange[1]+prevRange[2]))..' bytes of padding ...')
+	end
+	print()
+	local m = range[3]	
+	io.write( m.ptr[0].region ..'/'..m.ptr[0].index ..': '..
+		('$%06x'):format(range[1])..'-'..('$%06x'):format(range[1]+range[2]-1) )
+end
+print()
 

@@ -132,9 +132,9 @@ banksRequested[bank] = true
 	--if bit.band(bank, 1) == 0 
 	then 
 		offset = offset + 0x8000 
-		offset = bit.band(offset, 0xffff)
 	end
-	return bit.lshift(bank - 0x80, 15) + offset
+	offset = bit.band(offset, 0xffff)
+	return bit.bor(bit.lshift(bit.band(bank,0x7f), 15), offset)
 end
 
 
