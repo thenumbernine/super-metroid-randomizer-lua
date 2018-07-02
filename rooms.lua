@@ -16,7 +16,7 @@ local image = require 'image'
 local tilesize = 4
 local tilesPerRoom = 16
 local roomsize = tilesPerRoom * tilesize
-local mapimg = image(roomsize*60, roomsize*150, 3, 'unsigned char')
+local mapimg = image(roomsize*69, roomsize*58, 3, 'unsigned char')
 
 
 local colormap = shuffle(range(254))
@@ -25,19 +25,27 @@ colormap[255] = 255
 -- data is sized 32*m.width x 16*m.width
 local ofsPerRegion = {
 	{3,0},	-- crateria
-	{0,17},	-- brinstar
-	{0,40},	-- norfair
-	{0,60},	-- wrecked ship
-	{0,80},	-- maridia
-	{0,100},	-- tourian
-	{0,120},	-- ceres
-	{0,140},	-- testing
+	{0,18},	-- brinstar
+	{31,38},	-- norfair
+	{37,-10},	-- wrecked ship
+	{28,18},	-- maridia
+	{0,0},	-- tourian
+	{-5,25},	-- ceres
+	{7,47},	-- testing
 }
 
 local function writeRoom(m, solids, tiletypes)
-	local ofs = ofsPerRegion[m.region+1]
-	local xofs = 20 + roomsize * ofs[1]
-	local yofs = 20 + roomsize * ofs[2]
+	local ofsx, ofsy = table.unpack(ofsPerRegion[m.region+1])
+	
+	-- special case for crateria
+	if m.region == 0	-- crateria
+	and m.x > 45 
+	then
+		ofsx = ofsx + 7
+	end
+	
+	local xofs = roomsize * (ofsx - 4)
+	local yofs = roomsize * (ofsy + 1)
 	for j=0,m.height-1 do
 		for i=0,m.width-1 do
 			for ti=0,tilesPerRoom-1 do
