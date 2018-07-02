@@ -12,20 +12,69 @@ local plmBank = rom[0x204ac]
 
 local scrollBank = 0x8f
 
-local svg = require 'svg'
-local svgfile = assert(io.open('map.svg', 'w'))
-svgfile:write([[
-<?xml version='1.0' encoding='utf-8'?>
-<svg
-	version='1.0'
-	id='layer1'
-	xmlns='http://www.w3.org/2000/svg'
-	width='3600'
-	height='5400'
->
-	<g id='layer1' transform='matrix(1 0 0 1 0 0)'>
-]])
+local image = require 'image'
+local tilesize = 4
+local tilesPerRoom = 16
+local roomsize = tilesPerRoom * tilesize
+local mapimg = image(roomsize*60, roomsize*150, 3, 'unsigned char')
 
+
+local colormap = shuffle(range(254))
+colormap[0] = 0
+colormap[255] = 255
+-- data is sized 32*m.width x 16*m.width
+local ofsPerRegion = {
+	{3,0},	-- crateria
+	{0,17},	-- brinstar
+	{0,40},	-- norfair
+	{0,60},	-- wrecked ship
+	{0,80},	-- maridia
+	{0,100},	-- tourian
+	{0,120},	-- ceres
+	{0,140},	-- testing
+}
+
+local function writeRoom(m, solids, tiletypes)
+	local ofs = ofsPerRegion[m.region+1]
+	local xofs = 20 + roomsize * ofs[1]
+	local yofs = 20 + roomsize * ofs[2]
+	for j=0,m.height-1 do
+		for i=0,m.width-1 do
+			for ti=0,tilesPerRoom-1 do
+				for tj=0,tilesPerRoom-1 do
+					local dx = ti + tilesPerRoom * i
+					local dy = tj + tilesPerRoom * j
+					local di = dx + tilesPerRoom * m.width * dy
+					-- solids is 1-based
+					local d1 = solids[1 + 0 + 2 * di] or 0
+					local d2 = solids[1 + 1 + 2 * di] or 0
+					local d3 = tiletypes[1 + di] or 0
+				
+					if d1 == 0xff 
+					--and (d2 == 0x00 or d2 == 0x83)
+					then
+					else
+						for pi=0,tilesize-1 do
+							for pj=0,tilesize-1 do
+								local y = yofs + pj + tilesize * (tj + tilesPerRoom * (m.y + j))
+								local x = xofs + pi + tilesize * (ti + tilesPerRoom * (m.x + i))
+				--for y=(m.y + j)* roomsize + yofs, (m.y + m.height) * roomsize - 1 + yofs do
+				--	for x=m.x * roomsize + xofs, (m.x + m.width) * roomsize - 1 + xofs do
+								if x >= 0 and x < mapimg.width
+								and y >= 0 and y < mapimg.height 
+								then
+									mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
+									mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
+									mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
 
 -- defined in section 6
 local mdb_t = struct'mdb_t'{
@@ -150,15 +199,6 @@ for x=0x8000,0xffff do
 			('0x%06x '):format(data - rom)
 			..'mdb '..m.ptr[0])
 		data = data + 11
-		
-svgfile:write(svg.rect{
-	x = 20 * m.ptr[0].x,
-	y = 20 * m.ptr[0].y + 600 * m.ptr[0].region,
-	width = 20 * m.ptr[0].width - 1,
-	height = 20 * m.ptr[0].height - 1,
-	style = 'stroke-width:1; stroke:rgb(0,0,0); fill:none;',
-}, '\n')
-		
 
 		-- events
 		local testCode
@@ -231,7 +271,7 @@ svgfile:write(svg.rect{
 				end
 			end
 		
-			for _,roomState in ipairs(m.roomStates) do
+			for roomStateIndex,roomState in ipairs(m.roomStates) do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
 				if not roomState.ptr then
@@ -326,28 +366,48 @@ svgfile:write(svg.rect{
 				-- TODO still - fx1, bg, layerhandling
 				
 				if roomState.ptr 
---and #mdbs == 1				
+and roomStateIndex == 1
+--and #mdbs < 7	-- the 5th room (1-based) is screwing up on decompression. ... it's a save room
 				then
 					local roomaddr = roomState.ptr[0].roomAddr
 -- [[
-print('roomaddr '
-	..('0x%02x'):format(roomState.ptr[0].roomBank)
-	..('%04x'):format(roomState.ptr[0].roomAddr))
+local roomaddrstr = ('0x%02x'):format(roomState.ptr[0].roomBank)
+				..('%04x'):format(roomState.ptr[0].roomAddr)
+print('roomaddr '..roomaddrstr)
 --]]
 -- [[
 					local addr = topc(roomState.ptr[0].roomBank, roomaddr)
 					-- then we decompress the next 0x10000 bytes ...
 print('decompressing address '..('0x%06x'):format(addr))
-					local data = decompress(addr, 0x10000)
+					local success, data = pcall(decompress, addr, 0x10000)
+					if not success then
+						error("failed when decompressing roomaddr "..roomaddrstr)
+					end
 print('decompressed data length: '..#data)
 --print(data:map(function(i) return string.byte(tonumber(i)) end):concat():hexdump())
 --print(data:map(function(i) return ('%02x'):format(tonumber(i)) end):concat())
-for i=1,#data do
-	io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
-	if (i-2) % (32 * m.ptr[0].width) == 0 then print() end 
+-- [=[
+local function printblock(data, width)
+	for i=1,#data do
+		io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+		if i % width == 0 then print() end 
+	end
+	print()
 end
-print()
---]]				
+local i = 0
+local id = data:sub(i+1,i + 2) i=i+2
+local w = m.ptr[0].width * 32
+local h = m.ptr[0].height * 16
+local solids = data:sub(i+1, i + w*h) i=i+w*h
+local w2 = m.ptr[0].width * 16
+local tiletypes = data:sub(i+1, i + w2*h) i=i+w2*h
+--printblock(id, 2) 
+--printblock(solids, w) 
+--printblock(tiletypes, w2)
+--assert(i <= #data, "expected "..i.." <= "..#data)
+--]=]
+writeRoom(m.ptr[0], solids, tiletypes)
+--]]
 				end
 			end
 			
@@ -371,14 +431,9 @@ print()
 			end
 		
 			mdbs:insert(m)
-if #mdbs == 2 then break end
 		end
 	end
 end
 
-svgfile:write([[
-	</g>
-</svg>
-]])
-svgfile:close()
+mapimg:save'map.png'
 

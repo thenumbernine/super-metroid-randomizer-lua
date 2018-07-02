@@ -1227,13 +1227,6 @@ especially those that require certain items to escape from.
 ... choose item placement based on what the *least* number of future possibilities will be (i.e. lean away from placing items that open up the game quicker)
 --]]
 
-local function shuffle(x)
-	local y = {}
-	while #x > 0 do table.insert(y, table.remove(x, math.random(#x))) end
-	while #y > 0 do table.insert(x, table.remove(y, math.random(#y))) end
-	return x
-end
-
 -- weighted shuffle, p[i] is the weight of x[i]
 local function weightedShuffle(x, p)
 	x = table(x)

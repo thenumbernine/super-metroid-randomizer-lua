@@ -65,7 +65,7 @@ local function applyPatch(patchfilename)
 end
 if config.skipIntro then applyPatch'introskip_doorflags.ips' end
 if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
-local romstr = file.__tmp
+romstr = file.__tmp
 file.__tmp = nil
 --]]
 --[[
@@ -105,6 +105,14 @@ function pickRandom(t)
 	return t[math.random(#t)]
 end
 
+function shuffle(x)
+	local y = {}
+	while #x > 0 do table.insert(y, table.remove(x, math.random(#x))) end
+	while #y > 0 do table.insert(x, table.remove(y, math.random(#y))) end
+	return x
+end
+
+
 
 
 -- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
@@ -119,7 +127,7 @@ function topc(bank, offset)
 banksRequested[bank] = true 
 	-- why only these banks?
 	if bank == 0xb4 
-	or bank == 0xc2
+	or (bank >= 0xc2 and bank <= 0xce)
 	-- it's not all even banks ...
 	--if bit.band(bank, 1) == 0 
 	then 
