@@ -122,20 +122,36 @@ end
 -- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
 local banksRequested = table()
 function topc(bank, offset)
-	assert(offset >= 0 and offset < 0x10000)
+	assert(offset >= 0 and offset < 0x10000, "got a bad offset for addr $"..('%02x'):format(bank)..':'..('%04x'):format(offset))
 --	assert(bit.band(0x8000, offset) ~= 0)
 banksRequested[bank] = true 
 	-- why only these banks?
 	if bank == 0xb4 
-	or (bank >= 0xc2 and bank <= 0xce)
+	or bank == 0x83		-- for doors.
+--	or bank == 0x8e 	-- map mdb's, roomstate's, door tables.  nope, not this one
+	or bank == 0x8f		-- scroll and plm
+	or bank == 0xa1
+	or bank == 0xb9 or bank == 0xba	-- both for bg_t
+	or (bank >= 0xc2 and bank <= 0xce)	-- room block data
 	-- it's not all even banks ...
 	--if bit.band(bank, 1) == 0 
 	then 
 		offset = offset + 0x8000 
 	end
 	offset = bit.band(offset, 0xffff)
-	return bit.bor(bit.lshift(bit.band(bank,0x7f), 15), offset)
+	return bit.lshift(bit.band(bank,0x7f), 15) + offset
 end
+
+
+memoryRanges = table()
+function insertUniqueMemoryRange(addr, len, name, m, ...)
+	if not memoryRanges:find(nil, function(range)
+		return range.addr == addr and range.len == len and range.name == name
+	end) then
+		memoryRanges:insert{addr=addr, len=len, name=name, m=m, ...}
+	end
+end
+
 
 
 local name = ffi.string(rom + 0x7fc0, 0x15)
@@ -151,7 +167,6 @@ require 'enemies_data'
 -- *) door placement
 -- *) refinancin
 require 'rooms'
-os.exit()
 
 -- do the enemy randomization
 require 'enemies'
@@ -178,5 +193,61 @@ if not config.randomizeItems then
 	print'!!!!!!!!!!!! NOT RANDOMIZING IEMS !!!!!!!!!!!'
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 end
+
+do
+	memoryRanges:sort(function(a,b)
+		return a.addr < b.addr
+	end)
+	
+	-- combine ranges
+	for i=#memoryRanges-1,1,-1 do
+		local ra = memoryRanges[i]
+		local rb = memoryRanges[i+1]
+		if ra.addr + ra.len == rb.addr
+		and ra.name == rb.name
+		then
+			ra.len = ra.len + rb.len
+			ra.dup = (ra.dup or 1) + (rb.dup or 1)
+			memoryRanges:remove(i+1)
+		end
+	end
+	for _,range in ipairs(memoryRanges) do
+		if range.dup then
+			range.name = range.name..' x'..range.dup
+		end
+	end
+
+	print()
+	io.write('memory ranges:')
+	for i,range in ipairs(memoryRanges) do
+		local prevRange
+		if i>1 then
+			local prevname = range.name
+			io.write(' ('..prevname..') ')
+			prevRange = memoryRanges[i-1]
+			local padding = range.addr - (prevRange.addr + prevRange.len)
+			if padding ~= 0 then
+				io.write('... '..padding..' bytes of padding ...')
+			end
+		end
+		print()
+		if prevRange and bit.band(prevRange.addr, 0x7f8000) ~= bit.band(range.addr, 0x7f8000) then
+			print'--------------'			
+		end
+		
+		local m = range.m
+		if m then
+			io.write( 
+				('%2d'):format(tonumber(m.ptr[0].region))..'/'..
+				('%2d'):format(tonumber(m.ptr[0].index)))
+		else
+			io.write('     ')
+		end
+		io.write(': '..('$%06x'):format(range.addr)..'-'..('$%06x'):format(range.addr+range.len-1))
+	end
+	io.write(' ('..memoryRanges:last().name..') ')
+	print()
+end
+
 
 print('banks requested: '..banksRequested:keys():map(function(bank) return ('$%02x'):format(bank) end):concat', ')

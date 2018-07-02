@@ -33,7 +33,7 @@ local function decompress(addr, maxlen)
 				)
 			end
 		else
-			error 'got a bad lz decompression offset'
+			error('got a bad lz decompression offset: '..from..' vs current size '..#result)
 		end
 	end
 
@@ -99,7 +99,7 @@ end
 --local MAX_BLOCK_LENGTH = 1024
 -- but this produces false terminators: 111(ext):111(lzw):11(upper 2 bits of size) = 0xff
 -- max op len of 255+512 = 10:1111:1111
-local MAX_BLOCK_LENGTH = 255+512
+local MAX_BLOCK_LENGTH = 255+512	-- should it be plus one, since the encoded value is length-1?
 
 local function putBlockHeader(result, op, length)
 --print('inserting op '..op..' len '..length)	

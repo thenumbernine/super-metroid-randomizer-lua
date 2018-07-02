@@ -281,5 +281,7 @@ enemyForAddr = enemies:map(function(enemy)
 end)
 
 for _,enemy in ipairs(enemies) do
-	enemy.ptr = ffi.cast('enemy_t*', rom + topc(0x9f, enemy.addr))
+	local addr = topc(0x9f, enemy.addr)
+	enemy.ptr = ffi.cast('enemy_t*', rom + addr)
+	insertUniqueMemoryRange(addr, ffi.sizeof'enemy_t', 'enemy_t')
 end

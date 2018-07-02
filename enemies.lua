@@ -44,8 +44,9 @@ function EnemyAuxTable:randomize()
 				assert(#values == #self.fields)
 			end
 
-			local entry = ffi.cast(ptrtype, rom + topc(self.bank, addr))
-			
+			local pcaddr = topc(self.bank, addr)
+			local entry = ffi.cast(ptrtype, rom + pcaddr)
+
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
 		
@@ -82,7 +83,9 @@ function EnemyAuxTable:print()
 			return enemy.name
 		end):concat', ')
 		if addr ~= 0 then
-			local entry = ffi.cast(ptrtype, rom + topc(self.bank, addr))
+			local pcaddr = topc(self.bank, addr)
+			local entry = ffi.cast(ptrtype, rom + pcaddr)
+			insertUniqueMemoryRange(pcaddr, ffi.sizeof(self.structName), self.structName)
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
 				local value = entry[0][name]
@@ -551,7 +554,9 @@ local enemyShots = table{
 	{addr=0xEC95, name="Unknown/varies. Runs when rooms with acid are loaded."},
 }
 for _,shot in ipairs(enemyShots) do
-	shot.ptr = ffi.cast('enemyShot_t*', rom + topc(0x86, shot.addr))
+	local addr = topc(0x86, shot.addr)
+	shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
+	insertUniqueMemoryRange(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 end
 
 
@@ -656,7 +661,10 @@ for i,enemy in ipairs(enemies) do
 	io.write(' debug name: '
 		..('0x%04x'):format(enemy.ptr[0].name))
 	if enemy.ptr[0].name ~= 0 then
-		local betaname = ffi.string(rom + topc(0xb4, enemy.ptr[0].name), 10)
+		local addr = topc(0xb4, enemy.ptr[0].name)
+		local len = 10
+		local betaname = ffi.string(rom + addr, len)
+		insertUniqueMemoryRange(addr, len, 'debug name')
 		io.write(': '..betaname)
 		--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
 	end

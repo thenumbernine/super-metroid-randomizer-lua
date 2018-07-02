@@ -2,6 +2,7 @@
 -- metroidconstruction.com/SMMM
 -- https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.hpp
 -- http://forum.metroidconstruction.com/index.php?topic=2476.0
+-- http://www.metroidconstruction.com/SMMM/plm_disassembly.txt
 
 local ffi = require 'ffi'
 local struct = require 'struct'
@@ -9,7 +10,6 @@ local lz = require 'lz'
 
 -- check where the PLM bank is
 local plmBank = rom[0x204ac]
-
 local scrollBank = 0x8f
 
 local image = require 'image'
@@ -139,6 +139,34 @@ local enemySet_t = struct'enemySet_t'{
 	{palette = 'uint16_t'},
 }
 
+local fx1_t = struct'fx1_t'{
+	{select = 'uint16_t'},
+	{surfaceStart = 'uint16_t'},
+	{surfaceNew = 'uint16_t'},
+	{surfaceDelay = 'uint8_t'},
+	{layer3type = 'uint8_t'},
+	{a = 'uint8_t'},
+	{b = 'uint8_t'},
+	{c = 'uint8_t'},
+	{paletteFX = 'uint8_t'},
+	{animateTile = 'uint8_t'},
+	{blend = 'uint8_t'},
+}
+
+local bg_t = struct'bg_t'{
+	{header = 'uint16_t'},
+	{addr = 'uint16_t'},
+	{bank = 'uint8_t'},
+	-- then 14 bytes of unknown
+	{unknown1 = 'uint16_t'},
+	{unknown2 = 'uint16_t'},
+	{unknown3 = 'uint16_t'},
+	{unknown4 = 'uint16_t'},
+	{unknown5 = 'uint16_t'},
+	{unknown6 = 'uint16_t'},
+	{unknown7 = 'uint16_t'},
+}
+
 -- section 12 of metroidconstruction.com/SMMM
 local door_t = struct'door_t'{
 	{roomID = 'uint16_t'},				-- 0
@@ -167,6 +195,51 @@ local door_t = struct'door_t'{
 }
 
 
+local doorPLMTypes = table{
+	-- normal exit
+	exit_right = 0xb63b,
+	exit_left = 0xb63f,
+	exit_down = 0xb643,
+	exit_up = 0xb647,
+	-- gates
+	normal_open_gate = 0xc826,
+	normal_close_gate = 0xc82a,
+	flipped_open_gate = 0xc82e,
+	flipped_close_gate = 0xc832,
+	shot_gate_top = 0xc836,
+	-- grey
+	door_grey_right = 0xc842,
+	door_grey_left = 0xc848,
+	door_grey_down = 0xc84e,
+	door_grey_up = 0xc854,
+	-- orange
+	door_orange_right = 0xc85a,
+	door_orange_left = 0xc860,
+	door_orange_down = 0xc866,
+	door_orange_up = 0xc86c,
+	-- green
+	door_green_right = 0xc872,
+	door_green_left = 0xc878,
+	door_green_down = 0xc87e,
+	door_green_up = 0xc884,
+	-- red
+	door_red_right = 0xc88a,
+	door_red_left = 0xc890,
+	door_red_down = 0xc896,
+	door_red_up = 0xc89c,
+	-- blue
+	-- where are the regular blue doors?
+	door_blue_right_opening = 0xc8A2,
+	door_blue_left_opening = 0xc8a8,
+	door_blue_down_opening = 0xc8aE,
+	door_blue_up_opening = 0xc8b4,
+	door_blue_right_closing = 0xc8BA,
+	door_blue_left_closing = 0xc8bE,
+	door_blue_down_closing = 0xc8c2,
+	door_blue_up_closing = 0xc8c6,
+}
+local doorPLMNameForValue = doorPLMTypes:map(function(v,k) return k,v end)
+
 local RoomState = class()
 function RoomState:init(args)
 	for k,v in pairs(args) do
@@ -176,10 +249,14 @@ function RoomState:init(args)
 	self.scrollMods = self.scrollMods or table()
 	self.enemyPops = self.enemyPops or table()
 	self.enemySets = self.enemySets or table()
+	self.fx1s = self.fx1s or table()
+	self.bgs = self.bgs or table()
 end
 
 local mdbs = table()
-local roomMemoryRanges = table()
+
+local totalOriginalCompressedSize = 0
+local totalRecompressedSize = 0
 
 
 xpcall(function()
@@ -283,7 +360,7 @@ for x=0x8000,0xffff do
 					rs.ptr = ffi.cast('roomstate_t*', rom + topc(0x8e, rs.addr))
 				end
 			end
-		
+
 			for roomStateIndex,roomState in ipairs(m.roomStates) do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
@@ -294,18 +371,63 @@ for x=0x8000,0xffff do
 						roomState.scrollDataPtr = rom + topc(scrollBank, roomState.ptr[0].scroll)
 						-- sized mdb width x height
 					end
+
+print(' roomstate '..('%04x'):format(roomState.addr))
 					if roomState.ptr[0].plm ~= 0 then
-						local plmPtr = ffi.cast('plm_t*', rom + topc(plmBank, roomState.ptr[0].plm))
+						local startaddr = topc(plmBank, roomState.ptr[0].plm)
+						data = rom + startaddr
 						while true do
-							if plmPtr[0].cmd == 0 then break end
-							roomState.plms:insert(plmPtr)
-							plmPtr = plmPtr + 1
+							local ptr = ffi.cast('plm_t*', data)
+							if ptr[0].cmd == 0 then 
+								data = data + 2
+								break 
+							end
+							--inserting the struct by-value
+							roomState.plms:insert(ptr[0])
+							data = data + ffi.sizeof'plm_t'
+						end
+						local len = data-rom-startaddr
+						insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
+						-- look at plm range from topc(plmBank,roomState.ptr[0].plm) to plmPtr-rom
+				
+						-- randomize ... remove only for now
+						-- removing turns a door blue
+						--[[
+						for i=#roomState.plms,1,-1 do
+							local plm = roomState.plms[i]
+							local plmName = doorPLMNameForValue[plm.cmd]
+							if plmName then
+								local color, side = plmName:match'^door_(%w+)_(%w+)'
+								if side then
+									roomState.plms:remove(i)
+								end
+							end						
+						end
+						--]]
+						
+						-- now write back ...
+						local ptr = ffi.cast('plm_t*', rom + topc(plmBank, roomState.ptr[0].plm))
+						for _,plm in ipairs(roomState.plms) do
+							ptr[0] = plm
+							ptr = ptr + 1
+						end
+						ffi.cast('uint16_t*', ptr)[0] = 0
+				
+						-- and print
+						for _,plm in ipairs(roomState.plms) do
+							io.write('  plm: '..plm)
+							local plmName = doorPLMNameForValue[plm.cmd]
+							if plmName then
+								io.write(' '..plmName)
+							end
+							print()
 						end
 					end
-					for _,plmPtr in ipairs(roomState.plms) do
-						if plmPtr[0].cmd == 0xb703 then
-							data = rom + 0x70000 + plmPtr[0].args
-						
+					
+					for _,plm in ipairs(roomState.plms) do
+						if plm.cmd == 0xb703 then
+							local startaddr = 0x70000 + plm.args
+							data = rom + startaddr
 							local ok = false
 							local i = 1
 							local tmp = table()
@@ -326,10 +448,12 @@ for x=0x8000,0xffff do
 								tmp[i+1] = scroll
 								i = i + 2
 							end
+							local len = data-rom-startaddr
+							insertUniqueMemoryRange(startaddr, len, 'plm cmd', m)
 	
 							if ok then
 								local scrollMod = {}
-								scrollMod.addr = plmPtr[0].args
+								scrollMod.addr = plm.args
 								scrollMod.data = tmp
 								roomState.scrollMods:insert(scrollMod)
 							end
@@ -337,26 +461,39 @@ for x=0x8000,0xffff do
 					end
 		
 					-- TODO these enemyAddr's aren't lining up with any legitimate enemies ...
-					data = rom + topc(0xa1, roomState.ptr[0].enemyPop)
+					local startaddr = topc(0xa1, roomState.ptr[0].enemyPop)
+					data = rom + startaddr 
 					while true do
 						local ptr = ffi.cast('enemyPop_t*', data)
 						if ptr[0].enemyAddr == 0xffff then
+							-- include term and enemies-to-kill
+							data = data + 2
 							roomState.enemiesToKill = read'uint8_t'
 							break
 						end
-						--[[
-						print('  enemyPop '
-							..(enemyForAddr[ptr[0].enemyAddr] or {}).name
+						-- [[
+						print('  enemyPop: '
+							..((enemyForAddr[ptr[0].enemyAddr] or {}).name or '')
 							..': '..ptr[0])
 						--]]
-						roomState.enemyPops:insert(ptr)
+						roomState.enemyPops:insert(ptr[0])
 						data = data + ffi.sizeof'enemyPop_t'
 					end
-				
-					data = rom + topc(0xb4, roomState.ptr[0].enemySet)
+					local len = data-rom-startaddr
+					insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
+			
+					local startaddr = topc(0xb4, roomState.ptr[0].enemySet)
+					data = rom + startaddr 
 					while true do
 						local ptr = ffi.cast('enemySet_t*', data)
-						if ptr[0].enemyAddr == 0xffff then break end
+						if ptr[0].enemyAddr == 0xffff then 
+-- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
+local tmp = ffi.cast('uint16_t*', data)
+print('enemySet_t term:'..range(0,4):map(function(i) return ('%04x'):format(tmp[i]) end):concat' ')
+							-- include terminator
+							data = data + 2*5
+							break 
+						end
 				
 						--[[
 						local enemy = enemyForAddr[ptr[0].enemyAddr]
@@ -364,23 +501,91 @@ for x=0x8000,0xffff do
 							print('  enemySet: '..enemy.name..': '..ptr[0])
 						end
 						--]]
-						--[[
-						print('  enemySet '
-							..(enemyForAddr[ptr[0].enemyAddr] or {}).name
+						-- [[
+						print('  enemySet: '
+							..((enemyForAddr[ptr[0].enemyAddr] or {}).name or '')
 							..': '..ptr[0])
 						--]]
 
-						roomState.enemySets:insert(ptr)
+						roomState.enemySets:insert(ptr[0])
 						data = data + ffi.sizeof'enemySet_t'
 					end
+					local len = data-rom-startaddr
+					insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
 					--print('  #enemySets = '..#roomState.enemySets)
+				
+					local startaddr = topc(0x83, roomState.ptr[0].fx1)
+					data = rom + startaddr
+					local retry
+					while true do
+						local ptr = ffi.cast('fx1_t*', data)
+						if ptr[0].select == 0xffff then
+							-- do I really need to insert a last 'fx1' that has nothing but an 0xffff select?	
+							-- include terminator
+							data = data + 2
+							break
+						end
+						if ptr[0].select == 0
+						-- TODO only run this after all ddbs have been loaded?
+						or m.ddbs:find(nil, function(d) return d.pointer == ptr[0].select end)
+						then
+							roomState.fx1s:insert(ptr[0])
+							data = data + ffi.sizeof'fx1_t'
+						else
+							if not retry then
+								retry = true
+								startaddr = topc(0x83, roomState.ptr[0].fx1) + 0x10
+								data = rom + startaddr
+							else
+								data = nil
+								break
+							end
+						end
+					end
+					if data then
+						local len = data-rom-startaddr
+						insertUniqueMemoryRange(startaddr, len, 'fx1_t', m)
+					end
+				
+					if roomState.ptr[0].bgDataPtr > 0x8000 then
+						local startaddr = topc(0x8f, roomState.ptr[0].bgDataPtr)
+						data = rom + startaddr
+						while true do
+							local ptr = ffi.cast('bg_t*', data)
+							if ptr.header ~= 0x04 then
+print('bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
+								data = data + 8
+								break
+							end
+							roomState.bgs:insert{bg=ptr[0]}
+							data = data + ffi.sizeof'bg_t'
+						end
+						local len = data-rom-startaddr
+						insertUniqueMemoryRange(startaddr, len, 'bg_t', m)
+					
+						for _,bg in ipairs(roomState.bgs) do
+							local addr = topc(bg.bg.bank, bg.bg.addr)
+							local decompressed, compressedSize = lz.decompress(addr, 0x10000)
+							bg.data = decompressed
+							insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
+						end
+					end
+
+--[[ TODO decompress is failing here
+					if roomState.ptr[0].layerHandling > 0x8000 then
+						local addr = topc(0x8f, roomState.ptr[0].layerHandling)
+						local decompressed, compressedSize = lz.decompress(addr, 0x1000)
+						roomState.layerHandlingCode = decompressed
+						insertUniqueMemoryRange(addr, compressedSize, 'layer handling code', m)
+					end
+--]]
 				end
 			
-				-- TODO still - fx1, bg, layerhandling
+				-- TODO still - bg, layerhandling
 				
 				if roomState.ptr 
-and roomStateIndex == 1
---and #mdbs == 9	-- 9 has extra data after the room blocks, and when I recompress the whole thing, for some reason it only compresses the room blocks
+				-- only write the first instance of the room
+				and roomStateIndex == 1
 				then
 					local roomaddr = roomState.ptr[0].roomAddr
 					local roomaddrstr = ('0x%02x'):format(roomState.ptr[0].roomBank)
@@ -393,7 +598,6 @@ print('decompressing address '..('0x%06x'):format(addr))
 
 print('decompressed from '..compressedSize..' to '..#data)
 					
-					roomMemoryRanges:insert{addr, compressedSize, m}
 					local function printblock(data, width)
 						for i=1,#data do
 							io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
@@ -403,51 +607,54 @@ print('decompressed from '..compressedSize..' to '..#data)
 					end
 					local ofs = 0
 					local id = data:sub(ofs+1,ofs + 2) ofs=ofs+2
-					local w = m.ptr[0].width * 32
+					local w = m.ptr[0].width * 16
 					local h = m.ptr[0].height * 16
-					local solids = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
-					local w2 = m.ptr[0].width * 16
-					local tiletypes = data:sub(ofs+1, ofs + w2*h) ofs=ofs+w2*h
+					local solids = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
+					local tiletypes = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
 					printblock(id, 2) 
-					printblock(solids, w) 
-					printblock(tiletypes, w2)
+					printblock(solids, 2*w) 
+					printblock(tiletypes, w)
 					assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
 					print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
 					
 					drawRoom(m.ptr[0], solids, tiletypes)
+--[[ write back compressed data ... reduces to 57% of the original compressed data
 
 -- now to change the doors around ... or something
 -- and then re-compress and re-write
 
--- [=[
-if doneonce then
-	for i=1,#data do
-		assert(lastdata[i] == data[i], "found an error in the decompression at offset "..i
-			..': '..data[i]..' should be '..lastdata[i])
-	end
-	assert(#lastdata == #data, "decompressions have different lengths: original "..#lastdata.." vs recompressed "..#data)
-end
---]=]
+					-- remove all doors
+					for j=0,h-1-3 do
+						for i=0,w-1 do
+							-- blue door to the left
+							if tiletypes[1 + i + w * j] == 0x41 then
+							-- blue door to the right
+							elseif tiletypes[1 + i + w * j] == 0x41 then
+							end
+						end
+					end
+				
 
-if not doneonce then 
-lastdata = data
-	local recompressed = lz.compress(data)
-	print('recompressed size: '..#recompressed..' vs original compressed size '..compressedSize)
-	assert(#recompressed <= compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..compressedSize)
-	print('recompressed data: '..recompressed:map(function(i) return ('%02x'):format(tonumber(i)) end):concat' ')
-	compressedSize = #recompressed
-	-- now write back to the original location at addr
-	for i,v in ipairs(recompressed) do
-		rom[addr+i-1] = ffi.cast('uint8_t', v)
-	end
-end
---]=]
-
---]]
+					local recompressed = lz.compress(data)
+					print('recompressed size: '..#recompressed..' vs original compressed size '..compressedSize)
+					assert(#recompressed <= compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..compressedSize)
+totalOriginalCompressedSize = totalOriginalCompressedSize + compressedSize
+					compressedSize = #recompressed
+totalRecompressedSize = totalRecompressedSize + compressedSize
+					-- now write back to the original location at addr
+					for i,v in ipairs(recompressed) do
+						rom[addr+i-1] = ffi.cast('uint8_t', v)
+					end
+--]]					
+				
+					-- notice, this will exclude differing m.index/m.region that point to the same memory locations
+					insertUniqueMemoryRange(addr, compressedSize, 'room tiles', m)
 				end
 			end
-			
-			data = rom + 0x70000 + m.ptr[0].doors
+		
+			local startaddr = topc(0x8e, m.ptr[0].doors)
+			data = rom + startaddr 
+			--data = rom + 0x70000 + m.ptr[0].doors
 			local doorAddr = read'uint16_t'
 			while doorAddr > 0x8000 do
 				m.ddbs:insert{
@@ -455,15 +662,25 @@ end
 				}
 				doorAddr = read'uint16_t'
 			end
-
+			-- exclude terminator (?)
+			data = data - 2
+			local len = data-rom - startaddr
+			insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
+			
 			for _,ddb in ipairs(m.ddbs) do
-				data = rom + topc(0x83, ddb.addr)
+				local startaddr = topc(0x83, ddb.addr)
+				data = rom + startaddr 
 				ddb.ptr = ffi.cast('door_t*', data)
 				if ddb.ptr[0].code > 0x8000 then
-					ddb.doorCodePtr = rom + topc(0x8f, ddb.ptr[0].code)
+					local codeaddr = topc(0x8f, ddb.ptr[0].code)
+					ddb.doorCodePtr = rom + codeaddr 
 					-- the next 0x1000 bytes have the door asm code
+					insertUniqueMemoryRange(codeaddr, 0x1000, 'door code', m)
 				end
-				print(' doors: '..ddb.ptr[0])
+				print(' doors: '
+					..('$83:%04x'):format(ddb.addr)
+					..' '..ddb.ptr[0])
+				insertUniqueMemoryRange(startaddr, ffi.sizeof'door_t', 'door', m)
 			end
 		
 			mdbs:insert(m)
@@ -478,20 +695,7 @@ end)
 
 mapimg:save'map.png'
 
-roomMemoryRanges:sort(function(a,b)
-	return a[1] < b[1]
-end)
 print()
-io.write('room memory ranges:')
-for i,range in ipairs(roomMemoryRanges) do
-	if i>1 then
-		local prevRange = roomMemoryRanges[i-1]
-		io.write(' ... '..(range[1]-(prevRange[1]+prevRange[2]))..' bytes of padding ...')
-	end
-	print()
-	local m = range[3]	
-	io.write( m.ptr[0].region ..'/'..m.ptr[0].index ..': '..
-		('$%06x'):format(range[1])..'-'..('$%06x'):format(range[1]+range[2]-1) )
-end
-print()
-
+print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+	', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
+	..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
