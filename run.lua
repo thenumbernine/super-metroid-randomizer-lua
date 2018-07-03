@@ -224,7 +224,7 @@ do
 		io.write(...)
 	end
 	fwrite('    memory ranges:\n')
-	fwrite('mdb region/index: addr $start-$end (name) ... trailing bytes until next region ...')	
+	fwrite('mdb region/index: addr $start-$end (desc) ... trailing bytes until next region ...')	
 	for i,range in ipairs(memoryRanges) do
 		local prevRange
 		if i>1 then

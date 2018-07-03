@@ -105,7 +105,7 @@ local function maxBlockLen(op)
 end
 local function putBlockHeader(result, op, length)
 --print('inserting op '..op..' len '..length)
-	assert(length >= 1 and length <= maxblockLen(op), "got bad length of "..length)
+	assert(length >= 1 and length <= maxBlockLen(op), "got bad length of "..length)
 	length = length - 1
 	-- extended op
 	if length > 0x1f or op == 7 then
