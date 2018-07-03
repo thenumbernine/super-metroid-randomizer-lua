@@ -1,7 +1,7 @@
 -- http://www.romhacking.net/documents/243/
 -- http://pikensoft.com/docs/Zelda_LTTP_compression_(Piken).txt
 
--- decompresses from 'rom' to a lua table of uint8_t's
+-- decompresses from 'rom' to a lua table of numbers
 local function decompress(addr, maxlen)
 	local startaddr = addr
 	local result = table()
@@ -93,17 +93,19 @@ end
 	return result, addr - startaddr
 end
 
--- compresses from a lua table of uint8_t's to another lua table of uint8_t's
+-- compresses from a lua table of numbers to another lua table of numbers
 
--- max op len of 1023 = 11:1111:1111
---local MAX_BLOCK_LENGTH = 1024
--- but this produces false terminators: 111(ext):111(lzw):11(upper 2 bits of size) = 0xff
--- max op len of 255+512 = 10:1111:1111
-local MAX_BLOCK_LENGTH = 255+512	-- should it be plus one, since the encoded value is length-1?
-
+-- maxBlockLen varies per cmd
+-- usually there are up to 10 bits reserved for len in extended cmds
+-- op==7 can't have len > 768, or else its first byte will be 0xff, a terminator
+-- any other op will can have a maxlen of 1024 without creating a fake terminator
+local function maxBlockLen(op)
+	assert(op)
+	return op == 7 and 768 or 1024 
+end
 local function putBlockHeader(result, op, length)
---print('inserting op '..op..' len '..length)	
-	assert(length >= 1 and length <= MAX_BLOCK_LENGTH, "got bad length of "..length)
+--print('inserting op '..op..' len '..length)
+	assert(length >= 1 and length <= maxblockLen(op), "got bad length of "..length)
 	length = length - 1
 	-- extended op
 	if length > 0x1f or op == 7 then
@@ -139,7 +141,7 @@ local function rleCompress(source, offset, op)
 	end
 	local length = 1
 	local i = 1
-	while offset + i < #source and length < MAX_BLOCK_LENGTH do
+	while offset + i < #source and length < maxBlockLen(op) do
 		if source[1+ offset+i] == (source[1+ offset + i % bytes] + gradient * i) % 0x100 then 
 			length = length + 1 
 		else 
@@ -154,6 +156,7 @@ local function rleCompress(source, offset, op)
 		result:insert(source[1+ offset+1])
 	end
 	return {
+		op = op,
 		result = result,
 		srclen = length,
 	}
@@ -207,7 +210,7 @@ function LZC:compress(offset, op)
 	end
 	--build Knuth–Morris–Pratt table
 	local tabl = {}
-	local wordLength = math.min(MAX_BLOCK_LENGTH, #source - offset)
+	local wordLength = math.min(maxBlockLen(op), #source - offset)
 	tabl[1] = -1
 	tabl[2] = 0
 	local i = 2
@@ -235,10 +238,10 @@ function LZC:compress(offset, op)
 	end
 	if nextOffsetToTry >= #offsets[bit.bxor(source[1+ offset],mask)] then
 		length = 0
-		return {result=table(), srclen=0}
+		return {op=op, result=table(), srclen=0}
 	end
 	j = 0 --offset into string being searched for
-	while i + j < highest or (j ~=0 and i < offset and i + j < highest + MAX_BLOCK_LENGTH and i + j < #source) do
+	while i + j < highest or (j ~=0 and i < offset and i + j < highest + maxBlockLen(op) and i + j < #source) do
 		if source[1+ offset+j] == bit.bxor(source[1+ i+j],mask) then
 			j=j+1
 			if j > bestLength then
@@ -268,7 +271,9 @@ function LZC:compress(offset, op)
 	end
 	--apply
 	length = bestLength
-	if length == 0 then return {result=table(), srclen=0} end
+	if length == 0 then 
+		return {op=op, result=table(), srclen=0} 
+	end
 	local result = table()
 	putBlockHeader(result, op, length)
 	if not absolute then bestStart = offset - bestStart end
@@ -277,6 +282,7 @@ function LZC:compress(offset, op)
 		result:insert(bit.rshift(bestStart, 8))
 	end
 	return {
+		op = op,
 		srclen = length,
 		result = result,
 	}
@@ -324,12 +330,10 @@ print('compress #source '..#source)
 		if not bestOption then
 			noCompressionLength = noCompressionLength + 1
 			i = i + 1
-			if i >= #source 
-or noCompressionLength == MAX_BLOCK_LENGTH
-			then 
+			if i >= #source or noCompressionLength == maxBlockLen(0) then 
 --print('adding no-compress len '..noCompressionLength)			
 				noCompress(source, i, noCompressionLength, result)
-noCompressionLength = 0
+				noCompressionLength = 0
 			end
 		else
 			if noCompressionLength ~= 0 then

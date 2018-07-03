@@ -664,7 +664,7 @@ for i,enemy in ipairs(enemies) do
 		local addr = topc(0xb4, enemy.ptr[0].name)
 		local len = 10
 		local betaname = ffi.string(rom + addr, len)
-		insertUniqueMemoryRange(addr, len, 'debug name')
+		insertUniqueMemoryRange(addr, len+4, 'debug name')
 		io.write(': '..betaname)
 		--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
 	end

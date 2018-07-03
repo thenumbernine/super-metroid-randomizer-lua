@@ -24,26 +24,26 @@ colormap[0] = 0
 colormap[255] = 255
 -- data is sized 32*m.width x 16*m.width
 local ofsPerRegion = {
-	{3,0},	-- crateria
-	{0,18},	-- brinstar
-	{31,38},	-- norfair
-	{37,-10},	-- wrecked ship
-	{28,18},	-- maridia
-	{0,0},	-- tourian
-	{-5,25},	-- ceres
-	{7,47},	-- testing
+	function(m) 
+		-- special case for crateria
+		if m.region == 0	-- crateria
+		and m.x > 45 
+		then
+			return 10,0
+		end
+		return 3,0
+	end,	-- crateria
+	function(m) return 0,18 end,	-- brinstar
+	function(m) return 31,38 end,	-- norfair
+	function(m) return 37,-10 end,	-- wrecked ship
+	function(m) return 28,18 end,	-- maridia
+	function(m) return 0,0 end,	-- tourian
+	function(m) return -5,25 end,	-- ceres
+	function(m) return 7,47 end,	-- testing
 }
 
 local function drawRoom(m, solids, tiletypes)
-	local ofsx, ofsy = table.unpack(ofsPerRegion[m.region+1])
-	
-	-- special case for crateria
-	if m.region == 0	-- crateria
-	and m.x > 45 
-	then
-		ofsx = ofsx + 7
-	end
-	
+	local ofsx, ofsy = ofsPerRegion[m.region+1](m)
 	local xofs = roomsize * (ofsx - 4)
 	local yofs = roomsize * (ofsy + 1)
 	for j=0,m.height-1 do
@@ -107,12 +107,12 @@ local roomstate_t = struct'roomstate_t'{
 	{fx1 = 'uint16_t'},
 	{enemyPop = 'uint16_t'},
 	{enemySet = 'uint16_t'},
-	{layer2scrollData = 'uint16_t'},
+	{layer2scrollData = 'uint16_t'},	-- TODO
 	{scroll = 'uint16_t'},
 	{unused = 'uint16_t'},
-	{fx2 = 'uint16_t'},	--aka 'main asm ptr'
+	{fx2 = 'uint16_t'},					-- TODO - aka 'main asm ptr'
 	{plm = 'uint16_t'},
-	{bgDataPtr = 'uint16_t'},
+	{bgdata = 'uint16_t'},
 	{layerHandling = 'uint16_t'},
 }
 
@@ -157,7 +157,7 @@ local bg_t = struct'bg_t'{
 	{header = 'uint16_t'},
 	{addr = 'uint16_t'},
 	{bank = 'uint8_t'},
-	-- then 14 bytes of unknown
+	-- skip the next 14 bytes
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
 	{unknown3 = 'uint16_t'},
@@ -254,6 +254,24 @@ function RoomState:init(args)
 end
 
 local mdbs = table()
+
+-- table of all unique bgs.
+-- each entry has .addr and .ptr = (bg_t*)(rom+.addr)
+-- doesn't create duplicates -- returns a previous copy if it exists
+local bgs = table()
+local function addBG(addr)
+	local _,bg = bgs:find(nil, function(bg) return bg.addr == addr end)
+	if bg then return bg end
+	local bg = {
+		addr = addr,
+		ptr = ffi.cast('bg_t*', rom + addr),
+		-- list of all m's that use this bg
+		ms = table(),
+	}
+	bgs:insert(bg)
+	return bg
+end
+
 
 local totalOriginalCompressedSize = 0
 local totalRecompressedSize = 0
@@ -492,10 +510,9 @@ print(' roomstate '..('%04x'):format(roomState.addr))
 						local ptr = ffi.cast('enemySet_t*', data)
 						if ptr[0].enemyAddr == 0xffff then 
 -- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
-local tmp = ffi.cast('uint16_t*', data)
-print('enemySet_t term:'..range(0,4):map(function(i) return ('%04x'):format(tmp[i]) end):concat' ')
+print('enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
 							-- include terminator
-							data = data + 2*5
+							data = data + 10
 							break 
 						end
 				
@@ -551,31 +568,37 @@ print('enemySet_t term:'..range(0,4):map(function(i) return ('%04x'):format(tmp[
 						insertUniqueMemoryRange(startaddr, len, 'fx1_t', m)
 					end
 				
-					if roomState.ptr[0].bgDataPtr > 0x8000 then
-						local startaddr = topc(0x8f, roomState.ptr[0].bgDataPtr)
-						data = rom + startaddr
+					if roomState.ptr[0].bgdata > 0x8000 then
+						local startaddr = topc(0x8f, roomState.ptr[0].bgdata)
+						local addr = startaddr
 						while true do
-							local ptr = ffi.cast('bg_t*', data)
-							if ptr.header ~= 0x04 then
-print('bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
-								data = data + 8
+							local ptr = ffi.cast('bg_t*', rom+addr)
+							
+							-- this is a bad test of validity
+							-- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+							-- in fact, I never read more than 1 bg, and sometimes I read 0
+							--if ptr.header ~= 0x04 then
+if false then
+print(' bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(rom[addr+i]) end):concat' ')
+								addr = addr + 8
 								break
 							end
-							roomState.bgs:insert{bg=ptr[0]}
-							data = data + ffi.sizeof'bg_t'
+							-- so bgs[i].addr is the address where bgs[i].ptr was found
+							-- and bgs[i].ptr[0].bank,addr points to where bgs[i].data was found
+							-- a little confusing
+							local bg = addBG(addr)
+							bg.ms:insert(m)
+							roomState.bgs:insert(bg)
+print(' bg_t '..('$%06x'):format(addr)..': '..bg.ptr[0])
+							addr = addr + ffi.sizeof'bg_t'
+						
+do break end
 						end
-						local len = data-rom-startaddr
-						insertUniqueMemoryRange(startaddr, len, 'bg_t', m)
-					
-						for _,bg in ipairs(roomState.bgs) do
-							local addr = topc(bg.bg.bank, bg.bg.addr)
-							local decompressed, compressedSize = lz.decompress(addr, 0x10000)
-							bg.data = decompressed
-							insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
-						end
+						insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t ('..((addr-8-startaddr)/ffi.sizeof'bg_t')..')', m)
 					end
 
 --[[ TODO decompress is failing here
+-- 0x8f is also used for door code and for plm, soo....
 					if roomState.ptr[0].layerHandling > 0x8000 then
 						local addr = topc(0x8f, roomState.ptr[0].layerHandling)
 						local decompressed, compressedSize = lz.decompress(addr, 0x1000)
@@ -668,7 +691,9 @@ totalRecompressedSize = totalRecompressedSize + compressedSize
 			end
 			-- exclude terminator (?)
 			data = data - 2
+print('dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
 			local len = data-rom - startaddr
+			-- either +0, +39 or +44
 			insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
 			
 			for _,ddb in ipairs(m.ddbs) do
@@ -698,6 +723,29 @@ end, function(err)
 end)
 
 mapimg:save'map.png'
+
+-- print bg info
+print()
+print("all bg_t's:")
+bgs:sort(function(a,b) return a.addr < b.addr end)
+for _,bg in ipairs(bgs) do
+	print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
+		..' '..bg.ms:map(function(m)
+			return m.ptr[0].region..'/'..m.ptr[0].index
+		end):concat' '
+	)
+end
+
+
+--[[ load data
+-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
+for _,bg in ipairs(bgs) do
+	local addr = topc(bg.ptr[0].bank, bg.ptr[0].addr)
+	local decompressed, compressedSize = lz.decompress(addr, 0x10000)
+	bg.data = decompressed
+	insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
+end
+--]]
 
 print()
 print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
