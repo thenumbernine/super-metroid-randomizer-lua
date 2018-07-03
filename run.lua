@@ -190,9 +190,10 @@ end
 if not config.randomizeItems then
 	print()
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-	print'!!!!!!!!!!!! NOT RANDOMIZING IEMS !!!!!!!!!!!'
+	print'!!!!!!!!!!! NOT RANDOMIZING ITEMS !!!!!!!!!!!'
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 end
+print()
 
 do
 	memoryRanges:sort(function(a,b)
@@ -222,7 +223,8 @@ do
 		f:write(...)
 		io.write(...)
 	end
-	fwrite('memory ranges:')
+	fwrite('    memory ranges:\n')
+	fwrite('mdb region/index: addr $start-$end (name) ... trailing bytes until next region ...')	
 	for i,range in ipairs(memoryRanges) do
 		local prevRange
 		if i>1 then

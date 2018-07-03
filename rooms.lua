@@ -592,9 +592,10 @@ print(' bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(rom[addr
 print(' bg_t '..('$%06x'):format(addr)..': '..bg.ptr[0])
 							addr = addr + ffi.sizeof'bg_t'
 						
+addr=addr+8
 do break end
 						end
-						insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t ('..((addr-8-startaddr)/ffi.sizeof'bg_t')..')', m)
+						insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t', m)
 					end
 
 --[[ TODO decompress is failing here
