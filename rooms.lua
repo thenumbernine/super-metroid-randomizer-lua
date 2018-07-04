@@ -259,8 +259,6 @@ function RoomState:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
-	self.plms = self.plms or table()
-	self.scrollMods = self.scrollMods or table()
 	self.enemyPops = self.enemyPops or table()
 	self.enemySets = self.enemySets or table()
 	self.fx1s = self.fx1s or table()
@@ -268,7 +266,85 @@ function RoomState:init(args)
 	self.rooms = self.rooms or table()
 end
 
-local mdbs = table()
+-- table of all unique plm regions
+local plmsets = table()
+local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.  you have to add to plmset.mdbs externally
+	local startaddr = addr
+	local _,plmset = plmsets:find(nil, function(plmset) return plmset.addr == addr end)
+	if plmset then return plmset end
+
+	local startaddr = addr
+
+	local plms = table()
+	while true do
+		local ptr = ffi.cast('plm_t*', rom+addr)
+		if ptr[0].cmd == 0 then 
+			-- include plm term
+			addr = addr + 2
+			break 
+		end
+		--inserting the struct by-value
+		plms:insert(ptr[0])
+		addr = addr + ffi.sizeof'plm_t'
+	end
+	local len = addr-startaddr
+
+	-- nil plmset for no plms
+	--if #plms == 0 then return end
+
+	local plmset = {
+		addr = startaddr,
+		scrollMods = table(),
+		plms = plms,
+		mdbs = table(),
+		roomStates = table(),
+	}
+	plmsets:insert(plmset)
+
+
+-- this shows the orig rom memory
+insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
+
+	-- now interpret the plms...
+	for _,plm in ipairs(plmset.plms) do
+		if plm.cmd == 0xb703 then
+			local startaddr = 0x70000 + plm.args
+			local addr = startaddr
+			local ok = false
+			local i = 1
+			local tmp = table()
+			while true do
+				local screen = rom[addr] addr=addr+1
+				if screen == 0x80 then
+					tmp[i] = 0x80
+					ok = true
+					break
+				end
+
+				local scroll = rom[addr] addr=addr+1
+				if scroll > 0x02 then
+					ok = false
+					break
+				end
+				tmp[i] = screen
+				tmp[i+1] = scroll
+				i = i + 2
+			end
+			local len = addr-startaddr
+			insertUniqueMemoryRange(startaddr, len, 'plm cmd')
+	
+			if ok then
+				local scrollMod = {}
+				scrollMod.addr = plm.args
+				scrollMod.data = tmp
+				plmset.scrollMods:insert(scrollMod)
+			end
+		end
+	end
+
+	return plmset
+end
+
 
 -- table of all unique bgs.
 -- each entry has .addr and .ptr = (bg_t*)(rom+.addr)
@@ -281,7 +357,7 @@ local function addBG(addr)
 		addr = addr,
 		ptr = ffi.cast('bg_t*', rom + addr),
 		-- list of all m's that use this bg
-		ms = table(),
+		mdbs = table(),
 	}
 	bgs:insert(bg)
 	return bg
@@ -295,7 +371,7 @@ local function addFX1(addr)
 	fx1 = {
 		addr = addr,
 		ptr = ffi.cast('fx1_t*', rom + addr),
-		ms = table(),
+		mdbs = table(),
 	}
 	fx1s:insert(fx1)
 	return fx1
@@ -379,6 +455,7 @@ end
 
 
 
+local mdbs = table()
 xpcall(function()
 
 
@@ -463,13 +540,13 @@ for x=0x8000,0xffff do
 
 		do
 			-- after the last stateselect is the first roomstate_t
-			local roomState = ffi.cast('roomstate_t*', data)
+			local rsptr = ffi.cast('roomstate_t*', data)
 			insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			data = data + ffi.sizeof'roomstate_t'
 			
 			local rs = RoomState{
 				-- no select means a terminator
-				ptr = roomState,
+				ptr = rsptr,
 			}
 			m.roomStates:insert(rs)
 
@@ -495,97 +572,53 @@ for x=0x8000,0xffff do
 			end
 			--]]
 
-			for roomStateIndex,roomState in ipairs(m.roomStates) do
-				-- shouldn't all roomState.ptr's exist by now?
-				--assert(roomState.ptr, "found a roomstate without a ptr")
-				if not roomState.ptr then
+			for _,rs in ipairs(m.roomStates) do
+				-- shouldn't all rs.ptr's exist by now?
+				--assert(rs.ptr, "found a roomstate without a ptr")
+				if not rs.ptr then
 					error('found roomState without a pointer')
 				else
-					if roomState.ptr[0].scroll > 0x0001 and roomState.ptr[0].scroll ~= 0x8000 then
-						local addr = topc(scrollBank, roomState.ptr[0].scroll)
+					if rs.ptr[0].scroll > 0x0001 and rs.ptr[0].scroll ~= 0x8000 then
+						local addr = topc(scrollBank, rs.ptr[0].scroll)
 						local scrollDataPtr = rom + addr 
 						local scrollDataSize = m.ptr[0].width * m.ptr[0].height
-						roomState.scrollData = range(scrollDataSize):map(function(i)
+						rs.scrollData = range(scrollDataSize):map(function(i)
 							return scrollDataPtr[i-1]
 						end)
 						-- sized mdb width x height
 						insertUniqueMemoryRange(addr, scrollDataSize, 'scrolldata', m)
 					end
 					
-					if roomState.ptr[0].plm ~= 0 then
-						local startaddr = topc(plmBank, roomState.ptr[0].plm)
-						data = rom + startaddr
-						while true do
-							local ptr = ffi.cast('plm_t*', data)
-							if ptr[0].cmd == 0 then 
-								data = data + 2
-								break 
-							end
-							--inserting the struct by-value
-							roomState.plms:insert(ptr[0])
-							data = data + ffi.sizeof'plm_t'
+					if rs.ptr[0].plm ~= 0 then
+						local addr = topc(plmBank, rs.ptr[0].plm)
+						local plmset = addPLMSet(addr, m)
+						if plmset and #plmset.plms > 0 then
+							rs.plmset = plmset
+							plmset.mdbs:insert(m)
+							plmset.roomStates:insert(rs)
+						else
+							rs.ptr[0].plm = 0
 						end
-						local len = data-rom-startaddr
-						insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
-						-- look at plm range from topc(plmBank,roomState.ptr[0].plm) to plmPtr-rom
 					end
 					
-					for _,plm in ipairs(roomState.plms) do
-						if plm.cmd == 0xb703 then
-							local startaddr = 0x70000 + plm.args
-							data = rom + startaddr
-							local ok = false
-							local i = 1
-							local tmp = table()
-							while true do
-								local screen = read'uint8_t'
-								if screen == 0x80 then
-									tmp[i] = 0x80
-									ok = true
-									break
-								end
-
-								local scroll = read'uint8_t'
-								if scroll > 0x02 then
-									ok = false
-									break
-								end
-								tmp[i] = screen
-								tmp[i+1] = scroll
-								i = i + 2
-							end
-							local len = data-rom-startaddr
-							insertUniqueMemoryRange(startaddr, len, 'plm cmd', m)
-	
-							if ok then
-								local scrollMod = {}
-								scrollMod.addr = plm.args
-								scrollMod.data = tmp
-								roomState.scrollMods:insert(scrollMod)
-							end
-						end
-					end
-		
 					-- TODO these enemyAddr's aren't lining up with any legitimate enemies ...
-					local startaddr = topc(0xa1, roomState.ptr[0].enemyPop)
+					local startaddr = topc(0xa1, rs.ptr[0].enemyPop)
 					data = rom + startaddr 
 					while true do
 						local ptr = ffi.cast('enemyPop_t*', data)
 						if ptr[0].enemyAddr == 0xffff then
 							-- include term and enemies-to-kill
 							data = data + 2
-							roomState.enemiesToKill = read'uint8_t'
+							rs.enemiesToKill = read'uint8_t'
 							break
 						end
-						-- [[
-						--]]
-						roomState.enemyPops:insert(ptr[0])
+						rs.enemyPops:insert(ptr[0])
 						data = data + ffi.sizeof'enemyPop_t'
 					end
 					local len = data-rom-startaddr
 					insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
 			
-					local startaddr = topc(0xb4, roomState.ptr[0].enemySet)
+					local startaddr = topc(0xb4, rs.ptr[0].enemySet)
 					data = rom + startaddr 
 					while true do
 						local ptr = ffi.cast('enemySet_t*', data)
@@ -597,13 +630,13 @@ for x=0x8000,0xffff do
 							break 
 						end
 				
-						roomState.enemySets:insert(ptr[0])
+						rs.enemySets:insert(ptr[0])
 						data = data + ffi.sizeof'enemySet_t'
 					end
 					local len = data-rom-startaddr
 					insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
 				
-					local startaddr = topc(0x83, roomState.ptr[0].fx1)
+					local startaddr = topc(0x83, rs.ptr[0].fx1)
 					local addr = startaddr
 					local retry
 					while true do
@@ -619,14 +652,14 @@ for x=0x8000,0xffff do
 						or m.ddbs:find(nil, function(d) return d.pointer == cmd end)
 						then
 							local fx1 = addFX1(addr)
-							fx1.ms:insert(m)
-							roomState.fx1s:insert(fx1)
+							fx1.mdbs:insert(m)
+							rs.fx1s:insert(fx1)
 							addr = addr + ffi.sizeof'fx1_t'
 						else
 							-- try again 0x10 bytes ahead
 							if not retry then
 								retry = true
-								startaddr = topc(0x83, roomState.ptr[0].fx1) + 0x10
+								startaddr = topc(0x83, rs.ptr[0].fx1) + 0x10
 								addr = startaddr
 							else
 								addr = nil
@@ -639,8 +672,8 @@ for x=0x8000,0xffff do
 						insertUniqueMemoryRange(startaddr, len, 'fx1_t', m)
 					end
 				
-					if roomState.ptr[0].bgdata > 0x8000 then
-						local startaddr = topc(0x8f, roomState.ptr[0].bgdata)
+					if rs.ptr[0].bgdata > 0x8000 then
+						local startaddr = topc(0x8f, rs.ptr[0].bgdata)
 						local addr = startaddr
 						while true do
 							local ptr = ffi.cast('bg_t*', rom+addr)
@@ -658,8 +691,8 @@ for x=0x8000,0xffff do
 							-- and bgs[i].ptr[0].bank,addr points to where bgs[i].data was found
 							-- a little confusing
 							local bg = addBG(addr)
-							bg.ms:insert(m)
-							roomState.bgs:insert(bg)
+							bg.mdbs:insert(m)
+							rs.bgs:insert(bg)
 							addr = addr + ffi.sizeof'bg_t'
 						
 addr=addr+8
@@ -670,20 +703,18 @@ do break end
 
 --[[ TODO decompress is failing here
 -- 0x8f is also used for door code and for plm, soo....
-					if roomState.ptr[0].layerHandling > 0x8000 then
-						local addr = topc(0x8f, roomState.ptr[0].layerHandling)
+					if rs.ptr[0].layerHandling > 0x8000 then
+						local addr = topc(0x8f, rs.ptr[0].layerHandling)
 						local decompressed, compressedSize = lz.decompress(addr, 0x1000)
-						roomState.layerHandlingCode = decompressed
+						rs.layerHandlingCode = decompressed
 						insertUniqueMemoryRange(addr, compressedSize, 'layer handling code', m)
 					end
 --]]
 				end
 				
-				if roomState.ptr 
-				--and roomStateIndex == 1
-				then
-					local addr = topc(roomState.ptr[0].roomBank, roomState.ptr[0].roomAddr)
-					roomState.rooms:insert(addRoom(addr, m))
+				if rs.ptr then
+					local addr = topc(rs.ptr[0].roomBank, rs.ptr[0].roomAddr)
+					rs.rooms:insert(addRoom(addr, m))
 				end
 			end
 	
@@ -731,7 +762,7 @@ end)
 
 -- before the first mdb_t is 174 plm_t's, 
 -- then 100 bytes of something
-
+assert(mdbs)
 for j,m in ipairs(mdbs) do
 	local d = ffi.cast('uint8_t*',m.ptr)
 	local mdbaddr = d - rom
@@ -776,45 +807,189 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 
 	-- see if the next mdb_t is immediately after
 	-- sometimes a few plm_t's are found next ...
+	--[=[
 	if j+1 <= #mdbs then
 		local m2 = ffi.cast('uint8_t*', mdbs[j+1].ptr)
 		if d ~= m2 then
 			print('non-contiguous mdb_t before '..('$%06x'):format(m2-rom))	
 		end
 	end
+	--]=]
 end
 --]]
 
--- plmrandomization:
+-- plm randomization:
 -- randomize ... remove only for now
 -- removing turns a door blue
 -- TODO when combined with modifying tiles, this is screwing up door transitions
---[[
-for _,m in ipairs(mdbs) do
-	for _,rs in ipairs(m.roomStates) do
-		for i=#rs.plms,1,-1 do
-			local plm = rs.plms[i]
-			local plmName = doorPLMNameForValue[plm.cmd]
-			if plmName then
-				local color, side = plmName:match'^door_(%w+)_(%w+)'
-				if side then
-					rs.plms:remove(i)
-				end
-			end						
+-- [[
+for _,plmset in ipairs(plmsets) do
+	--[=[ remove all door plms
+	for i=#plmset.plms,1,-1 do
+		local plm = plmset.plms[i]
+		local plmName = doorPLMNameForValue[plm.cmd]
+		if plmName then
+			local color, side = plmName:match'^door_(%w+)_(%w+)'
+			if side then
+				plmset.plms:remove(i)
+			end
+		end						
+	end
+	--]=]
+	--[=[ change all doors to red
+	for _,plm in ipairs(plmset.plms) do
+		local name = doorPLMNameForValue[plm.cmd]
+		if name then
+			local color, side = name:match'^door_(%w+)_(%w+)'
+			if side then
+				plm.cmd = assert(doorPLMTypes['door_red_'..side])
+			end
 		end
-
-		-- now write it back ...
-		local ptr = ffi.cast('plm_t*', rom + topc(plmBank, rs.ptr[0].plm))
-		for _,plm in ipairs(rs.plms) do
-			ptr[0] = plm
-			ptr = ptr + 1
+	end
+	--]=]
+	-- if we erased all plms then we should clear all flags in all referencing rooms
+	if #plmset.plms == 0 then
+		for _,rs in ipairs(plmset.roomStates) do
+			rs.ptr[0].plm = 0
+			rs.plmset = nil
 		end
-		ffi.cast('uint16_t*', ptr)[0] = 0
 	end
 end
 --]]
 
+--[[ writing back plms ...
+-- turns out this needs more bulletproofing
+-- because the door changes and stuff modify those original plm locations 
+--[=[
+plm memory ranges:
+ 0/ 0: $078000..$079193 (plm_t x174) 
+ 3/ 0: $07c215..$07c230 (plm_t x2) 
+ 	... 20 bytes of padding ...
+ 3/ 3: $07c245..$07c2fe (plm_t x15) 
+ 	... 26 bytes of padding ...
+ 3/ 3: $07c319..$07c8c6 (plm_t x91) 
+ 	... 199 bytes of padding ...
+--]=]
+-- where plms were written before, so should be safe, right?
+-- ranges are inclusive
+local plmWriteRanges = {
+ 	{0x78000, 0x79193},	
+ 	-- then comes mdb_t data, and a lot of other stuff ...
+	{0x7c215, 0x7c230},
+ 	--... 20 bytes of padding ... which is "Hallway Atop Wrecked Ship" PLM data, according to metroid rom map.
+	-- I don't see where it is referenced from though.
+	{0x7c245, 0x7c2fe},
+ 	--... 26 bytes of padding ... "Hallway Atop Wrecked Ship" again
+	{0x7c319, 0x7c8c6},
+ 	-- next comes which is L12 data, and then a lot more stuff
+	{0x7e87f, 0x7e880},
+	-- then comes 
+	{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
+}
+for _,range in ipairs(plmWriteRanges) do
+	range.sofar = range[1]
+end
 
+
+-- if the roomstate points to an empty plmset then it can be cleared
+for _,plmset in ipairs(plmsets) do
+	if #plmset.plms == 0 then
+		for j=#plmset.roomStates,1,-1 do
+			local rs = plmset.roomStates[j]
+			rs.ptr[0].plm = 0
+			rs.plmset = nil
+			plmset.roomStates[j] = nil
+		end
+	end
+end
+-- remove empty plmsets
+-- TODO hmm if I remove the plmsets from the list, then the first room to the left from the ship stalls 
+-- another byproduct of this is ... when you start a new game, the door outside old mother brain is grey
+-- i think plms have ptrs to other plms that need to be updated ... 
+--[=[
+for i=#plmsets,1,-1 do
+	local plmset = plmsets[i]
+	if #plmset.plms == 0 then
+		plmsets:remove(i)
+		-- if you remove plm #8 from the list ... even though it's just a terminator ... you can't walk into the room to the left of the ship
+		if i <= 9 then break end
+	end
+end
+--]=]
+
+-- see if there are duplicates
+for i=1,#plmsets-1 do
+	local pi = plmsets[i]
+	for j=i+1,#plmsets do
+		local pj = plmsets[j]
+		if #pi.plms == #pj.plms 
+		-- a lot of zero-length plms match ... but what about non-zero-length plms? none match
+		and #pi.plms > 0
+		then
+			local differ
+			for k=1,#pi.plms do
+				if pi.plms[k] ~= pj.plms[k] then
+					differ = true
+					break
+				end
+			end
+			if not differ then
+				print('plms '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+			end
+		end
+	end
+end
+for _,plmset in ipairs(plmsets) do
+	-- TODO, if there are any duplicate plmsets then get rid of them
+	local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
+	local fromaddr, toaddr
+	for _,range in ipairs(plmWriteRanges) do
+		if range.sofar + bytesToWrite <= range[2]+1 then
+			fromaddr = range.sofar	
+			-- write
+			for _,plm in ipairs(plmset.plms) do
+				ffi.cast('plm_t*', rom+range.sofar)[0] = plm
+				range.sofar = range.sofar + ffi.sizeof'plm_t'
+			end
+			ffi.cast('uint16_t*', rom+range.sofar)[0] = 0
+			range.sofar = range.sofar + ffi.sizeof'uint16_t'
+			toaddr = range.sofar
+			break
+		end
+	end
+	if fromaddr then
+-- this shows the new rom memory
+insertUniqueMemoryRange(fromaddr, toaddr-fromaddr, 'plm_t', m)
+		--[=[
+		print('writing plms from '
+			..('$%06x'):format(fromaddr)
+			..' to '..('$%06x'):format(toaddr))
+		--]=]
+		for _,rs in ipairs(plmset.roomStates) do
+			local newofs = bit.band(0xffff, fromaddr)
+			if newofs ~= rs.ptr[0].plm then
+				print('updating roomstate plm from '..('%04x'):format(rs.ptr[0].plm)..' to '..('%04x'):format(newofs))
+				rs.ptr[0].plm = newofs 
+			end
+		end
+	else
+		error("couldn't find anywhere to write plm_t")
+	end
+end
+--]]
+
+print()
+print("all plm_t's:")
+for _,plmset in ipairs(plmsets) do
+	print(' '..('$%06x'):format(plmset.addr)
+		..' mdbs: '..plmset.mdbs:map(function(m)
+			return m.ptr[0].region..'/'..m.ptr[0].index
+		end):concat' '
+	)
+	for _,plm in ipairs(plmset.plms) do
+		print('  '..plm)
+	end
+end
 
 -- print bg info
 print()
@@ -822,7 +997,7 @@ print("all bg_t's:")
 bgs:sort(function(a,b) return a.addr < b.addr end)
 for _,bg in ipairs(bgs) do
 	print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
-		..' '..bg.ms:map(function(m)
+		..' mdbs: '..bg.mdbs:map(function(m)
 			return m.ptr[0].region..'/'..m.ptr[0].index
 		end):concat' '
 	)
@@ -845,7 +1020,7 @@ print("all fx1_t's:")
 fx1s:sort(function(a,b) return a.addr < b.addr end)
 for _,fx1 in ipairs(fx1s) do
 	print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
-		..' '..fx1.ms:map(function(m)
+		..' mdbs: '..fx1.mdbs:map(function(m)
 			return m.ptr[0].region..'/'..m.ptr[0].index
 		end):concat' '
 	)
@@ -861,12 +1036,16 @@ for _,m in ipairs(mdbs) do
 		if rs.select then
 			print('  '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..rs.select_ctype..' '..rs.select[0]) 
 		end
-		for _,plm in ipairs(rs.plms) do
-			io.write('   plm_t: '..plm)
-			local plmName = doorPLMNameForValue[plm.cmd]
-			if plmName then io.write(' '..plmName) end
-			print()	
+		-- [[
+		if rs.plmset then
+			for _,plm in ipairs(rs.plmset.plms) do
+				io.write('   plm_t: '..plm)
+				local plmName = doorPLMNameForValue[plm.cmd]
+				if plmName then io.write(' '..plmName) end
+				print()	
+			end
 		end
+		--]]
 		for _,enemyPop in ipairs(rs.enemyPops) do	
 			print('   enemyPop: '
 				..((enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
