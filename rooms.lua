@@ -105,6 +105,11 @@ local stateselect_t = struct'stateselect_t'{
 	{roomstate = 'uint16_t'},	-- ptr to alternative roomstate in bank $8f
 }
 
+local stateselect2_t = struct'stateselect2_t'{
+	{testcode = 'uint16_t'},
+	{roomstate = 'uint16_t'},
+}
+
 local roomstate_t = struct'roomstate_t'{
 	{roomAddr = 'uint16_t'},
 	{roomBank = 'uint8_t'},
@@ -339,7 +344,8 @@ for x=0x8000,0xffff do
 		while true do
 			local startptr = data
 			-- this overlaps with m.ptr[0].doors
-			testCode = read'uint16_t'
+			testCode = ffi.cast('uint16_t*',data)[0]
+			data = data + 2
 			
 			if testCode == 0xe5e6 then 
 				insertUniqueMemoryRange(startptr-rom, data-startptr, 'roomselect', m)
@@ -380,12 +386,12 @@ print('2-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 				testCode = testCode,
 				testValue = testValue,
 				testValueDoor = testValueDoor,
-				addr = assert(roomStateAddr),
+				roomStateAddr = assert(roomStateAddr),
 			}
 			m.roomStates:insert(rs)
 			-- [[
 			io.write(' adding room after mdb_t:')
-			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
+			for _,k in ipairs{'roomStateAddr','testCode','testValue','testValueDoor'} do
 				io.write(' ',k,'=',('%04x'):format(rs[k]))
 			end
 			print()
@@ -404,38 +410,39 @@ print('2-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 			-- looks like the rooms added 5 lines up are excluded in the next loop
 			-- should these be two separate loops and arrays?  they're two separate structures after all
 			local rs = RoomState{
-				testCode = 0xe5e6,
-				testValue = 0,
-				testValueDoor = 0,
-				addr = 0xe5e6,
 				ptr = roomState,
 			}
 			m.roomStates:insert(rs)
 			
 			-- [[
 			io.write(' adding room at 0xe5e6:')
-			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
-				io.write(' ',k,'=',('%04x'):format(rs[k]))
+			for _,k in ipairs{'roomStateAddr','testCode','testValue','testValueDoor'} do
+				io.write(' ',k,'=',rs[k] and ('%04x'):format(rs[k]) or 'nil')
 			end
 			print()
 			if rs.ptr then print('  '..rs.ptr[0]) end
 			--]]
 
 			for _,rs in ipairs(m.roomStates) do
-				assert(rs.addr)
-				if rs.addr ~= 0xe5e6 then
+				assert(rs.roomStateAddr or rs.ptr)
+				if rs.roomStateAddr then
 					assert(not rs.ptr)
-					local addr = topc(0x8e, rs.addr)
-					rs.ptr = ffi.cast('roomstate_t*', rom + addr)
-					insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+					local roomStateAddr = topc(0x8e, rs.roomStateAddr)
+					rs.ptr = ffi.cast('roomstate_t*', rom + roomStateAddr)
+					insertUniqueMemoryRange(roomStateAddr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 				end
+	
+				-- this is true for the last room
+				-- but rs.roomStateAddr == stateselect_t::roomstate is never used
+				--if rs.ptr then assert(rs.roomStateAddr ~= 0xe5e6) end
+			
 			end
 			
 			for roomStateIndex,roomState in ipairs(m.roomStates) do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
 				if not roomState.ptr then
-					print('  !! found roomState without a pointer '..('%04x'):format(roomState.addr))
+					print('  !! found roomState without a pointer '..('%04x'):format(roomState.roomStateAddr))
 				else
 					if roomState.ptr[0].scroll > 0x0001 and roomState.scroll ~= 0x8000 then
 						local addr = topc(scrollBank, roomState.ptr[0].scroll)
@@ -444,7 +451,7 @@ print('2-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 						insertUniqueMemoryRange(addr, m.ptr[0].width * m.ptr[0].height, 'scrolldata', m)
 					end
 					
-print(' roomstate '..('%04x'):format(roomState.addr))
+print(' roomstate '..(roomState.roomStateAddr and ('%04x'):format(roomState.roomStateAddr) or 'nil'))
 					if roomState.ptr[0].plm ~= 0 then
 						local startaddr = topc(plmBank, roomState.ptr[0].plm)
 						data = rom + startaddr
