@@ -195,6 +195,9 @@ if not config.randomizeItems then
 end
 print()
 
+
+-- TODO check against...
+-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 do
 	memoryRanges:sort(function(a,b)
 		return a.addr < b.addr
@@ -228,8 +231,6 @@ do
 	for i,range in ipairs(memoryRanges) do
 		local prevRange
 		if i>1 then
-			local prevname = range.name
-			fwrite(' ('..prevname..') ')
 			prevRange = memoryRanges[i-1]
 			local padding = range.addr - (prevRange.addr + prevRange.len)
 			if padding ~= 0 then
@@ -250,6 +251,7 @@ do
 			fwrite('     ')
 		end
 		fwrite(': '..('$%06x'):format(range.addr)..'-'..('$%06x'):format(range.addr+range.len-1))
+		fwrite(' ('..range.name..') ')
 	end
 	fwrite(' ('..memoryRanges:last().name..')\n')
 	f:close()

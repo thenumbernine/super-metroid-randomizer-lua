@@ -367,7 +367,6 @@ for x=0x8000,0xffff do
 			then
 				selectptr = ffi.cast('stateselect_t*', data)
 				data = data + ffi.sizeof'stateselect_t'
-print('3-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 			elseif testcode == 0xE5EB then
 				-- this is never reached
 				error'here' 
@@ -381,7 +380,6 @@ print('3-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 				-- this condition *does* happen, which means roomStateAddr may be 2 or 3 bytes from the start
 				selectptr = ffi.cast('stateselect2_t*', data)
 				data = data + ffi.sizeof'stateselect2_t'
-print('2-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 			end
 			insertUniqueMemoryRange(startptr-rom, data-startptr, 'stateselect', m)
 
