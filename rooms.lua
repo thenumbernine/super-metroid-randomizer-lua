@@ -309,25 +309,27 @@ for x=0x8000,0xffff do
 		data = data + ffi.sizeof(ctype)
 		return result[0]
 	end
-	local m = {
-		roomStates = table(),
-		ddbs = table(),
-	}
-	m.ptr = ffi.cast('mdb_t*', data)
+
+	local mptr = ffi.cast('mdb_t*', data)
 	if (
 		(data[12] == 0xE5 or data[12] == 0xE6) 
-		and m.ptr[0].region < 8 
-		and (m.ptr[0].width ~= 0 and m.ptr[0].width < 20) 
-		and (m.ptr[0].height ~= 0 and m.ptr[0].height < 20)
-		and m.ptr[0].upScroller ~= 0 
-		and m.ptr[0].downScroller ~= 0 
-		and m.ptr[0].gfxFlags < 0x10 
-		and m.ptr[0].doors > 0x7F00
+		and mptr[0].region < 8 
+		and (mptr[0].width ~= 0 and mptr[0].width < 20) 
+		and (mptr[0].height ~= 0 and mptr[0].height < 20)
+		and mptr[0].upScroller ~= 0 
+		and mptr[0].downScroller ~= 0 
+		and mptr[0].gfxFlags < 0x10 
+		and mptr[0].doors > 0x7F00
 	) then
+		local m = {
+			roomStates = table(),
+			ddbs = table(),
+			ptr = mptr,
+		}	
+		mdbs:insert(m)
+		
 		print()
-		print(
-			('$%06x '):format(data - rom)
-			..'mdb '..m.ptr[0])
+		print(('$%06x'):format(data - rom)..' mdb_t '..m.ptr[0])
 		
 		insertUniqueMemoryRange(data-rom, ffi.sizeof'mdb_t', 'mdb_t', m)
 		data = data + ffi.sizeof'mdb_t'
@@ -338,10 +340,16 @@ for x=0x8000,0xffff do
 			local startptr = data
 			-- this overlaps with m.ptr[0].doors
 			testCode = read'uint16_t'
-			if testCode == 0xe5e6 
-			or testCode == 0xffff 
-			then 
-				insertUniqueMemoryRange(data-rom, data-startptr, 'roomselect', m)
+			
+			if testCode == 0xe5e6 then 
+				insertUniqueMemoryRange(startptr-rom, data-startptr, 'roomselect', m)
+				break 
+			end
+		
+			-- doesn't happen
+			if testCode == 0xffff then 
+				error'here'
+				insertUniqueMemoryRange(startptr-rom, data-startptr, 'roomselect', m)
 				break 
 			end
 
@@ -351,8 +359,15 @@ for x=0x8000,0xffff do
 			or testCode == 0xE629
 			then
 				testValue = read'uint8_t'
+print('3-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 			elseif testCode == 0xE5EB then
+				-- this is never reached
+				error'here' 
+				-- I'm not using this just yet
 				testValueDoor = read'uint16_t'
+			else
+				-- this condition *does* happen, which means roomStateAddr may be 2 or 3 bytes from the start
+print('2-offset roomStateAddr '..('%04x'):format(ffi.cast('uint16_t*',data)[0]))
 			end
 
 			local roomStateAddr = read'uint16_t'
@@ -360,7 +375,7 @@ for x=0x8000,0xffff do
 			-- and will never have one
 			--assert(roomStateAddr ~= 0xe5e6, "found a room addr with 0xe5e6")
 
-			insertUniqueMemoryRange(data-rom, data-startptr, 'roomselect', m)
+			insertUniqueMemoryRange(startptr-rom, data-startptr, 'roomselect', m)
 			local rs = RoomState{
 				testCode = testCode,
 				testValue = testValue,
@@ -378,7 +393,10 @@ for x=0x8000,0xffff do
 			--]]
 		end
 
-		if testCode ~= 0xffff then
+		if testCode == 0xffff then
+			error'here'
+		else
+			--after the last room select is the first roomstate_t
 			local roomState = ffi.cast('roomstate_t*', data)
 			data = data + ffi.sizeof'roomstate_t'
 			
@@ -393,7 +411,8 @@ for x=0x8000,0xffff do
 				ptr = roomState,
 			}
 			m.roomStates:insert(rs)
-			-- [[			
+			
+			-- [[
 			io.write(' adding room at 0xe5e6:')
 			for _,k in ipairs{'addr','testCode','testValue','testValueDoor'} do
 				io.write(' ',k,'=',('%04x'):format(rs[k]))
@@ -411,7 +430,7 @@ for x=0x8000,0xffff do
 					insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 				end
 			end
-
+			
 			for roomStateIndex,roomState in ipairs(m.roomStates) do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
@@ -424,7 +443,7 @@ for x=0x8000,0xffff do
 						-- sized mdb width x height
 						insertUniqueMemoryRange(addr, m.ptr[0].width * m.ptr[0].height, 'scrolldata', m)
 					end
-
+					
 print(' roomstate '..('%04x'):format(roomState.addr))
 					if roomState.ptr[0].plm ~= 0 then
 						local startaddr = topc(plmBank, roomState.ptr[0].plm)
@@ -442,7 +461,7 @@ print(' roomstate '..('%04x'):format(roomState.addr))
 						local len = data-rom-startaddr
 						insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
 						-- look at plm range from topc(plmBank,roomState.ptr[0].plm) to plmPtr-rom
-				
+						
 						-- randomize ... remove only for now
 						-- removing turns a door blue
 						--[[
@@ -456,7 +475,6 @@ print(' roomstate '..('%04x'):format(roomState.addr))
 								end
 							end						
 						end
-						--]]
 						
 						-- now write it back ...
 						local ptr = ffi.cast('plm_t*', rom + topc(plmBank, roomState.ptr[0].plm))
@@ -465,6 +483,7 @@ print(' roomstate '..('%04x'):format(roomState.addr))
 							ptr = ptr + 1
 						end
 						ffi.cast('uint16_t*', ptr)[0] = 0
+						--]]
 				
 						-- and print
 						for _,plm in ipairs(roomState.plms) do
@@ -772,8 +791,6 @@ print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(da
 					..' '..ddb.ptr[0])
 				insertUniqueMemoryRange(startaddr, ffi.sizeof'door_t', 'door', m)
 			end
-		
-			mdbs:insert(m)
 		end
 	end
 end
