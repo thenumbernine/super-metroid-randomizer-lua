@@ -250,7 +250,7 @@ do
 		else
 			fwrite('     ')
 		end
-		fwrite(': '..('$%06x'):format(range.addr)..'-'..('$%06x'):format(range.addr+range.len-1))
+		fwrite(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
 		fwrite(' ('..range.name..') ')
 	end
 	fwrite(' ('..memoryRanges:last().name..')\n')

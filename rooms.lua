@@ -4,6 +4,8 @@
 -- http://forum.metroidconstruction.com/index.php?topic=2476.0
 -- http://www.metroidconstruction.com/SMMM/plm_disassembly.txt
 
+-- TODO separate reading from writing from printing from modifying
+
 local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
@@ -13,10 +15,10 @@ local plmBank = rom[0x204ac]
 local scrollBank = 0x8f
 
 local image = require 'image'
-local tilesize = 4
-local tilesPerRoom = 16
-local roomsize = tilesPerRoom * tilesize
-local mapimg = image(roomsize*68, roomsize*58, 3, 'unsigned char')
+local blockSizeInPixels = 4
+local blocksPerRoom = 16
+local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
+local mapimg = image(roomSizeInPixels*68, roomSizeInPixels*58, 3, 'unsigned char')
 
 local colormap = range(254)
 --colormap = shuffle(colormap)
@@ -44,15 +46,15 @@ local ofsPerRegion = {
 
 local function drawRoom(m, solids, bts)
 	local ofsx, ofsy = ofsPerRegion[m.region+1](m)
-	local xofs = roomsize * (ofsx - 4)
-	local yofs = roomsize * (ofsy + 1)
+	local xofs = roomSizeInPixels * (ofsx - 4)
+	local yofs = roomSizeInPixels * (ofsy + 1)
 	for j=0,m.height-1 do
 		for i=0,m.width-1 do
-			for ti=0,tilesPerRoom-1 do
-				for tj=0,tilesPerRoom-1 do
-					local dx = ti + tilesPerRoom * i
-					local dy = tj + tilesPerRoom * j
-					local di = dx + tilesPerRoom * m.width * dy
+			for ti=0,blocksPerRoom-1 do
+				for tj=0,blocksPerRoom-1 do
+					local dx = ti + blocksPerRoom * i
+					local dy = tj + blocksPerRoom * j
+					local di = dx + blocksPerRoom * m.width * dy
 					-- solids is 1-based
 					local d1 = solids[1 + 0 + 2 * di] or 0
 					local d2 = solids[1 + 1 + 2 * di] or 0
@@ -62,12 +64,12 @@ local function drawRoom(m, solids, bts)
 					--and (d2 == 0x00 or d2 == 0x83)
 					then
 					else
-						for pi=0,tilesize-1 do
-							for pj=0,tilesize-1 do
-								local y = yofs + pj + tilesize * (tj + tilesPerRoom * (m.y + j))
-								local x = xofs + pi + tilesize * (ti + tilesPerRoom * (m.x + i))
-				--for y=(m.y + j)* roomsize + yofs, (m.y + m.height) * roomsize - 1 + yofs do
-				--	for x=m.x * roomsize + xofs, (m.x + m.width) * roomsize - 1 + xofs do
+						for pi=0,blockSizeInPixels-1 do
+							for pj=0,blockSizeInPixels-1 do
+								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.y + j))
+								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.x + i))
+				--for y=(m.y + j)* roomSizeInPixels + yofs, (m.y + m.height) * roomSizeInPixels - 1 + yofs do
+				--	for x=m.x * roomSizeInPixels + xofs, (m.x + m.width) * roomSizeInPixels - 1 + xofs do
 								if x >= 0 and x < mapimg.width
 								and y >= 0 and y < mapimg.height 
 								then
@@ -263,6 +265,7 @@ function RoomState:init(args)
 	self.enemySets = self.enemySets or table()
 	self.fx1s = self.fx1s or table()
 	self.bgs = self.bgs or table()
+	self.rooms = self.rooms or table()
 end
 
 local mdbs = table()
@@ -298,15 +301,99 @@ local function addFX1(addr)
 	return fx1
 end
 
+local Room = class()
+function Room:init(args)
+	for k,v in pairs(args) do
+		self[k] = v
+	end
+	self.mdbs = table()
+end
+function Room:getData()
+	return table():append(
+		self.head,
+		self.solids,
+		self.bts,
+		self.tail
+	)
+end
 
+local rooms = table()
 -- see how well our recompression works (I'm getting 57% of the original compressed size)
 local totalOriginalCompressedSize = 0
 local totalRecompressedSize = 0
+local function addRoom(addr, m)
+	local _,room = rooms:find(nil, function(room) 
+		return room.addr == addr 
+	end)
+	if room then 
+		-- rooms can come from separate mdb_t's
+		-- which means they can have separate widths & heights
+		-- so here, assert that their width & height matches
+		assert(16 * room.m.ptr[0].width == room.width, "expected room width "..room.width.." but got "..m.ptr[0].width)
+		assert(16 * room.m.ptr[0].height == room.height, "expected room height "..room.height.." but got "..m.ptr[0].height)
+		room.mdbs:insert(m)
+		return room 
+	end
+					
+	local roomaddrstr = ('$%06x'):format(addr)
+--print('roomaddr '..roomaddrstr)
+	
+	-- then we decompress the next 0x10000 bytes ...
+--print('decompressing address '..('0x%06x'):format(addr))
+	local data, compressedSize = lz.decompress(addr, 0x10000)
+
+--print('decompressed from '..compressedSize..' to '..#data)
+	
+	local ofs = 0
+	local head = data:sub(ofs+1,ofs + 2) ofs=ofs+2
+	local w = m.ptr[0].width * 16
+	local h = m.ptr[0].height * 16
+	local solids = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
+	-- bts = 'behind the scenes'
+	local bts = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
+	local tail = data:sub(ofs+1)
+	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
+--print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
+	
+	-- insert this range to see what the old data took up
+	insertUniqueMemoryRange(addr, compressedSize, 'room', m)
+
+	local room = Room{
+		addr = addr,
+		m = m,
+		-- this is just 16*(w,h)
+		width = w,
+		height = h,
+		mdbs = table{m},
+		-- rule of thumb: do not exceed this
+		origCompressedSize = compressedSize,
+		-- decompressed data (in order):
+		head = head,	-- first 2 bytes of data
+		solids = solids,
+		bts = bts,
+		tail = tail,	-- last bytes after bts
+	}
+	rooms:insert(room)
+	return room
+end
+
 
 
 xpcall(function()
 
 
+--[[
+from $078000 to $079193 is plm_t data
+the first mdb_t is at $0791f8
+from there it is a dense structure of ...
+mdb_t
+stateselect's (in reverse order)
+roomstate_t's (in forward order)
+dooraddrs
+... then comes extra stuff, sometimes:
+scrolldata (which is in one place wedged into nowhere)
+plm cmd
+--]]
 for x=0x8000,0xffff do
 	local data = rom + topc(0x8e, x)
 	local function read(ctype)
@@ -332,19 +419,13 @@ for x=0x8000,0xffff do
 			ptr = mptr,
 		}	
 		mdbs:insert(m)
-		
-		print()
-		print(('$%06x'):format(data - rom)..' mdb_t '..m.ptr[0])
-		
 		insertUniqueMemoryRange(data-rom, ffi.sizeof'mdb_t', 'mdb_t', m)
 		data = data + ffi.sizeof'mdb_t'
 
 		-- events
-		local testcode
 		while true do
-			local startptr = data
-			-- this overlaps with m.ptr[0].doors
-			testcode = ffi.cast('uint16_t*',data)[0]
+			local startaddr = data - rom
+			local testcode = ffi.cast('uint16_t*',data)[0]
 			
 			if testcode == 0xe5e6 then 
 				insertUniqueMemoryRange(data-rom, 2, 'stateselect', m)	-- term
@@ -352,21 +433,12 @@ for x=0x8000,0xffff do
 				break 
 			end
 		
-			-- doesn't happen
-			-- I'm guessing this is a terminator without a roomstate_t associated with it
-			if testcode == 0xffff then 
-				error'here'
-				insertUniqueMemoryRange(data-rom, 2, 'stateselect', m)
-				data = data + 2
-				break 
-			end
-
+			local ctype
 			local selectptr
 			if testcode == 0xE612
 			or testcode == 0xE629
 			then
-				selectptr = ffi.cast('stateselect_t*', data)
-				data = data + ffi.sizeof'stateselect_t'
+				ctype = 'stateselect_t'
 			elseif testcode == 0xE5EB then
 				-- this is never reached
 				error'here' 
@@ -377,24 +449,20 @@ for x=0x8000,0xffff do
 				--	uint16_t roomstate;
 				-- }
 			else
-				-- this condition *does* happen, which means roomStateAddr may be 2 or 3 bytes from the start
-				selectptr = ffi.cast('stateselect2_t*', data)
-				data = data + ffi.sizeof'stateselect2_t'
+				ctype = 'stateselect2_t'
 			end
-			insertUniqueMemoryRange(startptr-rom, data-startptr, 'stateselect', m)
-
 			local rs = RoomState{
-				select = selectptr,
+				select = ffi.cast(ctype..'*', data),
+				select_ctype = ctype,	-- using for debug print only
 			}
 			m.roomStates:insert(rs)
-print(' '..('$%06x'):format(startptr-rom)..' stateselect '..rs.select[0]) 
+			
+			data = data + ffi.sizeof(ctype)
+			insertUniqueMemoryRange(startaddr, ffi.sizeof(ctype), 'stateselect', m)
 		end
 
-		if testcode == 0xffff then
-			-- non-roomstate terminators -- not used yet
-			error'here'
-		else
-			--after the last room select is the first roomstate_t
+		do
+			-- after the last stateselect is the first roomstate_t
 			local roomState = ffi.cast('roomstate_t*', data)
 			insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			data = data + ffi.sizeof'roomstate_t'
@@ -415,20 +483,33 @@ print(' '..('$%06x'):format(startptr-rom)..' stateselect '..rs.select[0])
 				end
 
 				assert(rs.ptr)
-print(' '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-data)..' roomstate '..rs.ptr[0]) 
 			end
-			
+
+			-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the stateselect's ... 
+			-- they sure aren't sequential
+			-- they might be reverse-sequential
+			-- sure enough, YES.  roomstates are contiguous and reverse-sequential from stateselect's
+			--[[
+			for i=1,#m.roomStates-1 do
+				assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
+			end
+			--]]
+
 			for roomStateIndex,roomState in ipairs(m.roomStates) do
 				-- shouldn't all roomState.ptr's exist by now?
 				--assert(roomState.ptr, "found a roomstate without a ptr")
 				if not roomState.ptr then
 					error('found roomState without a pointer')
 				else
-					if roomState.ptr[0].scroll > 0x0001 and roomState.scroll ~= 0x8000 then
+					if roomState.ptr[0].scroll > 0x0001 and roomState.ptr[0].scroll ~= 0x8000 then
 						local addr = topc(scrollBank, roomState.ptr[0].scroll)
-						roomState.scrollDataPtr = rom + addr 
+						local scrollDataPtr = rom + addr 
+						local scrollDataSize = m.ptr[0].width * m.ptr[0].height
+						roomState.scrollData = range(scrollDataSize):map(function(i)
+							return scrollDataPtr[i-1]
+						end)
 						-- sized mdb width x height
-						insertUniqueMemoryRange(addr, m.ptr[0].width * m.ptr[0].height, 'scrolldata', m)
+						insertUniqueMemoryRange(addr, scrollDataSize, 'scrolldata', m)
 					end
 					
 					if roomState.ptr[0].plm ~= 0 then
@@ -447,39 +528,6 @@ print(' '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-data)..' roomstate '..rs
 						local len = data-rom-startaddr
 						insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
 						-- look at plm range from topc(plmBank,roomState.ptr[0].plm) to plmPtr-rom
-						
-						-- randomize ... remove only for now
-						-- removing turns a door blue
-						--[[
-						for i=#roomState.plms,1,-1 do
-							local plm = roomState.plms[i]
-							local plmName = doorPLMNameForValue[plm.cmd]
-							if plmName then
-								local color, side = plmName:match'^door_(%w+)_(%w+)'
-								if side then
-									roomState.plms:remove(i)
-								end
-							end						
-						end
-						
-						-- now write it back ...
-						local ptr = ffi.cast('plm_t*', rom + topc(plmBank, roomState.ptr[0].plm))
-						for _,plm in ipairs(roomState.plms) do
-							ptr[0] = plm
-							ptr = ptr + 1
-						end
-						ffi.cast('uint16_t*', ptr)[0] = 0
-						--]]
-				
-						-- and print
-						for _,plm in ipairs(roomState.plms) do
-							io.write('  plm: '..plm)
-							local plmName = doorPLMNameForValue[plm.cmd]
-							if plmName then
-								io.write(' '..plmName)
-							end
-							print()
-						end
 					end
 					
 					for _,plm in ipairs(roomState.plms) do
@@ -530,9 +578,6 @@ print(' '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-data)..' roomstate '..rs
 							break
 						end
 						-- [[
-						print('  enemyPop: '
-							..((enemyForAddr[ptr[0].enemyAddr] or {}).name or '')
-							..': '..ptr[0])
 						--]]
 						roomState.enemyPops:insert(ptr[0])
 						data = data + ffi.sizeof'enemyPop_t'
@@ -546,30 +591,17 @@ print(' '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-data)..' roomstate '..rs
 						local ptr = ffi.cast('enemySet_t*', data)
 						if ptr[0].enemyAddr == 0xffff then 
 -- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
-print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
+--print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
 							-- include terminator
 							data = data + 10
 							break 
 						end
 				
-						--[[
-						local enemy = enemyForAddr[ptr[0].enemyAddr]
-						if enemy then
-							print('  enemySet: '..enemy.name..': '..ptr[0])
-						end
-						--]]
-						-- [[
-						print('  enemySet: '
-							..((enemyForAddr[ptr[0].enemyAddr] or {}).name or '')
-							..': '..ptr[0])
-						--]]
-
 						roomState.enemySets:insert(ptr[0])
 						data = data + ffi.sizeof'enemySet_t'
 					end
 					local len = data-rom-startaddr
 					insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
-					--print('  #enemySets = '..#roomState.enemySets)
 				
 					local startaddr = topc(0x83, roomState.ptr[0].fx1)
 					local addr = startaddr
@@ -587,7 +619,6 @@ print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(
 						or m.ddbs:find(nil, function(d) return d.pointer == cmd end)
 						then
 							local fx1 = addFX1(addr)
-print('  fx_t '..('$%06x'):format(addr)..': '..fx1.ptr[0])
 							fx1.ms:insert(m)
 							roomState.fx1s:insert(fx1)
 							addr = addr + ffi.sizeof'fx1_t'
@@ -619,7 +650,6 @@ print('  fx_t '..('$%06x'):format(addr)..': '..fx1.ptr[0])
 -- in fact, I never read more than 1 bg, and sometimes I read 0
 --[[
 							if ptr.header ~= 0x04 then
-print('   bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(rom[addr+i]) end):concat' ')
 								addr = addr + 8
 								break
 							end
@@ -630,7 +660,6 @@ print('   bg_t term: '..range(0,7):map(function(i) return ('%02x'):format(rom[ad
 							local bg = addBG(addr)
 							bg.ms:insert(m)
 							roomState.bgs:insert(bg)
-print('  bg_t '..('$%06x'):format(addr)..': '..bg.ptr[0])
 							addr = addr + ffi.sizeof'bg_t'
 						
 addr=addr+8
@@ -649,102 +678,15 @@ do break end
 					end
 --]]
 				end
-			
-				-- TODO still - bg, layerhandling
 				
 				if roomState.ptr 
-				-- only write the first instance of the room
-				and roomStateIndex == 1
+				--and roomStateIndex == 1
 				then
-					local roomaddr = roomState.ptr[0].roomAddr
-					local roomaddrstr = ('0x%02x'):format(roomState.ptr[0].roomBank)
-						..('%04x'):format(roomState.ptr[0].roomAddr)
-print('roomaddr '..roomaddrstr)
-					local addr = topc(roomState.ptr[0].roomBank, roomaddr)
-					-- then we decompress the next 0x10000 bytes ...
-print('decompressing address '..('0x%06x'):format(addr))
-					local data, compressedSize = lz.decompress(addr, 0x10000)
-
-print('decompressed from '..compressedSize..' to '..#data)
-					
-					local function printblock(data, width)
-						for i=1,#data do
-							io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
-							if i % width == 0 then print() end 
-						end
-						print()
-					end
-					local ofs = 0
-					local id = data:sub(ofs+1,ofs + 2) ofs=ofs+2
-					local w = m.ptr[0].width * 16
-					local h = m.ptr[0].height * 16
-					local solids = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
-					-- bts = 'behind the scenes'
-					local bts = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
-					printblock(id, 2) 
-					printblock(solids, 2*w) 
-					printblock(bts, w)
-					assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
-					print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
-					
-					drawRoom(m.ptr[0], solids, bts)
---[=[ write back compressed data
--- ... reduces to 57% of the original compressed data
--- but goes slow
-					
-					-- do any modifications
-					for j=0,h-1 do
-						for i=0,w-1 do
-							local v = bts[1+ i + w * j]
-							if false
-							-- v == 00 must mean bomb/shot 1x1... but everything is 00 .. so something else must activate a bts block?
-							or v == 1	-- bomb/shot 2x1
-							or v == 2	-- bomb/shot 1x2
-							or v == 3	-- bomb/shot 2x2
-							-- what does flag 100b mean?
-							or v == 4	-- bomb 1x1
-							or v == 5	-- bomb 2x1 
-							or v == 6	-- bomb 1x2
-							or v == 7	-- bomb 2x2
-							
-							or v == 0xa	-- super missile
-							or v == 0xb	-- super missile
-							then
-								if v < 8 then 
-									v = bit.band(v, 2)
-								else
-									v = 0
-								end
-								bts[1+ i + w * j] = v
-							end
-						end
-					end
-					
-					
-					local recompressed = lz.compress(data)
-					print('recompressed size: '..#recompressed..' vs original compressed size '..compressedSize)
-					assert(#recompressed <= compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..compressedSize)
-totalOriginalCompressedSize = totalOriginalCompressedSize + compressedSize
-					compressedSize = #recompressed
-totalRecompressedSize = totalRecompressedSize + compressedSize
-					-- now write back to the original location at addr
-					for i,v in ipairs(recompressed) do
-						rom[addr+i-1] = ffi.cast('uint8_t', v)
-					end
---[==[ verify that compression works by decompressing and re-compressing
-					local data2, compressedSize2 = lz.decompress(addr, 0x10000)
-					assert(compressedSize == compressedSize2)
-					assert(#data == #data2)
-					for i=1,#data do
-						assert(data[i] == data2[i])
-					end
---]==]
---]=]
-					-- notice, this will exclude differing m.index/m.region that point to the same memory locations
-					insertUniqueMemoryRange(addr, compressedSize, 'room tiles', m)
+					local addr = topc(roomState.ptr[0].roomBank, roomState.ptr[0].roomAddr)
+					roomState.rooms:insert(addRoom(addr, m))
 				end
 			end
-		
+	
 			local startaddr = topc(0x8e, m.ptr[0].doors)
 			data = rom + startaddr 
 			--data = rom + 0x70000 + m.ptr[0].doors
@@ -755,9 +697,9 @@ totalRecompressedSize = totalRecompressedSize + compressedSize
 				}
 				doorAddr = read'uint16_t'
 			end
-			-- exclude terminator (?)
+			-- exclude terminator
 			data = data - 2
-print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
+--print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
 			local len = data-rom - startaddr
 			-- either +0, +39 or +44
 			insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
@@ -770,11 +712,8 @@ print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(da
 					local codeaddr = topc(0x8f, ddb.ptr[0].code)
 					ddb.doorCodePtr = rom + codeaddr 
 					-- the next 0x1000 bytes have the door asm code
-					insertUniqueMemoryRange(codeaddr, 0x1000, 'door code', m)
+					insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
 				end
-				print(' doors: '
-					..('$83:%04x'):format(ddb.addr)
-					..' '..ddb.ptr[0])
 				insertUniqueMemoryRange(startaddr, ffi.sizeof'door_t', 'door', m)
 			end
 		end
@@ -786,7 +725,95 @@ end, function(err)
 	io.stderr:write(err..'\n'..debug.traceback())
 end)
 
-mapimg:save'map.png'
+
+-- [[ asserting underlying structure of the mdb_t...
+-- verify that after each mdb_t, the stateselect / roomstate_t / dooraddrs are packed together
+
+-- before the first mdb_t is 174 plm_t's, 
+-- then 100 bytes of something
+
+for j,m in ipairs(mdbs) do
+	local d = ffi.cast('uint8_t*',m.ptr)
+	local mdbaddr = d - rom
+	d = d + ffi.sizeof'mdb_t'
+	-- if there's only 1 roomState then it is a term, and
+	for i=1,#m.roomStates-1 do
+		assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
+		d = d + ffi.sizeof(m.roomStates[i].select_ctype)
+	end
+	-- last stateselect should always be 2 byte term
+	d = d + 2
+	-- next should always match the last room
+	for i=#m.roomStates,1,-1 do
+		assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
+		d = d + ffi.sizeof'roomstate_t'
+	end
+	-- for a single room there is an extra 26 bytes of padding between the roomstate_t's and the dooraddrs
+	-- and that room is $07ad1b, the speed booster room
+	-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+	-- says it is just part of the speed booster room
+	if mdbaddr == 0x07ad1b then
+print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
+		d = d + 26
+	end
+	local dooraddr = topc(0x8e, m.ptr[0].doors)
+	assert(d == rom + dooraddr)
+	d = d + 2 * #m.ddbs
+	
+	-- now expect all scrolldatas of all rooms of this mdb_t
+	-- the # of unique scrolldatas is either 0 or 1
+	local scrolls = m.roomStates:map(function(rs)
+		return true, rs.ptr[0].scroll
+	end):keys():filter(function(scroll)
+		return scroll > 1 and scroll ~= 0x8000
+	end):sort()
+	assert(#scrolls <= 1)
+	for _,scroll in ipairs(scrolls) do
+		local addr = topc(scrollBank, scroll)
+		assert(d == rom + addr)
+		d = d + m.ptr[0].width * m.ptr[0].height
+	end
+
+	-- see if the next mdb_t is immediately after
+	-- sometimes a few plm_t's are found next ...
+	if j+1 <= #mdbs then
+		local m2 = ffi.cast('uint8_t*', mdbs[j+1].ptr)
+		if d ~= m2 then
+			print('non-contiguous mdb_t before '..('$%06x'):format(m2-rom))	
+		end
+	end
+end
+--]]
+
+-- plmrandomization:
+-- randomize ... remove only for now
+-- removing turns a door blue
+-- TODO when combined with modifying tiles, this is screwing up door transitions
+--[[
+for _,m in ipairs(mdbs) do
+	for _,rs in ipairs(m.roomStates) do
+		for i=#rs.plms,1,-1 do
+			local plm = rs.plms[i]
+			local plmName = doorPLMNameForValue[plm.cmd]
+			if plmName then
+				local color, side = plmName:match'^door_(%w+)_(%w+)'
+				if side then
+					rs.plms:remove(i)
+				end
+			end						
+		end
+
+		-- now write it back ...
+		local ptr = ffi.cast('plm_t*', rom + topc(plmBank, rs.ptr[0].plm))
+		for _,plm in ipairs(rs.plms) do
+			ptr[0] = plm
+			ptr = ptr + 1
+		end
+		ffi.cast('uint16_t*', ptr)[0] = 0
+	end
+end
+--]]
+
 
 
 -- print bg info
@@ -824,6 +851,130 @@ for _,fx1 in ipairs(fx1s) do
 	)
 end
 
+-- print mdb info
+print()
+print("all mdb_t's:")
+for _,m in ipairs(mdbs) do
+	print((' $%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' mdb_t '..m.ptr[0])
+	for _,rs in ipairs(m.roomStates) do
+		print('  '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' roomstate_t '..rs.ptr[0]) 
+		if rs.select then
+			print('  '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..rs.select_ctype..' '..rs.select[0]) 
+		end
+		for _,plm in ipairs(rs.plms) do
+			io.write('   plm_t: '..plm)
+			local plmName = doorPLMNameForValue[plm.cmd]
+			if plmName then io.write(' '..plmName) end
+			print()	
+		end
+		for _,enemyPop in ipairs(rs.enemyPops) do	
+			print('   enemyPop: '
+				..((enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
+				..': '..enemyPop)
+		end
+		for _,enemySet in ipairs(rs.enemySets) do
+			print('   enemySet: '
+				..((enemyForAddr[enemySet.enemyAddr] or {}).name or '')
+				..': '..enemySet)
+		end
+		for _,fx1 in ipairs(rs.fx1s) do
+			print('   fx1_t '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
+		end
+		for _,bg in ipairs(rs.bgs) do
+			print('   bg_t '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
+		end
+	end
+	for _,ddb in ipairs(m.ddbs) do
+		print('  doors: '
+			..('$83:%04x'):format(ddb.addr)
+			..' '..ddb.ptr[0])
+	end
+end
+
+-- print/draw rooms
+print()
+print'all rooms'
+for _,room in ipairs(rooms) do
+	for _,m in ipairs(room.mdbs) do
+		io.write(' '..m.ptr[0].region..'/'..m.ptr[0].index)
+	end
+	print()
+
+	local function printblock(data, width)
+		for i=1,#data do
+			io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+			if i % width == 0 then print() end 
+		end
+		print()
+	end
+
+	local w,h = room.width, room.height
+	local m = room.m
+	printblock(room.head, 2) 
+	printblock(room.solids, 2*w) 
+	printblock(room.bts, w)
+	
+	drawRoom(m.ptr[0], room.solids, room.bts)
+--[=[ write back compressed data
+-- ... reduces to 57% of the original compressed data
+-- but goes slow
+
+--[==[ do some modifications
+	for j=0,h-1 do
+		for i=0,w-1 do
+			local v = room.bts[1+ i + w * j]
+		
+--[===[
+bit 0 = 2-wide
+bit 1 = 2-high
+bit 2:3 = 0 = bomb, 1 = shot, 2 = super missile, 3 = power bomb
+
+here's a 2x2 shootable block:
+.3ff
+ffff
+
+looks like this might be a combination with plms...
+--]===]
+			
+			if false
+			--or (v >= 0 and v <= 3) -- bomb
+			or (v >= 4 and v <= 7) -- bomb
+			or (v >= 8 and v <= 0xb) -- super missile
+			or (v >= 0xc and v <= 0xf)	-- powerbomb
+			then
+				v = 0x8
+				room.bts[1+ i + w * j] = v
+			end
+		end
+	end
+--]==]
+	
+	local data = room:getData()
+	local recompressed = lz.compress(data)
+	print('recompressed size: '..#recompressed..' vs original compressed size '..room.origCompressedSize)
+	assert(#recompressed <= room.origCompressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.origCompressedSize)
+totalOriginalCompressedSize = totalOriginalCompressedSize + room.origCompressedSize
+	local compressedSize = #recompressed
+totalRecompressedSize = totalRecompressedSize + compressedSize
+	-- now write back to the original location at addr
+	for i,v in ipairs(recompressed) do
+		rom[room.addr+i-1] = v
+	end
+--[==[ verify that compression works by decompressing and re-compressing
+	local data2, compressedSize2 = lz.decompress(addr, 0x10000)
+	assert(compressedSize == compressedSize2)
+	assert(#data == #data2)
+	for i=1,#data do
+		assert(data[i] == data2[i])
+	end
+--]==]
+--]=]
+	
+	-- insert this range to see what the newly compressed data takes up	
+	--insertUniqueMemoryRange(addr, compressedSize, 'room', m)
+end
+
+mapimg:save'map.png'
 
 print()
 print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..

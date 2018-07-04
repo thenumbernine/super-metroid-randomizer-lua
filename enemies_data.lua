@@ -38,7 +38,7 @@ structFields.weakness_t = table{
 	{speed = 'uint8_t'},
 	{sparkcharge = 'uint8_t'},
 	{screwattack = 'uint8_t'},
-	{hyper = 'uint8_t'},
+	{hyper = 'uint8_t'},	-- also charge
 	{pseudo_screwattack = 'uint8_t'},
 	{unknown = 'uint8_t'},
 }
