@@ -65,6 +65,7 @@ local function applyPatch(patchfilename)
 end
 if config.skipIntro then applyPatch'introskip_doorflags.ips' end
 if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
+--applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 romstr = file.__tmp
 file.__tmp = nil
 --]]
