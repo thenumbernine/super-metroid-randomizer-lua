@@ -96,7 +96,7 @@ local Enemy = class()
 --  so an instance must be created for this typecast to work
 -- maybe I should separate out the typecase definition from the Table init ...
 function Enemy:getWeakness()
-	local addr = self.ptr[0].weakness
+	local addr = self.ptr.weakness
 	if addr == 0 then return end
 	local ptr = rom + topc(0xb4, addr)
 	return ffi.cast('weakness_t*', ptr)

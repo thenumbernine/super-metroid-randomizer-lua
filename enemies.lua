@@ -339,14 +339,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
 	for name,_ in pairs(dontChangeWeaknessSet) do
-		if enemyForName[name].ptr[0].weakness == addr then
+		if enemyForName[name].ptr.weakness == addr then
 			return
 		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
 	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == enemyForName.Shaktool.ptr[0].weakness then
+	if addr == enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
 	
@@ -572,7 +572,7 @@ if config.randomizeEnemies then
 		print'palettes:'
 		-- 1) gather unique palette addrs
 		local addrs = enemies:map(function(enemy)
-			return true, topc(enemy.ptr[0].aiBank, enemy.ptr[0].palette)
+			return true, topc(enemy.ptr.aiBank, enemy.ptr.palette)
 		end):keys()
 		-- 2) get the rgb data
 		-- permute them in some way. rotation around (1,1,1) axis or something
@@ -600,7 +600,7 @@ if config.randomizeEnemies then
 		randomizeFieldExp(enemy.ptr, 'hurtTime')
 		
 		if randomizeEnemyProps.deathEffect then
-			enemy.ptr[0].deathEffect = math.random(0,4)
+			enemy.ptr.deathEffect = math.random(0,4)
 		end
 
 		for field,values in pairs(allEnemyFieldValues) do
@@ -615,12 +615,12 @@ if config.randomizeEnemies then
 
 	if randomizeEnemyProps.shotDamage then
 		for _,shot in ipairs(enemyShots) do
-			local value = shot.ptr[0].damageAndFlags
+			local value = shot.ptr.damageAndFlags
 			local flags = bit.band(0xf000, value)
 			local damage = bit.band(0xfff, value)
 			damage = expRand(table.unpack(randomizeEnemyProps.shotDamageScaleRange)) * damage
 			damage = math.clamp(damage, 0, 0xfff)
-			shot.ptr[0].damageAndFlags = bit.bor(damage, flags)
+			shot.ptr.damageAndFlags = bit.bor(damage, flags)
 		end
 	end
 end
@@ -636,12 +636,12 @@ print'enemies:'
 for i,enemy in ipairs(enemies) do
 	print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
 
-	print(' tileDataSize='..('0x%04x'):format(enemy.ptr[0].tileDataSize))
+	print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
 	
 	print(' palette='
-		..('$%02x'):format(enemy.ptr[0].aiBank)
-		..(':%04x'):format(enemy.ptr[0].palette))
---	local ptr = rom + topc(enemy.ptr[0].aiBank, enemy.ptr[0].palette)
+		..('$%02x'):format(enemy.ptr.aiBank)
+		..(':%04x'):format(enemy.ptr.palette))
+--	local ptr = rom + topc(enemy.ptr.aiBank, enemy.ptr.palette)
 --	local str = ffi.string(ptr, 32)
 --	print('  '..str:gsub('.', function(c) return ('%02x '):format(c:byte()) end))
 
@@ -649,7 +649,7 @@ for i,enemy in ipairs(enemies) do
 		print(' '..field..'='..enemy.ptr[0][field])
 	end
 
-	print(' deathEffect='..enemy.ptr[0].deathEffect)
+	print(' deathEffect='..enemy.ptr.deathEffect)
 	
 	for field,values in pairs(allEnemyFieldValues) do
 		print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
@@ -659,9 +659,9 @@ for i,enemy in ipairs(enemies) do
 	enemyItemDropTable:printEnemy(enemy)
 	
 	io.write(' debug name: '
-		..('0x%04x'):format(enemy.ptr[0].name))
-	if enemy.ptr[0].name ~= 0 then
-		local addr = topc(0xb4, enemy.ptr[0].name)
+		..('0x%04x'):format(enemy.ptr.name))
+	if enemy.ptr.name ~= 0 then
+		local addr = topc(0xb4, enemy.ptr.name)
 		local len = 10
 		local betaname = ffi.string(rom + addr, len)
 		insertUniqueMemoryRange(addr, len+4, 'debug name')

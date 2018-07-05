@@ -391,7 +391,7 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 	local plms = table()
 	while true do
 		local ptr = ffi.cast('plm_t*', rom+addr)
-		if ptr[0].cmd == 0 then 
+		if ptr.cmd == 0 then 
 			-- include plm term
 			addr = addr + 2
 			break 
@@ -520,8 +520,8 @@ local function addRoom(addr, m)
 		-- rooms can come from separate mdb_t's
 		-- which means they can have separate widths & heights
 		-- so here, assert that their width & height matches
-		assert(16 * room.m.ptr[0].width == room.width, "expected room width "..room.width.." but got "..m.ptr[0].width)
-		assert(16 * room.m.ptr[0].height == room.height, "expected room height "..room.height.." but got "..m.ptr[0].height)
+		assert(16 * room.mdbs[1].ptr.width == room.width, "expected room width "..room.width.." but got "..m.ptr.width)
+		assert(16 * room.mdbs[1].ptr.height == room.height, "expected room height "..room.height.." but got "..m.ptr.height)
 		room.mdbs:insert(m)
 		return room 
 	end
@@ -537,8 +537,8 @@ local function addRoom(addr, m)
 	
 	local ofs = 0
 	local head = data:sub(ofs+1,ofs + 2) ofs=ofs+2
-	local w = m.ptr[0].width * 16
-	local h = m.ptr[0].height * 16
+	local w = m.ptr.width * 16
+	local h = m.ptr.height * 16
 	local solids = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
 	-- bts = 'behind the scenes'
 	local bts = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
@@ -549,13 +549,42 @@ local function addRoom(addr, m)
 	-- insert this range to see what the old data took up
 	insertUniqueMemoryRange(addr, compressedSize, 'room', m)
 
+	-- keep track of door regions
+	local doorRegions = table()	-- x,y,w,h 
+	for j=1,h-2 do
+		for i=1,w-2 do
+			local v = bts[1+ i + w * j]
+			if v >= 0x40 and v <= 0x43 then
+				-- here's the upper-left of a door.  now, which way is it facing
+				if i<w-3
+				and bts[1+ (i+1) + w * j] == 0xff 
+				and bts[1+ (i+2) + w * j] == 0xfe 
+				and bts[1+ (i+3) + w * j] == 0xfd 
+				then
+					-- horizontal
+					doorRegions:insert{i,j,4,1} 
+				elseif j<h-3
+				and bts[1+ i + w * (j+1)] == 0xff 
+				and bts[1+ i + w * (j+2)] == 0xfe 
+				and bts[1+ i + w * (j+3)] == 0xfd 
+				then
+					-- vertical
+					doorRegions:insert{i,j,1,4} 
+				else
+					-- nothing, there's lots of other 40..43's out there
+				end
+			end
+		end
+	end
+	print('found '..#doorRegions..' door bts')
+
 	local room = Room{
 		addr = addr,
-		m = m,
+		mdbs = table{m},
+		doorRegions = doorRegions,
 		-- this is just 16*(w,h)
 		width = w,
 		height = h,
-		mdbs = table{m},
 		-- rule of thumb: do not exceed this
 		origCompressedSize = compressedSize,
 		-- decompressed data (in order):
@@ -689,10 +718,10 @@ for x=0x8000,0xffff do
 			--]]
 
 			for _,rs in ipairs(m.roomStates) do
-				if rs.ptr[0].scroll > 0x0001 and rs.ptr[0].scroll ~= 0x8000 then
-					local addr = topc(scrollBank, rs.ptr[0].scroll)
+				if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+					local addr = topc(scrollBank, rs.ptr.scroll)
 					local scrollDataPtr = rom + addr 
-					local scrollDataSize = m.ptr[0].width * m.ptr[0].height
+					local scrollDataSize = m.ptr.width * m.ptr.height
 					rs.scrollData = range(scrollDataSize):map(function(i)
 						return scrollDataPtr[i-1]
 					end)
@@ -706,8 +735,8 @@ for x=0x8000,0xffff do
 			-- so now, when writing them out, they will be in the same order in memory as they were when being read in
 			for i=#m.roomStates,1,-1 do
 				local rs = m.roomStates[i]
-				if rs.ptr[0].plm ~= 0 then
-					local addr = topc(plmBank, rs.ptr[0].plm)
+				if rs.ptr.plm ~= 0 then
+					local addr = topc(plmBank, rs.ptr.plm)
 					local plmset = addPLMSet(addr, m)
 					-- take the initiative here and just zero the memory of any zero-length plms
 					if plmset and #plmset.plms > 0 then
@@ -716,17 +745,17 @@ for x=0x8000,0xffff do
 						plmset.roomStates:insert(rs)
 					else
 						plmsets:removeObject(plmset)
-						rs.ptr[0].plm = 0
+						rs.ptr.plm = 0
 					end
 				end
 			end
 
 			for _,rs in ipairs(m.roomStates) do
-				local startaddr = topc(0xa1, rs.ptr[0].enemyPop)
+				local startaddr = topc(0xa1, rs.ptr.enemyPop)
 				data = rom + startaddr 
 				while true do
 					local ptr = ffi.cast('enemyPop_t*', data)
-					if ptr[0].enemyAddr == 0xffff then
+					if ptr.enemyAddr == 0xffff then
 						-- include term and enemies-to-kill
 						data = data + 2
 						rs.enemiesToKill = read'uint8_t'
@@ -738,11 +767,11 @@ for x=0x8000,0xffff do
 				local len = data-rom-startaddr
 				insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
 		
-				local startaddr = topc(0xb4, rs.ptr[0].enemySet)
+				local startaddr = topc(0xb4, rs.ptr.enemySet)
 				data = rom + startaddr 
 				while true do
 					local ptr = ffi.cast('enemySet_t*', data)
-					if ptr[0].enemyAddr == 0xffff then 
+					if ptr.enemyAddr == 0xffff then 
 -- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
 --print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
 						-- include terminator
@@ -756,7 +785,7 @@ for x=0x8000,0xffff do
 				local len = data-rom-startaddr
 				insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
 			
-				local startaddr = topc(0x83, rs.ptr[0].fx1)
+				local startaddr = topc(0x83, rs.ptr.fx1)
 				local addr = startaddr
 				local retry
 				while true do
@@ -779,7 +808,7 @@ for x=0x8000,0xffff do
 						-- try again 0x10 bytes ahead
 						if not retry then
 							retry = true
-							startaddr = topc(0x83, rs.ptr[0].fx1) + 0x10
+							startaddr = topc(0x83, rs.ptr.fx1) + 0x10
 							addr = startaddr
 						else
 							addr = nil
@@ -792,8 +821,8 @@ for x=0x8000,0xffff do
 					insertUniqueMemoryRange(startaddr, len, 'fx1_t', m)
 				end
 			
-				if rs.ptr[0].bgdata > 0x8000 then
-					local startaddr = topc(0x8f, rs.ptr[0].bgdata)
+				if rs.ptr.bgdata > 0x8000 then
+					local startaddr = topc(0x8f, rs.ptr.bgdata)
 					local addr = startaddr
 					while true do
 						local ptr = ffi.cast('bg_t*', rom+addr)
@@ -808,7 +837,7 @@ for x=0x8000,0xffff do
 						end
 --]]
 						-- so bgs[i].addr is the address where bgs[i].ptr was found
-						-- and bgs[i].ptr[0].bank,addr points to where bgs[i].data was found
+						-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
 						-- a little confusing
 						local bg = addBG(addr)
 						bg.mdbs:insert(m)
@@ -823,21 +852,21 @@ do break end
 
 --[[ TODO decompress is failing here
 -- 0x8f is also used for door code and for plm, soo....
-				if rs.ptr[0].layerHandling > 0x8000 then
-					local addr = topc(0x8f, rs.ptr[0].layerHandling)
+				if rs.ptr.layerHandling > 0x8000 then
+					local addr = topc(0x8f, rs.ptr.layerHandling)
 					local decompressed, compressedSize = lz.decompress(addr, 0x1000)
 					rs.layerHandlingCode = decompressed
 					insertUniqueMemoryRange(addr, compressedSize, 'layer handling code', m)
 				end
 --]]
 				
-				local addr = topc(rs.ptr[0].roomBank, rs.ptr[0].roomAddr)
+				local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
 				rs.rooms:insert(addRoom(addr, m))
 			end
 
-			local startaddr = topc(0x8e, m.ptr[0].doors)
+			local startaddr = topc(0x8e, m.ptr.doors)
 			data = rom + startaddr 
-			--data = rom + 0x70000 + m.ptr[0].doors
+			--data = rom + 0x70000 + m.ptr.doors
 			local doorAddr = read'uint16_t'
 			while doorAddr > 0x8000 do
 				m.doors:insert{
@@ -860,8 +889,8 @@ do break end
 --doorsSoFar[addr]:insert(m)
 				data = rom + addr 
 				door.ptr = ffi.cast('door_t*', data)
-				if door.ptr[0].code > 0x8000 then
-					local codeaddr = topc(0x8f, door.ptr[0].code)
+				if door.ptr.code > 0x8000 then
+					local codeaddr = topc(0x8f, door.ptr.code)
 					door.doorCodePtr = rom + codeaddr 
 					-- the next 0x1000 bytes have the door asm code
 					insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
@@ -940,14 +969,14 @@ for j,m in ipairs(mdbs) do
 print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
 		d = d + 26
 	end
-	local dooraddr = topc(0x8e, m.ptr[0].doors)
+	local dooraddr = topc(0x8e, m.ptr.doors)
 	assert(d == rom + dooraddr)
 	d = d + 2 * #m.doors
 	
 	-- now expect all scrolldatas of all rooms of this mdb_t
 	-- the # of unique scrolldatas is either 0 or 1
 	local scrolls = m.roomStates:map(function(rs)
-		return true, rs.ptr[0].scroll
+		return true, rs.ptr.scroll
 	end):keys():filter(function(scroll)
 		return scroll > 1 and scroll ~= 0x8000
 	end):sort()
@@ -955,7 +984,7 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 	for _,scroll in ipairs(scrolls) do
 		local addr = topc(scrollBank, scroll)
 		assert(d == rom + addr)
-		d = d + m.ptr[0].width * m.ptr[0].height
+		d = d + m.ptr.width * m.ptr.height
 		-- notice that one of these scrolldata's overlaps with the next mdb_t start ... mdb 2/30
 	end
 
@@ -1006,7 +1035,7 @@ for _,plmset in ipairs(plmsets) do
 	-- if we erased all plms then we should clear all flags in all referencing rooms
 	if #plmset.plms == 0 then
 		for _,rs in ipairs(plmset.roomStates) do
-			rs.ptr[0].plm = 0
+			rs.ptr.plm = 0
 			rs.plmset = nil
 		end
 	end
@@ -1054,7 +1083,7 @@ for _,plmset in ipairs(plmsets) do
 	if #plmset.plms == 0 then
 		for j=#plmset.roomStates,1,-1 do
 			local rs = plmset.roomStates[j]
-			rs.ptr[0].plm = 0
+			rs.ptr.plm = 0
 			rs.plmset = nil
 			plmset.roomStates[j] = nil
 		end
@@ -1130,9 +1159,9 @@ insertUniqueMemoryRange(fromaddr, toaddr-fromaddr, 'plm_t', plmset.mdbs[1])
 		--]=]
 		for _,rs in ipairs(plmset.roomStates) do
 			local newofs = bit.band(0xffff, fromaddr)
-			if newofs ~= rs.ptr[0].plm then
-				print('updating roomstate plm from '..('%04x'):format(rs.ptr[0].plm)..' to '..('%04x'):format(newofs))
-				rs.ptr[0].plm = newofs 
+			if newofs ~= rs.ptr.plm then
+				print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
+				rs.ptr.plm = newofs 
 			end
 		end
 	else
@@ -1157,7 +1186,7 @@ print("all plm_t's:")
 for _,plmset in ipairs(plmsets) do
 	print(' '..('$%06x'):format(plmset.addr)
 		..' mdbs: '..plmset.mdbs:map(function(m)
-			return m.ptr[0].region..'/'..m.ptr[0].index
+			return m.ptr.region..'/'..m.ptr.index
 		end):concat' '
 	)
 	for _,plm in ipairs(plmset.plms) do
@@ -1172,7 +1201,7 @@ bgs:sort(function(a,b) return a.addr < b.addr end)
 for _,bg in ipairs(bgs) do
 	print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
 		..' mdbs: '..bg.mdbs:map(function(m)
-			return m.ptr[0].region..'/'..m.ptr[0].index
+			return m.ptr.region..'/'..m.ptr.index
 		end):concat' '
 	)
 end
@@ -1181,7 +1210,7 @@ end
 --[[ load data
 -- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 for _,bg in ipairs(bgs) do
-	local addr = topc(bg.ptr[0].bank, bg.ptr[0].addr)
+	local addr = topc(bg.ptr.bank, bg.ptr.addr)
 	local decompressed, compressedSize = lz.decompress(addr, 0x10000)
 	bg.data = decompressed
 	insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
@@ -1195,7 +1224,7 @@ fx1s:sort(function(a,b) return a.addr < b.addr end)
 for _,fx1 in ipairs(fx1s) do
 	print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
 		..' mdbs: '..fx1.mdbs:map(function(m)
-			return m.ptr[0].region..'/'..m.ptr[0].index
+			return m.ptr.region..'/'..m.ptr.index
 		end):concat' '
 	)
 end
@@ -1249,7 +1278,7 @@ print()
 print'all rooms'
 for _,room in ipairs(rooms) do
 	for _,m in ipairs(room.mdbs) do
-		io.write(' '..m.ptr[0].region..'/'..m.ptr[0].index)
+		io.write(' '..m.ptr.region..'/'..m.ptr.index)
 	end
 	print()
 
@@ -1262,7 +1291,7 @@ for _,room in ipairs(rooms) do
 	end
 
 	local w,h = room.width, room.height
-	local m = room.m
+	local m = room.mdbs[1]
 	printblock(room.head, 2) 
 	printblock(room.solids, 2*w) 
 	printblock(room.bts, w)
@@ -1279,40 +1308,13 @@ for _,room in ipairs(rooms) do
 	-- it could be in the middle of the map too
 	-- ... it'd be nice if all the door locations were stored in a list somewhere
 	-- but I see the door_t's ... that seems to be pointed *to* by the door bts data, not vice versa 
-	local doorRegions = table()	-- x,y,w,h 
-	for j=1,h-2 do
-		for i=1,w-2 do
-			local v = room.bts[1+ i + w * j]
-			if v >= 0x40 and v <= 0x43 then
-				-- here's the upper-left of a door.  now, which way is it facing
-				if i<w-3
-				and room.bts[1+ (i+1) + w * j] == 0xff 
-				and room.bts[1+ (i+2) + w * j] == 0xfe 
-				and room.bts[1+ (i+3) + w * j] == 0xfd 
-				then
-					-- horizontal
-					doorRegions:insert{i,j,4,1} 
-				elseif j<h-3
-				and room.bts[1+ i + w * (j+1)] == 0xff 
-				and room.bts[1+ i + w * (j+2)] == 0xfe 
-				and room.bts[1+ i + w * (j+3)] == 0xfd 
-				then
-					-- vertical
-					doorRegions:insert{i,j,1,4} 
-				else
-					-- nothing, there's lots of other 40..43's out there
-				end
-			end
-		end
-	end
-	print('found '..#doorRegions..' door bts')
 -- [==[ change blocks around, skipping any ID #'s near the door regions
 -- I probably need to skip elevator shafts too, I bet ...
 	for j=0,h-1 do
 		for i=0,w-1 do
 			-- make sure we're not 1 block away from any door regions on any side
 			local neardoor
-			for _,doorRegion in ipairs(doorRegions) do
+			for _,doorRegion in ipairs(room.doorRegions) do
 				local x,y,dw,dh = table.unpack(doorRegion)
 				if i >= x-1 and i <= x+dw
 				and j >= y-1 and j <= y+dh
@@ -1342,7 +1344,8 @@ looks like this might be a combination with plms...
 				or (v >= 8 and v <= 0xb) -- super missile
 				or (v >= 0xc and v <= 0xf)	-- powerbomb
 				then
-					v = 0	-- makes it shootable
+					v = 0	-- makes it shootable ... though this doubles as a few other things?
+					--v = 4	-- makes it bombable
 					-- btw, how come there are bts==0 bombable blocks? (escaping alcatraz)
 					room.bts[1+ i + w * j] = v
 				end
