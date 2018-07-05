@@ -84,6 +84,12 @@ end
 rom = ffi.cast('uint8_t*', romstr) 
 
 
+-- [[ TODO eventually
+local SM = require 'sm'
+local sm = SM(rom)
+--]]
+
+
 -- global stuff
 
 ffi.cdef[[
@@ -155,8 +161,6 @@ end
 
 
 
-local name = ffi.string(rom + 0x7fc0, 0x15)
-print(name)
 
 
 -- build enemies table / type info

@@ -1,6 +1,28 @@
 -- http://www.romhacking.net/documents/243/
 -- http://pikensoft.com/docs/Zelda_LTTP_compression_(Piken).txt
 
+local ffi = require 'ffi'
+ffi.cdef[[
+typedef union {
+	uint8_t v;
+	struct {
+		uint8_t len : 5;
+		uint8_t cmd : 3;
+	};
+
+	//extended cmd, the low byte has the bits 8 & 9 of the length
+	//then the next (hi) byte has bits 0-7 of the length
+	struct {
+		uint8_t len : 2;
+		uint8_t cmd : 3;
+		uint8_t _7 : 3;	//should always be 111b = 7
+	} ext;
+} lzcmd_t;
+]]
+assert(ffi.sizeof'lzcmd_t' == 1)
+assert(ffi.new('lzcmd_t', 31).len == 31)
+assert(ffi.new('lzcmd_t', 32+64+128).cmd == 7)
+
 -- decompresses from 'rom' to a lua table of numbers
 local function decompress(addr, maxlen)
 	local startaddr = addr
@@ -41,13 +63,15 @@ local function decompress(addr, maxlen)
 		assert(addr < startaddr + maxlen, "compressed data exceeded boundary")
 		local c = readbyte()
 		if c == 0xff then break end
-		local cmd = bit.band(bit.rshift(c, 5), 7)
-		local len = bit.band(c, 0x1f)
-		if bit.band(c, 0xe0) == 0xe0 then	-- 1110:0000
+		local lzc = ffi.new('lzcmd_t', c)
+		local cmd = lzc.cmd
+		local len = lzc.len
+		-- this means you can't have cmd==7 without it being an extended cmd
+		if cmd == 7 then	-- 1110:0000
 			-- extended cmd
 			local v = readbyte()
-			cmd = bit.band(bit.rshift(c, 2), 7)
-			len = bit.bor(v, bit.lshift(bit.band(len, 0x3), 8))
+			cmd = lzc.ext.cmd
+			len = bit.bor(v, bit.lshift(lzc.ext.len, 8))
 		end
 		len=len+1
 		if cmd == 0 then	-- 000b: direct copy
@@ -107,17 +131,18 @@ local function putBlockHeader(result, op, length)
 --print('inserting op '..op..' len '..length)
 	assert(length >= 1 and length <= maxBlockLen(op), "got bad length of "..length)
 	length = length - 1
-	-- extended op
-	if length > 0x1f or op == 7 then
-		local v1 = bit.bor(0xe0, bit.lshift(op, 2), bit.band(bit.rshift(length, 8), 0x3))
-		local v2 = bit.band(length, 0xff)
-		assert(v1 ~= 0xff, "might get a false terminator for op "..op..' len '..length)
-		result:insert(v1)
-		result:insert(v2)
-	-- just regular kind
-	else 
-		local v = bit.bor(bit.lshift(op,5), length)
-		result:insert(v)
+	local c = ffi.new'lzcmd_t'
+	if length > 0x1f or op == 7 then -- extended op
+		c.ext._7 = 7
+		c.ext.cmd = op
+		c.ext.len = bit.band(bit.rshift(length, 8), 0x3)
+		assert(c.v ~= 0xff, "accidentally inserted a false terminator for op "..op..' len '..length)
+		result:insert(tonumber(c.v))
+		result:insert(bit.band(length, 0xff))
+	else  -- just regular kind
+		c.cmd = op
+		c.len = length
+		result:insert(tonumber(c.v))
 	end
 end
 
@@ -162,8 +187,8 @@ local function rleCompress(source, offset, op)
 	}
 end
 
-local LZC = class()
-function LZC:init(source)
+local LZCompress = class()
+function LZCompress:init(source)
 	self.source = source
 	self.offsets = range(0,255):map(function(i) 
 		return table(), i
@@ -174,7 +199,7 @@ function LZC:init(source)
 	end
 end
 
-function LZC:compress(offset, op)
+function LZCompress:compress(offset, op)
 	local source = self.source
 	local offsets = self.offsets
 	local bytes = 1
@@ -293,7 +318,7 @@ print('compress #source '..#source)
 	local result = table()	
 	local i = 0
 	local noCompressionLength = 0
-	local lzc = LZC(source)
+	local lzc = LZCompress(source)
 	while i < #source do
 		local options = {
 			rleCompress(source, i, 1),
