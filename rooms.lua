@@ -101,11 +101,11 @@ local digits = {
 		'   ',
 	},
 	['0'] = {
-		'***',
+		' * ',
 		'* *',
 		'* *',
 		'* *',
-		'***',
+		' * ',
 	},
 	['1'] = {
 		' * ',
@@ -115,18 +115,18 @@ local digits = {
 		' * ',
 	},
 	['2'] = {
-		'***',
+		'** ',
 		'  *',
-		'***',
+		' * ',
 		'*  ',
 		'***',
 	},
 	['3'] = {
-		'***',
+		'** ',
 		'  *',
-		'***',
+		'** ',
 		'  *',
-		'***',
+		'** ',
 	},
 	['4'] = {
 		'* *',
@@ -138,12 +138,12 @@ local digits = {
 	['5'] = {
 		'***',
 		'*  ',
-		'***',
+		'** ',
 		'  *',
-		'***',
+		'** ',
 	},
 	['6'] = {
-		'***',
+		' **',
 		'*  ',
 		'***',
 		'* *',
@@ -168,7 +168,49 @@ local digits = {
 		'* *',
 		'***',
 		'  *',
+		'** ',
+	},
+	['a'] = {
+		' * ',
+		'* *',
 		'***',
+		'* *',
+		'* *',
+	},
+	['b'] = {
+		'** ',
+		'* *',
+		'** ',
+		'* *',
+		'** ',
+	},
+	['c'] = {
+		' **',
+		'*  ',
+		'*  ',
+		'*  ',
+		' **',
+	},
+	['d'] = {
+		'** ',
+		'* *',
+		'* *',
+		'* *',
+		'** ',
+	},
+	['e'] = {
+		'***',
+		'*  ',
+		'***',
+		'*  ',
+		'***',
+	},
+	['f'] = {
+		'***',
+		'*  ',
+		'***',
+		'*  ',
+		'*  ',
 	},
 }
 
@@ -196,10 +238,11 @@ local digits = {
 			end
 		end
 	end
-	drawstr(m.region..'-'..m.index)
+	drawstr(('%x'):format(m.region)..'-'..('%02x'):format(m.index))
 end
 
--- defined in section 6
+-- defined in section 6 of metroidconstruction.com/SMMM
+-- mdb = 'map database' I'm guessing?
 local mdb_t = struct'mdb_t'{	-- aka mdb_header_t
 	{index = 'uint8_t'},		-- 0
 	{region = 'uint8_t'},		-- 1
@@ -243,6 +286,7 @@ local roomstate_t = struct'roomstate_t'{
 	{layerHandling = 'uint16_t'},
 }
 
+-- plm = 'post-load modification'
 local plm_t = struct'plm_t'{
 	{cmd = 'uint16_t'},
 	{x = 'uint8_t'},
@@ -266,18 +310,39 @@ local enemySet_t = struct'enemySet_t'{
 	{palette = 'uint16_t'},
 }
 
+-- http://metroidconstruction.com/SMMM/fx_values.txt
 local fx1_t = struct'fx1_t'{
-	{select = 'uint16_t'},
-	{surfaceStart = 'uint16_t'},
-	{surfaceNew = 'uint16_t'},
-	{surfaceDelay = 'uint8_t'},
-	{layer3type = 'uint8_t'},
-	{a = 'uint8_t'},
-	{b = 'uint8_t'},
-	{c = 'uint8_t'},
-	{paletteFX = 'uint8_t'},
-	{animateTile = 'uint8_t'},
-	{blend = 'uint8_t'},
+	-- bank $83, ptr to door data.  0 means no door-specific fx
+	{doorSelect = 'uint16_t'},				-- 0
+	-- starting height of water/lava/acid
+	{liquidSurfaceStart = 'uint16_t'},		-- 2
+	-- ending height of water
+	{liquidSurfaceNew = 'uint16_t'},		-- 4
+
+	--[[ from metroidconstruction.com/SMMM:
+	how long until the water/lava/acid starts to rise or lower. For rooms with liquid, you must use a value between 01 (instantly) and FF (a few seconds). For rooms with no liquid, use 00.
+	For liquids moving up, use a surface speed value between FE00-FFFF. Examples: FFFE (absolute slowest), FFD0 (slow), FFD0 (decent speed), and FE00 (very fast).
+	For liquids moving down, use a surface speed value between 0001-0100. Examples: 0001 (absolute slowest), 0020 (slow), 0040 (decent speed), 0100 (very fast). 
+	--]]
+	{liquidSurfaceDelay = 'uint8_t'},		-- 6
+
+	-- liquid, fog, spores, rain, etc
+	{fxType = 'uint8_t'},					-- 7
+	
+	-- lighting options: 02 = normal, 28 = dark visor room, 2a = darker yellow-visor room
+	{a = 'uint8_t'},						-- 8
+	
+	-- prioritize/color layers
+	{b = 'uint8_t'},						-- 9
+	
+	-- liquid options
+	{c = 'uint8_t'},						-- 0xa
+	
+	{paletteFXFlags = 'uint8_t'},			-- 0xb
+	{tileAnimateFlags = 'uint8_t'},			-- 0xc
+	{paletteBlend = 'uint8_t'},				-- 0xd
+	
+	{last = 'uint16_t'},					-- 0xe
 }
 
 local bg_t = struct'bg_t'{
@@ -492,6 +557,7 @@ local function addFX1(addr)
 	return fx1
 end
 
+
 local Room = class()
 function Room:init(args)
 	for k,v in pairs(args) do
@@ -551,7 +617,7 @@ local function addRoom(addr, m)
 
 	-- keep track of door regions
 	local doorRegions = table()	-- x,y,w,h 
-	for j=1,h-2 do
+	for j=2,h-3 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
 		for i=1,w-2 do
 			local v = bts[1+ i + w * j]
 			if v >= 0x40 and v <= 0x43 then
@@ -561,22 +627,27 @@ local function addRoom(addr, m)
 				and bts[1+ (i+2) + w * j] == 0xfe 
 				and bts[1+ (i+3) + w * j] == 0xfd 
 				then
-					-- horizontal
-					doorRegions:insert{i,j,4,1} 
+					--print('door mod 16 '..(i%16)..','..(j%16)..' horizontal')
+					local v1 = bts[1 + i + w * (j-2)]
+					local v2 = bts[1 + i + w * (j+2)]
+					local doorIndex = v1 ~= 0 and v1 or v2
+					doorRegions:insert{x=i,y=j,w=4,h=1, index=doorIndex}
 				elseif j<h-3
 				and bts[1+ i + w * (j+1)] == 0xff 
 				and bts[1+ i + w * (j+2)] == 0xfe 
 				and bts[1+ i + w * (j+3)] == 0xfd 
 				then
-					-- vertical
-					doorRegions:insert{i,j,1,4} 
+					--print('door mod 16 '..(i%16)..','..(j%16)..' vertical')
+					local v1 = bts[1 + (i-1) + w * j]
+					local v2 = bts[1 + (i+1) + w * j]
+					local doorIndex = v1 ~= 0 and v1 or v2
+					doorRegions:insert{x=i,y=j,w=1,h=4, index=doorIndex}
 				else
 					-- nothing, there's lots of other 40..43's out there
 				end
 			end
 		end
 	end
-	print('found '..#doorRegions..' door bts')
 
 	local room = Room{
 		addr = addr,
@@ -766,7 +837,9 @@ for x=0x8000,0xffff do
 				end
 				local len = data-rom-startaddr
 				insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
-		
+			end
+
+			for _,rs in ipairs(m.roomStates) do
 				local startaddr = topc(0xb4, rs.ptr.enemySet)
 				data = rom + startaddr 
 				while true do
@@ -784,42 +857,56 @@ for x=0x8000,0xffff do
 				end
 				local len = data-rom-startaddr
 				insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
-			
+			end
+
+			-- some rooms use the same fx1 ptr
+			-- and from there they are read in contiguous blocks until a term is encountered
+			-- so I should make these fx1sets (like plmsets)
+			-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
+			-- then make one set and just put the subset's at the end
+			-- (unless the order matters...)
+			for _,rs in ipairs(m.roomStates) do
 				local startaddr = topc(0x83, rs.ptr.fx1)
 				local addr = startaddr
 				local retry
 				while true do
 					local cmd = ffi.cast('uint16_t*', rom+addr)[0]
+					
+					-- null sets are represented as an immediate ffff
+					-- whereas sets of more than 1 value use 0000 as a term ...
+					-- They can also be used to terminate a set of fx1_t
 					if cmd == 0xffff then
-						-- do I really need to insert a last 'fx1' that has nothing but an 0xffff select?
 						-- include terminator bytes in block length:
+insertUniqueMemoryRange(addr, 2, 
+	--'fx1_t term '..('$%04x'):format(addr)..'='..('%04x'):format(cmd),
+	'fx1_t',
+	m)
 						addr = addr + 2
 						break
 					end
-					if cmd == 0
+					
+					--if cmd == 0
 					-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
-					or m.doors:find(nil, function(door) return door.addr == cmd end)
-					then
+					--or m.doors:find(nil, function(door) return door.addr == cmd end)
+					--then
+					if true then
 						local fx1 = addFX1(addr)
+-- this misses 5 fx1_t's
+local done = fx1.ptr.doorSelect == 0 
 						fx1.mdbs:insert(m)
 						rs.fx1s:insert(fx1)
+insertUniqueMemoryRange(addr, ffi.sizeof'fx1_t', 
+	--'fx1_t '..(done and '(last) ' or '')..('$%04x'):format(addr)..'='..fx1.ptr[0], 
+	'fx1_t',
+	m)
+						
 						addr = addr + ffi.sizeof'fx1_t'
-					else
-						-- try again 0x10 bytes ahead
-						if not retry then
-							retry = true
-							startaddr = topc(0x83, rs.ptr.fx1) + 0x10
-							addr = startaddr
-						else
-							addr = nil
-							break
-						end
+
+-- term of 0 past the first entry
+if done then break end
 					end
 				end
-				if addr then
-					local len = addr - startaddr
-					insertUniqueMemoryRange(startaddr, len, 'fx1_t', m)
-				end
+				--insertUniqueMemoryRange(startaddr, addr-startaddr, 'fx1_t', m)
 			
 				if rs.ptr.bgdata > 0x8000 then
 					local startaddr = topc(0x8f, rs.ptr.bgdata)
@@ -1009,7 +1096,7 @@ end
 -- TODO when combined with modifying tiles, this is screwing up door transitions
 -- [[
 for _,plmset in ipairs(plmsets) do
-	-- [=[ remove all door plms
+	--[=[ remove all door plms
 	for i=#plmset.plms,1,-1 do
 		local plm = plmset.plms[i]
 		local plmName = doorPLMNameForValue[plm.cmd]
@@ -1032,6 +1119,19 @@ for _,plmset in ipairs(plmsets) do
 		end
 	end
 	--]=]
+	
+	-- get rid of region-room 1-16's plm's
+	local m = plmset.mdbs[1]
+	if m.region == 1 and m.index == 0x10 then
+		for _,rs in ipairs(m.roomStates) do
+			rs.ptr.plm = 0
+			assert(rs.plmset == plmset)
+			rs.plmset = nil
+			plmset.mdbs:removeObject(m)
+			plmset.roomStates:removeObject(rs)
+		end
+	end
+
 	-- if we erased all plms then we should clear all flags in all referencing rooms
 	if #plmset.plms == 0 then
 		for _,rs in ipairs(plmset.roomStates) do
@@ -1292,32 +1392,24 @@ for _,room in ipairs(rooms) do
 
 	local w,h = room.width, room.height
 	local m = room.mdbs[1]
-	printblock(room.head, 2) 
-	printblock(room.solids, 2*w) 
-	printblock(room.bts, w)
 	
-	drawRoom(m.ptr[0], room.solids, room.bts)
--- [=[ write back compressed data
--- ... reduces to 57% of the original compressed data
--- but goes slow
-
--- [==[ do some modifications
-	-- hmm, todo, don't write over the doors ...
-	-- look out for 41-ff-fe-fd in horizontal or vertical order
-	-- then, beside it will be the door ID #... don't change that ...
-	-- it could be in the middle of the map too
-	-- ... it'd be nice if all the door locations were stored in a list somewhere
-	-- but I see the door_t's ... that seems to be pointed *to* by the door bts data, not vice versa 
--- [==[ change blocks around, skipping any ID #'s near the door regions
+-- [[ do some modifications
+-- hmm, todo, don't write over the doors ...
+-- look out for 41-ff-fe-fd in horizontal or vertical order
+-- then, beside it will be the door ID #... don't change that ...
+-- it could be in the middle of the map too
+-- ... it'd be nice if all the door locations were stored in a list somewhere
+-- but I see the door_t's ... that seems to be pointed *to* by the door bts data, not vice versa 
+-- [=[ change blocks around, skipping any ID #'s near the door regions
 -- I probably need to skip elevator shafts too, I bet ...
 	for j=0,h-1 do
 		for i=0,w-1 do
 			-- make sure we're not 1 block away from any door regions on any side
 			local neardoor
 			for _,doorRegion in ipairs(room.doorRegions) do
-				local x,y,dw,dh = table.unpack(doorRegion)
-				if i >= x-1 and i <= x+dw
-				and j >= y-1 and j <= y+dh
+				if i >= doorRegion.x - 1 and i <= doorRegion.x + doorRegion.w
+				-- technically you only need the +1 extra if it is a horizontal door, not a vertical
+				and j >= doorRegion.y - 2 and j <= doorRegion.y + doorRegion.h + 1
 				then
 					neardoor = true
 					break
@@ -1326,35 +1418,51 @@ for _,room in ipairs(rooms) do
 			if not neardoor then
 				local v = room.bts[1+ i + w * j]
 		
---[====[
+--[==[
 bit 0 = 2-wide
 bit 1 = 2-high
-bit 2:3 = 0 = bomb, 1 = shot, 2 = super missile, 3 = power bomb
-
-here's a 2x2 shootable block:
-.3ff
-ffff
-
+bit 2:3 = 0 = shot, 1 = bomb, 2 = super missile, 3 = power bomb
 looks like this might be a combination with plms...
---]====]
+because 0-7 can be bomb or shot
+and 0-3 can also be lifts
+--]==]
 			
 				if false
 				--or (v >= 0 and v <= 3) -- bomb ... ? and also doors, and platforms, and IDs for doors and platforms
 				or (v >= 4 and v <= 7) -- bomb in most rooms, shoot in 1/16 ...
-				or (v >= 8 and v <= 0xb) -- super missile
-				or (v >= 0xc and v <= 0xf)	-- powerbomb
+				or v == 8 -- super missile
+				or v == 9 -- power bomb
 				then
-					v = 0	-- makes it shootable ... though this doubles as a few other things?
-					--v = 4	-- makes it bombable
+					--v = 0 -- means bombable/shootable, respawning
+					--v = 4	-- means bombable/shootable, no respawning, or it means fallthrough block
+					--v = 0xc
+					
 					-- btw, how come there are bts==0 bombable blocks? (escaping alcatraz)
 					room.bts[1+ i + w * j] = v
 				end
 			end
 		end
 	end
---]===]
---]==]
-	
+--]=]
+--]]
+
+
+	printblock(room.head, 2) 
+	printblock(room.solids, 2*w) 
+	printblock(room.bts, w)
+	print('found '..#room.doorRegions..' door bts')
+	for _,door in ipairs(room.doorRegions) do
+		print(' '..tolua(door))
+	end
+
+	for _,m in ipairs(room.mdbs) do
+		drawRoom(m.ptr, room.solids, room.bts)
+	end
+
+
+-- [[ write back compressed data
+-- ... reduces to 57% of the original compressed data
+-- but goes slow
 	local data = room:getData()
 	local recompressed = lz.compress(data)
 	print('recompressed size: '..#recompressed..' vs original compressed size '..room.origCompressedSize)
@@ -1366,15 +1474,15 @@ totalRecompressedSize = totalRecompressedSize + compressedSize
 	for i,v in ipairs(recompressed) do
 		rom[room.addr+i-1] = v
 	end
---[==[ verify that compression works by decompressing and re-compressing
+--[=[ verify that compression works by decompressing and re-compressing
 	local data2, compressedSize2 = lz.decompress(room.addr, 0x10000)
 	assert(compressedSize == compressedSize2)
 	assert(#data == #data2)
 	for i=1,#data do
 		assert(data[i] == data2[i])
 	end
---]==]
 --]=]
+--]]
 	
 	-- insert this range to see what the newly compressed data takes up	
 	--insertUniqueMemoryRange(addr, compressedSize, 'room', m)
