@@ -288,7 +288,7 @@ function SMEnemies:initEnemies()
 	end
 end
 
-function SMEnemies:buildMemoryMap()
+function SMEnemies:buildMemoryMapEnemies()
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(0x9f, enemy.addr)
 		insertUniqueMemoryRange(addr, ffi.sizeof'enemy_t', 'enemy_t')

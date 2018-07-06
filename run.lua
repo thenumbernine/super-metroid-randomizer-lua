@@ -155,6 +155,8 @@ function insertUniqueMemoryRange(addr, len, name, m, ...)
 end
 
 
+-- make a single object for the representation of the ROM
+-- this way I can call stuff on it -- like making a memory map -- multiple times
 local SM = require 'sm'
 -- global for now
 sm = SM(rom)
@@ -163,7 +165,7 @@ sm = SM(rom)
 -- *) enemy placement
 -- *) door placement
 -- *) refinancin
-require 'rooms'
+--require 'rooms'
 
 -- do the enemy randomization
 require 'enemies'
