@@ -243,6 +243,7 @@ end
 
 -- defined in section 6 of metroidconstruction.com/SMMM
 -- mdb = 'map database' I'm guessing?
+-- I am really tempted to defy convention and just call this 'room_t'
 local mdb_t = struct'mdb_t'{	-- aka mdb_header_t
 	{index = 'uint8_t'},		-- 0
 	{region = 'uint8_t'},		-- 1
@@ -257,13 +258,13 @@ local mdb_t = struct'mdb_t'{	-- aka mdb_header_t
 }
 
 -- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
-local stateselect_t = struct'stateselect_t'{
+local roomselect_t = struct'roomselect_t'{
 	{testcode = 'uint16_t'},	-- ptr to test code in bank $8f
 	{testvalue = 'uint8_t'},
 	{roomstate = 'uint16_t'},	-- ptr to alternative roomstate in bank $8f
 }
 
-local stateselect2_t = struct'stateselect2_t'{
+local roomselect2_t = struct'roomselect2_t'{
 	{testcode = 'uint16_t'},
 	{roomstate = 'uint16_t'},
 }
@@ -361,7 +362,7 @@ local bg_t = struct'bg_t'{
 
 -- section 12 of metroidconstruction.com/SMMM
 local door_t = struct'door_t'{
-	{roomID = 'uint16_t'},				-- 0: points to the mdb_t to transition into?
+	{destmdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
 	
 --[[
 0x40 = change regions
@@ -386,6 +387,11 @@ local door_t = struct'door_t'{
 	{code = 'uint16_t'},				-- A
 }
 
+-- this is what the metroid ROM map says ... "Elevator thing"
+-- two dooraddrs point to a uint16_t of zero, at $0188fc and $01a18a, and they point to structs that only take up 2 bytes
+local lift_t = struct'lift_t'{
+	{zero = 'uint16_t'},
+}
 
 local doorPLMTypes = table{
 	-- normal exit
@@ -512,7 +518,7 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 			end
 			local len = addr-startaddr
 			insertUniqueMemoryRange(startaddr, len, 'plm cmd', m)
-	
+			
 			if ok then
 				local scrollMod = {}
 				scrollMod.addr = plm.args
@@ -574,6 +580,7 @@ function Room:getData()
 	)
 end
 
+-- this is the block data of the rooms
 local rooms = table()
 -- see how well our recompression works (I'm getting 57% of the original compressed size)
 local totalOriginalCompressedSize = 0
@@ -675,7 +682,7 @@ from $078000 to $079193 is plm_t data
 the first mdb_t is at $0791f8
 from there it is a dense structure of ...
 mdb_t
-stateselect's (in reverse order)
+roomselect's (in reverse order)
 roomstate_t's (in forward order)
 dooraddrs
 ... then comes extra stuff, sometimes:
@@ -704,6 +711,7 @@ for x=0x8000,0xffff do
 		local m = {
 			roomStates = table(),
 			doors = table(),
+			addr = x,
 			ptr = mptr,
 		}	
 		mdbs:insert(m)
@@ -716,7 +724,7 @@ for x=0x8000,0xffff do
 			local testcode = ffi.cast('uint16_t*',data)[0]
 			
 			if testcode == 0xe5e6 then 
-				insertUniqueMemoryRange(data-rom, 2, 'stateselect', m)	-- term
+				insertUniqueMemoryRange(data-rom, 2, 'roomselect', m)	-- term
 				data = data + 2
 				break 
 			end
@@ -726,7 +734,7 @@ for x=0x8000,0xffff do
 			if testcode == 0xE612
 			or testcode == 0xE629
 			then
-				ctype = 'stateselect_t'
+				ctype = 'roomselect_t'
 			elseif testcode == 0xE5EB then
 				-- this is never reached
 				error'here' 
@@ -737,7 +745,7 @@ for x=0x8000,0xffff do
 				--	uint16_t roomstate;
 				-- }
 			else
-				ctype = 'stateselect2_t'
+				ctype = 'roomselect2_t'
 			end
 			local rs = RoomState{
 				select = ffi.cast(ctype..'*', data),
@@ -746,11 +754,11 @@ for x=0x8000,0xffff do
 			m.roomStates:insert(rs)
 			
 			data = data + ffi.sizeof(ctype)
-			insertUniqueMemoryRange(startaddr, ffi.sizeof(ctype), 'stateselect', m)
+			insertUniqueMemoryRange(startaddr, ffi.sizeof(ctype), 'roomselect', m)
 		end
 
 		do
-			-- after the last stateselect is the first roomstate_t
+			-- after the last roomselect is the first roomstate_t
 			local rsptr = ffi.cast('roomstate_t*', data)
 			insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			data = data + ffi.sizeof'roomstate_t'
@@ -773,10 +781,10 @@ for x=0x8000,0xffff do
 				assert(rs.ptr)
 			end
 
-			-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the stateselect's ... 
+			-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
 			-- they sure aren't sequential
 			-- they might be reverse-sequential
-			-- sure enough, YES.  roomstates are contiguous and reverse-sequential from stateselect's
+			-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
 			--[[
 			for i=1,#m.roomStates-1 do
 				assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
@@ -970,18 +978,40 @@ do break end
 --doorsSoFar[addr] = doorsSoFar[addr] or table()
 --doorsSoFar[addr]:insert(m)
 				data = rom + addr 
-				door.ptr = ffi.cast('door_t*', data)
-				if door.ptr.code > 0x8000 then
+				local destmdb = ffi.cast('uint16_t*', data)[0]
+				-- if destmdb == 0 then it is just a 2-byte 'lift' structure ...
+				local ctype = destmdb == 0 and 'lift_t' or 'door_t'
+				door.ctype = ctype
+				door.ptr = ffi.cast(ctype..'*', data)
+				insertUniqueMemoryRange(addr, ffi.sizeof(ctype), ctype, m)
+				if ctype == 'door_t' 
+				and door.ptr.code > 0x8000 
+				then
 					local codeaddr = topc(0x8f, door.ptr.code)
 					door.doorCodePtr = rom + codeaddr 
 					-- the next 0x1000 bytes have the door asm code
 					insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
 				end
-				insertUniqueMemoryRange(addr, ffi.sizeof'door_t', 'door_t', m)
 			end
 		end
 	end
 end
+
+
+-- link all doors to their mdbs
+for _,m in ipairs(mdbs) do
+	for _,door in ipairs(m.doors) do
+		if door.ctype == 'door_t' then
+			local destmdb = mdbs:find(nil, function(m) return m.addr == door.ptr.destmdb end)
+			if not destmdb then
+				error('!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
+			end
+			-- points to the dest mdb
+			door.destmdb = destmdb
+		end
+	end
+end
+
 
 --[[ seeing if any two rooms have door addrs that point to the same door ... not many but a few do:
 -- found overlapping doors at $0188fc, used by 0/8 0/15 0/20 0/25 1/0 1/14 1/36 0/51 1/52 2/3 2/38 2/54
@@ -1022,7 +1052,7 @@ end
 
 
 -- asserting underlying contiguousness of structure of the mdb_t's...
--- verify that after each mdb_t, the stateselect / roomstate_t / dooraddrs are packed together
+-- verify that after each mdb_t, the roomselect / roomstate_t / dooraddrs are packed together
 
 -- before the first mdb_t is 174 plm_t's, 
 -- then 100 bytes of something
@@ -1036,7 +1066,7 @@ for j,m in ipairs(mdbs) do
 		assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
 		d = d + ffi.sizeof(m.roomStates[i].select_ctype)
 	end
-	-- last stateselect should always be 2 byte term
+	-- last roomselect should always be 2 byte term
 	d = d + 2
 	-- next should always match the last room
 	for i=#m.roomStates,1,-1 do
@@ -1155,38 +1185,6 @@ end
 
 
 -- [[ writing back plms ...
--- turns out this needs more bulletproofing
--- because the door changes and stuff modify those original plm locations
--- so all those need to be updated
---[=[
-plm memory ranges:
- 0/ 0: $078000..$079193 (plm_t x174) 
- 3/ 0: $07c215..$07c230 (plm_t x2) 
- 	... 20 bytes of padding ...
- 3/ 3: $07c245..$07c2fe (plm_t x15) 
- 	... 26 bytes of padding ...
- 3/ 3: $07c319..$07c8c6 (plm_t x91) 
- 	... 199 bytes of padding ...
---]=]
--- where plms were written before, so should be safe, right?
--- ranges are inclusive
-local plmWriteRanges = {
- 	{0x78000, 0x79193},	
- 	-- then comes mdb_t data, and a lot of other stuff ...
-	{0x7c215, 0x7c230},
- 	--... 20 bytes of padding ... which is "Hallway Atop Wrecked Ship" PLM data, according to metroid rom map.
-	-- I don't see where it is referenced from though.
-	{0x7c245, 0x7c2fe},
- 	--... 26 bytes of padding ... "Hallway Atop Wrecked Ship" again
-	{0x7c319, 0x7c8c6},
- 	-- next comes which is L12 data, and then a lot more stuff
-	{0x7e87f, 0x7e880},
-	-- then comes 
-	{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
-}
-for _,range in ipairs(plmWriteRanges) do
-	range.sofar = range[1]
-end
 
 -- if the roomstate points to an empty plmset then it can be cleared
 for _,plmset in ipairs(plmsets) do
@@ -1199,13 +1197,7 @@ for _,plmset in ipairs(plmsets) do
 		end
 	end
 end
--- remove empty plmsets
--- TODO hmm if I remove the plmsets from the list, then the first room to the left from the ship stalls 
--- another byproduct of this is ... when you start a new game, the door outside old mother brain is grey
--- i think plms have ptrs to other plms that need to be updated ... 
--- FIXED(?) ... I might've fixed it by loading roomstate plms in reverse order, as roomstates are stored reversed of selectstate
--- I'm sure it's just overwriting something else instead of whatever was getting corrupted ...
--- [=[
+-- [=[ remove empty plmsets
 for i=#plmsets,1,-1 do
 	local plmset = plmsets[i]
 	if #plmset.plms == 0 then
@@ -1235,6 +1227,36 @@ for i=1,#plmsets-1 do
 			end
 		end
 	end
+end
+
+--[=[
+plm memory ranges:
+ 0/ 0: $078000..$079193 (plm_t x174) 
+ 3/ 0: $07c215..$07c230 (plm_t x2) 
+ 	... 20 bytes of padding ...
+ 3/ 3: $07c245..$07c2fe (plm_t x15) 
+ 	... 26 bytes of padding ...
+ 3/ 3: $07c319..$07c8c6 (plm_t x91) 
+ 	... 199 bytes of padding ...
+--]=]
+-- where plms were written before, so should be safe, right?
+-- ranges are inclusive
+local plmWriteRanges = {
+ 	{0x78000, 0x79193},	
+ 	-- then comes mdb_t data, and a lot of other stuff ...
+	{0x7c215, 0x7c230},
+ 	--... 20 bytes of padding ... which is "Hallway Atop Wrecked Ship" PLM data, according to metroid rom map.
+	-- I don't see where it is referenced from though.
+	{0x7c245, 0x7c2fe},
+ 	--... 26 bytes of padding ... "Hallway Atop Wrecked Ship" again
+	{0x7c319, 0x7c8c6},
+ 	-- next comes which is L12 data, and then a lot more stuff
+	{0x7e87f, 0x7e880},
+	-- then comes 
+	{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
+}
+for _,range in ipairs(plmWriteRanges) do
+	range.sofar = range[1]
 end
 
 -- TODO any code that points to a PLM needs to be updated as well
