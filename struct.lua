@@ -52,6 +52,8 @@ end
 			return ffi.sizeof(ctype)
 		end):sum()
 		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
+
+		return mt
 	end
 end
 

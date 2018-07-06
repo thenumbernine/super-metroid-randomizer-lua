@@ -24,7 +24,7 @@ EnemyAuxTable.bank = 0xb4
 function EnemyAuxTable:init()
 	EnemyAuxTable.super.init(self)
 	
-	self.addrs = enemies:map(function(enemy)
+	self.addrs = sm.enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
 
@@ -77,7 +77,7 @@ function EnemyAuxTable:print()
 		--io.write('  '..('0x%04x'):format(addr)..' ')
 		-- verbose:
 		print(('0x%04x'):format(addr))
-		print('used by: '..enemies:filter(function(enemy)
+		print('used by: '..sm.enemies:filter(function(enemy)
 			return enemy.ptr[0][self.enemyField] == addr
 		end):map(function(enemy)
 			return enemy.name
@@ -138,7 +138,7 @@ local EnemyItemDropTable = class(EnemyAuxTable)
 EnemyItemDropTable.name = 'enemy item drop table'
 EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemy_t to get addresses from
 EnemyItemDropTable.structName = 'itemDrop_t'	-- structure at the address
-EnemyItemDropTable.fields = structFields.itemDrop_t
+EnemyItemDropTable.fields = itemDrop_t_fields
 
 -- returns a list of bytes that are written to the structure
 -- TODO I could use the ffi info and return arbitrary values that are correctly cast into the structure ...
@@ -166,7 +166,7 @@ local EnemyWeaknessTable = class(EnemyAuxTable)
 EnemyWeaknessTable.name = 'enemy weakness table'
 EnemyWeaknessTable.enemyField = 'weakness'
 EnemyWeaknessTable.structName = 'weakness_t'
-EnemyWeaknessTable.fields = structFields.weakness_t
+EnemyWeaknessTable.fields = weakness_t_fields
 
 --[[
 t is value => percentage
@@ -339,14 +339,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
 	for name,_ in pairs(dontChangeWeaknessSet) do
-		if enemyForName[name].ptr.weakness == addr then
+		if sm.enemyForName[name].ptr.weakness == addr then
 			return
 		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
 	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == enemyForName.Shaktool.ptr.weakness then
+	if addr == sm.enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
 	
@@ -416,7 +416,7 @@ for _,field in ipairs{
 			distr = {},
 		}
 		local values = allEnemyFieldValues[field]
-		for _,enemy in ipairs(enemies) do
+		for _,enemy in ipairs(sm.enemies) do
 			local value = enemy.ptr[0][field]
 			values.distr[value] = (values.distr[value] or 0) + 1
 		end
@@ -438,7 +438,7 @@ local typeinfo = {
 local function randomizeFieldExp(enemyPtr, fieldname)
 	if randomizeEnemyProps[fieldname] then
 		local value = expRand(table.unpack(randomizeEnemyProps[fieldname..'ScaleRange'])) * enemyPtr[0][fieldname]
-		local field = select(2, enemyFields:find(nil, function(field) return next(field) == fieldname end))
+		local field = select(2, enemy_t_fields:find(nil, function(field) return next(field) == fieldname end))
 		local fieldtype = select(2, next(field))
 		local fieldrange = typeinfo[fieldtype].range
 		value = math.clamp(value, fieldrange[1], fieldrange[2])
@@ -571,7 +571,7 @@ if config.randomizeEnemies then
 		print()
 		print'palettes:'
 		-- 1) gather unique palette addrs
-		local addrs = enemies:map(function(enemy)
+		local addrs = sm.enemies:map(function(enemy)
 			return true, topc(enemy.ptr.aiBank, enemy.ptr.palette)
 		end):keys()
 		-- 2) get the rgb data
@@ -594,7 +594,7 @@ if config.randomizeEnemies then
 	end
 --]]
 
-	for i,enemy in ipairs(enemies) do
+	for i,enemy in ipairs(sm.enemies) do
 		randomizeFieldExp(enemy.ptr, 'health')
 		randomizeFieldExp(enemy.ptr, 'damage')
 		randomizeFieldExp(enemy.ptr, 'hurtTime')
@@ -633,7 +633,7 @@ enemyItemDropTable:print()
 enemyWeaknessTable:print()
 
 print'enemies:'
-for i,enemy in ipairs(enemies) do
+for i,enemy in ipairs(sm.enemies) do
 	print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
 
 	print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))

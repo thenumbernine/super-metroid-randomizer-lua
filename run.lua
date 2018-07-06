@@ -84,11 +84,6 @@ end
 rom = ffi.cast('uint8_t*', romstr) 
 
 
--- [[ TODO eventually
-local SM = require 'sm'
-local sm = SM(rom)
---]]
-
 
 -- global stuff
 
@@ -160,12 +155,9 @@ function insertUniqueMemoryRange(addr, len, name, m, ...)
 end
 
 
-
-
-
--- build enemies table / type info
--- do this before rooms, enemies, items
-require 'enemies_data'
+local SM = require 'sm'
+-- global for now
+sm = SM(rom)
 
 -- randomize rooms?  still working on this
 -- *) enemy placement

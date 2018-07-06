@@ -478,7 +478,7 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 
 	local plmset = {
 		addr = startaddr,
-		scrollMods = table(),
+		scrollmods = table(),
 		plms = plms,
 		plmorigs = range(#plms):map(function(i)
 			return ffi.new('plm_t', plms[i])	-- deep copy
@@ -489,7 +489,7 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 	plmsets:insert(plmset)
 
 -- this shows the orig rom memory
---insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
+insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
 
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
@@ -517,13 +517,14 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 				i = i + 2
 			end
 			local len = addr-startaddr
-			insertUniqueMemoryRange(startaddr, len, 'plm cmd', m)
+			insertUniqueMemoryRange(startaddr, len, 'plm scrollmod', m)
 			
 			if ok then
-				local scrollMod = {}
-				scrollMod.addr = plm.args
-				scrollMod.data = tmp
-				plmset.scrollMods:insert(scrollMod)
+				plmset.scrollmods:insert{
+					addr = startaddr,
+					len = addr - startaddr,
+					data = tmp,
+				}
 			end
 		end
 	end
@@ -582,7 +583,7 @@ end
 
 -- this is the block data of the rooms
 local rooms = table()
--- see how well our recompression works (I'm getting 57% of the original compressed size)
+-- see how well our recompression works 
 local totalOriginalCompressedSize = 0
 local totalRecompressedSize = 0
 local function addRoom(addr, m)
@@ -595,10 +596,9 @@ local function addRoom(addr, m)
 		-- so here, assert that their width & height matches
 		assert(16 * room.mdbs[1].ptr.width == room.width, "expected room width "..room.width.." but got "..m.ptr.width)
 		assert(16 * room.mdbs[1].ptr.height == room.height, "expected room height "..room.height.." but got "..m.ptr.height)
-		room.mdbs:insert(m)
 		return room 
 	end
-					
+	
 	local roomaddrstr = ('$%06x'):format(addr)
 --print('roomaddr '..roomaddrstr)
 	
@@ -619,8 +619,11 @@ local function addRoom(addr, m)
 	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
 --print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
 	
-	-- insert this range to see what the old data took up
-	insertUniqueMemoryRange(addr, compressedSize, 'room', m)
+-- insert this range to see what the old data took up
+--insertUniqueMemoryRange(addr, compressedSize, 
+	--'room',
+	--'room '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index),
+	--m)
 
 	-- keep track of door regions
 	local doorRegions = table()	-- x,y,w,h 
@@ -658,7 +661,8 @@ local function addRoom(addr, m)
 
 	local room = Room{
 		addr = addr,
-		mdbs = table{m},
+		mdbs = table(),
+		roomStates = table(),
 		doorRegions = doorRegions,
 		-- this is just 16*(w,h)
 		width = w,
@@ -687,7 +691,7 @@ roomstate_t's (in forward order)
 dooraddrs
 ... then comes extra stuff, sometimes:
 scrolldata (which is in one place wedged into nowhere)
-plm cmd
+plm scrollmod
 --]]
 local mdbs = table()
 for x=0x8000,0xffff do
@@ -940,18 +944,17 @@ do break end
 					insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t', m)
 				end
 
---[[ TODO decompress is failing here
--- 0x8f is also used for door code and for plm, soo....
 				if rs.ptr.layerHandling > 0x8000 then
 					local addr = topc(0x8f, rs.ptr.layerHandling)
-					local decompressed, compressedSize = lz.decompress(addr, 0x1000)
-					rs.layerHandlingCode = decompressed
-					insertUniqueMemoryRange(addr, compressedSize, 'layer handling code', m)
+					-- read code
+					insertUniqueMemoryRange(addr, 0x10, 'layer handling code', m)
 				end
---]]
 				
 				local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
-				rs.rooms:insert(addRoom(addr, m))
+				local room = addRoom(addr, m)
+				room.mdbs:insert(m)
+				room.roomStates:insert(rs)
+				rs.rooms:insert(room)
 			end
 
 			local startaddr = topc(0x8e, m.ptr.doors)
@@ -1013,9 +1016,13 @@ for _,m in ipairs(mdbs) do
 end
 
 
---[[ seeing if any two rooms have door addrs that point to the same door ... not many but a few do:
--- found overlapping doors at $0188fc, used by 0/8 0/15 0/20 0/25 1/0 1/14 1/36 0/51 1/52 2/3 2/38 2/54
--- found overlapping doors at $01a18a, used by 4/19 5/0
+-- ok, now to try and change a mdb_t
+
+
+--[[ seeing if any two rooms have door addrs that point to the same door ...
+-- looks like the only ones that do are the lift_t zero structure:
+-- $0188fc, used by 00/08 00/0f 00/14 00/19 01/00 01/0e 01/24 00/33 01/34 02/03 02/26 02/36
+-- $01a18a, used by 04/13 05/00
 print()
 for _,addr in ipairs(doorsSoFar:keys():sort()) do
 	local ms = doorsSoFar[addr]
@@ -1107,8 +1114,32 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 	-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
 	-- mdb_t $07ad1b - speed booster room - has 26 bytes here
 	-- mdb_t $07b1e5 - lava-lowering chozo statue - has 11 bytes here
+	d = d + (({
+		[0x79804] = 14,
+		[0x7a66a] = 8,
+		[0x7a923] = 5,
+		[0x7a98d] = 6,
+		[0x7ad1b] = 26,
+		[0x7b1e5] = 11,
+	})[mdbaddr] or 0)
 
-	-- plm cmds sometimes go here
+--[=[ continuity of plm scrollmods?
+print('d starts at '..('%06x'):format( d-rom ))
+	-- plm scrollmod sometimes go here
+	local plmsets = table()
+	for _,rs in ipairs(m.roomStates) do
+		plmsets:insertUnique(rs.plmset)
+	end
+	plmsets:sort(function(a,b) return a.addr < b.addr end)
+	for _,plmset in ipairs(plmsets) do
+		if plmset and #plmset.scrollmods > 0 then
+			for _,scrollmod in ipairs(plmset.scrollmods) do
+--				assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
+				d = d + scrollmod.len
+			end
+		end
+	end
+--]=]
 
 	-- mdb_t $07c98e - wrecked ship chozo & reserve - has 12 bytes here
 	-- mdb_t $07ca42 - hallway at top of wrecked ship - has 8 bytes here
@@ -1184,7 +1215,7 @@ end
 
 
 
--- [[ writing back plms ...
+-- [[ optimizing plms ... 
 
 -- if the roomstate points to an empty plmset then it can be cleared
 for _,plmset in ipairs(plmsets) do
@@ -1228,7 +1259,11 @@ for i=1,#plmsets-1 do
 		end
 	end
 end
+--]]
 
+
+--[[ writing back plms...
+-- TODO this is causing a problem -- room 03/04, the main room of wrecked ship, isn't scrolling out of the room correctly
 --[=[
 plm memory ranges:
  0/ 0: $078000..$079193 (plm_t x174) 
@@ -1243,17 +1278,13 @@ plm memory ranges:
 -- ranges are inclusive
 local plmWriteRanges = {
  	{0x78000, 0x79193},	
- 	-- then comes mdb_t data, and a lot of other stuff ...
-	{0x7c215, 0x7c230},
- 	--... 20 bytes of padding ... which is "Hallway Atop Wrecked Ship" PLM data, according to metroid rom map.
-	-- I don't see where it is referenced from though.
-	{0x7c245, 0x7c2fe},
- 	--... 26 bytes of padding ... "Hallway Atop Wrecked Ship" again
-	{0x7c319, 0x7c8c6},
- 	-- next comes which is L12 data, and then a lot more stuff
-	{0x7e87f, 0x7e880},
-	-- then comes 
+ 	-- then comes 100 bytes of layer handling code, then mdb's
+	{0x7c215, 0x7c8c6},
+ 	-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
+	{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
+	-- then comes a lot of unknown data 
 	{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
+				-- however $7ff00 is where the door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
 }
 for _,range in ipairs(plmWriteRanges) do
 	range.sofar = range[1]
@@ -1274,30 +1305,30 @@ for _,plmset in ipairs(plmsets) do
 				ffi.cast('plm_t*', rom+range.sofar)[0] = plm
 				range.sofar = range.sofar + ffi.sizeof'plm_t'
 			end
+			-- write term
 			ffi.cast('uint16_t*', rom+range.sofar)[0] = 0
 			range.sofar = range.sofar + ffi.sizeof'uint16_t'
 			toaddr = range.sofar
 			break
 		end
 	end
-	if fromaddr then
+	if not fromaddr then
+		error("couldn't find anywhere to write plm_t")
+	end
 
 -- this shows the new rom memory
 insertUniqueMemoryRange(fromaddr, toaddr-fromaddr, 'plm_t', plmset.mdbs[1])
-		--[=[
-		print('writing plms from '
-			..('$%06x'):format(fromaddr)
-			..' to '..('$%06x'):format(toaddr))
-		--]=]
-		for _,rs in ipairs(plmset.roomStates) do
-			local newofs = bit.band(0xffff, fromaddr)
-			if newofs ~= rs.ptr.plm then
-				print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
-				rs.ptr.plm = newofs 
-			end
+	--[=[
+	print('writing plms from '
+		..('$%06x'):format(fromaddr)
+		..' to '..('$%06x'):format(toaddr))
+	--]=]
+	for _,rs in ipairs(plmset.roomStates) do
+		local newofs = bit.band(0xffff, fromaddr)
+		if newofs ~= rs.ptr.plm then
+			print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
+			rs.ptr.plm = newofs 
 		end
-	else
-		error("couldn't find anywhere to write plm_t")
 	end
 end
 -- output memory ranges
@@ -1311,6 +1342,24 @@ for _,range in ipairs(plmWriteRanges) do
 		..('%04x'):format(range[2]-range[1]+1)..' bytes')
 end
 --]]
+
+
+
+-- writing back mdb_t
+-- if you move a mdb_t
+-- then don't forget to reassign all mdb.dooraddr.door_t.destmdb
+local mdbWriteRanges = {
+	{0x791f8, 0x7b769},	-- mdbs of regions 0-2
+	-- then comes bg_t's and door codes and plm_t's
+	{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
+	-- then comes db_t's and door codes 
+	{0x7e82c, 0x7e85a},	-- single mdb of region 7
+	-- then comes door code
+}
+for _,range in ipairs(mdbWriteRanges) do
+	range.sofar = range[1]
+end
+
 
 
 print()
@@ -1379,16 +1428,19 @@ for _,m in ipairs(mdbs) do
 				if plmName then io.write(' '..plmName) end
 				print()	
 			end
+			for _,scrollmod in ipairs(rs.plmset.scrollmods) do
+				print('   plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+			end
 		end
 		--]]
 		for _,enemyPop in ipairs(rs.enemyPops) do	
 			print('   enemyPop_t: '
-				..((enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
+				..((sm.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
 				..': '..enemyPop)
 		end
 		for _,enemySet in ipairs(rs.enemySets) do
 			print('   enemySet_t: '
-				..((enemyForAddr[enemySet.enemyAddr] or {}).name or '')
+				..((sm.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
 				..': '..enemySet)
 		end
 		for _,fx1 in ipairs(rs.fx1s) do
@@ -1399,39 +1451,23 @@ for _,m in ipairs(mdbs) do
 		end
 	end
 	for _,door in ipairs(m.doors) do
-		print('  door_t: '
+		print('  '..door.ctype..': '
 			..('$83:%04x'):format(door.addr)
 			..' '..door.ptr[0])
 	end
 end
 
--- print/draw rooms
-print()
-print'all rooms'
-for _,room in ipairs(rooms) do
-	for _,m in ipairs(room.mdbs) do
-		io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
-	end
-	print()
 
-	local function printblock(data, width)
-		for i=1,#data do
-			io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
-			if i % width == 0 then print() end 
-		end
-		print()
-	end
-
-	local w,h = room.width, room.height
-	local m = room.mdbs[1]
-	
--- [[ do some modifications
+--[[ do some modifications
 -- hmm, todo, don't write over the doors ...
 -- look out for 41-ff-fe-fd in horizontal or vertical order
 -- then, beside it will be the door ID #... don't change that ...
 -- it could be in the middle of the map too
 -- ... it'd be nice if all the door locations were stored in a list somewhere
 -- but I see the door_t's ... that seems to be pointed *to* by the door bts data, not vice versa 
+for _,room in ipairs(rooms) do
+	local w,h = room.width, room.height
+
 -- [=[ change blocks around, skipping any ID #'s near the door regions
 -- I probably need to skip elevator shafts too, I bet ...
 	for j=0,h-1 do
@@ -1476,8 +1512,27 @@ and 0-3 can also be lifts
 		end
 	end
 --]=]
+end
 --]]
 
+
+-- print/draw rooms
+print()
+print'all rooms'
+for _,room in ipairs(rooms) do
+	local w,h = room.width, room.height
+	for _,m in ipairs(room.mdbs) do
+		io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
+	end
+	print()
+
+	local function printblock(data, width)
+		for i=1,#data do
+			io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+			if i % width == 0 then print() end 
+		end
+		print()
+	end
 
 	printblock(room.head, 2) 
 	printblock(room.solids, 2*w) 
@@ -1490,22 +1545,71 @@ and 0-3 can also be lifts
 	for _,m in ipairs(room.mdbs) do
 		drawRoom(m.ptr, room.solids, room.bts)
 	end
+end
 
 
 -- [[ write back compressed data
--- ... reduces to 57% of the original compressed data
+local roomWriteRanges = {
+	--[=[ there are some bytes outside compressed regions but between a few roomdatas
+	-- the metroid rom map says these are a part of the room data
+	-- this includes those breaks
+	{0x2142bb, 0x235d76},
+	{0x235ee0, 0x244da8},
+	{0x24559c, 0x272502},
+	{0x272823, 0x27322d},
+	--]=]
+	-- [=[ and this doesn't -- one giant contiguous region
+	{0x2142bb, 0x277fff},
+	--]=]
+}
+for _,range in ipairs(roomWriteRanges) do
+	range.sofar = range[1]
+end
+-- ... reduces to 56% of the original compressed data
 -- but goes slow
+for _,room in ipairs(rooms) do
 	local data = room:getData()
 	local recompressed = lz.compress(data)
 	print('recompressed size: '..#recompressed..' vs original compressed size '..room.origCompressedSize)
 	assert(#recompressed <= room.origCompressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.origCompressedSize)
 totalOriginalCompressedSize = totalOriginalCompressedSize + room.origCompressedSize
-	local compressedSize = #recompressed
-totalRecompressedSize = totalRecompressedSize + compressedSize
-	-- now write back to the original location at addr
-	for i,v in ipairs(recompressed) do
+totalRecompressedSize = totalRecompressedSize + #recompressed
+	data = recompressed
+	--[=[ now write back to the original location at addr
+	for i,v in ipairs(data) do
 		rom[room.addr+i-1] = v
 	end
+	--]=]
+	-- [=[ write back at a contiguous location
+	-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
+	-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
+	local bytesToWrite = #data
+	local fromaddr, toaddr
+	for _,range in ipairs(roomWriteRanges) do
+		if range.sofar + bytesToWrite <= range[2]+1 then
+			fromaddr = range.sofar
+			range.sofar = range.sofar + bytesToWrite
+			toaddr = range.sofar
+			break
+		end
+	end
+	if not fromaddr then
+		error("couldn't find anywhere to write room data")
+	end
+	-- do the write
+	for i,v in ipairs(data) do
+		rom[fromaddr+i-1] = v
+	end
+	-- update room addr
+	print('updating room address from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
+	room.addr = fromaddr
+	-- update any roomstate_t's that point to this data
+	for _,rs in ipairs(room.roomStates) do
+		rs.ptr.roomBank = bit.rshift(room.addr, 15) + 0x80 
+		rs.ptr.roomAddr = bit.band(room.addr, 0x7fff) + 0x8000
+	end
+	--]=]
+
 --[=[ verify that compression works by decompressing and re-compressing
 	local data2, compressedSize2 = lz.decompress(room.addr, 0x10000)
 	assert(compressedSize == compressedSize2)
@@ -1514,11 +1618,22 @@ totalRecompressedSize = totalRecompressedSize + compressedSize
 		assert(data[i] == data2[i])
 	end
 --]=]
---]]
 	
 	-- insert this range to see what the newly compressed data takes up	
-	--insertUniqueMemoryRange(addr, compressedSize, 'room', m)
+insertUniqueMemoryRange(room.addr, #data, 'room', room.mdbs[1])
 end
+-- output memory ranges
+print()
+print'room write usage:'
+for _,range in ipairs(roomWriteRanges) do
+	print('range '
+		..('%04x'):format(range[1])..'..'..('%04x'):format(range[2])
+		..'  '..('%04x'):format(range.sofar)..' used = '
+		..('%.1f'):format(100*(range.sofar-range[1])/(range[2]-range[1]+1))..'% of '
+		..('%04x'):format(range[2]-range[1]+1)..' bytes')
+end
+--]]
+
 
 mapimg:save'map.png'
 

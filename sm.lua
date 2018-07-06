@@ -9,7 +9,9 @@ so TODO clean up and bureaucratize
 local ffi = require 'ffi'
 local class = require 'ext.class'
 
-local SM = class()
+local SM = class(
+	require 'enemies_data'
+)
 
 --[[
 rom = c string of the ROM
@@ -19,6 +21,9 @@ function SM:init(rom)
 	
 	local name = ffi.string(rom + 0x7fc0, 0x15)
 	print(name)
+
+	self:initEnemies()
+	self:buildMemoryMap()
 end
 
 return SM

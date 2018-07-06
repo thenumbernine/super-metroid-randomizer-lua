@@ -22,7 +22,7 @@ local function beamCanFreeze(weak, field)
 end
 
 local function canFreeze(enemyName)
-	local enemy = assert(enemyForName[enemyName], 'failed to find enemy named '..enemyName)
+	local enemy = assert(sm.enemyForName[enemyName], 'failed to find enemy named '..enemyName)
 	local weak = enemy:getWeakness()
 	
 	if weak == nil then return false end
@@ -65,7 +65,7 @@ some TODO's...
 --]]
 local function canKill(enemyName)
 --io.write('canKill '..enemyName)
-	local enemy = assert(enemyForName[enemyName], 'failed to find enemy named '..enemyName)
+	local enemy = assert(sm.enemyForName[enemyName], 'failed to find enemy named '..enemyName)
 	local weak = enemy:getWeakness()
 	
 	-- null weak means invincible
