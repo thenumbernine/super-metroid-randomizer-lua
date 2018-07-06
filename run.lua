@@ -250,8 +250,8 @@ do
 		local m = range.m
 		if m then
 			fwrite( 
-				('%2d'):format(tonumber(m.ptr.region))..'/'..
-				('%2d'):format(tonumber(m.ptr.index)))
+				('%02x'):format(tonumber(m.ptr.region))..'/'..
+				('%02x'):format(tonumber(m.ptr.index)))
 		else
 			fwrite('     ')
 		end

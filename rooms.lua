@@ -670,11 +670,6 @@ local function addRoom(addr, m)
 end
 
 
-
-local mdbs = table()
-xpcall(function()
-
-
 --[[
 from $078000 to $079193 is plm_t data
 the first mdb_t is at $0791f8
@@ -687,6 +682,7 @@ dooraddrs
 scrolldata (which is in one place wedged into nowhere)
 plm cmd
 --]]
+local mdbs = table()
 for x=0x8000,0xffff do
 	local data = rom + topc(0x8e, x)
 	local function read(ctype)
@@ -698,14 +694,13 @@ for x=0x8000,0xffff do
 	local mptr = ffi.cast('mdb_t*', data)
 	if (
 		(data[12] == 0xE5 or data[12] == 0xE6) 
-		and mptr[0].region < 8 
-		and (mptr[0].width ~= 0 and mptr[0].width < 20) 
-		and (mptr[0].height ~= 0 and mptr[0].height < 20)
-		and mptr[0].upScroller ~= 0 
-		and mptr[0].downScroller ~= 0 
-		and mptr[0].gfxFlags < 0x10 
-		and mptr[0].doors > 0x7F00
+		and mptr.region < 8 
+		and (mptr.width ~= 0 and mptr.width < 20) 
+		and (mptr.height ~= 0 and mptr.height < 20)
+		and mptr.gfxFlags < 0x10 
+		and mptr.doors > 0x7F00
 	) then
+		
 		local m = {
 			roomStates = table(),
 			doors = table(),
@@ -997,7 +992,7 @@ for _,addr in ipairs(doorsSoFar:keys():sort()) do
 	if #ms > 1 then
 		io.write('found overlapping doors at '..('$%06x'):format(addr)..', used by')
 		for _,m in ipairs(ms) do
-			io.write(' '..m.ptr.region..'/'..m.ptr.index)
+			io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
 		end
 		print()
 	end
@@ -1021,12 +1016,12 @@ for i=1,#alldoors-1 do
 end
 --]]
 
-end, function(err)
-	io.stderr:write(err..'\n'..debug.traceback())
-end)
 
 
--- [[ asserting underlying contiguousness of structure of the mdb_t's...
+-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
+
+
+-- asserting underlying contiguousness of structure of the mdb_t's...
 -- verify that after each mdb_t, the stateselect / roomstate_t / dooraddrs are packed together
 
 -- before the first mdb_t is 174 plm_t's, 
@@ -1068,15 +1063,28 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 		return scroll > 1 and scroll ~= 0x8000
 	end):sort()
 	assert(#scrolls <= 1)
+	-- mdb_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
+	-- so... shouldn't this assertion fail?
 	for _,scroll in ipairs(scrolls) do
 		local addr = topc(scrollBank, scroll)
 		assert(d == rom + addr)
 		d = d + m.ptr.width * m.ptr.height
-		-- notice that one of these scrolldata's overlaps with the next mdb_t start ... mdb 2/30
 	end
 
+	-- mdb_t $079804 - gold torizo room - has 14 bytes here 
+	-- mdb_t $07a66a - statues before tourian - has 8 bytes after it
+	-- mdb_t $07a923 - slope down to crocomire - has 5 bytes here 
+	-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
+	-- mdb_t $07ad1b - speed booster room - has 26 bytes here
+	-- mdb_t $07b1e5 - lava-lowering chozo statue - has 11 bytes here
+
+	-- plm cmds sometimes go here
+
+	-- mdb_t $07c98e - wrecked ship chozo & reserve - has 12 bytes here
+	-- mdb_t $07ca42 - hallway at top of wrecked ship - has 8 bytes here
+	-- mdb_t $07cc6f - hallway before phantoon - has 3 bytes here
+
 	-- see if the next mdb_t is immediately after
-	-- sometimes a few plm_t's are found next ...
 	--[=[
 	if j+1 <= #mdbs then
 		local m2 = ffi.cast('uint8_t*', mdbs[j+1].ptr)
@@ -1086,7 +1094,9 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 	end
 	--]=]
 end
---]]
+
+
+--]] --------------------------------------------------------------------------------
 
 
 
@@ -1286,7 +1296,7 @@ print("all plm_t's:")
 for _,plmset in ipairs(plmsets) do
 	print(' '..('$%06x'):format(plmset.addr)
 		..' mdbs: '..plmset.mdbs:map(function(m)
-			return m.ptr.region..'/'..m.ptr.index
+			return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
 		end):concat' '
 	)
 	for _,plm in ipairs(plmset.plms) do
@@ -1301,7 +1311,7 @@ bgs:sort(function(a,b) return a.addr < b.addr end)
 for _,bg in ipairs(bgs) do
 	print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
 		..' mdbs: '..bg.mdbs:map(function(m)
-			return m.ptr.region..'/'..m.ptr.index
+			return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
 		end):concat' '
 	)
 end
@@ -1324,7 +1334,7 @@ fx1s:sort(function(a,b) return a.addr < b.addr end)
 for _,fx1 in ipairs(fx1s) do
 	print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
 		..' mdbs: '..fx1.mdbs:map(function(m)
-			return m.ptr.region..'/'..m.ptr.index
+			return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
 		end):concat' '
 	)
 end
@@ -1378,7 +1388,7 @@ print()
 print'all rooms'
 for _,room in ipairs(rooms) do
 	for _,m in ipairs(room.mdbs) do
-		io.write(' '..m.ptr.region..'/'..m.ptr.index)
+		io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
 	end
 	print()
 
