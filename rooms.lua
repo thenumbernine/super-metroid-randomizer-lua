@@ -279,7 +279,7 @@ local roomstate_t = struct'roomstate_t'{
 	{enemySet = 'uint16_t'},
 	{layer2scrollData = 'uint16_t'},	-- TODO
 	{scroll = 'uint16_t'},
-	{unused = 'uint16_t'},
+	{unknown = 'uint16_t'},				-- this is only used by the gold torizo room, and points to the extra data after mdb_t
 	{fx2 = 'uint16_t'},					-- TODO - aka 'main asm ptr'
 	{plm = 'uint16_t'},
 	{bgdata = 'uint16_t'},
@@ -1071,8 +1071,8 @@ print('speed booster room extra trailing data: '..range(26):map(function(i) retu
 		d = d + m.ptr.width * m.ptr.height
 	end
 
-	-- mdb_t $079804 - gold torizo room - has 14 bytes here 
-	-- mdb_t $07a66a - statues before tourian - has 8 bytes after it
+	-- mdb_t $079804 - gold torizo room - has 14 bytes here -- pointed to by roomstate_t.unknown: 0f 0a 52 00 0f 0b 52 00 0f 0c 52 00 00 00
+	-- mdb_t $07a66a - statues before tourian - has 8 bytes after it 
 	-- mdb_t $07a923 - slope down to crocomire - has 5 bytes here 
 	-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
 	-- mdb_t $07ad1b - speed booster room - has 26 bytes here
