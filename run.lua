@@ -145,16 +145,6 @@ banksRequested[bank] = true
 end
 
 
-memoryRanges = table()
-function insertUniqueMemoryRange(addr, len, name, m, ...)
-	if not memoryRanges:find(nil, function(range)
-		return range.addr == addr and range.len == len and range.name == name
-	end) then
-		memoryRanges:insert{addr=addr, len=len, name=name, m=m, ...}
-	end
-end
-
-
 -- make a single object for the representation of the ROM
 -- this way I can call stuff on it -- like making a memory map -- multiple times
 local SM = require 'sm'
@@ -181,7 +171,7 @@ end
 
 
 sm:print()
-sm:buildMemoryMap()
+local mem = sm:buildMemoryMap()
 sm:saveMapImage()
 
 
@@ -204,67 +194,8 @@ if not config.randomizeItems then
 end
 print()
 
-
 -- TODO check against...
 -- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
-do
-	memoryRanges:sort(function(a,b)
-		return a.addr < b.addr
-	end)
-	
-	-- combine ranges
-	for i=#memoryRanges-1,1,-1 do
-		local ra = memoryRanges[i]
-		local rb = memoryRanges[i+1]
-		if ra.addr + ra.len == rb.addr
-		and ra.name == rb.name
-		then
-			ra.len = ra.len + rb.len
-			ra.dup = (ra.dup or 1) + (rb.dup or 1)
-			memoryRanges:remove(i+1)
-		end
-	end
-	for _,range in ipairs(memoryRanges) do
-		if range.dup then
-			range.name = range.name..' x'..range.dup
-		end
-	end
-
-	local f = assert(io.open('memorymap.txt', 'w'))
-	local function fwrite(...)
-		f:write(...)
-		io.write(...)
-	end
-	fwrite('    memory ranges:\n')
-	fwrite('mdb region/index: addr $start-$end (desc) ... trailing bytes until next region ...')	
-	for i,range in ipairs(memoryRanges) do
-		local prevRange
-		if i>1 then
-			prevRange = memoryRanges[i-1]
-			local padding = range.addr - (prevRange.addr + prevRange.len)
-			if padding ~= 0 then
-				fwrite('... '..padding..' bytes of padding ...')
-			end
-		end
-		fwrite'\n'
-		if prevRange and bit.band(prevRange.addr, 0x7f8000) ~= bit.band(range.addr, 0x7f8000) then
-			fwrite'--------------\n'
-		end
-		
-		local m = range.m
-		if m then
-			fwrite( 
-				('%02x'):format(tonumber(m.ptr.region))..'/'..
-				('%02x'):format(tonumber(m.ptr.index)))
-		else
-			fwrite('     ')
-		end
-		fwrite(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
-		fwrite(' ('..range.name..') ')
-	end
-	fwrite(' ('..memoryRanges:last().name..')\n')
-	f:close()
-end
-
+mem:print()
 
 print('banks requested: '..banksRequested:keys():map(function(bank) return ('$%02x'):format(bank) end):concat', ')

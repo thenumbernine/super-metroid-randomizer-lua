@@ -1267,10 +1267,10 @@ end
 
 -- this doesn't do anything
 -- items are just plms with specific cmds
-function SMItems:buildMemoryMapItems()
+function SMItems:buildMemoryMapItems(mem)
 	--[[
 	for _,item in ipairs(self.items) do
-		insertUniqueMemoryRange(item.addr, 2, 'item: '..item.name)
+		mem:add(item.addr, 2, 'item: '..item.name)
 	end
 	--]]
 end

@@ -187,17 +187,6 @@ for _,range in ipairs(mdbWriteRanges) do
 end
 
 
---[[ load data
--- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
-for _,bg in ipairs(sm.bgs) do
-	local addr = topc(bg.ptr.bank, bg.ptr.addr)
-	local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
-	bg.data = decompressed
-	insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
-end
---]]
-
-
 --[[ do some modifications
 -- hmm, todo, don't write over the doors ...
 -- look out for 41-ff-fe-fd in horizontal or vertical order

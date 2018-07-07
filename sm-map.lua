@@ -251,7 +251,8 @@ function RoomState:init(args)
 end
 
 -- table of all unique plm regions
-function SMMap:mapAddPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.  you have to add to plmset.mdbs externally
+-- m is only used for MemoryMap.  you have to add to plmset.mdbs externally
+function SMMap:mapAddPLMSet(addr, m)
 	local startaddr = addr
 	local _,plmset = self.plmsets:find(nil, function(plmset) return plmset.addr == addr end)
 	if plmset then return plmset end
@@ -281,7 +282,6 @@ function SMMap:mapAddPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRan
 		plmorigs = range(#plms):map(function(i)
 			return ffi.new('plm_t', plms[i])	-- deep copy
 		end),
-		mdbs = table(),
 		roomStates = table(),
 	}
 	self.plmsets:insert(plmset)
@@ -291,36 +291,19 @@ function SMMap:mapAddPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRan
 		if plm.cmd == 0xb703 then
 			local startaddr = 0x70000 + plm.args
 			local addr = startaddr
-			local ok = false
-			local i = 1
-			local tmp = table()
+			local data = table()
 			while true do
 				local screen = rom[addr] addr=addr+1
-				if screen == 0x80 then
-					tmp[i] = 0x80
-					ok = true
-					break
-				end
-
+				data:insert(screen)
+				if screen == 0x80 then break end
 				local scroll = rom[addr] addr=addr+1
-				if scroll > 0x02 then
-					ok = false
-					break
-				end
-				tmp[i] = screen
-				tmp[i+1] = scroll
-				i = i + 2
+				data:insert(scroll)
 			end
-			local len = addr-startaddr
-			insertUniqueMemoryRange(startaddr, len, 'plm scrollmod', m)
-			
-			if ok then
-				plmset.scrollmods:insert{
-					addr = startaddr,
-					len = addr - startaddr,
-					data = tmp,
-				}
-			end
+			assert(addr - startaddr == #data)
+			plmset.scrollmods:insert{
+				addr = startaddr,
+				data = data,
+			}
 		end
 	end
 
@@ -406,13 +389,6 @@ function SMMap:mapAddRoom(addr, m)
 	local bts = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
 	local tail = data:sub(ofs+1)
 	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
---print('data used for tiles: '..ofs..'. data remaining: '..(#data - ofs))
-	
--- insert this range to see what the old data took up
---insertUniqueMemoryRange(addr, compressedSize, 
-	--'room',
-	--'room '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index),
-	--m)
 
 	-- keep track of door regions
 	local doorRegions = table()	-- x,y,w,h 
@@ -426,7 +402,6 @@ function SMMap:mapAddRoom(addr, m)
 				and bts[1+ (i+2) + w * j] == 0xfe 
 				and bts[1+ (i+3) + w * j] == 0xfd 
 				then
-					--print('door mod 16 '..(i%16)..','..(j%16)..' horizontal')
 					local v1 = bts[1 + i + w * (j-2)]
 					local v2 = bts[1 + i + w * (j+2)]
 					local doorIndex = v1 ~= 0 and v1 or v2
@@ -555,21 +530,18 @@ function SMMap:mapInit()
 
 			do
 				-- after the last roomselect is the first roomstate_t
-				local rsptr = ffi.cast('roomstate_t*', data)
-				insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
-				data = data + ffi.sizeof'roomstate_t'
-				
 				local rs = m.roomStates:last()
 				-- uint16_t select means a terminator
 				assert(rs.select_ctype == 'uint16_t')
-				rs.ptr = rsptr
+				rs.ptr = ffi.cast('roomstate_t*', data)
+				data = data + ffi.sizeof'roomstate_t'
 
+				-- then the rest of the roomstates come
 				for _,rs in ipairs(m.roomStates) do
 					if rs.select_ctype ~= 'uint16_t' then
 						assert(not rs.ptr)
 						local addr = topc(0x8e, rs.select[0].roomstate)
 						rs.ptr = ffi.cast('roomstate_t*', rom + addr)
-						insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 					end
 
 					assert(rs.ptr)
@@ -588,13 +560,10 @@ function SMMap:mapInit()
 				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
 						local addr = topc(scrollBank, rs.ptr.scroll)
-						local scrollDataPtr = rom + addr 
-						local scrollDataSize = m.ptr.width * m.ptr.height
-						rs.scrollData = range(scrollDataSize):map(function(i)
-							return scrollDataPtr[i-1]
+						local size = m.ptr.width * m.ptr.height
+						rs.scrollData = range(size):map(function(i)
+							return rom[addr+i-1]
 						end)
-						-- sized mdb width x height
-						insertUniqueMemoryRange(addr, scrollDataSize, 'scrolldata', m)
 					end
 				end
 
@@ -613,8 +582,7 @@ function SMMap:mapInit()
 				end
 
 				for _,rs in ipairs(m.roomStates) do
-					local startaddr = topc(0xa1, rs.ptr.enemyPop)
-					data = rom + startaddr 
+					data = rom + topc(0xa1, rs.ptr.enemyPop)
 					while true do
 						local ptr = ffi.cast('enemyPop_t*', data)
 						if ptr.enemyAddr == 0xffff then
@@ -626,13 +594,10 @@ function SMMap:mapInit()
 						rs.enemyPops:insert(ptr[0])
 						data = data + ffi.sizeof'enemyPop_t'
 					end
-					local len = data-rom-startaddr
-					insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
 				end
 
 				for _,rs in ipairs(m.roomStates) do
-					local startaddr = topc(0xb4, rs.ptr.enemySet)
-					data = rom + startaddr 
+					data = rom + topc(0xb4, rs.ptr.enemySet)
 					while true do
 						local ptr = ffi.cast('enemySet_t*', data)
 						if ptr.enemyAddr == 0xffff then 
@@ -646,8 +611,6 @@ function SMMap:mapInit()
 						rs.enemySets:insert(ptr[0])
 						data = data + ffi.sizeof'enemySet_t'
 					end
-					local len = data-rom-startaddr
-					insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
 				end
 
 				-- some rooms use the same fx1 ptr
@@ -668,10 +631,7 @@ function SMMap:mapInit()
 						-- They can also be used to terminate a set of fx1_t
 						if cmd == 0xffff then
 							-- include terminator bytes in block length:
-	insertUniqueMemoryRange(addr, 2, 
-		--'fx1_t term '..('$%04x'):format(addr)..'='..('%04x'):format(cmd),
-		'fx1_t',
-		m)
+							rs.fx1term = true
 							addr = addr + 2
 							break
 						end
@@ -686,10 +646,6 @@ function SMMap:mapInit()
 	local done = fx1.ptr.doorSelect == 0 
 							fx1.mdbs:insert(m)
 							rs.fx1s:insert(fx1)
-	insertUniqueMemoryRange(addr, ffi.sizeof'fx1_t', 
-		--'fx1_t '..(done and '(last) ' or '')..('$%04x'):format(addr)..'='..fx1.ptr[0], 
-		'fx1_t',
-		m)
 							
 							addr = addr + ffi.sizeof'fx1_t'
 
@@ -697,11 +653,9 @@ function SMMap:mapInit()
 	if done then break end
 						end
 					end
-					--insertUniqueMemoryRange(startaddr, addr-startaddr, 'fx1_t', m)
 				
 					if rs.ptr.bgdata > 0x8000 then
-						local startaddr = topc(0x8f, rs.ptr.bgdata)
-						local addr = startaddr
+						local addr = topc(0x8f, rs.ptr.bgdata)
 						while true do
 							local ptr = ffi.cast('bg_t*', rom+addr)
 							
@@ -722,16 +676,24 @@ function SMMap:mapInit()
 							rs.bgs:insert(bg)
 							addr = addr + ffi.sizeof'bg_t'
 						
-	addr=addr+8
-	do break end
+							addr=addr+8
+							do break end
 						end
-						insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t', m)
+					
+						--[[ load data
+						-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
+						for _,bg in ipairs(rs.bgs) do
+							local addr = topc(bg.ptr.bank, bg.ptr.addr)
+							local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
+							bg.data = decompressed
+							mem:add(addr, compressedSize, 'bg data', m)
+						end
+						--]]
 					end
 
 					if rs.ptr.layerHandling > 0x8000 then
 						local addr = topc(0x8f, rs.ptr.layerHandling)
-						-- read code
-						insertUniqueMemoryRange(addr, 0x10, 'layer handling code', m)
+						-- TODO read code
 					end
 					
 					local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
@@ -748,16 +710,12 @@ function SMMap:mapInit()
 				while doorAddr > 0x8000 do
 					m.doors:insert{
 						addr = doorAddr,
-	--					m = m,
 					}
 					doorAddr = read'uint16_t'
 				end
 				-- exclude terminator
 				data = data - 2
-	--print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
 				local len = data-rom - startaddr
-				-- either +0, +39 or +44
-				insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
 			
 	--doorsSoFar = doorsSoFar or table()
 				for _,door in ipairs(m.doors) do
@@ -770,14 +728,11 @@ function SMMap:mapInit()
 					local ctype = destmdb == 0 and 'lift_t' or 'door_t'
 					door.ctype = ctype
 					door.ptr = ffi.cast(ctype..'*', data)
-					insertUniqueMemoryRange(addr, ffi.sizeof(ctype), ctype, m)
 					if ctype == 'door_t' 
 					and door.ptr.code > 0x8000 
 					then
 						local codeaddr = topc(0x8f, door.ptr.code)
 						door.doorCodePtr = rom + codeaddr 
-						-- the next 0x1000 bytes have the door asm code
-						insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
 					end
 				end
 			end
@@ -1304,40 +1259,64 @@ function SMMap:mapPrint()
 	self:mapPrintRooms()
 end
 
-function SMMap:mapBuildMemoryMap()
+function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
 	for _,m in ipairs(self.mdbs) do
 		local addr = topc(0x8e, m.addr)	
-		insertUniqueMemoryRange(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
-		
+		mem:add(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
 		for _,rs in ipairs(m.roomStates) do
-			if rs.select then
-				insertUniqueMemoryRange(ffi.cast('uint8_t*', rs.select) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
+			assert(rs.select)
+			mem:add(ffi.cast('uint8_t*', rs.select) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
+			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+			if rs.scrollData then
+				-- sized mdb width x height
+				local addr = topc(scrollBank, rs.ptr.scroll)
+				mem:add(addr, #rs.scrollData, 'scrolldata', m)
+			end
+					
+			mem:add(topc(0xa1, rs.ptr.enemyPop), 3 + #rs.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
+			mem:add(topc(0xb4, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
+			mem:add(topc(0x83, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(topc(0x8f, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
+			if rs.ptr.layerHandling > 0x8000 then
+				mem:add(topc(0x8f, rs.ptr.layerHandling), 0x10, 'layer handling code', m)
+			end
+		end
+		
+		mem:add(topc(0x8e, m.ptr.doors), #m.doors * 2, 'dooraddrs', m)
+		for _,door in ipairs(m.doors) do
+			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
+			if door.doorCodePtr then
+				mem:add(ffi.cast('uint8_t*',door.doorCodePtr)-rom, 0x10, 'door code', m)
 			end
 		end
 	end
 	for _,plmset in ipairs(self.plmsets) do
+		local m = plmset.roomStates[1].m
 		--[[ entry-by-entry
 		local addr = plmset.addr
 		for _,plm in ipairs(plmset.plms) do
-			insertUniqueMemoryRange(addr, ffi.sizeof'plm_t', 
+			mem:add(addr, ffi.sizeof'plm_t', 
 				'plm_t',
 				--'plm '..ffi.cast('plm_t*',rom+addr)[0], 
 				m)
 			addr = addr + ffi.sizeof'plm_t'
 		end
-		insertUniqueMemoryRange(addr, 2, 
+		mem:add(addr, 2, 
 			'plm_t term',
 			--'plm '..ffi.cast('uint16_t*',rom+addr)[0], 
 			m)
 		--]]
 		-- [[ all at once
 		local len = 2 + #plmset.plms * ffi.sizeof'plm_t'
-		insertUniqueMemoryRange(plmset.addr, len, 'plm_t', m)
+		mem:add(plmset.addr, len, 'plm_t', m)
 		--]]
+		for _,scrollmod in ipairs(plmset.scrollmods) do	
+			mem:add(scrollmod.addr, #scrollmod.data, 'plm scrollmod', m)
+		end
 	end
 	for _,room in ipairs(self.rooms) do
-		insertUniqueMemoryRange(room.addr, room.compressedSize, 'room', room.mdbs[1])
+		mem:add(room.addr, room.compressedSize, 'room', room.mdbs[1])
 	end
 end
 

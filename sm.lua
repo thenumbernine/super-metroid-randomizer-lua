@@ -8,6 +8,7 @@ so TODO clean up and bureaucratize
 
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local MemoryMap = require 'memorymap'
 
 local SM = class(
 	require 'sm-enemies',
@@ -30,10 +31,12 @@ function SM:init(rom)
 end
 
 function SM:buildMemoryMap()
+	local mem = MemoryMap()
 	-- TODO make this return a 'memorymap' object that prints out
-	self:buildMemoryMapEnemies()
-	self:buildMemoryMapItems()
-	self:mapBuildMemoryMap()
+	self:buildMemoryMapEnemies(mem)
+	self:buildMemoryMapItems(mem)
+	self:mapBuildMemoryMap(mem)
+	return mem
 end
 
 function SM:print()

@@ -187,6 +187,14 @@ function EnemyAuxTable:randomize()
 	end
 end
 
+function EnemyAuxTable:buildMemoryMap(mem)
+	for _,addr in ipairs(self.addrs) do
+		if addr ~= 0 then
+			mem:add(topc(self.bank, addr), ffi.sizeof(self.structName), self.structName)
+		end
+	end
+end
+
 function EnemyAuxTable:print()
 	local sm = self.sm
 	local rom = sm.rom
@@ -214,7 +222,6 @@ function EnemyAuxTable:print()
 		if addr ~= 0 then
 			local pcaddr = topc(self.bank, addr)
 			local entry = ffi.cast(ptrtype, rom + pcaddr)
-			insertUniqueMemoryRange(pcaddr, ffi.sizeof(self.structName), self.structName)
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
 				local value = entry[0][name]
@@ -872,14 +879,12 @@ function SMEnemies:printEnemies()
 			local addr = topc(0xb4, enemy.ptr.name)
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
-			insertUniqueMemoryRange(addr, len+4, 'debug name')
 			io.write(': '..betaname)
 			--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
 		end
 		print()
 
 	end
-
 
 	print'enemy shot table:'
 	for _,shot in ipairs(self.enemyShots) do
@@ -888,15 +893,21 @@ function SMEnemies:printEnemies()
 end
 
 
-function SMEnemies:buildMemoryMapEnemies()
+function SMEnemies:buildMemoryMapEnemies(mem)
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
-		insertUniqueMemoryRange(addr, ffi.sizeof'enemy_t', 'enemy_t')
+		mem:add(addr, ffi.sizeof'enemy_t', 'enemy_t')
+		if enemy.ptr.name ~= 0 then
+			mem:add(topc(0xb4, enemy.ptr.name), 14, 'debug name')
+		end
 	end
+		
+	self.enemyWeaknessTable:buildMemoryMap(mem)
+	self.enemyItemDropTable:buildMemoryMap(mem)
 
 	for _,shot in ipairs(self.enemyShots) do
 		local addr = topc(enemyShotBank, shot.addr)
-		insertUniqueMemoryRange(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
+		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 	end	
 end
 
