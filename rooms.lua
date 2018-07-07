@@ -43,61 +43,104 @@ local function WriteRange(name)
 	end
 end
 
---[[
--- plm randomization:
--- randomize ... remove only for now
--- removing turns a door blue
--- TODO when combined with modifying tiles, this is screwing up door transitions
-for _,plmset in ipairs(sm.plmsets) do
-	--[=[ remove all door plms
-	for i=#plmset.plms,1,-1 do
-		local plm = plmset.plms[i]
-		local plmName = sm.plmCmdNameForValue[plm.cmd]
-		if plmName then
-			local color, side = plmName:match'^door_(%w+)_(%w+)'
-			if side then
-				plmset.plms:remove(i)
+-- [[
+--[=[
+so if I want to randomize all doors ...
+1) enumerate all door regions
+2) find plms associated with each door region
+3) for doors that have no plm associated, make a new one
+4) last make sure to give doors unique ids 
+--]=]
+for _,m in ipairs(sm.mdbs) do
+	for _,rs in ipairs(m.roomStates) do
+		local room = rs.room
+		for _,doorRegion in ipairs(room.doorRegions) do
+			local plmindex, plm = rs.plmset.plms:find(nil, function(plm)
+				return plm.x == doorRegion.x and plm.y == doorRegion.y
+			end)
+		
+			--[=[ if there's no plm for this door then add one
+			if not plm then
+				local newplm = ffi.new'plm_t'
+				newplm.cmd = sm.plmCmdValueForName['door_'..color..'_'..dir]
+				newplm.x = doorRegion.x
+				newplm.y = doorRegion.y
+				rs.plmset.plms:insert(newplm)
 			end
-		end						
-	end
-	--]=]
-	--[=[ change all doors to red
-	for _,plm in ipairs(plmset.plms) do
-		local name = sm.plmCmdNameForValue[plm.cmd]
-		if name then
-			local color, side = name:match'^door_(%w+)_(%w+)'
-			if side then
-				plm.cmd = assert(sm.plmCmdValueForName['door_red_'..side])
-			end
-		end
-	end
-	--]=]
+			--]=]
 	
-	-- get rid of region-room 1-16's plm's
-	local m = plmset.roomStates[1].m
-	if m.region == 1 and m.index == 0x10 then
-		for _,rs in ipairs(m.roomStates) do
-			rs.ptr.plm = 0
-			assert(rs.plmset == plmset)
-			rs.plmset = nil
-			plmset.roomStates:removeObject(rs)
-		end
-	end
-
-	-- if we erased all plms then we should clear all flags in all referencing rooms
-	if #plmset.plms == 0 then
-		for _,rs in ipairs(plmset.roomStates) do
-			rs.ptr.plm = 0
-			rs.plmset = nil
+			-- if there already exists a plm...
+			local saveThisDoor
+			if plm then
+				local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected doorRegion plm to have a valid name "..plm)
+				assert(plmname:match'^door_')
+				-- don't touch special doors
+				if plmname:match'^door_grey_' 
+				or plmname:match'^door_eye_' 
+				then
+					saveThisDoor = true
+				else 
+					-- then this plm is for this door ...	
+					-- so remove it?
+					rs.plmset.plms:remove(plmindex)
+				end
+			end
+		
+			-- [[ now roll for this door
+			if not saveThisDoor then
+				local color = math.random(8)	-- red, green, orange, rest are blue options
+				if color <= 3 then	-- skip blue doors completely
+					color = ({'red', 'green', 'orange'})[color]
+					local dir = ({'right', 'left', 'down', 'up'})[doorRegion.dir+1]
+					local plm = ffi.new'plm_t'
+					local plmname = 'door_'..color..'_'..dir
+					plm.cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname)
+					plm.x = doorRegion.x
+					plm.y = doorRegion.y
+					plm.args = 0
+					rs.plmset.plms:insert(plm)
+newDoorCount = (newDoorCount or 0) + 1				
+				end	
+			end
+			--]]
 		end
 	end
 end
+print('created '..newDoorCount..' new doors')
 --]]
+
+--[[
+notes on doors:
+plm_t of door_* has an x and y that matches up with the door region in the map
+the plm arg low byte of each (non-blue) door is a unique index, contiguous 0x00..0x60 and 0x80..0xac
+(probably used wrt savefiles, to know what doors have been opened)
+certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x18, 0x90, 0x94
+--]]
+print'all door plm ids:'
+-- re-id all door plms?
+local doorid = 0
+local allplms = table():append(sm.plmsets:map(function(plmset) return plmset.plms end):unpack())
+--local maxnamelen = allplms:map(function(plm) return #(sm.plmCmdNameForValue[plm.cmd] or '') end):sup()
+for _,plm in ipairs(allplms) do
+	local name = sm.plmCmdNameForValue[plm.cmd]
+	if name 
+	and name:match'^door_' 
+	
+	-- for now I'm not reassigning eye doors, but TODO I should give all the ones associated with the same doorRegion the same ID
+	and not name:match'^door_eye_'
+	
+	then
+		assert(doorid <= 0xff, "got too many doors")
+		plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
+		doorid = doorid + 1
+		--print(name .. ' '..('.'):rep(maxnamelen - #name) .. ' '.. ('%04x'):format(tonumber(plm.args)))
+	end
+end
 
 
 
 -- [[ optimizing plms ... 
--- if the roomstate points to an empty plmset then it can be cleared
+-- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
 for _,plmset in ipairs(sm.plmsets) do
 	if #plmset.plms == 0 then
 		for j=#plmset.roomStates,1,-1 do
@@ -117,7 +160,7 @@ for i=#sm.plmsets,1,-1 do
 end
 --]=]
 
--- get rid of any duplicates 
+-- get rid of any duplicate plmsets ... there are none by default
 for i=1,#sm.plmsets-1 do
 	local pi = sm.plmsets[i]
 	for j=i+1,#sm.plmsets do
@@ -201,7 +244,7 @@ plmWriteRanges:print()
 
 -- writing back mdb_t
 -- if you move a mdb_t
--- then don't forget to reassign all mdb.dooraddr.door_t.destmdb
+-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
 local mdbWriteRanges = WriteRange'mdb'{
 	{0x791f8, 0x7b769},	-- mdbs of regions 0-2
 	-- then comes bg_t's and door codes and plm_t's

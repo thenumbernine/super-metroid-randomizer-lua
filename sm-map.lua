@@ -134,7 +134,7 @@ local bg_t = struct'bg_t'{
 
 -- section 12 of metroidconstruction.com/SMMM
 local door_t = struct'door_t'{
-	{destmdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
+	{dest_mdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
 	
 --[[
 0x40 = change regions
@@ -173,6 +173,8 @@ SMMap.plmCmdValueForName = table{
 	exit_up = 0xb647,
 
 	scrollmod = 0xb703,
+	
+	door_grey_right_closing = 0xbaf4,
 
 	-- gates
 	normal_open_gate = 0xc826,
@@ -210,6 +212,14 @@ SMMap.plmCmdValueForName = table{
 	door_blue_left_closing = 0xc8bE,
 	door_blue_down_closing = 0xc8c2,
 	door_blue_up_closing = 0xc8c6,
+
+	door_eye_left = 0xdb4c,
+	door_eye_left_part2 = 0xdb48,
+	door_eye_left_part3 = 0xdb52,
+	
+	door_eye_right = 0xdb5a,
+	door_eye_right_part2 = 0xdb56,
+	door_eye_right_part3 = 0xdb60,
 
 	-- items: (this is just like SMItems.itemTypes in sm-items.lua
 	item_energy 		= 0xeed7,
@@ -395,25 +405,42 @@ function SMMap:mapAddRoom(addr, m)
 			local v = bts[1+ i + w * j]
 			if v >= 0x40 and v <= 0x43 then
 				-- here's the upper-left of a door.  now, which way is it facing
-				if i<w-3
+				if i<w-3	-- TODO assert
+				and (v == 0x42 or v == 0x43)
 				and bts[1+ (i+1) + w * j] == 0xff 
 				and bts[1+ (i+2) + w * j] == 0xfe 
 				and bts[1+ (i+3) + w * j] == 0xfd 
 				then
-					local v1 = bts[1 + i + w * (j-2)]
-					local v2 = bts[1 + i + w * (j+2)]
-					local doorIndex = v1 ~= 0 and v1 or v2
-					doorRegions:insert{x=i,y=j,w=4,h=1, index=doorIndex}
-				elseif j<h-3
+					-- if v == 0x42 then it's down, if v == 0x43 then it's up 
+					local doorIndex = v == 0x42 
+						and bts[1 + i + w * (j+2)]
+						or bts[1 + i + w * (j-2)]
+					doorRegions:insert{
+						x = i,
+						y = j,
+						w = 4,
+						h = 1,
+						dir = bit.band(3, v),
+						index = doorIndex,
+					}
+				elseif j<h-3	-- TODO assert this
+				and (v == 0x40 or v == 0x41)
 				and bts[1+ i + w * (j+1)] == 0xff 
 				and bts[1+ i + w * (j+2)] == 0xfe 
 				and bts[1+ i + w * (j+3)] == 0xfd 
 				then
-					--print('door mod 16 '..(i%16)..','..(j%16)..' vertical')
-					local v1 = bts[1 + (i-1) + w * j]
-					local v2 = bts[1 + (i+1) + w * j]
-					local doorIndex = v1 ~= 0 and v1 or v2
-					doorRegions:insert{x=i,y=j,w=1,h=4, index=doorIndex}
+					-- if v == 0x41 then it's left, if v == 0x40 then it's right
+					local doorIndex = v == 0x40 
+						and bts[1 + (i+1) + w * j]
+						or bts[1 + (i-1) + w * j]
+					doorRegions:insert{
+						x = i,
+						y = j,
+						w = 1,
+						h = 4, 
+						dir = bit.band(3, v),
+						index = doorIndex,
+					}
 				else
 					-- nothing, there's lots of other 40..43's out there
 				end
@@ -731,10 +758,9 @@ function SMMap:mapInit()
 					end
 					
 					local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
-					local room = self:mapAddRoom(addr, m)
-					room.mdbs:insert(m)
-					room.roomStates:insert(rs)
-					rs.rooms:insert(room)
+					rs.room = self:mapAddRoom(addr, m)
+					rs.room.mdbs:insertUnique(m)
+					rs.room.roomStates:insert(rs)
 				end
 
 				local startaddr = topc(0x8e, m.ptr.doors)
@@ -757,9 +783,9 @@ function SMMap:mapInit()
 	--doorsSoFar[addr] = doorsSoFar[addr] or table()
 	--doorsSoFar[addr]:insert(m)
 					data = rom + addr 
-					local destmdb = ffi.cast('uint16_t*', data)[0]
-					-- if destmdb == 0 then it is just a 2-byte 'lift' structure ...
-					local ctype = destmdb == 0 and 'lift_t' or 'door_t'
+					local dest_mdb = ffi.cast('uint16_t*', data)[0]
+					-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
+					local ctype = dest_mdb == 0 and 'lift_t' or 'door_t'
 					door.ctype = ctype
 					door.ptr = ffi.cast(ctype..'*', data)
 					if ctype == 'door_t' 
@@ -778,15 +804,29 @@ function SMMap:mapInit()
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				local destmdb = self.mdbs:find(nil, function(m) return m.addr == door.ptr.destmdb end)
-				if not destmdb then
+				local dest_mdb = self.mdbs:find(nil, function(m) return m.addr == door.ptr.dest_mdb end)
+				if not dest_mdb then
 					error('!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
 				end
 				-- points to the dest mdb
-				door.destmdb = destmdb
+				door.dest_mdb = dest_mdb
 			end
 		end
 	end
+
+	--[[ get a table of doors based on their plm arg low byte
+	self.doorPLMForID = table()
+	for _,plmset in ipairs(self.plmsets) do
+		for _,plm in ipairs(plmset.plms) do
+			local name = self.plmCmdNameForValue[plm.cmd]
+			if name and name:match'^door_' then
+				local id = bit.band(plm.args, 0xff)
+				assert(not self.doorPLMForID[id])
+				self.doorPLMForID[id] = plm
+			end	
+		end
+	end
+	--]]
 
 
 	-- ok, now to try and change a mdb_t
