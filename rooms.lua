@@ -175,6 +175,7 @@ for _,plmset in ipairs(sm.plmsets) do
 	local addr, endaddr = plmWriteRanges:get(bytesToWrite)
 	plmset.addr = addr 
 
+	
 	-- write
 	for _,plm in ipairs(plmset.plms) do
 		ffi.cast('plm_t*', rom+addr)[0] = plm
@@ -188,7 +189,7 @@ for _,plmset in ipairs(sm.plmsets) do
 	for _,rs in ipairs(plmset.roomStates) do
 		local newofs = bit.band(0xffff, plmset.addr)
 		if newofs ~= rs.ptr.plm then
-			print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
+			--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
 			rs.ptr.plm = newofs
 		end
 	end
@@ -313,7 +314,10 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 		rom[fromaddr+i-1] = v
 	end
 	-- update room addr
-	print('updating room address from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
+	print('updating room address '
+		..('%02x'):format(room.mdbs[1].ptr.region)
+			..'/'..('%02x'):format(room.mdbs[1].ptr.index)
+		..' from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
 	room.addr = fromaddr
 	-- update any roomstate_t's that point to this data
 	for _,rs in ipairs(room.roomStates) do

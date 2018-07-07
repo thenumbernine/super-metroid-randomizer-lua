@@ -175,6 +175,9 @@ SMMap.plmCmdValueForName = table{
 	exit_left = 0xb63f,
 	exit_down = 0xb643,
 	exit_up = 0xb647,
+
+	scrollmod = 0xb703,
+
 	-- gates
 	normal_open_gate = 0xc826,
 	normal_close_gate = 0xc82a,
@@ -268,7 +271,8 @@ function SMMap:mapAddPLMSet(addr, m)
 			break 
 		end
 		--inserting the struct by-value
-		plms:insert(ptr[0])
+		-- why did I have to make a copy?
+		plms:insert(ffi.new('plm_t', ptr[0]))
 		addr = addr + ffi.sizeof'plm_t'
 	end
 	
@@ -279,9 +283,6 @@ function SMMap:mapAddPLMSet(addr, m)
 		addr = startaddr,
 		scrollmods = table(),
 		plms = plms,
-		plmorigs = range(#plms):map(function(i)
-			return ffi.new('plm_t', plms[i])	-- deep copy
-		end),
 		roomStates = table(),
 	}
 	self.plmsets:insert(plmset)

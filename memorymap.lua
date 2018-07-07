@@ -21,7 +21,7 @@ function MemoryMap:print()
 		return a.addr < b.addr
 	end)
 	
-	-- combine ranges
+	-- [[ combine ranges
 	for i=#ranges-1,1,-1 do
 		local ra = ranges[i]
 		local rb = ranges[i+1]
@@ -38,6 +38,7 @@ function MemoryMap:print()
 			range.name = range.name..' x'..range.dup
 		end
 	end
+	--]]
 
 	local f = assert(io.open('memorymap.txt', 'w'))
 	local function fwrite(...)
