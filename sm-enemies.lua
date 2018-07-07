@@ -189,7 +189,6 @@ end
 function EnemyAuxTable:print()
 	local sm = self.sm
 	local ptrtype = self.structName..'*'
-
 	print(self.name..' has '..#self.addrs..' unique addrs:')
 	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
 
@@ -467,14 +466,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
 	for name,_ in pairs(dontChangeWeaknessSet) do
-		if sm.enemyForName[name].ptr.weakness == addr then
+		if self.enemyForName[name].ptr.weakness == addr then
 			return
 		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
 	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == sm.enemyForName.Shaktool.ptr.weakness then
+	if addr == self.enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
 	
@@ -779,12 +778,104 @@ function SMEnemies:initEnemies()
 		local addr = topc(enemyShotBank, shot.addr)
 		shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
 	end
+
+	self.allEnemyFieldValues = {}
+	for _,field in ipairs{
+		'sound',
+
+	-- doesn't look so great.
+	--	'palette',	
+		
+		-- don't pick from previous values here
+		--  because only 0,2,3,4 are used, but 1 is valid
+		--'deathEffect',
+
+		--[[ randomize AI?  
+		-- maybe only for certain monsters ... among only certain values ...
+		-- just doing everything causes it to freeze very often
+		'aiBank',
+		'initiationAI',
+		'mainAI',
+		'grappleAI',
+		'hurtAI',
+		'frozenAI',
+		'xrayAI',
+		--]]
+
+	} do
+		if randomizeEnemyProps[field] then
+			self.allEnemyFieldValues[field] = self.allEnemyFieldValues[field] or {
+				distr = {},
+			}
+			local values = self.allEnemyFieldValues[field]
+			for _,enemy in ipairs(self.enemies) do
+				local value = enemy.ptr[0][field]
+				values.distr[value] = (values.distr[value] or 0) + 1
+			end
+			values.values = table.keys(values.distr):sort()
+			--[[ TODO print distribution *after* randomization
+			print('enemy '..field..' distribution:')
+			for _,value in ipairs(values.values) do
+				print('  '..value..' x'..values.distr[value])
+			end
+			--]]
+		end
+	end
 end
 
 
 function SMEnemies:printEnemies()
 	self.enemyItemDropTable:print()
 	self.enemyWeaknessTable:print()
+
+	-- do the printing
+
+
+	print'enemies:'
+	for i,enemy in ipairs(self.enemies) do
+		print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
+
+		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
+		
+		print(' palette='
+			..('$%02x'):format(enemy.ptr.aiBank)
+			..(':%04x'):format(enemy.ptr.palette))
+	--	local ptr = rom + topc(enemy.ptr.aiBank, enemy.ptr.palette)
+	--	local str = ffi.string(ptr, 32)
+	--	print('  '..str:gsub('.', function(c) return ('%02x '):format(c:byte()) end))
+
+		for _,field in ipairs{'health', 'damage', 'hurtTime', 'bossValue'} do
+			print(' '..field..'='..enemy.ptr[0][field])
+		end
+
+		print(' deathEffect='..enemy.ptr.deathEffect)
+		
+		for field,values in pairs(self.allEnemyFieldValues) do
+			print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
+		end
+		
+		self.enemyWeaknessTable:printEnemy(enemy)
+		self.enemyItemDropTable:printEnemy(enemy)
+		
+		io.write(' debug name: '
+			..('0x%04x'):format(enemy.ptr.name))
+		if enemy.ptr.name ~= 0 then
+			local addr = topc(0xb4, enemy.ptr.name)
+			local len = 10
+			local betaname = ffi.string(rom + addr, len)
+			insertUniqueMemoryRange(addr, len+4, 'debug name')
+			io.write(': '..betaname)
+			--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
+		end
+		print()
+
+	end
+
+
+	print'enemy shot table:'
+	for _,shot in ipairs(self.enemyShots) do
+		print(shot.addr, shot.ptr[0])
+	end
 end
 
 

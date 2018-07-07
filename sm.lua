@@ -12,7 +12,7 @@ local class = require 'ext.class'
 local SM = class(
 	require 'sm-enemies',
 	require 'sm-items',
-	require 'sm-rooms'
+	require 'sm-map'
 )
 
 --[[

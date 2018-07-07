@@ -170,7 +170,9 @@ if config.randomizeRooms then
 end
 
 -- do the enemy randomization
-require 'enemies'
+if config.randomizeEnemies then
+	require 'enemies'
+end
 
 -- do the item randomization
 if config.randomizeItems then
