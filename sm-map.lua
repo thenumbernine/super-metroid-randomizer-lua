@@ -457,7 +457,7 @@ function SMMap:mapAddRoom(addr, m)
 		width = w,
 		height = h,
 		-- rule of thumb: do not exceed this
-		origCompressedSize = compressedSize,
+		compressedSize = compressedSize,
 		-- decompressed data (in order):
 		head = head,	-- first 2 bytes of data
 		solids = solids,
@@ -1335,6 +1335,9 @@ function SMMap:mapBuildMemoryMap()
 		local len = 2 + #plmset.plms * ffi.sizeof'plm_t'
 		insertUniqueMemoryRange(plmset.addr, len, 'plm_t', m)
 		--]]
+	end
+	for _,room in ipairs(self.rooms) do
+		insertUniqueMemoryRange(room.addr, room.compressedSize, 'room', room.mdbs[1])
 	end
 end
 

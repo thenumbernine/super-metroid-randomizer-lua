@@ -281,11 +281,12 @@ local totalRecompressedSize = 0
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
 	local recompressed = lz.compress(data)
-	print('recompressed size: '..#recompressed..' vs original compressed size '..room.origCompressedSize)
-	assert(#recompressed <= room.origCompressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.origCompressedSize)
-totalOriginalCompressedSize = totalOriginalCompressedSize + room.origCompressedSize
+	print('recompressed size: '..#recompressed..' vs original compressed size '..room.compressedSize)
+	assert(#recompressed <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.compressedSize)
+totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
 totalRecompressedSize = totalRecompressedSize + #recompressed
 	data = recompressed
+	room.compressedSize = #recompressed
 	--[=[ now write back to the original location at addr
 	for i,v in ipairs(data) do
 		rom[room.addr+i-1] = v
@@ -329,9 +330,6 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 		assert(data[i] == data2[i])
 	end
 --]=]
-	
-	-- insert this range to see what the newly compressed data takes up	
-insertUniqueMemoryRange(room.addr, #data, 'room', room.mdbs[1])
 end
 print()
 print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
