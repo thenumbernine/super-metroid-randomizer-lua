@@ -2,6 +2,7 @@ local ffi = require 'ffi'
 local lz = require 'lz'
 local class = require 'ext.class'
 
+local rom = sm.rom
 
 local WriteRangeClass = class()
 
@@ -175,10 +176,9 @@ for _,plmset in ipairs(sm.plmsets) do
 	local addr, endaddr = plmWriteRanges:get(bytesToWrite)
 	plmset.addr = addr 
 
-	
 	-- write
 	for _,plm in ipairs(plmset.plms) do
-		ffi.cast('plm_t*', rom+addr)[0] = plm
+		ffi.cast('plm_t*', rom + addr)[0] = plm
 		addr = addr + ffi.sizeof'plm_t'
 	end
 	-- write term

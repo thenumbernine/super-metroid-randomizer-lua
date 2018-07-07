@@ -47,7 +47,7 @@ if randomizeEnemyProps.palette then
 	-- permute them in some way. rotation around (1,1,1) axis or something
 	for _,addr in ipairs(addrs) do
 		print('addr: '..('0x%06x'):format(addr))
-		local rgb = ffi.cast('rgb_t*', rom + addr)
+		local rgb = ffi.cast('rgb_t*', sm.rom + addr)
 		for i=0,15 do
 			print(' '..rgb[0].a
 				..' '..rgb[0].r

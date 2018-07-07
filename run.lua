@@ -81,7 +81,7 @@ if bit.band(#romstr, 0x7fff) ~= 0 then
 end
 
 -- global so other files can see it
-rom = ffi.cast('uint8_t*', romstr) 
+local rom = ffi.cast('uint8_t*', romstr) 
 
 
 

@@ -12,10 +12,6 @@ local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
 
--- check where the PLM bank is
-local plmBank = rom[0x204ac]
-local scrollBank = 0x8f
-
 
 -- defined in section 6 of metroidconstruction.com/SMMM
 -- mdb = 'map database' I'm guessing?
@@ -256,6 +252,7 @@ end
 -- table of all unique plm regions
 -- m is only used for MemoryMap.  you have to add to plmset.mdbs externally
 function SMMap:mapAddPLMSet(addr, m)
+	local rom = self.rom
 	local startaddr = addr
 	local _,plmset = self.plmsets:find(nil, function(plmset) return plmset.addr == addr end)
 	if plmset then return plmset end
@@ -320,7 +317,7 @@ function SMMap:mapAddBG(addr)
 	if bg then return bg end
 	bg = {
 		addr = addr,
-		ptr = ffi.cast('bg_t*', rom + addr),
+		ptr = ffi.cast('bg_t*', self.rom + addr),
 		-- list of all m's that use this bg
 		mdbs = table(),
 	}
@@ -334,7 +331,7 @@ function SMMap:mapAddFX1(addr)
 	if fx1 then return fx1 end
 	fx1 = {
 		addr = addr,
-		ptr = ffi.cast('fx1_t*', rom + addr),
+		ptr = ffi.cast('fx1_t*', self.rom + addr),
 		mdbs = table(),
 	}
 	self.fx1s:insert(fx1)
@@ -377,7 +374,7 @@ function SMMap:mapAddRoom(addr, m)
 	
 	-- then we decompress the next 0x10000 bytes ...
 --print('decompressing address '..('0x%06x'):format(addr))
-	local data, compressedSize = lz.decompress(rom, addr, 0x10000)
+	local data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
 
 --print('decompressed from '..compressedSize..' to '..#data)
 	
@@ -447,6 +444,13 @@ end
 
 
 function SMMap:mapInit()
+	local rom = self.rom
+
+	-- check where the PLM bank is
+	self.plmBank = rom[0x204ac]
+	self.scrollBank = 0x8f
+
+	
 	self.mdbs = table()
 	self.rooms = table()
 	self.plmsets = table()
@@ -560,7 +564,7 @@ function SMMap:mapInit()
 
 				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
-						local addr = topc(scrollBank, rs.ptr.scroll)
+						local addr = topc(self.scrollBank, rs.ptr.scroll)
 						local size = m.ptr.width * m.ptr.height
 						rs.scrollData = range(size):map(function(i)
 							return rom[addr+i-1]
@@ -574,7 +578,7 @@ function SMMap:mapInit()
 				for i=#m.roomStates,1,-1 do
 					local rs = m.roomStates[i]
 					if rs.ptr.plm ~= 0 then
-						local addr = topc(plmBank, rs.ptr.plm)
+						local addr = topc(self.plmBank, rs.ptr.plm)
 						local plmset = self:mapAddPLMSet(addr, m)
 						
 						rs.plmset = plmset
@@ -841,7 +845,7 @@ function SMMap:mapInit()
 		-- mdb_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
 		-- so... shouldn't this assertion fail?
 		for _,scroll in ipairs(scrolls) do
-			local addr = topc(scrollBank, scroll)
+			local addr = topc(self.scrollBank, scroll)
 			assert(d == rom + addr)
 			d = d + m.ptr.width * m.ptr.height
 		end
@@ -1174,6 +1178,7 @@ function SMMap:mapPrintRooms()
 end
 
 function SMMap:mapPrint()
+	local rom = self.rom
 	print()
 	print("all plm_t's:")
 	for _,plmset in ipairs(sm.plmsets) do
@@ -1271,7 +1276,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized mdb width x height
-				local addr = topc(scrollBank, rs.ptr.scroll)
+				local addr = topc(self.scrollBank, rs.ptr.scroll)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 					
