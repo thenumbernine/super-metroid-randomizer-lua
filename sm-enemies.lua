@@ -199,6 +199,8 @@ function EnemyAuxTable:print()
 	local sm = self.sm
 	local rom = sm.rom
 	local ptrtype = self.structName..'*'
+	
+	print()
 	print(self.name..' has '..#self.addrs..' unique addrs:')
 	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
 

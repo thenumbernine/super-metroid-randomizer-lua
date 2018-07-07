@@ -1,5 +1,46 @@
 local ffi = require 'ffi'
 local lz = require 'lz'
+local class = require 'ext.class'
+
+
+local WriteRangeClass = class()
+
+function WriteRangeClass:init(ranges)
+	self.ranges = ranges
+	for _,range in ipairs(self.ranges) do
+		range.sofar = range[1]
+	end
+end
+
+function WriteRangeClass:get(len)
+	local range = select(2, table.find(self.ranges, nil, function(range)
+		return range.sofar + len <= range[2]+1 
+	end))
+	assert(range, "couldn't find anywhere to write "..self.name)
+	local fromaddr = range.sofar
+	range.sofar = range.sofar + len
+	return fromaddr, range.sofar
+end
+
+function WriteRangeClass:print()
+	print()
+	print(self.name..' write usage:')
+	for _,range in ipairs(self.ranges) do
+		print('range '
+			..('%04x'):format(range[1])..'..'..('%04x'):format(range[2])
+			..'  '..('%04x'):format(range.sofar)..' used = '
+			..('%.1f'):format(100*(range.sofar-range[1])/(range[2]-range[1]+1))..'% of '
+			..('%04x'):format(range[2]-range[1]+1)..' bytes')
+	end
+end
+
+local function WriteRange(name)
+	return function(ranges)
+		local range = WriteRangeClass(ranges)
+		range.name = name
+		return range
+	end
+end
 
 --[[
 -- plm randomization:
@@ -114,7 +155,7 @@ plm memory ranges:
 --]=]
 -- where plms were written before, so should be safe, right?
 -- ranges are inclusive
-local plmWriteRanges = {
+local plmWriteRanges = WriteRange'plm'{
  	{0x78000, 0x79193},	
  	-- then comes 100 bytes of layer handling code, then mdb's
 	{0x7c215, 0x7c8c6},
@@ -124,9 +165,6 @@ local plmWriteRanges = {
 	{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
 				-- however $7ff00 is where the door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
 }
-for _,range in ipairs(plmWriteRanges) do
-	range.sofar = range[1]
-end
 
 -- TODO any code that points to a PLM needs to be updated as well
 -- like whatever changes doors around from blue to grey, etc
@@ -134,20 +172,18 @@ end
 print()
 for _,plmset in ipairs(sm.plmsets) do
 	local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
-	local _,range = table.find(plmWriteRanges, nil, function(range)
-		return range.sofar + bytesToWrite <= range[2]+1 
-	end)
-	assert(range, "couldn't find anywhere to write plm_t")
-	plmset.addr = range.sofar
+	local addr, endaddr = plmWriteRanges:get(bytesToWrite)
+	plmset.addr = addr 
 
 	-- write
 	for _,plm in ipairs(plmset.plms) do
-		ffi.cast('plm_t*', rom+range.sofar)[0] = plm
-		range.sofar = range.sofar + ffi.sizeof'plm_t'
+		ffi.cast('plm_t*', rom+addr)[0] = plm
+		addr = addr + ffi.sizeof'plm_t'
 	end
 	-- write term
-	ffi.cast('uint16_t*', rom+range.sofar)[0] = 0
-	range.sofar = range.sofar + ffi.sizeof'uint16_t'
+	ffi.cast('uint16_t*', rom+addr)[0] = 0
+	addr = addr + ffi.sizeof'uint16_t'
+	assert(addr == endaddr)
 
 	for _,rs in ipairs(plmset.roomStates) do
 		local newofs = bit.band(0xffff, plmset.addr)
@@ -157,16 +193,7 @@ for _,plmset in ipairs(sm.plmsets) do
 		end
 	end
 end
--- output memory ranges
-print()
-print'plm write usage:'
-for _,range in ipairs(plmWriteRanges) do
-	print('range '
-		..('%04x'):format(range[1])..'..'..('%04x'):format(range[2])
-		..'  '..('%04x'):format(range.sofar)..' used = '
-		..('%.1f'):format(100*(range.sofar-range[1])/(range[2]-range[1]+1))..'% of '
-		..('%04x'):format(range[2]-range[1]+1)..' bytes')
-end
+plmWriteRanges:print()
 --]]
 
 
@@ -174,7 +201,7 @@ end
 -- writing back mdb_t
 -- if you move a mdb_t
 -- then don't forget to reassign all mdb.dooraddr.door_t.destmdb
-local mdbWriteRanges = {
+local mdbWriteRanges = WriteRange'mdb'{
 	{0x791f8, 0x7b769},	-- mdbs of regions 0-2
 	-- then comes bg_t's and door codes and plm_t's
 	{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
@@ -182,9 +209,6 @@ local mdbWriteRanges = {
 	{0x7e82c, 0x7e85a},	-- single mdb of region 7
 	-- then comes door code
 }
-for _,range in ipairs(mdbWriteRanges) do
-	range.sofar = range[1]
-end
 
 
 --[[ do some modifications
@@ -247,7 +271,7 @@ end
 
 
 -- [[ write back compressed data
-local roomWriteRanges = {
+local roomWriteRanges = WriteRange'room'{
 	--[=[ there are some bytes outside compressed regions but between a few roomdatas
 	-- the metroid rom map says these are a part of the room data
 	-- this includes those breaks
@@ -260,13 +284,11 @@ local roomWriteRanges = {
 	{0x2142bb, 0x277fff},
 	--]=]
 }
-for _,range in ipairs(roomWriteRanges) do
-	range.sofar = range[1]
-end
 -- ... reduces to 56% of the original compressed data
 -- but goes slow
 local totalOriginalCompressedSize = 0
 local totalRecompressedSize = 0
+print()
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
 	local recompressed = lz.compress(data)
@@ -284,19 +306,8 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 	-- [=[ write back at a contiguous location
 	-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
 	-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
-	local bytesToWrite = #data
-	local fromaddr, toaddr
-	for _,range in ipairs(roomWriteRanges) do
-		if range.sofar + bytesToWrite <= range[2]+1 then
-			fromaddr = range.sofar
-			range.sofar = range.sofar + bytesToWrite
-			toaddr = range.sofar
-			break
-		end
-	end
-	if not fromaddr then
-		error("couldn't find anywhere to write room data")
-	end
+	local fromaddr, toaddr = roomWriteRanges:get(#data)
+
 	-- do the write
 	for i,v in ipairs(data) do
 		rom[fromaddr+i-1] = v
@@ -326,13 +337,5 @@ print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRe
 	..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
 -- output memory ranges
-print()
-print'room write usage:'
-for _,range in ipairs(roomWriteRanges) do
-	print('range '
-		..('%04x'):format(range[1])..'..'..('%04x'):format(range[2])
-		..'  '..('%04x'):format(range.sofar)..' used = '
-		..('%.1f'):format(100*(range.sofar-range[1])/(range[2]-range[1]+1))..'% of '
-		..('%04x'):format(range[2]-range[1]+1)..' bytes')
-end
+roomWriteRanges:print()
 --]]
