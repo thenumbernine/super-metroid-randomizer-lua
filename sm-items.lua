@@ -1,3 +1,10 @@
+--[[
+notice, the items array is full of addresses that point back to the plm_t's in the original ROM
+plm's also have door info, and a blue door is the absense of a plm, which means to change door colors I will have to add and remove some plms ... 
+so ... always run the item randomization *before* rearranging plms
+or in the future (TODO maybe) have this pick out the item plm's based on room and plm cmd ... and x/y ?
+--]]
+
 local ffi = require 'ffi'
 local config = require 'config'
 local playerSkills = config.playerSkills
@@ -1257,8 +1264,13 @@ end
 
 
 -- this doesn't do anything
--- items are just fields within plms, right?
+-- items are just plms with specific cmds
 function SMItems:buildMemoryMapItems()
+	--[[
+	for _,item in ipairs(self.items) do
+		insertUniqueMemoryRange(item.addr, 2, 'item: '..item.name)
+	end
+	--]]
 end
 
 return SMItems

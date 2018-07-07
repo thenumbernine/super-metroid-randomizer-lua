@@ -11,7 +11,8 @@ local class = require 'ext.class'
 
 local SM = class(
 	require 'sm-enemies',
-	require 'sm-items'
+	require 'sm-items',
+	require 'sm-rooms'
 )
 
 --[[
@@ -25,6 +26,7 @@ function SM:init(rom)
 
 	self:initEnemies()
 	self:initItems()
+	self:initMap()
 end
 
 function SM:buildMemoryMap()

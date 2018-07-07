@@ -165,7 +165,9 @@ sm = SM(rom)
 -- *) enemy placement
 -- *) door placement
 -- *) refinancin
---require 'rooms'
+if config.randomizeRooms then
+	require 'rooms'
+end
 
 -- do the enemy randomization
 require 'enemies'
