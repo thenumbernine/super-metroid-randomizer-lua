@@ -443,6 +443,33 @@ function SMMap:mapAddRoom(addr, m)
 end
 
 
+local function readCode(rom, addr, maxlen)
+	local code = table()
+	for i=0,maxlen-1 do
+		local r = rom[addr] addr=addr+1
+		code:insert(r)
+		if r == 0x60 then break end
+		if i == maxlen-1 then error("code read overflow") end
+	end
+	return code
+end
+
+
+function SMMap:mapAddLayerHandling(addr)
+	local _,layerHandling = self.layerHandlings:find(nil, function(layerHandling)
+		return layerHandling.addr == addr
+	end)
+	if layerHandling then return layerHandling end
+	local layerHandling = {
+		addr = addr,
+		code = readCode(self.rom, addr, 0x100),
+		roomStates = table(),
+	}
+	self.layerHandlings:insert(layerHandling)
+	return layerHandling
+end
+
+
 function SMMap:mapInit()
 	local rom = self.rom
 
@@ -456,6 +483,7 @@ function SMMap:mapInit()
 	self.plmsets = table()
 	self.bgs = table()
 	self.fx1s = table()
+	self.layerHandlings = table()
 	
 	--[[
 	from $078000 to $079193 is plm_t data
@@ -596,7 +624,7 @@ function SMMap:mapInit()
 							rs.enemiesToKill = read'uint8_t'
 							break
 						end
-						rs.enemyPops:insert(ptr[0])
+						rs.enemyPops:insert(ffi.new('enemyPop_t', ptr[0]))
 						data = data + ffi.sizeof'enemyPop_t'
 					end
 				end
@@ -613,7 +641,7 @@ function SMMap:mapInit()
 							break 
 						end
 				
-						rs.enemySets:insert(ptr[0])
+						rs.enemySets:insert(ffi.new('enemySet_t', ptr[0]))
 						data = data + ffi.sizeof'enemySet_t'
 					end
 				end
@@ -698,7 +726,8 @@ function SMMap:mapInit()
 
 					if rs.ptr.layerHandling > 0x8000 then
 						local addr = topc(0x8f, rs.ptr.layerHandling)
-						-- TODO read code
+						rs.layerHandling = self:mapAddLayerHandling(addr)
+						rs.layerHandling.roomStates:insert(rs)
 					end
 					
 					local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
@@ -736,8 +765,8 @@ function SMMap:mapInit()
 					if ctype == 'door_t' 
 					and door.ptr.code > 0x8000 
 					then
-						local codeaddr = topc(0x8f, door.ptr.code)
-						door.doorCodePtr = rom + codeaddr 
+						door.doorCodeAddr = topc(0x8f, door.ptr.code)
+						door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
 					end
 				end
 			end
@@ -1284,19 +1313,21 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(topc(0xb4, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
 			mem:add(topc(0x83, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 			mem:add(topc(0x8f, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
-			if rs.ptr.layerHandling > 0x8000 then
-				mem:add(topc(0x8f, rs.ptr.layerHandling), 0x10, 'layer handling code', m)
-			end
 		end
 		
 		mem:add(topc(0x8e, m.ptr.doors), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
 			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
-			if door.doorCodePtr then
-				mem:add(ffi.cast('uint8_t*',door.doorCodePtr)-rom, 0x10, 'door code', m)
+			if door.doorCode then
+				mem:add(door.doorCodeAddr, #door.doorCode, 'door code', m)
 			end
 		end
 	end
+
+	for _,layerHandling in ipairs(self.layerHandlings) do
+		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].m)
+	end
+	
 	for _,plmset in ipairs(self.plmsets) do
 		local m = plmset.roomStates[1].m
 		--[[ entry-by-entry

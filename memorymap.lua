@@ -27,6 +27,7 @@ function MemoryMap:print()
 		local rb = ranges[i+1]
 		if ra.addr + ra.len == rb.addr
 		and ra.name == rb.name
+		and ra.m == rb.m
 		then
 			ra.len = ra.len + rb.len
 			ra.dup = (ra.dup or 1) + (rb.dup or 1)
