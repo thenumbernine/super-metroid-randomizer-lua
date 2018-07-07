@@ -124,7 +124,7 @@ local Enemy = class()
 function Enemy:getWeakness()
 	local addr = self.ptr.weakness
 	if addr == 0 then return end
-	local ptr = rom + topc(enemyAuxTableBank, addr)
+	local ptr = self.rom + topc(enemyAuxTableBank, addr)
 	return ffi.cast('weakness_t*', ptr)
 end
 
@@ -158,6 +158,7 @@ function EnemyAuxTable:init(sm)
 end
 
 function EnemyAuxTable:randomize()
+	local rom = self.sm.rom
 	local ptrtype = self.structName..'*'
 	
 	for _,addr in ipairs(self.addrs) do
@@ -169,7 +170,7 @@ function EnemyAuxTable:randomize()
 			end
 
 			local pcaddr = topc(self.bank, addr)
-			local entry = ffi.cast(ptrtype, rom + pcaddr)
+			local entry = ffi.cast(ptrtype, sm.rom + pcaddr)
 
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
@@ -188,6 +189,7 @@ end
 
 function EnemyAuxTable:print()
 	local sm = self.sm
+	local rom = sm.rom
 	local ptrtype = self.structName..'*'
 	print(self.name..' has '..#self.addrs..' unique addrs:')
 	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
@@ -249,6 +251,7 @@ end
 
 -- print information on an individual enemy
 function EnemyAuxTable:printEnemy(enemy)
+	local rom = self.sm.rom
 	local field = self.enemyField
 	
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
@@ -500,6 +503,7 @@ function EnemyWeaknessTable:randomizeEnemy(enemy)
 end
 
 function SMEnemies:initEnemies()
+	local rom = self.rom
 	self.enemies = table{
 		{addr=0xCEBF, name="Boyon"},
 		{addr=0xCEFF, name="Mini-Crocomire [unused]"},
@@ -666,6 +670,9 @@ function SMEnemies:initEnemies()
 		{addr=0xF753, name="Pink Zebesian"},
 		{addr=0xF793, name="Black Zebesian"},
 	}:map(function(enemy)
+		-- used for getWeakness(), which casts the rom location to a ptr (or returns nil)
+		-- do I really need this function?
+		enemy.rom = rom
 		return setmetatable(enemy, Enemy)
 	end)
 
@@ -825,6 +832,8 @@ end
 
 
 function SMEnemies:printEnemies()
+	local rom = self.rom
+
 	self.enemyItemDropTable:print()
 	self.enemyWeaknessTable:print()
 

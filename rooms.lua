@@ -232,7 +232,7 @@ end
 -- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 for _,bg in ipairs(sm.bgs) do
 	local addr = topc(bg.ptr.bank, bg.ptr.addr)
-	local decompressed, compressedSize = lz.decompress(addr, 0x10000)
+	local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
 	bg.data = decompressed
 	insertUniqueMemoryRange(addr, compressedSize, 'bg data', m)
 end
@@ -422,7 +422,7 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 	--]=]
 
 --[=[ verify that compression works by decompressing and re-compressing
-	local data2, compressedSize2 = lz.decompress(room.addr, 0x10000)
+	local data2, compressedSize2 = lz.decompress(rom, room.addr, 0x10000)
 	assert(compressedSize == compressedSize2)
 	assert(#data == #data2)
 	for i=1,#data do

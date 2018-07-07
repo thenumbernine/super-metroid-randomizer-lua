@@ -404,7 +404,7 @@ local function addRoom(addr, m)
 	
 	-- then we decompress the next 0x10000 bytes ...
 --print('decompressing address '..('0x%06x'):format(addr))
-	local data, compressedSize = lz.decompress(addr, 0x10000)
+	local data, compressedSize = lz.decompress(rom, addr, 0x10000)
 
 --print('decompressed from '..compressedSize..' to '..#data)
 	

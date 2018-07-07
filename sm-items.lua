@@ -1249,6 +1249,8 @@ end
 SMItems.itemTypeNameForValue = SMItems.itemTypes:map(function(v,k) return k,v end)
 
 function SMItems:initItems()
+	local rom = self.rom
+
 	self.items = table(items)
 
 	for _,item in ipairs(self.items) do
