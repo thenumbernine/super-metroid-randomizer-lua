@@ -26,17 +26,19 @@ function SM:init(rom)
 
 	self:initEnemies()
 	self:initItems()
-	self:initMap()
+	self:mapInit()
 end
 
 function SM:buildMemoryMap()
 	-- TODO make this return a 'memorymap' object that prints out
 	self:buildMemoryMapEnemies()
 	self:buildMemoryMapItems()
+	self:mapBuildMemoryMap()
 end
 
 function SM:print()
 	self:printEnemies()
+	self:mapPrint()
 end
 
 return SM

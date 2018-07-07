@@ -251,10 +251,9 @@ function RoomState:init(args)
 end
 
 -- table of all unique plm regions
-local plmsets = table()
-local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.  you have to add to plmset.mdbs externally
+function SMMap:mapAddPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.  you have to add to plmset.mdbs externally
 	local startaddr = addr
-	local _,plmset = plmsets:find(nil, function(plmset) return plmset.addr == addr end)
+	local _,plmset = self.plmsets:find(nil, function(plmset) return plmset.addr == addr end)
 	if plmset then return plmset end
 
 	local startaddr = addr
@@ -263,19 +262,15 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 	while true do
 		local ptr = ffi.cast('plm_t*', rom+addr)
 		if ptr.cmd == 0 then 
--- this shows entry-by-entry
---insertUniqueMemoryRange(addr, 2, 'plm term '..('%04x'):format(ptr.cmd), m)
 			-- include plm term
 			addr = addr + 2
 			break 
 		end
 		--inserting the struct by-value
 		plms:insert(ptr[0])
---insertUniqueMemoryRange(addr, ffi.sizeof'plm_t', 'plm '..ptr[0], m)
 		addr = addr + ffi.sizeof'plm_t'
 	end
-	local len = addr-startaddr
-
+	
 	-- nil plmset for no plms
 	--if #plms == 0 then return end
 
@@ -289,10 +284,7 @@ local function addPLMSet(addr, m)	-- m is only used for insertUniqueMemoryRange.
 		mdbs = table(),
 		roomStates = table(),
 	}
-	plmsets:insert(plmset)
-
--- this shows the orig rom memory
-insertUniqueMemoryRange(startaddr, len, 'plm_t', m)
+	self.plmsets:insert(plmset)
 
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
@@ -339,9 +331,8 @@ end
 -- table of all unique bgs.
 -- each entry has .addr and .ptr = (bg_t*)(rom+.addr)
 -- doesn't create duplicates -- returns a previous copy if it exists
-local bgs = table()
-local function addBG(addr)
-	local _,bg = bgs:find(nil, function(bg) return bg.addr == addr end)
+function SMMap:mapAddBG(addr)
+	local _,bg = self.bgs:find(nil, function(bg) return bg.addr == addr end)
 	if bg then return bg end
 	bg = {
 		addr = addr,
@@ -349,21 +340,20 @@ local function addBG(addr)
 		-- list of all m's that use this bg
 		mdbs = table(),
 	}
-	bgs:insert(bg)
+	self.bgs:insert(bg)
 	return bg
 end
 
 
-local fx1s = table()
-local function addFX1(addr)
-	local _,fx1 = fx1s:find(nil, function(fx1) return fx1.addr == addr end)
+function SMMap:mapAddFX1(addr)
+	local _,fx1 = self.fx1s:find(nil, function(fx1) return fx1.addr == addr end)
 	if fx1 then return fx1 end
 	fx1 = {
 		addr = addr,
 		ptr = ffi.cast('fx1_t*', rom + addr),
 		mdbs = table(),
 	}
-	fx1s:insert(fx1)
+	self.fx1s:insert(fx1)
 	return fx1
 end
 
@@ -385,9 +375,8 @@ function Room:getData()
 end
 
 -- this is the block data of the rooms
-local rooms = table()
-local function addRoom(addr, m)
-	local _,room = rooms:find(nil, function(room) 
+function SMMap:mapAddRoom(addr, m)
+	local _,room = self.rooms:find(nil, function(room) 
 		return room.addr == addr 
 	end)
 	if room then 
@@ -476,490 +465,483 @@ local function addRoom(addr, m)
 		tail = tail,	-- last bytes after bts
 	}
 	room.mdbs:insert(m)
-	rooms:insert(room)
+	self.rooms:insert(room)
 	return room
 end
 
 
---[[
-from $078000 to $079193 is plm_t data
-the first mdb_t is at $0791f8
-from there it is a dense structure of ...
-mdb_t
-roomselect's (in reverse order)
-roomstate_t's (in forward order)
-dooraddrs
-... then comes extra stuff, sometimes:
-scrolldata (which is in one place wedged into nowhere)
-plm scrollmod
+function SMMap:mapInit()
+	self.mdbs = table()
+	self.rooms = table()
+	self.plmsets = table()
+	self.bgs = table()
+	self.fx1s = table()
+	
+	--[[
+	from $078000 to $079193 is plm_t data
+	the first mdb_t is at $0791f8
+	from there it is a dense structure of ...
+	mdb_t
+	roomselect's (in reverse order)
+	roomstate_t's (in forward order)
+	dooraddrs
+	... then comes extra stuff, sometimes:
+	scrolldata (which is in one place wedged into nowhere)
+	plm scrollmod
 
-TODO don't check *every* byte from 0x8000 to 0xffff
---]]
-local mdbs = table()
-for x=0x8000,0xffff do
-	local data = rom + topc(0x8e, x)
-	local function read(ctype)
-		local result = ffi.cast(ctype..'*', data)
-		data = data + ffi.sizeof(ctype)
-		return result[0]
-	end
-
-	local mptr = ffi.cast('mdb_t*', data)
-	if (
-		(data[12] == 0xE5 or data[12] == 0xE6) 
-		and mptr.region < 8 
-		and (mptr.width ~= 0 and mptr.width < 20) 
-		and (mptr.height ~= 0 and mptr.height < 20)
-		and mptr.gfxFlags < 0x10 
-		and mptr.doors > 0x7F00
-	) then
-		
-		local m = {
-			roomStates = table(),
-			doors = table(),
-			addr = x,
-			ptr = mptr,
-		}	
-		mdbs:insert(m)
-		insertUniqueMemoryRange(data-rom, ffi.sizeof'mdb_t', 'mdb_t', m)
-		data = data + ffi.sizeof'mdb_t'
-
-		-- events
-		while true do
-			local startaddr = data - rom
-			local testcode = ffi.cast('uint16_t*',data)[0]
-			
-			if testcode == 0xe5e6 then 
-				insertUniqueMemoryRange(data-rom, 2, 'roomselect', m)	-- term
-				data = data + 2
-				break 
-			end
-		
-			local ctype
-			local selectptr
-			if testcode == 0xE612
-			or testcode == 0xE629
-			then
-				ctype = 'roomselect_t'
-			elseif testcode == 0xE5EB then
-				-- this is never reached
-				error'here' 
-				-- I'm not using this just yet
-				-- struct {
-				-- 	uint16_t testcode;
-				-- 	uint16_t testvaluedoor;
-				--	uint16_t roomstate;
-				-- }
-			else
-				ctype = 'roomselect2_t'
-			end
-			local rs = RoomState{
-				select = ffi.cast(ctype..'*', data),
-				select_ctype = ctype,	-- using for debug print only
-			}
-			m.roomStates:insert(rs)
-			
+	TODO don't check *every* byte from 0x8000 to 0xffff
+	--]]
+	for x=0x8000,0xffff do
+		local data = rom + topc(0x8e, x)
+		local function read(ctype)
+			local result = ffi.cast(ctype..'*', data)
 			data = data + ffi.sizeof(ctype)
-			insertUniqueMemoryRange(startaddr, ffi.sizeof(ctype), 'roomselect', m)
+			return result[0]
 		end
 
-		do
-			-- after the last roomselect is the first roomstate_t
-			local rsptr = ffi.cast('roomstate_t*', data)
-			insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
-			data = data + ffi.sizeof'roomstate_t'
+		local mptr = ffi.cast('mdb_t*', data)
+		if (
+			(data[12] == 0xE5 or data[12] == 0xE6) 
+			and mptr.region < 8 
+			and (mptr.width ~= 0 and mptr.width < 20) 
+			and (mptr.height ~= 0 and mptr.height < 20)
+			and mptr.gfxFlags < 0x10 
+			and mptr.doors > 0x7F00
+		) then
 			
-			local rs = RoomState{
-				-- no select means a terminator
-				ptr = rsptr,
-			}
-			m.roomStates:insert(rs)
+			local m = {
+				roomStates = table(),
+				doors = table(),
+				addr = x,
+				ptr = mptr,
+			}	
+			self.mdbs:insert(m)
+			data = data + ffi.sizeof'mdb_t'
 
-			for _,rs in ipairs(m.roomStates) do
-				assert(rs.select or rs.ptr)
-				if rs.select then
-					assert(not rs.ptr)
-					local addr = topc(0x8e, rs.select[0].roomstate)
-					rs.ptr = ffi.cast('roomstate_t*', rom + addr)
-					insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+			-- events
+			while true do
+				local testcode = ffi.cast('uint16_t*',data)[0]
+				
+				local ctype
+				if testcode == 0xe5e6 then 
+					ctype = 'uint16_t'
+				elseif testcode == 0xE612
+				or testcode == 0xE629
+				then
+					ctype = 'roomselect_t'
+				elseif testcode == 0xE5EB then
+					-- this is never reached
+					error'here' 
+					-- I'm not using this just yet
+					-- struct {
+					-- 	uint16_t testcode;
+					-- 	uint16_t testvaluedoor;
+					--	uint16_t roomstate;
+					-- }
+				else
+					ctype = 'roomselect2_t'
+				end
+				local rs = RoomState{
+					m = m,
+					select = ffi.cast(ctype..'*', data),
+					select_ctype = ctype,	-- using for debug print only
+				}
+				m.roomStates:insert(rs)
+				
+				data = data + ffi.sizeof(ctype)
+
+				if ctype == 'uint16_t' then break end	-- term
+			end
+
+			do
+				-- after the last roomselect is the first roomstate_t
+				local rsptr = ffi.cast('roomstate_t*', data)
+				insertUniqueMemoryRange(data-rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+				data = data + ffi.sizeof'roomstate_t'
+				
+				local rs = m.roomStates:last()
+				-- uint16_t select means a terminator
+				assert(rs.select_ctype == 'uint16_t')
+				rs.ptr = rsptr
+
+				for _,rs in ipairs(m.roomStates) do
+					if rs.select_ctype ~= 'uint16_t' then
+						assert(not rs.ptr)
+						local addr = topc(0x8e, rs.select[0].roomstate)
+						rs.ptr = ffi.cast('roomstate_t*', rom + addr)
+						insertUniqueMemoryRange(addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+					end
+
+					assert(rs.ptr)
 				end
 
-				assert(rs.ptr)
-			end
-
-			-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
-			-- they sure aren't sequential
-			-- they might be reverse-sequential
-			-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
-			--[[
-			for i=1,#m.roomStates-1 do
-				assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
-			end
-			--]]
-
-			for _,rs in ipairs(m.roomStates) do
-				if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
-					local addr = topc(scrollBank, rs.ptr.scroll)
-					local scrollDataPtr = rom + addr 
-					local scrollDataSize = m.ptr.width * m.ptr.height
-					rs.scrollData = range(scrollDataSize):map(function(i)
-						return scrollDataPtr[i-1]
-					end)
-					-- sized mdb width x height
-					insertUniqueMemoryRange(addr, scrollDataSize, 'scrolldata', m)
+				-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
+				-- they sure aren't sequential
+				-- they might be reverse-sequential
+				-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
+				--[[
+				for i=1,#m.roomStates-1 do
+					assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
 				end
-			end
+				--]]
 
-			-- add plms in reverse order, because the roomstates are in reverse order of roomselects,
-			-- and the plms are stored in-order with roomselects
-			-- so now, when writing them out, they will be in the same order in memory as they were when being read in
-			for i=#m.roomStates,1,-1 do
-				local rs = m.roomStates[i]
-				if rs.ptr.plm ~= 0 then
-					local addr = topc(plmBank, rs.ptr.plm)
-					local plmset = addPLMSet(addr, m)
-					-- take the initiative here and just zero the memory of any zero-length plms
-					if plmset and #plmset.plms > 0 then
+				for _,rs in ipairs(m.roomStates) do
+					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+						local addr = topc(scrollBank, rs.ptr.scroll)
+						local scrollDataPtr = rom + addr 
+						local scrollDataSize = m.ptr.width * m.ptr.height
+						rs.scrollData = range(scrollDataSize):map(function(i)
+							return scrollDataPtr[i-1]
+						end)
+						-- sized mdb width x height
+						insertUniqueMemoryRange(addr, scrollDataSize, 'scrolldata', m)
+					end
+				end
+
+				-- add plms in reverse order, because the roomstates are in reverse order of roomselects,
+				-- and the plms are stored in-order with roomselects
+				-- so now, when writing them out, they will be in the same order in memory as they were when being read in
+				for i=#m.roomStates,1,-1 do
+					local rs = m.roomStates[i]
+					if rs.ptr.plm ~= 0 then
+						local addr = topc(plmBank, rs.ptr.plm)
+						local plmset = self:mapAddPLMSet(addr, m)
+						
 						rs.plmset = plmset
-						plmset.mdbs:insert(m)
 						plmset.roomStates:insert(rs)
-					else
-						plmsets:removeObject(plmset)
-						rs.ptr.plm = 0
 					end
 				end
-			end
 
-			for _,rs in ipairs(m.roomStates) do
-				local startaddr = topc(0xa1, rs.ptr.enemyPop)
-				data = rom + startaddr 
-				while true do
-					local ptr = ffi.cast('enemyPop_t*', data)
-					if ptr.enemyAddr == 0xffff then
-						-- include term and enemies-to-kill
-						data = data + 2
-						rs.enemiesToKill = read'uint8_t'
-						break
-					end
-					rs.enemyPops:insert(ptr[0])
-					data = data + ffi.sizeof'enemyPop_t'
-				end
-				local len = data-rom-startaddr
-				insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
-			end
-
-			for _,rs in ipairs(m.roomStates) do
-				local startaddr = topc(0xb4, rs.ptr.enemySet)
-				data = rom + startaddr 
-				while true do
-					local ptr = ffi.cast('enemySet_t*', data)
-					if ptr.enemyAddr == 0xffff then 
--- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
---print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
-						-- include terminator
-						data = data + 10
-						break 
-					end
-			
-					rs.enemySets:insert(ptr[0])
-					data = data + ffi.sizeof'enemySet_t'
-				end
-				local len = data-rom-startaddr
-				insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
-			end
-
-			-- some rooms use the same fx1 ptr
-			-- and from there they are read in contiguous blocks until a term is encountered
-			-- so I should make these fx1sets (like plmsets)
-			-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
-			-- then make one set and just put the subset's at the end
-			-- (unless the order matters...)
-			for _,rs in ipairs(m.roomStates) do
-				local startaddr = topc(0x83, rs.ptr.fx1)
-				local addr = startaddr
-				local retry
-				while true do
-					local cmd = ffi.cast('uint16_t*', rom+addr)[0]
-					
-					-- null sets are represented as an immediate ffff
-					-- whereas sets of more than 1 value use 0000 as a term ...
-					-- They can also be used to terminate a set of fx1_t
-					if cmd == 0xffff then
-						-- include terminator bytes in block length:
-insertUniqueMemoryRange(addr, 2, 
-	--'fx1_t term '..('$%04x'):format(addr)..'='..('%04x'):format(cmd),
-	'fx1_t',
-	m)
-						addr = addr + 2
-						break
-					end
-					
-					--if cmd == 0
-					-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
-					--or m.doors:find(nil, function(door) return door.addr == cmd end)
-					--then
-					if true then
-						local fx1 = addFX1(addr)
--- this misses 5 fx1_t's
-local done = fx1.ptr.doorSelect == 0 
-						fx1.mdbs:insert(m)
-						rs.fx1s:insert(fx1)
-insertUniqueMemoryRange(addr, ffi.sizeof'fx1_t', 
-	--'fx1_t '..(done and '(last) ' or '')..('$%04x'):format(addr)..'='..fx1.ptr[0], 
-	'fx1_t',
-	m)
-						
-						addr = addr + ffi.sizeof'fx1_t'
-
--- term of 0 past the first entry
-if done then break end
-					end
-				end
-				--insertUniqueMemoryRange(startaddr, addr-startaddr, 'fx1_t', m)
-			
-				if rs.ptr.bgdata > 0x8000 then
-					local startaddr = topc(0x8f, rs.ptr.bgdata)
-					local addr = startaddr
+				for _,rs in ipairs(m.roomStates) do
+					local startaddr = topc(0xa1, rs.ptr.enemyPop)
+					data = rom + startaddr 
 					while true do
-						local ptr = ffi.cast('bg_t*', rom+addr)
-						
--- this is a bad test of validity
--- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
--- in fact, I never read more than 1 bg, and sometimes I read 0
---[[
-						if ptr.header ~= 0x04 then
-							addr = addr + 8
+						local ptr = ffi.cast('enemyPop_t*', data)
+						if ptr.enemyAddr == 0xffff then
+							-- include term and enemies-to-kill
+							data = data + 2
+							rs.enemiesToKill = read'uint8_t'
 							break
 						end
---]]
-						-- so bgs[i].addr is the address where bgs[i].ptr was found
-						-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
-						-- a little confusing
-						local bg = addBG(addr)
-						bg.mdbs:insert(m)
-						rs.bgs:insert(bg)
-						addr = addr + ffi.sizeof'bg_t'
-					
-addr=addr+8
-do break end
+						rs.enemyPops:insert(ptr[0])
+						data = data + ffi.sizeof'enemyPop_t'
 					end
-					insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t', m)
+					local len = data-rom-startaddr
+					insertUniqueMemoryRange(startaddr, len, 'enemyPop_t', m)
 				end
 
-				if rs.ptr.layerHandling > 0x8000 then
-					local addr = topc(0x8f, rs.ptr.layerHandling)
-					-- read code
-					insertUniqueMemoryRange(addr, 0x10, 'layer handling code', m)
-				end
+				for _,rs in ipairs(m.roomStates) do
+					local startaddr = topc(0xb4, rs.ptr.enemySet)
+					data = rom + startaddr 
+					while true do
+						local ptr = ffi.cast('enemySet_t*', data)
+						if ptr.enemyAddr == 0xffff then 
+	-- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
+	--print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
+							-- include terminator
+							data = data + 10
+							break 
+						end
 				
-				local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
-				local room = addRoom(addr, m)
-				room.mdbs:insert(m)
-				room.roomStates:insert(rs)
-				rs.rooms:insert(room)
-			end
+						rs.enemySets:insert(ptr[0])
+						data = data + ffi.sizeof'enemySet_t'
+					end
+					local len = data-rom-startaddr
+					insertUniqueMemoryRange(startaddr, len, 'enemySet_t', m)
+				end
 
-			local startaddr = topc(0x8e, m.ptr.doors)
-			data = rom + startaddr 
-			--data = rom + 0x70000 + m.ptr.doors
-			local doorAddr = read'uint16_t'
-			while doorAddr > 0x8000 do
-				m.doors:insert{
-					addr = doorAddr,
---					m = m,
-				}
-				doorAddr = read'uint16_t'
-			end
-			-- exclude terminator
-			data = data - 2
---print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
-			local len = data-rom - startaddr
-			-- either +0, +39 or +44
-			insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
-		
---doorsSoFar = doorsSoFar or table()
-			for _,door in ipairs(m.doors) do
-				local addr = topc(0x83, door.addr)
---doorsSoFar[addr] = doorsSoFar[addr] or table()
---doorsSoFar[addr]:insert(m)
-				data = rom + addr 
-				local destmdb = ffi.cast('uint16_t*', data)[0]
-				-- if destmdb == 0 then it is just a 2-byte 'lift' structure ...
-				local ctype = destmdb == 0 and 'lift_t' or 'door_t'
-				door.ctype = ctype
-				door.ptr = ffi.cast(ctype..'*', data)
-				insertUniqueMemoryRange(addr, ffi.sizeof(ctype), ctype, m)
-				if ctype == 'door_t' 
-				and door.ptr.code > 0x8000 
-				then
-					local codeaddr = topc(0x8f, door.ptr.code)
-					door.doorCodePtr = rom + codeaddr 
-					-- the next 0x1000 bytes have the door asm code
-					insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
+				-- some rooms use the same fx1 ptr
+				-- and from there they are read in contiguous blocks until a term is encountered
+				-- so I should make these fx1sets (like plmsets)
+				-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
+				-- then make one set and just put the subset's at the end
+				-- (unless the order matters...)
+				for _,rs in ipairs(m.roomStates) do
+					local startaddr = topc(0x83, rs.ptr.fx1)
+					local addr = startaddr
+					local retry
+					while true do
+						local cmd = ffi.cast('uint16_t*', rom+addr)[0]
+						
+						-- null sets are represented as an immediate ffff
+						-- whereas sets of more than 1 value use 0000 as a term ...
+						-- They can also be used to terminate a set of fx1_t
+						if cmd == 0xffff then
+							-- include terminator bytes in block length:
+	insertUniqueMemoryRange(addr, 2, 
+		--'fx1_t term '..('$%04x'):format(addr)..'='..('%04x'):format(cmd),
+		'fx1_t',
+		m)
+							addr = addr + 2
+							break
+						end
+						
+						--if cmd == 0
+						-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
+						--or m.doors:find(nil, function(door) return door.addr == cmd end)
+						--then
+						if true then
+							local fx1 = self:mapAddFX1(addr)
+	-- this misses 5 fx1_t's
+	local done = fx1.ptr.doorSelect == 0 
+							fx1.mdbs:insert(m)
+							rs.fx1s:insert(fx1)
+	insertUniqueMemoryRange(addr, ffi.sizeof'fx1_t', 
+		--'fx1_t '..(done and '(last) ' or '')..('$%04x'):format(addr)..'='..fx1.ptr[0], 
+		'fx1_t',
+		m)
+							
+							addr = addr + ffi.sizeof'fx1_t'
+
+	-- term of 0 past the first entry
+	if done then break end
+						end
+					end
+					--insertUniqueMemoryRange(startaddr, addr-startaddr, 'fx1_t', m)
+				
+					if rs.ptr.bgdata > 0x8000 then
+						local startaddr = topc(0x8f, rs.ptr.bgdata)
+						local addr = startaddr
+						while true do
+							local ptr = ffi.cast('bg_t*', rom+addr)
+							
+	-- this is a bad test of validity
+	-- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+	-- in fact, I never read more than 1 bg, and sometimes I read 0
+	--[[
+							if ptr.header ~= 0x04 then
+								addr = addr + 8
+								break
+							end
+	--]]
+							-- so bgs[i].addr is the address where bgs[i].ptr was found
+							-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
+							-- a little confusing
+							local bg = self:mapAddBG(addr)
+							bg.mdbs:insert(m)
+							rs.bgs:insert(bg)
+							addr = addr + ffi.sizeof'bg_t'
+						
+	addr=addr+8
+	do break end
+						end
+						insertUniqueMemoryRange(startaddr, addr-startaddr, 'bg_t', m)
+					end
+
+					if rs.ptr.layerHandling > 0x8000 then
+						local addr = topc(0x8f, rs.ptr.layerHandling)
+						-- read code
+						insertUniqueMemoryRange(addr, 0x10, 'layer handling code', m)
+					end
+					
+					local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
+					local room = self:mapAddRoom(addr, m)
+					room.mdbs:insert(m)
+					room.roomStates:insert(rs)
+					rs.rooms:insert(room)
+				end
+
+				local startaddr = topc(0x8e, m.ptr.doors)
+				data = rom + startaddr 
+				--data = rom + 0x70000 + m.ptr.doors
+				local doorAddr = read'uint16_t'
+				while doorAddr > 0x8000 do
+					m.doors:insert{
+						addr = doorAddr,
+	--					m = m,
+					}
+					doorAddr = read'uint16_t'
+				end
+				-- exclude terminator
+				data = data - 2
+	--print('   dooraddr term: '..range(0,1):map(function(i) return ('%02x'):format(data[i]) end):concat' ')			
+				local len = data-rom - startaddr
+				-- either +0, +39 or +44
+				insertUniqueMemoryRange(startaddr, len, 'dooraddrs', m)
+			
+	--doorsSoFar = doorsSoFar or table()
+				for _,door in ipairs(m.doors) do
+					local addr = topc(0x83, door.addr)
+	--doorsSoFar[addr] = doorsSoFar[addr] or table()
+	--doorsSoFar[addr]:insert(m)
+					data = rom + addr 
+					local destmdb = ffi.cast('uint16_t*', data)[0]
+					-- if destmdb == 0 then it is just a 2-byte 'lift' structure ...
+					local ctype = destmdb == 0 and 'lift_t' or 'door_t'
+					door.ctype = ctype
+					door.ptr = ffi.cast(ctype..'*', data)
+					insertUniqueMemoryRange(addr, ffi.sizeof(ctype), ctype, m)
+					if ctype == 'door_t' 
+					and door.ptr.code > 0x8000 
+					then
+						local codeaddr = topc(0x8f, door.ptr.code)
+						door.doorCodePtr = rom + codeaddr 
+						-- the next 0x1000 bytes have the door asm code
+						insertUniqueMemoryRange(codeaddr, 0x10, 'door code', m)
+					end
 				end
 			end
 		end
 	end
-end
 
 
--- link all doors to their mdbs
-for _,m in ipairs(mdbs) do
-	for _,door in ipairs(m.doors) do
-		if door.ctype == 'door_t' then
-			local destmdb = mdbs:find(nil, function(m) return m.addr == door.ptr.destmdb end)
-			if not destmdb then
-				error('!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
-			end
-			-- points to the dest mdb
-			door.destmdb = destmdb
-		end
-	end
-end
-
-
--- ok, now to try and change a mdb_t
-
-
---[[ seeing if any two rooms have door addrs that point to the same door ...
--- looks like the only ones that do are the lift_t zero structure:
--- $0188fc, used by 00/08 00/0f 00/14 00/19 01/00 01/0e 01/24 00/33 01/34 02/03 02/26 02/36
--- $01a18a, used by 04/13 05/00
-print()
-for _,addr in ipairs(doorsSoFar:keys():sort()) do
-	local ms = doorsSoFar[addr]
-	if #ms > 1 then
-		io.write('found overlapping doors at '..('$%06x'):format(addr)..', used by')
-		for _,m in ipairs(ms) do
-			io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
-		end
-		print()
-	end
-end
---]]
---[[ now lets look through all doors and see if there's any duplicates that *could have* been overlapping
--- nope, all doors are unique.  any sort of duplication is handled by the overlapping door addresses above
-local alldoors = table():append(mdbs:map(function(m) return m.doors end):unpack())
-print()
-print('#alldoors '..#alldoors)
-for i=1,#alldoors-1 do
-	local da = alldoors[i]
-	for j=i+1,#alldoors do
-		local db = alldoors[j]
-		if da.addr ~= db.addr and da.ptr[0] == db.ptr[0] then
-			print('doors '..('$%06x'):format(ffi.cast('uint8_t*',da.ptr)-rom)
-				..' and '..('$%06x'):format(ffi.cast('uint8_t*',db.ptr)-rom)
-				..' are identical (and could be consolidated)')
-		end
-	end
-end
---]]
-
-
-
--- [[ -------------------------------- ASSERT STRUCT ---------------------------------
-
-
--- asserting underlying contiguousness of structure of the mdb_t's...
--- verify that after each mdb_t, the roomselect / roomstate_t / dooraddrs are packed together
-
--- before the first mdb_t is 174 plm_t's, 
--- then 100 bytes of something
-assert(mdbs)
-for j,m in ipairs(mdbs) do
-	local d = ffi.cast('uint8_t*',m.ptr)
-	local mdbaddr = d - rom
-	d = d + ffi.sizeof'mdb_t'
-	-- if there's only 1 roomState then it is a term, and
-	for i=1,#m.roomStates-1 do
-		assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
-		d = d + ffi.sizeof(m.roomStates[i].select_ctype)
-	end
-	-- last roomselect should always be 2 byte term
-	d = d + 2
-	-- next should always match the last room
-	for i=#m.roomStates,1,-1 do
-		assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
-		d = d + ffi.sizeof'roomstate_t'
-	end
-	-- for a single room there is an extra 26 bytes of padding between the roomstate_t's and the dooraddrs
-	-- and that room is $07ad1b, the speed booster room
-	-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
-	-- says it is just part of the speed booster room
-	if mdbaddr == 0x07ad1b then
-print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
-		d = d + 26
-	end
-	local dooraddr = topc(0x8e, m.ptr.doors)
-	assert(d == rom + dooraddr)
-	d = d + 2 * #m.doors
-	
-	-- now expect all scrolldatas of all rooms of this mdb_t
-	-- the # of unique scrolldatas is either 0 or 1
-	local scrolls = m.roomStates:map(function(rs)
-		return true, rs.ptr.scroll
-	end):keys():filter(function(scroll)
-		return scroll > 1 and scroll ~= 0x8000
-	end):sort()
-	assert(#scrolls <= 1)
-	-- mdb_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
-	-- so... shouldn't this assertion fail?
-	for _,scroll in ipairs(scrolls) do
-		local addr = topc(scrollBank, scroll)
-		assert(d == rom + addr)
-		d = d + m.ptr.width * m.ptr.height
-	end
-
-	-- mdb_t $079804 - gold torizo room - has 14 bytes here -- pointed to by roomstate_t.unknown: 0f 0a 52 00 0f 0b 52 00 0f 0c 52 00 00 00
-	-- mdb_t $07a66a - statues before tourian - has 8 bytes after it 
-	-- mdb_t $07a923 - slope down to crocomire - has 5 bytes here 
-	-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
-	-- mdb_t $07ad1b - speed booster room - has 26 bytes here
-	-- mdb_t $07b1e5 - lava-lowering chozo statue - has 11 bytes here
-	d = d + (({
-		[0x79804] = 14,
-		[0x7a66a] = 8,
-		[0x7a923] = 5,
-		[0x7a98d] = 6,
-		[0x7ad1b] = 26,
-		[0x7b1e5] = 11,
-	})[mdbaddr] or 0)
-
---[=[ continuity of plm scrollmods?
-print('d starts at '..('%06x'):format( d-rom ))
-	-- plm scrollmod sometimes go here
-	local plmsets = table()
-	for _,rs in ipairs(m.roomStates) do
-		plmsets:insertUnique(rs.plmset)
-	end
-	plmsets:sort(function(a,b) return a.addr < b.addr end)
-	for _,plmset in ipairs(plmsets) do
-		if plmset and #plmset.scrollmods > 0 then
-			for _,scrollmod in ipairs(plmset.scrollmods) do
---				assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
-				d = d + scrollmod.len
+	-- link all doors to their mdbs
+	for _,m in ipairs(self.mdbs) do
+		for _,door in ipairs(m.doors) do
+			if door.ctype == 'door_t' then
+				local destmdb = self.mdbs:find(nil, function(m) return m.addr == door.ptr.destmdb end)
+				if not destmdb then
+					error('!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
+				end
+				-- points to the dest mdb
+				door.destmdb = destmdb
 			end
 		end
 	end
---]=]
 
-	-- mdb_t $07c98e - wrecked ship chozo & reserve - has 12 bytes here
-	-- mdb_t $07ca42 - hallway at top of wrecked ship - has 8 bytes here
-	-- mdb_t $07cc6f - hallway before phantoon - has 3 bytes here
 
-	-- see if the next mdb_t is immediately after
-	--[=[
-	if j+1 <= #mdbs then
-		local m2 = ffi.cast('uint8_t*', mdbs[j+1].ptr)
-		if d ~= m2 then
-			print('non-contiguous mdb_t before '..('$%06x'):format(m2-rom))	
+	-- ok, now to try and change a mdb_t
+
+
+	--[[ seeing if any two rooms have door addrs that point to the same door ...
+	-- looks like the only ones that do are the lift_t zero structure:
+	-- $0188fc, used by 00/08 00/0f 00/14 00/19 01/00 01/0e 01/24 00/33 01/34 02/03 02/26 02/36
+	-- $01a18a, used by 04/13 05/00
+	print()
+	for _,addr in ipairs(doorsSoFar:keys():sort()) do
+		local ms = doorsSoFar[addr]
+		if #ms > 1 then
+			io.write('found overlapping doors at '..('$%06x'):format(addr)..', used by')
+			for _,m in ipairs(ms) do
+				io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
+			end
+			print()
 		end
 	end
+	--]]
+	--[[ now lets look through all doors and see if there's any duplicates that *could have* been overlapping
+	-- nope, all doors are unique.  any sort of duplication is handled by the overlapping door addresses above
+	local alldoors = table():append(self.mdbs:map(function(m) return m.doors end):unpack())
+	print()
+	print('#alldoors '..#alldoors)
+	for i=1,#alldoors-1 do
+		local da = alldoors[i]
+		for j=i+1,#alldoors do
+			local db = alldoors[j]
+			if da.addr ~= db.addr and da.ptr[0] == db.ptr[0] then
+				print('doors '..('$%06x'):format(ffi.cast('uint8_t*',da.ptr)-rom)
+					..' and '..('$%06x'):format(ffi.cast('uint8_t*',db.ptr)-rom)
+					..' are identical (and could be consolidated)')
+			end
+		end
+	end
+	--]]
+
+
+
+	-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
+	-- asserting underlying contiguousness of structure of the mdb_t's...
+	-- verify that after each mdb_t, the roomselect / roomstate_t / dooraddrs are packed together
+
+	-- before the first mdb_t is 174 plm_t's, 
+	-- then 100 bytes of something
+	assert(self.mdbs)
+	for j,m in ipairs(self.mdbs) do
+		local d = ffi.cast('uint8_t*',m.ptr)
+		local mdbaddr = d - rom
+		d = d + ffi.sizeof'mdb_t'
+		-- if there's only 1 roomState then it is a term, and
+		for i=1,#m.roomStates-1 do
+			assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
+			d = d + ffi.sizeof(m.roomStates[i].select_ctype)
+		end
+		-- last roomselect should always be 2 byte term
+		d = d + 2
+		-- next should always match the last room
+		for i=#m.roomStates,1,-1 do
+			assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
+			d = d + ffi.sizeof'roomstate_t'
+		end
+		-- for a single room there is an extra 26 bytes of padding between the roomstate_t's and the dooraddrs
+		-- and that room is $07ad1b, the speed booster room
+		-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+		-- says it is just part of the speed booster room
+		if mdbaddr == 0x07ad1b then
+	print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
+			d = d + 26
+		end
+		local dooraddr = topc(0x8e, m.ptr.doors)
+		assert(d == rom + dooraddr)
+		d = d + 2 * #m.doors
+		
+		-- now expect all scrolldatas of all rooms of this mdb_t
+		-- the # of unique scrolldatas is either 0 or 1
+		local scrolls = m.roomStates:map(function(rs)
+			return true, rs.ptr.scroll
+		end):keys():filter(function(scroll)
+			return scroll > 1 and scroll ~= 0x8000
+		end):sort()
+		assert(#scrolls <= 1)
+		-- mdb_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
+		-- so... shouldn't this assertion fail?
+		for _,scroll in ipairs(scrolls) do
+			local addr = topc(scrollBank, scroll)
+			assert(d == rom + addr)
+			d = d + m.ptr.width * m.ptr.height
+		end
+
+		-- mdb_t $079804 - gold torizo room - has 14 bytes here -- pointed to by roomstate_t.unknown: 0f 0a 52 00 0f 0b 52 00 0f 0c 52 00 00 00
+		-- mdb_t $07a66a - statues before tourian - has 8 bytes after it 
+		-- mdb_t $07a923 - slope down to crocomire - has 5 bytes here 
+		-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
+		-- mdb_t $07ad1b - speed booster room - has 26 bytes here
+		-- mdb_t $07b1e5 - lava-lowering chozo statue - has 11 bytes here
+		d = d + (({
+			[0x79804] = 14,
+			[0x7a66a] = 8,
+			[0x7a923] = 5,
+			[0x7a98d] = 6,
+			[0x7ad1b] = 26,
+			[0x7b1e5] = 11,
+		})[mdbaddr] or 0)
+
+	--[=[ continuity of plm scrollmods?
+	print('d starts at '..('%06x'):format( d-rom ))
+		-- plm scrollmod sometimes go here
+		local plmsets = table()
+		for _,rs in ipairs(m.roomStates) do
+			plmsets:insertUnique(rs.plmset)
+		end
+		plmsets:sort(function(a,b) return a.addr < b.addr end)
+		for _,plmset in ipairs(plmsets) do
+			if plmset and #plmset.scrollmods > 0 then
+				for _,scrollmod in ipairs(plmset.scrollmods) do
+	--				assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
+					d = d + scrollmod.len
+				end
+			end
+		end
 	--]=]
+
+		-- mdb_t $07c98e - wrecked ship chozo & reserve - has 12 bytes here
+		-- mdb_t $07ca42 - hallway at top of wrecked ship - has 8 bytes here
+		-- mdb_t $07cc6f - hallway before phantoon - has 3 bytes here
+
+		-- see if the next mdb_t is immediately after
+		--[=[
+		if j+1 <= #self.mdbs then
+			local m2 = ffi.cast('uint8_t*', self.mdbs[j+1].ptr)
+			if d ~= m2 then
+				print('non-contiguous mdb_t before '..('$%06x'):format(m2-rom))	
+			end
+		end
+		--]=]
+	end
+
+
+	--]] --------------------------------------------------------------------------------
 end
 
-
---]] --------------------------------------------------------------------------------
 
 
 
@@ -1196,7 +1178,7 @@ end
 function SMMap:saveMapImage()
 	local mapimg = image(roomSizeInPixels*68, roomSizeInPixels*58, 3, 'unsigned char')
 
-	for _,room in ipairs(rooms) do
+	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
 			drawRoom(mapimg, m.ptr, room.solids, room.bts)
 		end
@@ -1206,7 +1188,7 @@ function SMMap:saveMapImage()
 end
 
 
-function SMMap:printRooms()
+function SMMap:mapPrintRooms()
 	-- print/draw rooms
 	print()
 	print'all rooms'
@@ -1235,12 +1217,125 @@ function SMMap:printRooms()
 	end
 end
 
-function SMMap:initMap()
-	self.plmsets = plmsets
-	self.bgs = bgs
-	self.fx1s = fx1s
-	self.mdbs = mdbs
-	self.rooms = rooms
+function SMMap:mapPrint()
+	print()
+	print("all plm_t's:")
+	for _,plmset in ipairs(sm.plmsets) do
+		print(' '..('$%06x'):format(plmset.addr)
+			..' mdbs: '..plmset.roomStates:map(function(rs)
+				local m = rs.m
+				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+			end):concat' '
+		)
+		for _,plm in ipairs(plmset.plms) do
+			print('  '..plm)
+		end
+	end
+
+	-- print bg info
+	print()
+	print("all bg_t's:")
+	sm.bgs:sort(function(a,b) return a.addr < b.addr end)
+	for _,bg in ipairs(sm.bgs) do
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
+			..' mdbs: '..bg.mdbs:map(function(m)
+				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+			end):concat' '
+		)
+	end
+
+	-- print fx1 info
+	print()
+	print("all fx1_t's:")
+	sm.fx1s:sort(function(a,b) return a.addr < b.addr end)
+	for _,fx1 in ipairs(sm.fx1s) do
+		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
+			..' mdbs: '..fx1.mdbs:map(function(m)
+				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+			end):concat' '
+		)
+	end
+
+	-- print mdb info
+	print()
+	print("all mdb_t's:")
+	for _,m in ipairs(sm.mdbs) do
+		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
+		for _,rs in ipairs(m.roomStates) do
+			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..rs.select[0]) 
+			-- [[
+			if rs.plmset then
+				for _,plm in ipairs(rs.plmset.plms) do
+					io.write('   plm_t: ')
+					local plmName = sm.plmCmdNameForValue[plm.cmd]
+					if plmName then io.write(plmName..': ') end
+					print(plm)
+				end
+				for _,scrollmod in ipairs(rs.plmset.scrollmods) do
+					print('   plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+				end
+			end
+			--]]
+			for _,enemyPop in ipairs(rs.enemyPops) do	
+				print('   enemyPop_t: '
+					..((sm.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
+					..': '..enemyPop)
+			end
+			for _,enemySet in ipairs(rs.enemySets) do
+				print('   enemySet_t: '
+					..((sm.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
+					..': '..enemySet)
+			end
+			for _,fx1 in ipairs(rs.fx1s) do
+				print('   fx1_t: '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
+			end
+			for _,bg in ipairs(rs.bgs) do
+				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
+			end
+		end
+		for _,door in ipairs(m.doors) do
+			print('  '..door.ctype..': '
+				..('$83:%04x'):format(door.addr)
+				..' '..door.ptr[0])
+		end
+	end
+	
+	self:mapPrintRooms()
+end
+
+function SMMap:mapBuildMemoryMap()
+	local rom = self.rom
+	for _,m in ipairs(self.mdbs) do
+		local addr = topc(0x8e, m.addr)	
+		insertUniqueMemoryRange(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
+		
+		for _,rs in ipairs(m.roomStates) do
+			if rs.select then
+				insertUniqueMemoryRange(ffi.cast('uint8_t*', rs.select) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
+			end
+		end
+	end
+	for _,plmset in ipairs(self.plmsets) do
+		--[[ entry-by-entry
+		local addr = plmset.addr
+		for _,plm in ipairs(plmset.plms) do
+			insertUniqueMemoryRange(addr, ffi.sizeof'plm_t', 
+				'plm_t',
+				--'plm '..ffi.cast('plm_t*',rom+addr)[0], 
+				m)
+			addr = addr + ffi.sizeof'plm_t'
+		end
+		insertUniqueMemoryRange(addr, 2, 
+			'plm_t term',
+			--'plm '..ffi.cast('uint16_t*',rom+addr)[0], 
+			m)
+		--]]
+		-- [[ all at once
+		local len = 2 + #plmset.plms * ffi.sizeof'plm_t'
+		insertUniqueMemoryRange(plmset.addr, len, 'plm_t', m)
+		--]]
+	end
 end
 
 return SMMap

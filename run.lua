@@ -182,6 +182,7 @@ end
 
 sm:print()
 sm:buildMemoryMap()
+sm:saveMapImage()
 
 
 -- write back out
