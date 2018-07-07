@@ -59,16 +59,6 @@ for _,m in ipairs(sm.mdbs) do
 				return plm.x == doorRegion.x and plm.y == doorRegion.y
 			end)
 		
-			--[=[ if there's no plm for this door then add one
-			if not plm then
-				local newplm = ffi.new'plm_t'
-				newplm.cmd = sm.plmCmdValueForName['door_'..color..'_'..dir]
-				newplm.x = doorRegion.x
-				newplm.y = doorRegion.y
-				rs.plmset.plms:insert(newplm)
-			end
-			--]=]
-	
 			-- if there already exists a plm...
 			local saveThisDoor
 			if plm then
@@ -88,7 +78,7 @@ for _,m in ipairs(sm.mdbs) do
 		
 			-- [[ now roll for this door
 			if not saveThisDoor then
-				local color = math.random(8)	-- red, green, orange, rest are blue options
+				local color = math.random(9)	-- red, green, orange, rest are blue options
 				if color <= 3 then	-- skip blue doors completely
 					color = ({'red', 'green', 'orange'})[color]
 					local dir = ({'right', 'left', 'down', 'up'})[doorRegion.dir+1]
@@ -119,24 +109,38 @@ certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x1
 print'all door plm ids:'
 -- re-id all door plms?
 local doorid = 0
-local allplms = table():append(sm.plmsets:map(function(plmset) return plmset.plms end):unpack())
---local maxnamelen = allplms:map(function(plm) return #(sm.plmCmdNameForValue[plm.cmd] or '') end):sup()
-for _,plm in ipairs(allplms) do
-	local name = sm.plmCmdNameForValue[plm.cmd]
-	if name 
-	and name:match'^door_' 
-	
-	-- for now I'm not reassigning eye doors, but TODO I should give all the ones associated with the same doorRegion the same ID
-	and not name:match'^door_eye_'
-	
-	then
-		assert(doorid <= 0xff, "got too many doors")
-		plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
-		doorid = doorid + 1
-		--print(name .. ' '..('.'):rep(maxnamelen - #name) .. ' '.. ('%04x'):format(tonumber(plm.args)))
+for _,plmset in ipairs(sm.plmsets) do
+	local eyeparts
+	local eyedoor
+	for _,plm in ipairs(plmset.plms) do
+		local name = sm.plmCmdNameForValue[plm.cmd]
+		if name 
+		and name:match'^door_' 
+		then
+			-- if it's an eye door part then
+			--  find the associated eye door, and make sure their ids match up
+			if name:match'^door_eye_.*_part' then
+				eyeparts = eyeparts or table()
+				eyeparts:insert(plm)
+			elseif name:match'^door_eye_' then
+				assert(not eyedoor, "one eye door per room, I guess")
+				eyedoor = plm
+			end
+			
+			plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
+			doorid = doorid + 1
+			--print(name .. ' '..('.'):rep(maxnamelen - #name) .. ' '.. ('%04x'):format(tonumber(plm.args)))
+		end
+	end
+	if eyedoor then 
+		assert(eyeparts and #eyeparts > 0)
+		for _,part in ipairs(eyeparts) do
+			part.args = eyedoor.args
+		end
 	end
 end
-
+-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
+if doorid >= 0xff then error("got too many doors: "..doorid) end
 
 
 -- [[ optimizing plms ... 
