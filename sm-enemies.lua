@@ -155,9 +155,6 @@ function EnemyAuxTable:init(sm)
 	self.addrs = sm.enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
-
-	print(self.name..' has '..#self.addrs..' unique addrs:')
-	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
 end
 
 function EnemyAuxTable:randomize()
@@ -192,6 +189,9 @@ end
 function EnemyAuxTable:print()
 	local sm = self.sm
 	local ptrtype = self.structName..'*'
+
+	print(self.name..' has '..#self.addrs..' unique addrs:')
+	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
 
 	local distr
 	if self.showDistribution then
@@ -248,6 +248,7 @@ function EnemyAuxTable:randomizeEnemy(enemy)
 	enemy.ptr[0][field] = pickRandom(self.addrs)
 end
 
+-- print information on an individual enemy
 function EnemyAuxTable:printEnemy(enemy)
 	local field = self.enemyField
 	
@@ -781,6 +782,12 @@ function SMEnemies:initEnemies()
 end
 
 
+function SMEnemies:printEnemies()
+	self.enemyItemDropTable:print()
+	self.enemyWeaknessTable:print()
+end
+
+
 function SMEnemies:buildMemoryMapEnemies()
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
@@ -790,12 +797,7 @@ function SMEnemies:buildMemoryMapEnemies()
 	for _,shot in ipairs(self.enemyShots) do
 		local addr = topc(enemyShotBank, shot.addr)
 		insertUniqueMemoryRange(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
-	end
-	
-	-- TODO separate :print() from :buildMemoryMap
-	-- but for now this inserts memory ranges
-	self.enemyItemDropTable:print()
-	self.enemyWeaknessTable:print()
+	end	
 end
 
 return SMEnemies

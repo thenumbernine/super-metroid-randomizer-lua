@@ -10,8 +10,8 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 
 local SM = class(
-	require 'sm_enemies',
-	require 'sm_items'
+	require 'sm-enemies',
+	require 'sm-items'
 )
 
 --[[
@@ -25,9 +25,16 @@ function SM:init(rom)
 
 	self:initEnemies()
 	self:initItems()
+end
 
+function SM:buildMemoryMap()
+	-- TODO make this return a 'memorymap' object that prints out
 	self:buildMemoryMapEnemies()
 	self:buildMemoryMapItems()
+end
+
+function SM:print()
+	self:printEnemies()
 end
 
 return SM

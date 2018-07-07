@@ -175,6 +175,11 @@ if config.randomizeItems then
 	require 'items'
 end
 
+
+sm:print()
+sm:buildMemoryMap()
+
+
 -- write back out
 file[outfilename] = header .. ffi.string(rom, #romstr)
 
