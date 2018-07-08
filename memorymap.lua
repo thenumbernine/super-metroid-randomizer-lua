@@ -54,7 +54,7 @@ function MemoryMap:print()
 			prevRange = ranges[i-1]
 			local padding = range.addr - (prevRange.addr + prevRange.len)
 			if padding ~= 0 then
-				fwrite('... '..padding..' bytes of padding ...')
+				fwrite(' ... '..padding..' bytes of padding ...')
 			end
 		end
 		fwrite'\n'
@@ -64,14 +64,12 @@ function MemoryMap:print()
 		
 		local m = range.m
 		if m then
-			fwrite( 
-				('%02x'):format(tonumber(m.ptr.region))..'/'..
-				('%02x'):format(tonumber(m.ptr.index)))
+			fwrite(('%02x/%02x'):format(m.ptr.region, m.ptr.index))
 		else
 			fwrite('     ')
 		end
 		fwrite(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
-		fwrite(' ('..range.name..') ')
+		fwrite(' ('..range.name..')')
 	end
 	fwrite(' ('..ranges:last().name..')\n')
 	f:close()

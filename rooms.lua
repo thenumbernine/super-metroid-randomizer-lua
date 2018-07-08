@@ -45,29 +45,32 @@ end
 
 -- [[
 --[=[
-so if I want to randomize all doors ...
+randomizing all doors ...
 1) enumerate all door regions
 2) find plms associated with each door region
 3) for doors that have no plm associated, make a new one
 4) last make sure to give doors unique ids 
 --]=]
+local newDoorCount = 0
 for _,m in ipairs(sm.mdbs) do
 	for _,rs in ipairs(m.roomStates) do
 		local room = rs.room
-		for _,doorRegion in ipairs(room.doorRegions) do
+		for _,door in ipairs(room.doors) do
+			-- TODO store this in room load
 			local plmindex, plm = rs.plmset.plms:find(nil, function(plm)
-				return plm.x == doorRegion.x and plm.y == doorRegion.y
+				return plm.x == door.x and plm.y == door.y
 			end)
 		
 			-- if there already exists a plm...
 			local saveThisDoor
 			if plm then
-				local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected doorRegion plm to have a valid name "..plm)
+				local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
 				assert(plmname:match'^door_')
 				-- don't touch special doors
 				if plmname:match'^door_grey_' 
 				or plmname:match'^door_eye_' 
 				then
+newDoorCount = newDoorCount + 1				
 					saveThisDoor = true
 				else 
 					-- then this plm is for this door ...	
@@ -76,36 +79,39 @@ for _,m in ipairs(sm.mdbs) do
 				end
 			end
 		
-			-- [[ now roll for this door
-			if not saveThisDoor then
+			-- [=[ now roll for this door
+			if not saveThisDoor 
+			and newDoorCount < 0xf5
+			then
 				local color = math.random(9)	-- red, green, orange, rest are blue options
 				if color <= 3 then	-- skip blue doors completely
 					color = ({'red', 'green', 'orange'})[color]
-					local dir = ({'right', 'left', 'down', 'up'})[doorRegion.dir+1]
+					local dir = ({'right', 'left', 'down', 'up'})[door.dir+1]
 					local plm = ffi.new'plm_t'
 					local plmname = 'door_'..color..'_'..dir
 					plm.cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname)
-					plm.x = doorRegion.x
-					plm.y = doorRegion.y
+					plm.x = door.x
+					plm.y = door.y
 					plm.args = 0
 					rs.plmset.plms:insert(plm)
-newDoorCount = (newDoorCount or 0) + 1				
+newDoorCount = newDoorCount + 1				
 				end	
 			end
-			--]]
+			--]=]
 		end
 	end
 end
 print('created '..newDoorCount..' new doors')
 --]]
 
---[[
+-- [[ re-indexing the doors
+--[=[
 notes on doors:
 plm_t of door_* has an x and y that matches up with the door region in the map
 the plm arg low byte of each (non-blue) door is a unique index, contiguous 0x00..0x60 and 0x80..0xac
 (probably used wrt savefiles, to know what doors have been opened)
 certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x18, 0x90, 0x94
---]]
+--]=]
 print'all door plm ids:'
 -- re-id all door plms?
 local doorid = 0
@@ -141,7 +147,7 @@ for _,plmset in ipairs(sm.plmsets) do
 end
 -- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
 if doorid >= 0xff then error("got too many doors: "..doorid) end
-
+--]]
 
 -- [[ optimizing plms ... 
 -- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
@@ -163,7 +169,6 @@ for i=#sm.plmsets,1,-1 do
 	end
 end
 --]=]
-
 -- get rid of any duplicate plmsets ... there are none by default
 for i=1,#sm.plmsets-1 do
 	local pi = sm.plmsets[i]
@@ -187,7 +192,6 @@ for i=1,#sm.plmsets-1 do
 	end
 end
 --]]
-
 
 -- [[ writing back plms...
 -- TODO this is causing a problem -- room 03/04, the main room of wrecked ship, isn't scrolling out of the room correctly
@@ -275,10 +279,10 @@ for _,room in ipairs(sm.rooms) do
 		for i=0,w-1 do
 			-- make sure we're not 1 block away from any door regions on any side
 			local neardoor
-			for _,doorRegion in ipairs(room.doorRegions) do
-				if i >= doorRegion.x - 1 and i <= doorRegion.x + doorRegion.w
+			for _,door in ipairs(room.doors) do
+				if i >= door.x - 1 and i <= door.x + door.w
 				-- technically you only need the +1 extra if it is a horizontal door, not a vertical
-				and j >= doorRegion.y - 2 and j <= doorRegion.y + doorRegion.h + 1
+				and j >= door.y - 2 and j <= door.y + door.h + 1
 				then
 					neardoor = true
 					break
@@ -362,8 +366,7 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 	end
 	-- update room addr
 	print('updating room address '
-		..('%02x'):format(room.mdbs[1].ptr.region)
-			..'/'..('%02x'):format(room.mdbs[1].ptr.index)
+		..('%02x/%02x'):format(room.mdbs[1].ptr.region, room.mdbs[1].ptr.index)
 		..' from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
 	room.addr = fromaddr
 	-- update any roomstate_t's that point to this data

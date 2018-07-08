@@ -132,7 +132,11 @@ local bg_t = struct'bg_t'{
 	{unknown7 = 'uint16_t'},
 }
 
--- section 12 of metroidconstruction.com/SMMM
+-- described in section 12 of metroidconstruction.com/SMMM
+-- This isn't the door so much as the information associated with its destination.
+-- This doesn't reference the in-room door object so much as vice-versa.
+-- The bts block data associated with a door has a # next to it, and that # points to the offset in this structure for more information: room target, etc.
+-- The x & y of that block is associated with a plm_t for even more information associated with the door: what color it is, what index in the 'open door' table it is.
 local door_t = struct'door_t'{
 	{dest_mdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
 	
@@ -398,14 +402,16 @@ function SMMap:mapAddRoom(addr, m)
 	local tail = data:sub(ofs+1)
 	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
 
-	-- keep track of door regions
-	local doorRegions = table()	-- x,y,w,h 
+	-- keep track of doors
+	local doors = table()	-- x,y,w,h 
 	for j=2,h-3 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
 		for i=1,w-2 do
 			local v = bts[1+ i + w * j]
+			-- doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
+			-- however exits with no doors (like those in the room to the right of the ship, 
 			if v >= 0x40 and v <= 0x43 then
 				-- here's the upper-left of a door.  now, which way is it facing
-				if i<w-3	-- TODO assert
+				if i<w-3
 				and (v == 0x42 or v == 0x43)
 				and bts[1+ (i+1) + w * j] == 0xff 
 				and bts[1+ (i+2) + w * j] == 0xfe 
@@ -415,7 +421,7 @@ function SMMap:mapAddRoom(addr, m)
 					local doorIndex = v == 0x42 
 						and bts[1 + i + w * (j+2)]
 						or bts[1 + i + w * (j-2)]
-					doorRegions:insert{
+					doors:insert{
 						x = i,
 						y = j,
 						w = 4,
@@ -433,7 +439,7 @@ function SMMap:mapAddRoom(addr, m)
 					local doorIndex = v == 0x40 
 						and bts[1 + (i+1) + w * j]
 						or bts[1 + (i-1) + w * j]
-					doorRegions:insert{
+					doors:insert{
 						x = i,
 						y = j,
 						w = 1,
@@ -452,7 +458,7 @@ function SMMap:mapAddRoom(addr, m)
 		addr = addr,
 		mdbs = table(),
 		roomStates = table(),
-		doorRegions = doorRegions,
+		doors = doors,
 		-- this is just 16*(w,h)
 		width = w,
 		height = h,
@@ -713,7 +719,9 @@ function SMMap:mapInit()
 	if done then break end
 						end
 					end
+				end
 				
+				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.bgdata > 0x8000 then
 						local addr = topc(0x8f, rs.ptr.bgdata)
 						while true do
@@ -750,7 +758,9 @@ function SMMap:mapInit()
 						end
 						--]]
 					end
+				end
 
+				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.layerHandling > 0x8000 then
 						local addr = topc(0x8f, rs.ptr.layerHandling)
 						rs.layerHandling = self:mapAddLayerHandling(addr)
@@ -795,6 +805,32 @@ function SMMap:mapInit()
 						door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
 					end
 				end
+			
+				-- ok now we've got all the roomstates, rooms, plms, and door_t's ...
+				-- now to link the doors in the rooms to their plm and door_t 
+				--[[ turns out it is very slow, esp when building the map from roomstate to exit
+				for _,rs in ipairs(m.roomStates) do
+					for _,door in ipairs(rs.room.doors) do
+						local exit = m.doors[door.index+1]
+						if not exit then
+							print("failed to find exit index "..door.index.." in "
+								..('%02x/%02x'):format(m.ptr.region, m.ptr.index))
+						else
+							door.exit = door.exit or {}
+							door.exit[rs] = exit 
+						end
+
+						local plmindex, plm = rs.plmset.plms:find(nil, function(plm)
+							return plm.x == door.x and plm.y == door.y
+						end)
+						-- may or may not be there
+						if plm then
+							door.plms = door.plms or {}
+							door.plms[rs] = plm
+						end
+					end
+				end
+				---]]
 			end
 		end
 	end
@@ -842,7 +878,7 @@ function SMMap:mapInit()
 		if #ms > 1 then
 			io.write('found overlapping doors at '..('$%06x'):format(addr)..', used by')
 			for _,m in ipairs(ms) do
-				io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
+				io.write(' '..('%02x/%02x'):format(m.ptr.region, m.ptr.index))
 			end
 			print()
 		end
@@ -1199,7 +1235,7 @@ local digits = {
 			end
 		end
 	end
-	drawstr(('%x'):format(m.region)..'-'..('%02x'):format(m.index))
+	drawstr(('%x-%02x'):format(m.region, m.index))
 end
 
 
@@ -1224,7 +1260,7 @@ function SMMap:mapPrintRooms()
 	for _,room in ipairs(self.rooms) do
 		local w,h = room.width, room.height
 		for _,m in ipairs(room.mdbs) do
-			io.write(' '..('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index))
+			io.write(' '..('%02x/%02x'):format(m.ptr.region, m.ptr.index))
 		end
 		print()
 
@@ -1239,8 +1275,8 @@ function SMMap:mapPrintRooms()
 		printblock(room.head, 2) 
 		printblock(room.solids, 2*w) 
 		printblock(room.bts, w)
-		print('found '..#room.doorRegions..' door bts')
-		for _,door in ipairs(room.doorRegions) do
+		print('found '..#room.doors..' door bts')
+		for _,door in ipairs(room.doors) do
 			print(' '..tolua(door))
 		end
 	end
@@ -1254,7 +1290,7 @@ function SMMap:mapPrint()
 		print(' '..('$%06x'):format(plmset.addr)
 			..' mdbs: '..plmset.roomStates:map(function(rs)
 				local m = rs.m
-				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 			end):concat' '
 		)
 		for _,plm in ipairs(plmset.plms) do
@@ -1269,7 +1305,7 @@ function SMMap:mapPrint()
 	for _,bg in ipairs(sm.bgs) do
 		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
 			..' mdbs: '..bg.mdbs:map(function(m)
-				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 			end):concat' '
 		)
 	end
@@ -1281,7 +1317,7 @@ function SMMap:mapPrint()
 	for _,fx1 in ipairs(sm.fx1s) do
 		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
 			..' mdbs: '..fx1.mdbs:map(function(m)
-				return ('%02x'):format(m.ptr.region)..'/'..('%02x'):format(m.ptr.index)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 			end):concat' '
 		)
 	end
