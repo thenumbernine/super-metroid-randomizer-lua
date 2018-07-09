@@ -132,7 +132,15 @@ function byteArrayToTable(src)
 	return dest
 end
 
-
+function byteArraySubset(src, ofs, len)
+	assert(ofs + len <= ffi.sizeof(src))
+	local dest = ffi.new('uint8_t[?]', len)
+	src = ffi.cast('uint8_t*', src)
+	for i=0,len-1 do
+		dest[i] = src[i+ofs]
+	end
+	return dest
+end
 
 -- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
 -- http://www.dkc-atlas.com/forum/viewtopic.php?t=1009

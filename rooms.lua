@@ -406,9 +406,6 @@ local totalRecompressedSize = 0
 print()
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
--- TODO REPLACEME
-data = tableToByteArray(data)
-	
 	local recompressed = lz.compress(data)
 --	print('recompressed size: '..ffi.sizeof(recompressed)..' vs original compressed size '..room.compressedSize)
 	assert(ffi.sizeof(recompressed) <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..ffi.sizeof(recompressed).." vs original "..room.compressedSize)

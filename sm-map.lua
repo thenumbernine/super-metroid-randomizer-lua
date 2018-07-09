@@ -373,12 +373,15 @@ function Room:getData()
 			k = k + 1
 		end
 	end
-	return table():append(
+	local dest = table():append(
 		self.head,
 		ch12,
 		ch3,
 		self.tail
 	)
+-- TODO REPLACEME
+dest = tableToByteArray(dest)
+	return dest
 end
 
 -- this is the block data of the rooms
@@ -401,30 +404,26 @@ function SMMap:mapAddRoom(addr, m)
 	-- then we decompress the next 0x10000 bytes ...
 --print('decompressing address '..('0x%06x'):format(addr))
 	local data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
--- TODO REPLACEME
-data = byteArrayToTable(data)
-
-
---print('decompressed from '..compressedSize..' to '..#data)
+--print('decompressed from '..compressedSize..' to '..ffi.sizeof(data))
 	
 	local ofs = 0
-	local head = data:sub(ofs+1,ofs + 2) ofs=ofs+2
+	local head = byteArraySubset(data, ofs, 2) ofs=ofs+2
 	local w = m.ptr.width * 16
 	local h = m.ptr.height * 16
-	local ch12 = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
-	local ch3 = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
+	local ch12 = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
+	local ch3 = byteArraySubset(data, ofs, w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
 	local blocks = table()
 	local k = 0
 	for j=0,h-1 do
 		for i=0,w-1 do
-			blocks:insert(ch12[1+ 0+ 2*k])
-			blocks:insert(ch12[1+ 1+ 2*k])
-			blocks:insert(ch3[1+ k])
+			blocks:insert(ch12[0 + 2 * k])
+			blocks:insert(ch12[1 + 2 * k])
+			blocks:insert(ch3[k])
 			k = k + 1
 		end
 	end
-	local tail = data:sub(ofs+1)
-	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
+	local tail = byteArraySubset(data, ofs, ffi.sizeof(data) - ofs)
+	assert(ofs <= ffi.sizeof(data), "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..ffi.sizeof(data))
 
 	-- keep track of doors
 	local doors = table()	-- x,y,w,h 
@@ -521,6 +520,10 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 			end
 		end
 	end
+
+-- TODO REPLACEME	
+head = byteArrayToTable(head)
+tail = byteArrayToTable(tail)
 
 	local room = Room{
 		addr = addr,
@@ -820,8 +823,6 @@ function SMMap:mapInit()
 						for _,bg in ipairs(rs.bgs) do
 							local addr = topc(bg.ptr.bank, bg.ptr.addr)
 							local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
--- TODO REPLACEME
-decompressed = byteArrayToTable(decompressed)
 							bg.data = decompressed
 							mem:add(addr, compressedSize, 'bg data', m)
 						end
