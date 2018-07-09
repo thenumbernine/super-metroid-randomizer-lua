@@ -314,7 +314,7 @@ function LZCompress:compress(offset, op)
 end
 
 local function compress(source)
-print('compress #source '..#source)	
+--print('compress #source '..#source)	
 	local result = table()	
 	local i = 0
 	local noCompressionLength = 0
@@ -372,7 +372,7 @@ print('compress #source '..#source)
 		end
 	end
 	result:insert(0xff)
-print('total result len '..#result)	
+--print('total result len '..#result)	
 	return result
 end
 

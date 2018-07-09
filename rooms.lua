@@ -312,18 +312,12 @@ for _,room in ipairs(sm.rooms) do
 
 	for j=0,h-1 do
 		for i=0,w-1 do
-			-- make sure we're not 1 block away from any door regions on any side
-			local neardoor
-			for _,door in ipairs(room.doors) do
-				if i >= door.x - 1 and i <= door.x + door.w
-				-- technically you only need the +1 extra if it is a horizontal door, not a vertical
-				and j >= door.y - 2 and j <= door.y + door.h + 1
-				then
-					neardoor = true
-					break
-				end
-			end
-			if not neardoor then
+			-- make sure we're not in any door regions, because those have to be shootable/whatever
+			local door = room.doors:find(nil, function(door)
+				return i >= door.x and i <= door.x + door.w
+				and j >= door.y and j <= door.y + door.h
+			end)
+			if not door then
 				local a = room.blocks[1+ 0+ 3*(i + w * j)]
 				local b = room.blocks[1+ 1+ 3*(i + w * j)]
 				local c = room.blocks[1+ 2+ 3*(i + w * j)]
@@ -333,17 +327,9 @@ for _,room in ipairs(sm.rooms) do
 				or (bit.band(b, 0xf0) == 0xb0)	-- crumble 
 				or (bit.band(b, 0xf0) == 0xc0)	-- shootable / powerbombable / super missile / speed booster?
 				
-				-- repeat tiles ...
-				or (
-					(
-						bit.band(b, 0xf0) == 0xf0 
-						or bit.band(b, 0xf0) == 0xd0
-						or bit.band(b, 0xf0) == 0x50
-					) 
-					and c == 0xff
-				)	-- repeat ... up, left, or up/left tile (based on b's bits?)
-				-- but only if the neighbor tiles are what we're looking for?
-
+				or (bit.band(b, 0xf0) == 0x50)	-- repeat? 
+				or (bit.band(b, 0xf0) == 0xd0)	-- repeat? 
+				
 				--or (bit.band(b, 0x50) == 0x50 and c == 5)	-- fall through
 				--or (c >= 4 and c <= 7) 
 				--or c == 8 -- super missile
@@ -421,7 +407,7 @@ print()
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
 	local recompressed = lz.compress(data)
-	print('recompressed size: '..#recompressed..' vs original compressed size '..room.compressedSize)
+--	print('recompressed size: '..#recompressed..' vs original compressed size '..room.compressedSize)
 	assert(#recompressed <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.compressedSize)
 totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
 totalRecompressedSize = totalRecompressedSize + #recompressed
@@ -442,9 +428,9 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 		rom[fromaddr+i-1] = v
 	end
 	-- update room addr
-	print('updating room address '
-		..('%02x/%02x'):format(room.mdbs[1].ptr.region, room.mdbs[1].ptr.index)
-		..' from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
+--	print('updating room address '
+--		..('%02x/%02x'):format(room.mdbs[1].ptr.region, room.mdbs[1].ptr.index)
+--		..' from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
 	room.addr = fromaddr
 	-- update any roomstate_t's that point to this data
 	for _,rs in ipairs(room.roomStates) do
@@ -463,7 +449,7 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 --]=]
 end
 print()
-print('overall recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+print('rooms recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
 	', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
 	..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
