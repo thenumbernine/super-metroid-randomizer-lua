@@ -318,9 +318,9 @@ for _,room in ipairs(sm.rooms) do
 				and j >= door.y and j <= door.y + door.h
 			end)
 			if not door then
-				local a = room.blocks[1+ 0+ 3*(i + w * j)]
-				local b = room.blocks[1+ 1+ 3*(i + w * j)]
-				local c = room.blocks[1+ 2+ 3*(i + w * j)]
+				local a = room.blocks[0 + 3 * (i + w * j)]
+				local b = room.blocks[1 + 3 * (i + w * j)]
+				local c = room.blocks[2 + 3 * (i + w * j)]
 				-- notice that doors and platforms and IDs for doors and platforms can be just about anything
 				if false
 				or (bit.band(b, 0xf0) == 0xf0)	-- bombable
@@ -336,19 +336,19 @@ for _,room in ipairs(sm.rooms) do
 				--or c == 9 -- power bomb .. if high byte high nibble is c
 				--or c == 0xf	-- speed block
 				then
-					room.blocks[1+ 0+ 3*(i + w * j)] = 0xff
-					room.blocks[1+ 1+ 3*(i + w * j)] = 0
-					room.blocks[1+ 2+ 3*(i + w * j)] = 0
+					room.blocks[0 + 3 * (i + w * j)] = 0xff
+					room.blocks[1 + 3 * (i + w * j)] = 0
+					room.blocks[2 + 3 * (i + w * j)] = 0
 					
 					--c = 0 -- means bombable/shootable, respawning
 					--c = 4	-- means bombable/shootable, no respawning, or it means fallthrough block
 					--c = 0xc
 					
 					-- btw, how come there are ch3==0 bombable blocks? (escaping alcatraz)
-					--room.blocks[1+ 2+ 3*(i + w * j)] = c
+					--room.blocks[2 + 3 * (i + w * j)] = c
 					
 --					b = bit.bor(bit.band(b, 0x0f), 0xc0)
---					room.blocks[1+ 1+ 3*(i + w * j)] = b
+--					room.blocks[1 + 3 * (i + w * j)] = b
 				end
 			end
 		end
@@ -373,9 +373,9 @@ for _,room in ipairs(sm.rooms) do
 		local i,j = door.x, door.y
 		for k=0,3 do
 			if door.dir == 0 or door.dir == 1 then	-- left/right
-				room.blocks[1+ 2+ 3*((i+k) + w * j)] = 0
+				room.blocks[2 + 3 * ((i+k) + w * j)] = 0
 			elseif door.dir == 2 or door.dir == 3 then	-- up/down
-				room.blocks[1+ 2+ 3*(i + w * (j+k))] = 0
+				room.blocks[2 + 3 * (i + w * (j+k))] = 0
 			else
 				error'here'
 			end

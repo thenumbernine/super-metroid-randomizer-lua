@@ -367,17 +367,23 @@ function Room:getData()
 	local k = 0
 	for j=0,self.height-1 do
 		for i=0,self.width-1 do
-			ch12:insert(self.blocks[1+ 0+ 3*k])
-			ch12:insert(self.blocks[1+ 1+ 3*k])
-			ch3:insert(self.blocks[1+ 2+ 3*k])
+			ch12:insert(self.blocks[0 + 3 * k])
+			ch12:insert(self.blocks[1 + 3 * k])
+			ch3:insert(self.blocks[2 + 3 * k])
 			k = k + 1
 		end
 	end
+
+	local head = self.head
+	local tail = self.tail
+-- TODO REPLACEME
+head = byteArrayToTable(head)
+tail = byteArrayToTable(tail)
 	local dest = table():append(
-		self.head,
+		head,
 		ch12,
 		ch3,
-		self.tail
+		tail
 	)
 -- TODO REPLACEME
 dest = tableToByteArray(dest)
@@ -412,13 +418,13 @@ function SMMap:mapAddRoom(addr, m)
 	local h = m.ptr.height * 16
 	local ch12 = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
 	local ch3 = byteArraySubset(data, ofs, w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
-	local blocks = table()
+	local blocks = ffi.new('uint8_t[?]', 3 * w * h)
 	local k = 0
 	for j=0,h-1 do
 		for i=0,w-1 do
-			blocks:insert(ch12[0 + 2 * k])
-			blocks:insert(ch12[1 + 2 * k])
-			blocks:insert(ch3[k])
+			blocks[0 + 3 * k] = ch12[0 + 2 * k]
+			blocks[1 + 3 * k] = ch12[1 + 2 * k]
+			blocks[2 + 3 * k] = ch3[k]
 			k = k + 1
 		end
 	end
@@ -429,9 +435,9 @@ function SMMap:mapAddRoom(addr, m)
 	local doors = table()	-- x,y,w,h 
 	for j=2,h-3 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
 		for i=1,w-2 do
-			local a = blocks[1+ 0+ 3*(i + w * j)]
-			local b = blocks[1+ 1+ 3*(i + w * j)]
-			local c = blocks[1+ 2+ 3*(i + w * j)]
+			local a = blocks[0 + 3 * (i + w * j)]
+			local b = blocks[1 + 3 * (i + w * j)]
+			local c = blocks[2 + 3 * (i + w * j)]
 
 --[[
 -- look for 0x9x in ch2 of of room.blocks
@@ -480,14 +486,14 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 				-- here's the upper-left of a door.  now, which way is it facing
 				if i<w-3
 				and (c == 0x42 or c == 0x43)
-				and blocks[1+ 2+ 3*( (i+1) + w * j)] == 0xff 
-				and blocks[1+ 2+ 3*( (i+2) + w * j)] == 0xfe 
-				and blocks[1+ 2+ 3*( (i+3) + w * j)] == 0xfd 
+				and blocks[2 + 3 * ((i+1) + w * j)] == 0xff 
+				and blocks[2 + 3 * ((i+2) + w * j)] == 0xfe 
+				and blocks[2 + 3 * ((i+3) + w * j)] == 0xfd 
 				then
 					-- if c == 0x42 then it's down, if c == 0x43 then it's up 
 					local doorIndex = c == 0x42 
-						and blocks[1+ 2+ 3*( i + w * (j+2))]
-						or blocks[1+ 2+ 3*( i + w * (j-2))]
+						and blocks[2 + 3 * ( i + w * (j+2))]
+						or blocks[2 + 3 * ( i + w * (j-2))]
 					doors:insert{
 						x = i,
 						y = j,
@@ -498,14 +504,14 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 					}
 				elseif j<h-3	-- TODO assert this
 				and (c == 0x40 or c == 0x41)
-				and blocks[1+ 2+ 3*( i + w * (j+1))] == 0xff 
-				and blocks[1+ 2+ 3*( i + w * (j+2))] == 0xfe 
-				and blocks[1+ 2+ 3*( i + w * (j+3))] == 0xfd 
+				and blocks[2 + 3 * (i + w * (j+1))] == 0xff 
+				and blocks[2 + 3 * (i + w * (j+2))] == 0xfe 
+				and blocks[2 + 3 * (i + w * (j+3))] == 0xfd 
 				then
 					-- if c == 0x41 then it's left, if c == 0x40 then it's right
 					local doorIndex = c == 0x40 
-						and blocks[1+ 2+ 3*( (i+1) + w * j)]
-						or blocks[1+ 2+ 3*( (i-1) + w * j)]
+						and blocks[2 + 3 * ((i+1) + w * j)]
+						or blocks[2 + 3 * ((i-1) + w * j)]
 					doors:insert{
 						x = i,
 						y = j,
@@ -520,10 +526,6 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 			end
 		end
 	end
-
--- TODO REPLACEME	
-head = byteArrayToTable(head)
-tail = byteArrayToTable(tail)
 
 	local room = Room{
 		addr = addr,
@@ -1124,9 +1126,9 @@ local function drawRoom(mapimg, m, blocks)
 					local dy = tj + blocksPerRoom * j
 					local di = dx + blocksPerRoom * m.width * dy
 					-- blocks is 1-based
-					local d1 = blocks[1 + 0 + 3 * di] or 0
-					local d2 = blocks[1 + 1 + 3 * di] or 0
-					local d3 = blocks[1 + 2 + 3 * di] or 0
+					local d1 = blocks[0 + 3 * di] or 0
+					local d2 = blocks[1 + 3 * di] or 0
+					local d3 = blocks[2 + 3 * di] or 0
 				
 					if d1 == 0xff 
 					--and (d2 == 0x00 or d2 == 0x83)
@@ -1335,8 +1337,8 @@ function SMMap:mapPrintRooms()
 		print()
 
 		local function printblock(data, width)
-			for i=1,#data do
-				io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+			for i=1,ffi.sizeof(data) do
+				io.write((('%02x'):format(tonumber(data[i-1])):gsub('0','.')))
 				if i % width == 0 then print() end 
 			end
 			print()
