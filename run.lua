@@ -136,9 +136,7 @@ function byteArraySubset(src, ofs, len)
 	assert(ofs + len <= ffi.sizeof(src))
 	local dest = ffi.new('uint8_t[?]', len)
 	src = ffi.cast('uint8_t*', src)
-	for i=0,len-1 do
-		dest[i] = src[i+ofs]
-	end
+	ffi.copy(dest, src + ofs, len)
 	return dest
 end
 
@@ -151,10 +149,8 @@ function mergeByteArrays(...)
 	local dest = ffi.new('uint8_t[?]', totalSize)
 	local k = 0
 	for _,src in ipairs(srcs) do
-		for i=0,ffi.sizeof(src)-1 do
-			dest[k] = src[i]
-			k = k + 1
-		end
+		ffi.copy(dest + k, src, ffi.sizeof(src))
+		k = k + ffi.sizeof(src)
 	end
 	assert(k == totalSize)
 	return dest

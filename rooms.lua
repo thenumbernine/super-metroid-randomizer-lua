@@ -415,9 +415,7 @@ totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 	data = recompressed
 	room.compressedSize = ffi.sizeof(recompressed)
 	--[=[ now write back to the original location at addr
-	for i=0,ffi.sizeof(data)-1 do
-		rom[room.addr+i] = data[i]
-	end
+	ffi.copy(rom + room.addr, data, ffi.sizeof(data))
 	--]=]
 	-- [=[ write back at a contiguous location
 	-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
@@ -425,9 +423,7 @@ totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 	local fromaddr, toaddr = roomWriteRanges:get(ffi.sizeof(data))
 
 	-- do the write
-	for i=0,ffi.sizeof(data)-1 do
-		rom[fromaddr+i] = data[i]
-	end
+	ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
 	-- update room addr
 --	print('updating room address '
 --		..('%02x/%02x'):format(room.mdbs[1].ptr.region, room.mdbs[1].ptr.index)
