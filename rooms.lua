@@ -406,27 +406,30 @@ local totalRecompressedSize = 0
 print()
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
-	local recompressed = lz.compress(tableToByteArray(data))
-recompressed = byteArrayToTable(recompressed)
---	print('recompressed size: '..#recompressed..' vs original compressed size '..room.compressedSize)
-	assert(#recompressed <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.compressedSize)
+-- TODO REPLACEME
+data = tableToByteArray(data)
+	
+	local recompressed = lz.compress(data)
+--	print('recompressed size: '..ffi.sizeof(recompressed)..' vs original compressed size '..room.compressedSize)
+	assert(ffi.sizeof(recompressed) <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..ffi.sizeof(recompressed).." vs original "..room.compressedSize)
 totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
-totalRecompressedSize = totalRecompressedSize + #recompressed
+totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+	
 	data = recompressed
-	room.compressedSize = #recompressed
+	room.compressedSize = ffi.sizeof(recompressed)
 	--[=[ now write back to the original location at addr
-	for i,v in ipairs(data) do
-		rom[room.addr+i-1] = v
+	for i=0,ffi.sizeof(data)-1 do
+		rom[room.addr+i] = data[i]
 	end
 	--]=]
 	-- [=[ write back at a contiguous location
 	-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
 	-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
-	local fromaddr, toaddr = roomWriteRanges:get(#data)
+	local fromaddr, toaddr = roomWriteRanges:get(ffi.sizeof(data))
 
 	-- do the write
-	for i,v in ipairs(data) do
-		rom[fromaddr+i-1] = v
+	for i=0,ffi.sizeof(data)-1 do
+		rom[fromaddr+i] = data[i]
 	end
 	-- update room addr
 --	print('updating room address '
@@ -442,10 +445,9 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 
 --[=[ verify that compression works by decompressing and re-compressing
 	local data2, compressedSize2 = lz.decompress(rom, room.addr, 0x10000)
-data2 = byteArrayToTable(data2)
 	assert(compressedSize == compressedSize2)
-	assert(#data == #data2)
-	for i=1,#data do
+	assert(ffi.sizeof(data) == ffi.sizeof(data2))
+	for i=0,ffi.sizeof(data)-1 do
 		assert(data[i] == data2[i])
 	end
 --]=]

@@ -401,6 +401,7 @@ function SMMap:mapAddRoom(addr, m)
 	-- then we decompress the next 0x10000 bytes ...
 --print('decompressing address '..('0x%06x'):format(addr))
 	local data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
+-- TODO REPLACEME
 data = byteArrayToTable(data)
 
 
@@ -819,6 +820,7 @@ function SMMap:mapInit()
 						for _,bg in ipairs(rs.bgs) do
 							local addr = topc(bg.ptr.bank, bg.ptr.addr)
 							local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
+-- TODO REPLACEME
 decompressed = byteArrayToTable(decompressed)
 							bg.data = decompressed
 							mem:add(addr, compressedSize, 'bg data', m)
