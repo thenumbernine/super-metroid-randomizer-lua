@@ -362,32 +362,25 @@ function Room:init(args)
 	self.mdbs = table()
 end
 function Room:getData()
-	local ch12 = table()
-	local ch3 = table()
+	local w, h = self.width, self.height
+	local ch12 = ffi.new('uint8_t[?]', 2 * w * h)
+	local ch3 = ffi.new('uint8_t[?]', w * h)
 	local k = 0
 	for j=0,self.height-1 do
 		for i=0,self.width-1 do
-			ch12:insert(self.blocks[0 + 3 * k])
-			ch12:insert(self.blocks[1 + 3 * k])
-			ch3:insert(self.blocks[2 + 3 * k])
+			ch12[0 + 2 * k] = self.blocks[0 + 3 * k]
+			ch12[1 + 2 * k] = self.blocks[1 + 3 * k]
+			ch3[k] = self.blocks[2 + 3 * k]
 			k = k + 1
 		end
 	end
 
-	local head = self.head
-	local tail = self.tail
--- TODO REPLACEME
-head = byteArrayToTable(head)
-tail = byteArrayToTable(tail)
-	local dest = table():append(
-		head,
+	return mergeByteArrays(
+		self.head,
 		ch12,
 		ch3,
-		tail
+		self.tail
 	)
--- TODO REPLACEME
-dest = tableToByteArray(dest)
-	return dest
 end
 
 -- this is the block data of the rooms

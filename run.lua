@@ -142,6 +142,24 @@ function byteArraySubset(src, ofs, len)
 	return dest
 end
 
+function mergeByteArrays(...)
+	local srcs = {...}
+	local totalSize = 0
+	for _,src in ipairs(srcs) do
+		totalSize = totalSize + ffi.sizeof(src)
+	end
+	local dest = ffi.new('uint8_t[?]', totalSize)
+	local k = 0
+	for _,src in ipairs(srcs) do
+		for i=0,ffi.sizeof(src)-1 do
+			dest[k] = src[i]
+			k = k + 1
+		end
+	end
+	assert(k == totalSize)
+	return dest
+end
+
 -- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
 -- http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
 -- why is it that some banks need a subtract of 0x8000?
