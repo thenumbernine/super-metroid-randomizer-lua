@@ -165,6 +165,7 @@ local door_t = struct'door_t'{
 
 -- this is what the metroid ROM map says ... "Elevator thing"
 -- two dooraddrs point to a uint16_t of zero, at $0188fc and $01a18a, and they point to structs that only take up 2 bytes
+-- you find it trailing the door_t corresponding with the lift
 local lift_t = struct'lift_t'{
 	{zero = 'uint16_t'},
 }
@@ -361,10 +362,21 @@ function Room:init(args)
 	self.mdbs = table()
 end
 function Room:getData()
+	local ch12 = table()
+	local ch3 = table()
+	local k = 0
+	for j=0,self.height-1 do
+		for i=0,self.width-1 do
+			ch12:insert(self.blocks[1+ 0+ 3*k])
+			ch12:insert(self.blocks[1+ 1+ 3*k])
+			ch3:insert(self.blocks[1+ 2+ 3*k])
+			k = k + 1
+		end
+	end
 	return table():append(
 		self.head,
-		self.solids,
-		self.bts,
+		ch12,
+		ch3,
 		self.tail
 	)
 end
@@ -396,9 +408,18 @@ function SMMap:mapAddRoom(addr, m)
 	local head = data:sub(ofs+1,ofs + 2) ofs=ofs+2
 	local w = m.ptr.width * 16
 	local h = m.ptr.height * 16
-	local solids = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
-	-- bts = 'behind the scenes'
-	local bts = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h
+	local ch12 = data:sub(ofs+1, ofs + 2*w*h) ofs=ofs+2*w*h
+	local ch3 = data:sub(ofs+1, ofs + w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
+	local blocks = table()
+	local k = 0
+	for j=0,h-1 do
+		for i=0,w-1 do
+			blocks:insert(ch12[1+ 0+ 2*k])
+			blocks:insert(ch12[1+ 1+ 2*k])
+			blocks:insert(ch3[1+ k])
+			k = k + 1
+		end
+	end
 	local tail = data:sub(ofs+1)
 	assert(ofs <= #data, "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..#data)
 
@@ -406,45 +427,89 @@ function SMMap:mapAddRoom(addr, m)
 	local doors = table()	-- x,y,w,h 
 	for j=2,h-3 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
 		for i=1,w-2 do
-			local v = bts[1+ i + w * j]
-			-- doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
-			-- however exits with no doors (like those in the room to the right of the ship, 
-			if v >= 0x40 and v <= 0x43 then
+			local a = blocks[1+ 0+ 3*(i + w * j)]
+			local b = blocks[1+ 1+ 3*(i + w * j)]
+			local c = blocks[1+ 2+ 3*(i + w * j)]
+
+--[[
+-- look for 0x9x in ch2 of of room.blocks
+			if bit.band(b, 0xf0) == 0x90 then
+				-- only now, look for a c==0x4x to either side of the 0x9x
+				-- notice that the 0x4x will be where the plm points to
+				-- that means we can have exits that use 0x9x that don't have doors associated with them ...
+			end
+--]]
+
+--[[
+doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
+ and then next to the 4 numbers, offset based on the door dir 40-43 <-> x+1,x-1,y+2,y-2, 
+ will be the door_t index, repeated 4 times.
+ for non-blue doors, this will match up with a plm in the roomstate that has x,y matching the door's location
+ for blue doors, no plm is needed
+however exits with no doors: 
+ 	* 00/0d the room to the right of the ship, exits 0 & 1 
+ 	* 01/09 the tall pink brinstar room, exit 5
+ 	* 04/01 maridia tube room, exits 1 & 2
+ 	* 04/0e maridia broken tube crab room, exits 0 & 1
+ 	* between maridia tall room 04/04 (exit 4) and maridia balloon room 04/08 (exit 4)
+		-- this one is really unique, since the rest of them would always be 4 indexes in a row, and always at the same offsets %16 depending on their direction, (not always on the map edge)
+			but 04/04 is only a single 04 on the edge of the map surrounded by 0's
+			and 04/08 is two 0404's in a row, in the middle of the map, surrounded by 0's
+	* 04/19 maridia upper right sandpit start
+	* 04/1a maridia where sand pit #1 falls into. there's a third door_t for the sand entrance, 
+			but no 02's in ch3 
+	* 04/1d maridia sand pit #1.  has two door_t's.  only one is seen in the ch3's: exit 1 in the floor
+	* 04/1e maridia sand pit #2.  same as #1 
+	* 04/1f maridia sandfall room #1 ... has no up exit, but the bottom is all 01 tiles for exit #1
+	* 04/20 maridia sandfall room #2 same.  interesting that there is no exit #0 used, only exit #1.
+		the roomstate says there are two doors though, but no door for index 0 can be seen.
+	* 04/21 maridia big pink room with two sand exits to 04/1f (exit 1) and 04/20 (exit 2)
+		-- these are a row of 80 tiles over a row of exit # tiles 
+	* 04/22 maridia upper right sandpit end
+ 	* 04/27 where sand pit 04/2b ends up
+ 	* 04/2b maridia room after botwoon, has 4 doors, two are doors, two are sandpit exits (#1 & #2)
+	* 04/2e maridia upper right sandpit middle
+	* 04/2f sandpit down from room after botwoon 
+ will only have their dest door_t number and a door_t entry ... no plm even
+so how does the map know when to distinguish those tiles from ordinary 00,01,etc shot tiles, especially with no plm there?
+ and esp when the destination door_t structure doesn't say anything about the location from where the door is?
+--]]			
+			if c >= 0x40 and c <= 0x43 then
 				-- here's the upper-left of a door.  now, which way is it facing
 				if i<w-3
-				and (v == 0x42 or v == 0x43)
-				and bts[1+ (i+1) + w * j] == 0xff 
-				and bts[1+ (i+2) + w * j] == 0xfe 
-				and bts[1+ (i+3) + w * j] == 0xfd 
+				and (c == 0x42 or c == 0x43)
+				and blocks[1+ 2+ 3*( (i+1) + w * j)] == 0xff 
+				and blocks[1+ 2+ 3*( (i+2) + w * j)] == 0xfe 
+				and blocks[1+ 2+ 3*( (i+3) + w * j)] == 0xfd 
 				then
-					-- if v == 0x42 then it's down, if v == 0x43 then it's up 
-					local doorIndex = v == 0x42 
-						and bts[1 + i + w * (j+2)]
-						or bts[1 + i + w * (j-2)]
+					-- if c == 0x42 then it's down, if c == 0x43 then it's up 
+					local doorIndex = c == 0x42 
+						and blocks[1+ 2+ 3*( i + w * (j+2))]
+						or blocks[1+ 2+ 3*( i + w * (j-2))]
 					doors:insert{
 						x = i,
 						y = j,
 						w = 4,
 						h = 1,
-						dir = bit.band(3, v),
+						dir = bit.band(3, c),
 						index = doorIndex,
 					}
 				elseif j<h-3	-- TODO assert this
-				and (v == 0x40 or v == 0x41)
-				and bts[1+ i + w * (j+1)] == 0xff 
-				and bts[1+ i + w * (j+2)] == 0xfe 
-				and bts[1+ i + w * (j+3)] == 0xfd 
+				and (c == 0x40 or c == 0x41)
+				and blocks[1+ 2+ 3*( i + w * (j+1))] == 0xff 
+				and blocks[1+ 2+ 3*( i + w * (j+2))] == 0xfe 
+				and blocks[1+ 2+ 3*( i + w * (j+3))] == 0xfd 
 				then
-					-- if v == 0x41 then it's left, if v == 0x40 then it's right
-					local doorIndex = v == 0x40 
-						and bts[1 + (i+1) + w * j]
-						or bts[1 + (i-1) + w * j]
+					-- if c == 0x41 then it's left, if c == 0x40 then it's right
+					local doorIndex = c == 0x40 
+						and blocks[1+ 2+ 3*( (i+1) + w * j)]
+						or blocks[1+ 2+ 3*( (i-1) + w * j)]
 					doors:insert{
 						x = i,
 						y = j,
 						w = 1,
 						h = 4, 
-						dir = bit.band(3, v),
+						dir = bit.band(3, c),
 						index = doorIndex,
 					}
 				else
@@ -466,9 +531,8 @@ function SMMap:mapAddRoom(addr, m)
 		compressedSize = compressedSize,
 		-- decompressed data (in order):
 		head = head,	-- first 2 bytes of data
-		solids = solids,
-		bts = bts,
-		tail = tail,	-- last bytes after bts
+		blocks = blocks,	-- interleaved 2-byte and 1-byte bts into 3-byte room block data
+		tail = tail,	-- last bytes after blocks 
 	}
 	room.mdbs:insert(m)
 	self.rooms:insert(room)
@@ -1041,7 +1105,7 @@ local ofsPerRegion = {
 	function(m) return 7,47 end,	-- testing
 }
 
-local function drawRoom(mapimg, m, solids, bts)
+local function drawRoom(mapimg, m, blocks)
 	local ofsx, ofsy = ofsPerRegion[m.region+1](m)
 	local xofs = roomSizeInPixels * (ofsx - 4)
 	local yofs = roomSizeInPixels * (ofsy + 1)
@@ -1053,10 +1117,10 @@ local function drawRoom(mapimg, m, solids, bts)
 					local dx = ti + blocksPerRoom * i
 					local dy = tj + blocksPerRoom * j
 					local di = dx + blocksPerRoom * m.width * dy
-					-- solids is 1-based
-					local d1 = solids[1 + 0 + 2 * di] or 0
-					local d2 = solids[1 + 1 + 2 * di] or 0
-					local d3 = bts[1 + di] or 0
+					-- blocks is 1-based
+					local d1 = blocks[1 + 0 + 3 * di] or 0
+					local d2 = blocks[1 + 1 + 3 * di] or 0
+					local d3 = blocks[1 + 2 + 3 * di] or 0
 				
 					if d1 == 0xff 
 					--and (d2 == 0x00 or d2 == 0x83)
@@ -1245,7 +1309,7 @@ function SMMap:saveMapImage()
 
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
-			drawRoom(mapimg, m.ptr, room.solids, room.bts)
+			drawRoom(mapimg, m.ptr, room.blocks)
 		end
 	end
 
@@ -1273,9 +1337,8 @@ function SMMap:mapPrintRooms()
 		end
 
 		printblock(room.head, 2) 
-		printblock(room.solids, 2*w) 
-		printblock(room.bts, w)
-		print('found '..#room.doors..' door bts')
+		printblock(room.blocks, 3*w) 
+		print('found '..#room.doors..' door references in the blocks')
 		for _,door in ipairs(room.doors) do
 			print(' '..tolua(door))
 		end
