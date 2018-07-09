@@ -115,6 +115,23 @@ function shuffle(x)
 end
 
 
+function tableToByteArray(src)
+	local dest = ffi.new('uint8_t[?]', #src)
+	for i,v in ipairs(src) do
+		assert(type(v) == 'number' and v >= 0 and v <= 255)
+		dest[i-1] = v 
+	end
+	return dest
+end
+
+function byteArrayToTable(src)
+	local dest = table()
+	for i=1,ffi.sizeof(src) do
+		dest[i] = src[i-1]
+	end
+	return dest
+end
+
 
 
 -- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor

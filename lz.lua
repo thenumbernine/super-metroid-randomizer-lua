@@ -23,6 +23,7 @@ assert(ffi.sizeof'lzcmd_t' == 1)
 assert(ffi.new('lzcmd_t', 31).len == 31)
 assert(ffi.new('lzcmd_t', 32+64+128).cmd == 7)
 
+
 -- decompresses from 'rom' to a lua table of numbers
 local function decompress(rom, addr, maxlen)
 	local startaddr = addr
@@ -114,7 +115,7 @@ for _,v in ipairs(result) do
 	assert(type(v) == 'number')
 end
 
-	return result, addr - startaddr
+	return tableToByteArray(result), addr - startaddr
 end
 
 -- compresses from a lua table of numbers to another lua table of numbers
@@ -149,7 +150,7 @@ end
 local function noCompress(source, offset, length, result)
 	putBlockHeader(result, 0, length)
 	for i=0,length-1 do
-		result:insert(source[1+ offset-length+i])
+		result:insert(source[offset-length+i])
 	end
 end
 
@@ -166,8 +167,8 @@ local function rleCompress(source, offset, op)
 	end
 	local length = 1
 	local i = 1
-	while offset + i < #source and length < maxBlockLen(op) do
-		if source[1+ offset+i] == (source[1+ offset + i % bytes] + gradient * i) % 0x100 then 
+	while offset + i < ffi.sizeof(source) and length < maxBlockLen(op) do
+		if source[offset+i] == (source[offset + i % bytes] + gradient * i) % 0x100 then 
 			length = length + 1 
 		else 
 			break
@@ -176,9 +177,9 @@ local function rleCompress(source, offset, op)
 	end
 	local result = table()
 	putBlockHeader(result, op, length)
-	result:insert(source[1+ offset])
+	result:insert(source[offset])
 	if bytes == 2 then
-		result:insert(source[1+ offset+1])
+		result:insert(source[offset+1])
 	end
 	return {
 		op = op,
@@ -193,9 +194,10 @@ function LZCompress:init(source)
 	self.offsets = range(0,255):map(function(i) 
 		return table(), i
 	end)
-	for i,v in ipairs(source) do
+	for i=0,ffi.sizeof(source)-1 do
+		local v = source[i]
 		assert(type(v) == 'number')
-		self.offsets[v]:insert(i-1)
+		self.offsets[v]:insert(i)
 	end
 end
 
@@ -235,13 +237,13 @@ function LZCompress:compress(offset, op)
 	end
 	--build Knuth–Morris–Pratt table
 	local tabl = {}
-	local wordLength = math.min(maxBlockLen(op), #source - offset)
+	local wordLength = math.min(maxBlockLen(op), ffi.sizeof(source) - offset)
 	tabl[1] = -1
 	tabl[2] = 0
 	local i = 2
 	local j = 0
 	while i < wordLength do
-		if source[1+ offset+i-1] == source[1+ offset+j] then
+		if source[offset+i-1] == source[offset+j] then
 			j=j+1
 			tabl[1+ i] = j
 			i=i+1
@@ -256,18 +258,18 @@ function LZCompress:compress(offset, op)
 	local bestStart = 0
 	local bestLength = 0
 	local nextOffsetToTry = 0
-	while nextOffsetToTry < #offsets[bit.bxor(source[1+ offset],mask)] do
-		i = offsets[bit.bxor(source[1+ offset],mask)][1+ nextOffsetToTry]
+	while nextOffsetToTry < #offsets[bit.bxor(source[offset],mask)] do
+		i = offsets[bit.bxor(source[offset],mask)][1+ nextOffsetToTry]
 		if i >= lowest then break end
 		nextOffsetToTry = nextOffsetToTry + 1
 	end
-	if nextOffsetToTry >= #offsets[bit.bxor(source[1+ offset],mask)] then
+	if nextOffsetToTry >= #offsets[bit.bxor(source[offset],mask)] then
 		length = 0
 		return {op=op, result=table(), srclen=0}
 	end
 	j = 0 --offset into string being searched for
-	while i + j < highest or (j ~=0 and i < offset and i + j < highest + maxBlockLen(op) and i + j < #source) do
-		if source[1+ offset+j] == bit.bxor(source[1+ i+j],mask) then
+	while i + j < highest or (j ~=0 and i < offset and i + j < highest + maxBlockLen(op) and i + j < ffi.sizeof(source)) do
+		if source[offset+j] == bit.bxor(source[i+j],mask) then
 			j=j+1
 			if j > bestLength then
 				bestStart = i
@@ -283,13 +285,13 @@ function LZCompress:compress(offset, op)
 				--advance i based on index of source
 				while true do
 					nextOffsetToTry = nextOffsetToTry + 1
-					if nextOffsetToTry >= #offsets[bit.bxor(source[1+ offset],mask)] then break end
-					if offsets[bit.bxor(source[1+ offset],mask)][1+ nextOffsetToTry] >= i then break end
+					if nextOffsetToTry >= #offsets[bit.bxor(source[offset],mask)] then break end
+					if offsets[bit.bxor(source[offset],mask)][1+ nextOffsetToTry] >= i then break end
 				end
-				if nextOffsetToTry >= #offsets[bit.bxor(source[1+ offset],mask)] then 
+				if nextOffsetToTry >= #offsets[bit.bxor(source[offset],mask)] then 
 					break 
 				else 
-					i = offsets[bit.bxor(source[1+ offset],mask)][1+ nextOffsetToTry]
+					i = offsets[bit.bxor(source[offset],mask)][1+ nextOffsetToTry]
 				end
 			end
 		end
@@ -314,12 +316,13 @@ function LZCompress:compress(offset, op)
 end
 
 local function compress(source)
---print('compress #source '..#source)	
+	local len = ffi.sizeof(source)
+--print('compress source size '..len)	
 	local result = table()	
 	local i = 0
 	local noCompressionLength = 0
 	local lzc = LZCompress(source)
-	while i < #source do
+	while i < len do
 		local options = {
 			rleCompress(source, i, 1),
 			rleCompress(source, i, 2),
@@ -355,7 +358,7 @@ local function compress(source)
 		if not bestOption then
 			noCompressionLength = noCompressionLength + 1
 			i = i + 1
-			if i >= #source or noCompressionLength == maxBlockLen(0) then 
+			if i >= len or noCompressionLength == maxBlockLen(0) then 
 --print('adding no-compress len '..noCompressionLength)			
 				noCompress(source, i, noCompressionLength, result)
 				noCompressionLength = 0
@@ -373,7 +376,7 @@ local function compress(source)
 	end
 	result:insert(0xff)
 --print('total result len '..#result)	
-	return result
+	return tableToByteArray(result)
 end
 
 return {

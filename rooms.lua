@@ -406,7 +406,8 @@ local totalRecompressedSize = 0
 print()
 for _,room in ipairs(sm.rooms) do
 	local data = room:getData()
-	local recompressed = lz.compress(data)
+	local recompressed = lz.compress(tableToByteArray(data))
+recompressed = byteArrayToTable(recompressed)
 --	print('recompressed size: '..#recompressed..' vs original compressed size '..room.compressedSize)
 	assert(#recompressed <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..#recompressed.." vs original "..room.compressedSize)
 totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
@@ -441,6 +442,7 @@ totalRecompressedSize = totalRecompressedSize + #recompressed
 
 --[=[ verify that compression works by decompressing and re-compressing
 	local data2, compressedSize2 = lz.decompress(rom, room.addr, 0x10000)
+data2 = byteArrayToTable(data2)
 	assert(compressedSize == compressedSize2)
 	assert(#data == #data2)
 	for i=1,#data do
