@@ -190,6 +190,11 @@ local SM = require 'sm'
 -- global for now
 sm = SM(rom)
 
+-- write out unaltered stuff
+sm:mapSaveImage'map.png'
+-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+sm:buildMemoryMap():print'memorymap.txt'
+
 -- randomize rooms?  still working on this
 -- *) enemy placement
 -- *) door placement
@@ -208,10 +213,10 @@ if config.randomizeItems then
 	require 'items'
 end
 
-
+-- write out altered stuff
 sm:print()
-local mem = sm:buildMemoryMap()
-sm:saveMapImage()
+sm:mapSaveImage'map-random.png'
+sm:buildMemoryMap():print()
 
 
 -- write back out
@@ -232,9 +237,5 @@ if not config.randomizeItems then
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 end
 print()
-
--- TODO check against...
--- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
-mem:print()
 
 print('banks requested: '..banksRequested:keys():map(function(bank) return ('$%02x'):format(bank) end):concat', ')

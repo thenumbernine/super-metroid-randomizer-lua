@@ -1248,7 +1248,7 @@ end
 
 SMItems.itemTypeNameForValue = SMItems.itemTypes:map(function(v,k) return k,v end)
 
-function SMItems:initItems()
+function SMItems:itemsInit()
 	local rom = self.rom
 
 	self.items = table(items)
@@ -1267,7 +1267,7 @@ end
 
 -- this doesn't do anything
 -- items are just plms with specific cmds
-function SMItems:buildMemoryMapItems(mem)
+function SMItems:itemsBuildMemoryMap(mem)
 	--[[
 	for _,item in ipairs(self.items) do
 		mem:add(item.addr, 2, 'item: '..item.name)

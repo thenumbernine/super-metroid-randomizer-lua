@@ -78,6 +78,7 @@ local enemyPop_t = struct'enemyPop_t'{
 	{roomArg2 = 'uint16_t'},-- 'speed 2'
 }
 
+-- what is this really?  'enemySet_t' seems like a bad name
 local enemySet_t = struct'enemySet_t'{
 	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
 	{palette = 'uint16_t'},
@@ -321,6 +322,72 @@ function SMMap:mapAddPLMSet(addr, m)
 	end
 
 	return plmset
+end
+
+
+function SMMap:mapAddEnemyPopSet(addr)
+	local rom = self.rom
+	local _,enemyPopSet = self.enemyPopSets:find(nil, function(enemyPopSet)
+		return enemyPopSet.addr == addr
+	end)
+	if enemyPopSet then return enemyPopSet end
+
+	local startaddr = addr
+	local enemyPops = table()
+	local enemiesToKill 
+	while true do
+		local ptr = ffi.cast('enemyPop_t*', rom + addr)
+		if ptr.enemyAddr == 0xffff then
+			-- include term and enemies-to-kill
+			addr = addr + 2
+			break
+		end
+		enemyPops:insert(ffi.new('enemyPop_t', ptr[0]))
+		addr = addr + ffi.sizeof'enemyPop_t'
+	end
+	enemiesToKill = rom[addr]
+	addr = addr + 1
+
+	local enemyPopSet = {
+		addr = startaddr,
+		enemyPops = enemyPops,
+		enemiesToKill = enemiesToKill, 
+		roomStates = table(),
+	}
+	self.enemyPopSets:insert(enemyPopSet)
+	return enemyPopSet
+end
+
+function SMMap:mapAddEnemySetSet(addr)
+	local rom = self.rom
+	local _,enemySetSet = self.enemySetSets:find(nil, function(enemySetSet)
+		return enemySetSet.addr == addr
+	end)
+	if enemySetSet then return enemySetSet end
+
+	local startaddr = addr
+	local enemySets = table()
+
+	while true do
+		local ptr = ffi.cast('enemySet_t*', rom+addr)
+		if ptr.enemyAddr == 0xffff then 
+-- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
+--print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
+			-- include terminator
+			addr = addr + 10
+			break 
+		end
+		enemySets:insert(ffi.new('enemySet_t', ptr[0]))
+		addr = addr + ffi.sizeof'enemySet_t'
+	end
+
+	local enemySetSet = {
+		addr = startaddr,
+		enemySets = enemySets,
+		roomStates = table(),
+	}
+	self.enemySetSets:insert(enemySetSet)
+	return enemySetSet
 end
 
 
@@ -578,11 +645,14 @@ function SMMap:mapInit()
 	
 	self.mdbs = table()
 	self.rooms = table()
-	self.plmsets = table()
 	self.bgs = table()
 	self.fx1s = table()
 	self.layerHandlings = table()
 	
+	self.plmsets = table()
+	self.enemyPopSets = table()
+	self.enemySetSets = table()
+
 	--[[
 	from $078000 to $079193 is plm_t data
 	the first mdb_t is at $0791f8
@@ -712,36 +782,16 @@ function SMMap:mapInit()
 					end
 				end
 
+				-- enemyPopSet
+				-- but notice, for writing back enemy populations, sometimes there's odd padding in there, like -1, 3, etc
 				for _,rs in ipairs(m.roomStates) do
-					data = rom + topc(0xa1, rs.ptr.enemyPop)
-					while true do
-						local ptr = ffi.cast('enemyPop_t*', data)
-						if ptr.enemyAddr == 0xffff then
-							-- include term and enemies-to-kill
-							data = data + 2
-							rs.enemiesToKill = read'uint8_t'
-							break
-						end
-						rs.enemyPops:insert(ffi.new('enemyPop_t', ptr[0]))
-						data = data + ffi.sizeof'enemyPop_t'
-					end
+					rs.enemyPopSet = self:mapAddEnemyPopSet(topc(0xa1, rs.ptr.enemyPop))
+					rs.enemyPopSet.roomStates:insert(rs)
 				end
-
-				for _,rs in ipairs(m.roomStates) do
-					data = rom + topc(0xb4, rs.ptr.enemySet)
-					while true do
-						local ptr = ffi.cast('enemySet_t*', data)
-						if ptr.enemyAddr == 0xffff then 
-	-- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
-	--print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
-							-- include terminator
-							data = data + 10
-							break 
-						end
 				
-						rs.enemySets:insert(ffi.new('enemySet_t', ptr[0]))
-						data = data + ffi.sizeof'enemySet_t'
-					end
+				for _,rs in ipairs(m.roomStates) do
+					rs.enemySetSet = self:mapAddEnemySetSet(topc(0xb4, rs.ptr.enemySet))
+					rs.enemySetSet.roomStates:insert(rs)
 				end
 
 				-- some rooms use the same fx1 ptr
@@ -1122,9 +1172,18 @@ local function drawRoom(mapimg, m, blocks)
 					local d1 = blocks[0 + 3 * di] or 0
 					local d2 = blocks[1 + 3 * di] or 0
 					local d3 = blocks[2 + 3 * di] or 0
-				
-					if d1 == 0xff 
-					--and (d2 == 0x00 or d2 == 0x83)
+			
+					-- empty background tiles:
+					-- ff0000
+					-- ff0083
+					-- ff00ff
+					-- ff8300
+					-- ff8383
+					-- ff83ff
+					if d1 == 0xff
+					--and d2 == 0x00
+					and (d2 == 0x00 or d2 == 0x83)
+					and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
 					then
 					else
 						for pi=0,blockSizeInPixels-1 do
@@ -1305,7 +1364,8 @@ end
 
 
 
-function SMMap:saveMapImage()
+function SMMap:mapSaveImage(filename)
+	filename = filename or 'map.png'	
 	local mapimg = image(roomSizeInPixels*68, roomSizeInPixels*58, 3, 'unsigned char')
 
 	for _,room in ipairs(self.rooms) do
@@ -1314,7 +1374,7 @@ function SMMap:saveMapImage()
 		end
 	end
 
-	mapimg:save'map.png'
+	mapimg:save(filename)
 end
 
 
@@ -1407,7 +1467,7 @@ function SMMap:mapPrint()
 				end
 			end
 			--]]
-			for _,enemyPop in ipairs(rs.enemyPops) do	
+			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do	
 				print('   enemyPop_t: '
 					..((sm.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
 					..': '..enemyPop)
@@ -1448,8 +1508,8 @@ function SMMap:mapBuildMemoryMap(mem)
 				local addr = topc(self.scrollBank, rs.ptr.scroll)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
-					
-			mem:add(topc(0xa1, rs.ptr.enemyPop), 3 + #rs.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
+			
+			mem:add(topc(0xa1, rs.ptr.enemyPop), 3 + #rs.enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
 			mem:add(topc(0xb4, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
 			mem:add(topc(0x83, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 			mem:add(topc(0x8f, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)

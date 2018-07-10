@@ -511,7 +511,7 @@ function EnemyWeaknessTable:randomizeEnemy(enemy)
 	EnemyWeaknessTable.super.randomizeEnemy(self, enemy)
 end
 
-function SMEnemies:initEnemies()
+function SMEnemies:enemiesInit()
 	local rom = self.rom
 	self.enemies = table{
 		{addr=0xCEBF, name="Boyon"},
@@ -840,11 +840,12 @@ function SMEnemies:initEnemies()
 end
 
 
-function SMEnemies:printEnemies()
+function SMEnemies:enemiesPrint()
 	local rom = self.rom
 
 	self.enemyItemDropTable:print()
 	self.enemyWeaknessTable:print()
+
 
 	-- do the printing
 
@@ -895,7 +896,7 @@ function SMEnemies:printEnemies()
 end
 
 
-function SMEnemies:buildMemoryMapEnemies(mem)
+function SMEnemies:enemiesBuildMemoryMap(mem)
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
 		mem:add(addr, ffi.sizeof'enemy_t', 'enemy_t')

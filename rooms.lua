@@ -237,8 +237,8 @@ for _,plmset in ipairs(sm.plmsets) do
 	addr = addr + ffi.sizeof'uint16_t'
 	assert(addr == endaddr)
 
+	local newofs = bit.band(0xffff, plmset.addr)
 	for _,rs in ipairs(plmset.roomStates) do
-		local newofs = bit.band(0xffff, plmset.addr)
 		if newofs ~= rs.ptr.plm then
 			--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
 			rs.ptr.plm = newofs
@@ -306,6 +306,7 @@ B=b1, C=0f = speed
 c0 = shootable / powerbomb, no respawn
 d0 = another bombable?
 f0 = bombable, no respawn
+
 --]=]
 for _,room in ipairs(sm.rooms) do
 	local w,h = room.width, room.height
@@ -321,6 +322,7 @@ for _,room in ipairs(sm.rooms) do
 				local a = room.blocks[0 + 3 * (i + w * j)]
 				local b = room.blocks[1 + 3 * (i + w * j)]
 				local c = room.blocks[2 + 3 * (i + w * j)]
+--I'm still missing the bomable block in the loewr red room brinstar
 				-- notice that doors and platforms and IDs for doors and platforms can be just about anything
 				if false
 				or (bit.band(b, 0xf0) == 0xf0)	-- bombable
@@ -452,4 +454,103 @@ print('rooms recompressed from '..totalOriginalCompressedSize..' to '..totalReco
 
 -- output memory ranges
 roomWriteRanges:print()
+--]]
+
+
+--[[ get rid of duplicate enemy pops
+-- this currently crashes the game
+-- notice that re-writing the enemy pops is working fine
+-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
+for i=1,#sm.enemyPopSets-1 do
+	local pi = sm.enemyPopSets[i]
+	for j=#sm.enemyPopSets,i+1,-1 do
+		local pj = sm.enemyPopSets[j]
+		if #pi.enemyPops == #pj.enemyPops 
+		and pi.enemiesToKill == pj.enemiesToKill 
+		then
+			local differ
+			for k=1,#pi.enemyPops do
+				if pi.enemyPops[k] ~= pj.enemyPops[k] then
+					differ = true
+					break
+				end
+			end
+			if not differ then
+				print('enemyPops '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+				for _,rs in ipairs(pj.roomStates) do
+					rs.ptr.enemyPop = bit.band(0xffff, pi.addr)
+					rs.enemyPopSet = pi
+				end
+				sm.enemyPopSets:remove(j)
+			end
+		end
+	end
+end
+--]]
+
+--[[ update enemy pop
+--[=[
+with writing back plms removing onn-grey non-eye doors
+and writing back room data, removing all breakable blocks and crumble blocks
+and writing back enemy pop ranges
+I did a playthrough and found the following bugs:
+* a few grey doors - esp kill quota rooms - would not be solid
+* one grey door was phantoon ... and walking outside mid-battle would show garbage tiles in the next room.
+	note that the room was normal before and after the battle.
+* scroll glitch in the crab broke tube room in maridia
+--]=]
+local enemyPopWriteRanges = WriteRange'enemy pop sets'{
+	-- original pop goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
+	{0x108000, 0x10ffff},
+}
+for _,enemyPopSet in ipairs(sm.enemyPopSets) do
+	local addr, endaddr = enemyPopWriteRanges:get(3 + #enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t')
+	enemyPopSet.addr = addr
+	for i,enemyPop in ipairs(enemyPopSet.enemyPops) do
+		ffi.cast('enemyPop_t*', rom + addr)[0] = enemyPop
+		addr = addr + ffi.sizeof'enemyPop_t'
+	end
+	ffi.cast('uint16_t*', rom + addr)[0] = 0xffff
+	addr = addr + 2
+	rom[addr] = enemyPopSet.enemiesToKill
+	addr = addr + 1
+
+	assert(addr == endaddr)
+	local newofs = bit.band(0xffff, enemyPopSet.addr)
+	for _,rs in ipairs(enemyPopSet.roomStates) do
+		if newofs ~= rs.ptr.enemyPop then
+			print('updating roomstate enemyPop addr from '..('%04x'):format(rs.ptr.enemyPop)..' to '..('%04x'):format(newofs))
+			rs.ptr.enemyPop = newofs
+		end
+	end
+end
+enemyPopWriteRanges:print()
+--]]
+
+--[[ update enemy set
+-- I'm sure this will fail.  there's lots of mystery padding here.
+local enemySetWriteRanges = WriteRange'enemy set sets'{
+	{0x1a0000, 0x1a12c5},
+	-- next comes a debug routine, listed as $9809-$981e
+	-- then next comes a routine at $9961 ...
+}
+for _,enemySetSet in ipairs(sm.enemySetSets) do
+	local addr, endaddr = enemySetWriteRanges:get(#enemySetSet.enemySets * ffi.sizeof'enemySet_t')
+	enemySetSet.addr = addr
+	for i,enemySet in ipairs(enemySetSet.enemySets) do
+		ffi.cast('enemySet_t*', rom + addr)[0] = enemySet
+		addr = addr + ffi.sizeof'enemySet_t'
+	end
+	-- TODO tail
+
+	assert(addr == endaddr)
+	local newofs = bit.band(0x7fff, enemyPopSet.addr) + 0x8000
+	for _,rs in ipairs(enemyPopSet.roomStates) do
+		if newofs ~= rs.ptr.enemyPop then
+			print('updating roomstate enemySet addr from '..('%04x'):format(rs.ptr.enemySet)..' to '..('%04x'):format(newofs))
+			rs.ptr.enemyPop = newofs
+		end
+	end
+end
+enemyPopWriteRanges:print()
 --]]

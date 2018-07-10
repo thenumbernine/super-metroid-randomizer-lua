@@ -15,7 +15,7 @@ function MemoryMap:add(addr, len, name, m, ...)
 	end
 end
 
-function MemoryMap:print()
+function MemoryMap:print(filename)
 	local ranges = self.ranges
 	ranges:sort(function(a,b)
 		return a.addr < b.addr
@@ -41,38 +41,39 @@ function MemoryMap:print()
 	end
 	--]]
 
-	local f = assert(io.open('memorymap.txt', 'w'))
-	local function fwrite(...)
-		f:write(...)
-		io.write(...)
-	end
-	fwrite('    memory ranges:\n')
-	fwrite('mdb region/index: addr $start-$end (desc) ... trailing bytes until next region ...')	
+	local f = filename 
+		and assert(io.open(filename, 'w'))
+		or io.stdout
+	
+	f:write('    memory ranges:\n')
+	f:write('map region/index: addr $start-$end (desc) ... trailing bytes until next region ...')	
 	for i,range in ipairs(ranges) do
 		local prevRange
 		if i>1 then
 			prevRange = ranges[i-1]
 			local padding = range.addr - (prevRange.addr + prevRange.len)
 			if padding ~= 0 then
-				fwrite(' ... '..padding..' bytes of padding ...')
+				f:write(' ... '..padding..' bytes of padding ...')
 			end
 		end
-		fwrite'\n'
+		f:write'\n'
 		if prevRange and bit.band(prevRange.addr, 0x7f8000) ~= bit.band(range.addr, 0x7f8000) then
-			fwrite'--------------\n'
+			f:write'--------------\n'
 		end
 		
 		local m = range.m
 		if m then
-			fwrite(('%02x/%02x'):format(m.ptr.region, m.ptr.index))
+			f:write(('%02x/%02x'):format(m.ptr.region, m.ptr.index))
 		else
-			fwrite('     ')
+			f:write('     ')
 		end
-		fwrite(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
-		fwrite(' ('..range.name..')')
+		f:write(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
+		f:write(' ('..range.name..')')
 	end
-	fwrite(' ('..ranges:last().name..')\n')
-	f:close()
+	f:write(' ('..ranges:last().name..')\n')
+	if filename then
+		f:close()
+	end
 end
 
 return MemoryMap
