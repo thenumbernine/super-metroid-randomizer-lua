@@ -187,5 +187,10 @@ for _,room in ipairs(sm.rooms) do
 end
 --]]
 
+-- make the first Ceres door go to Zebes
+local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
+local _,ceres = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 6 and m.ptr.index == 0 end))
+ceres.doors[1].ptr.dest_mdb = startRoom.addr
+
 -- write back changes
 sm:mapWrite()

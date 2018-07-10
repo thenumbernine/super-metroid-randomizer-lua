@@ -261,11 +261,8 @@ function RoomState:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
-	self.enemyPops = self.enemyPops or table()
-	self.enemySets = self.enemySets or table()
 	self.fx1s = self.fx1s or table()
 	self.bgs = self.bgs or table()
-	self.rooms = self.rooms or table()
 end
 
 -- table of all unique plm regions
@@ -701,6 +698,7 @@ function SMMap:mapInit()
 			local m = {
 				roomStates = table(),
 				doors = table(),
+-- TODO bank-offset addr vs pc addr for all my structures ...
 				addr = x,
 				ptr = mptr,
 			}	
@@ -1485,7 +1483,7 @@ function SMMap:mapPrint()
 					..((self.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
 					..': '..enemyPop)
 			end
-			for _,enemySet in ipairs(rs.enemySets) do
+			for _,enemySet in ipairs(rs.enemySetSet.enemySets) do
 				print('   enemySet_t: '
 					..((self.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
 					..': '..enemySet)
@@ -1522,8 +1520,6 @@ function SMMap:mapBuildMemoryMap(mem)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 			
-			mem:add(topc(self.enemyPopBank, rs.ptr.enemyPop), 3 + #rs.enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
-			mem:add(topc(self.enemySetBank, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
 			mem:add(topc(self.fx1Bank, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 			mem:add(topc(self.bgBank, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
 		end
@@ -1540,7 +1536,14 @@ function SMMap:mapBuildMemoryMap(mem)
 	for _,layerHandling in ipairs(self.layerHandlings) do
 		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].m)
 	end
-	
+
+	for _,enemyPopSet in ipairs(self.enemyPopSets) do
+		mem:add(enemyPopSet.addr, 3 + #enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', enemyPopSet.roomStates[1].m)
+	end
+	for _,enemySetSet in ipairs(self.enemySetSets) do
+		mem:add(enemySetSet.addr, 10 + #enemySetSet.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', enemySetSet.roomStates[1].m)
+	end
+
 	for _,plmset in ipairs(self.plmsets) do
 		local m = plmset.roomStates[1].m
 		--[[ entry-by-entry
