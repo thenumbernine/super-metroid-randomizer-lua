@@ -4,18 +4,21 @@
 -- http://forum.metroidconstruction.com/index.php?topic=2476.0
 -- http://www.metroidconstruction.com/SMMM/plm_disassembly.txt
 
-local SMMap = {}
-
 
 
 local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
+local WriteRange = require 'writerange'
+
+
+local SMMap = {}
 
 
 -- defined in section 6 of metroidconstruction.com/SMMM
 -- mdb = 'map database' I'm guessing?
 -- I am really tempted to defy convention and just call this 'room_t'
+-- and then call 'rooms' => 'roomblocks' or something, since it is the per-block data
 local mdb_t = struct'mdb_t'{	-- aka mdb_header_t
 	{index = 'uint8_t'},		-- 0
 	{region = 'uint8_t'},		-- 1
@@ -134,10 +137,10 @@ local bg_t = struct'bg_t'{
 }
 
 -- described in section 12 of metroidconstruction.com/SMMM
+-- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
 -- This isn't the door so much as the information associated with its destination.
 -- This doesn't reference the in-room door object so much as vice-versa.
--- The bts block data associated with a door has a # next to it, and that # points to the offset in this structure for more information: room target, etc.
--- The x & y of that block is associated with a plm_t for even more information associated with the door: what color it is, what index in the 'open door' table it is.
+-- I'm tempted to call this 'exit_t' ... since you don't need a door
 local door_t = struct'door_t'{
 	{dest_mdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
 	
@@ -634,14 +637,24 @@ function SMMap:mapAddLayerHandling(addr)
 	return layerHandling
 end
 
+SMMap.scrollBank = 0x8f
+SMMap.mdbBank = 0x8e
+SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
+SMMap.enemyPopBank = 0xa1
+SMMap.enemySetBank = 0xb4
+SMMap.fx1Bank = 0x83
+SMMap.bgBank = 0x8f
+SMMap.layerHandlingBank = 0x8f
+SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
+SMMap.doorBank = 0x83
+SMMap.doorCodeBank = 0x8f
 
 function SMMap:mapInit()
 	local rom = self.rom
 
 	-- check where the PLM bank is
+	-- TODO this will affect the items.lua addresses
 	self.plmBank = rom[0x204ac]
-	self.scrollBank = 0x8f
-
 	
 	self.mdbs = table()
 	self.rooms = table()
@@ -668,7 +681,7 @@ function SMMap:mapInit()
 	TODO don't check *every* byte from 0x8000 to 0xffff
 	--]]
 	for x=0x8000,0xffff do
-		local data = rom + topc(0x8e, x)
+		local data = rom + topc(self.mdbBank, x)
 		local function read(ctype)
 			local result = ffi.cast(ctype..'*', data)
 			data = data + ffi.sizeof(ctype)
@@ -741,7 +754,7 @@ function SMMap:mapInit()
 				for _,rs in ipairs(m.roomStates) do
 					if rs.select_ctype ~= 'uint16_t' then
 						assert(not rs.ptr)
-						local addr = topc(0x8e, rs.select[0].roomstate)
+						local addr = topc(self.roomStateBank, rs.select[0].roomstate)
 						rs.ptr = ffi.cast('roomstate_t*', rom + addr)
 					end
 
@@ -785,12 +798,12 @@ function SMMap:mapInit()
 				-- enemyPopSet
 				-- but notice, for writing back enemy populations, sometimes there's odd padding in there, like -1, 3, etc
 				for _,rs in ipairs(m.roomStates) do
-					rs.enemyPopSet = self:mapAddEnemyPopSet(topc(0xa1, rs.ptr.enemyPop))
+					rs.enemyPopSet = self:mapAddEnemyPopSet(topc(self.enemyPopBank, rs.ptr.enemyPop))
 					rs.enemyPopSet.roomStates:insert(rs)
 				end
 				
 				for _,rs in ipairs(m.roomStates) do
-					rs.enemySetSet = self:mapAddEnemySetSet(topc(0xb4, rs.ptr.enemySet))
+					rs.enemySetSet = self:mapAddEnemySetSet(topc(self.enemySetBank, rs.ptr.enemySet))
 					rs.enemySetSet.roomStates:insert(rs)
 				end
 
@@ -801,7 +814,7 @@ function SMMap:mapInit()
 				-- then make one set and just put the subset's at the end
 				-- (unless the order matters...)
 				for _,rs in ipairs(m.roomStates) do
-					local startaddr = topc(0x83, rs.ptr.fx1)
+					local startaddr = topc(self.fx1Bank, rs.ptr.fx1)
 					local addr = startaddr
 					local retry
 					while true do
@@ -838,7 +851,7 @@ function SMMap:mapInit()
 				
 				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.bgdata > 0x8000 then
-						local addr = topc(0x8f, rs.ptr.bgdata)
+						local addr = topc(self.bgBank, rs.ptr.bgdata)
 						while true do
 							local ptr = ffi.cast('bg_t*', rom+addr)
 							
@@ -877,7 +890,7 @@ function SMMap:mapInit()
 
 				for _,rs in ipairs(m.roomStates) do
 					if rs.ptr.layerHandling > 0x8000 then
-						local addr = topc(0x8f, rs.ptr.layerHandling)
+						local addr = topc(self.layerHandlingBank, rs.ptr.layerHandling)
 						rs.layerHandling = self:mapAddLayerHandling(addr)
 						rs.layerHandling.roomStates:insert(rs)
 					end
@@ -888,7 +901,7 @@ function SMMap:mapInit()
 					rs.room.roomStates:insert(rs)
 				end
 
-				local startaddr = topc(0x8e, m.ptr.doors)
+				local startaddr = topc(self.doorAddrBank, m.ptr.doors)
 				data = rom + startaddr 
 				--data = rom + 0x70000 + m.ptr.doors
 				local doorAddr = read'uint16_t'
@@ -904,7 +917,7 @@ function SMMap:mapInit()
 			
 	--doorsSoFar = doorsSoFar or table()
 				for _,door in ipairs(m.doors) do
-					local addr = topc(0x83, door.addr)
+					local addr = topc(self.doorBank, door.addr)
 	--doorsSoFar[addr] = doorsSoFar[addr] or table()
 	--doorsSoFar[addr]:insert(m)
 					data = rom + addr 
@@ -916,7 +929,7 @@ function SMMap:mapInit()
 					if ctype == 'door_t' 
 					and door.ptr.code > 0x8000 
 					then
-						door.doorCodeAddr = topc(0x8f, door.ptr.code)
+						door.doorCodeAddr = topc(self.doorCodeBank, door.ptr.code)
 						door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
 					end
 				end
@@ -1050,7 +1063,7 @@ function SMMap:mapInit()
 	print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
 			d = d + 26
 		end
-		local dooraddr = topc(0x8e, m.ptr.doors)
+		local dooraddr = topc(self.doorAddrBank, m.ptr.doors)
 		assert(d == rom + dooraddr)
 		d = d + 2 * #m.doors
 		
@@ -1410,7 +1423,7 @@ function SMMap:mapPrint()
 	local rom = self.rom
 	print()
 	print("all plm_t's:")
-	for _,plmset in ipairs(sm.plmsets) do
+	for _,plmset in ipairs(self.plmsets) do
 		print(' '..('$%06x'):format(plmset.addr)
 			..' mdbs: '..plmset.roomStates:map(function(rs)
 				local m = rs.m
@@ -1425,8 +1438,8 @@ function SMMap:mapPrint()
 	-- print bg info
 	print()
 	print("all bg_t's:")
-	sm.bgs:sort(function(a,b) return a.addr < b.addr end)
-	for _,bg in ipairs(sm.bgs) do
+	self.bgs:sort(function(a,b) return a.addr < b.addr end)
+	for _,bg in ipairs(self.bgs) do
 		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
 			..' mdbs: '..bg.mdbs:map(function(m)
 				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
@@ -1437,8 +1450,8 @@ function SMMap:mapPrint()
 	-- print fx1 info
 	print()
 	print("all fx1_t's:")
-	sm.fx1s:sort(function(a,b) return a.addr < b.addr end)
-	for _,fx1 in ipairs(sm.fx1s) do
+	self.fx1s:sort(function(a,b) return a.addr < b.addr end)
+	for _,fx1 in ipairs(self.fx1s) do
 		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
 			..' mdbs: '..fx1.mdbs:map(function(m)
 				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
@@ -1449,7 +1462,7 @@ function SMMap:mapPrint()
 	-- print mdb info
 	print()
 	print("all mdb_t's:")
-	for _,m in ipairs(sm.mdbs) do
+	for _,m in ipairs(self.mdbs) do
 		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
@@ -1458,7 +1471,7 @@ function SMMap:mapPrint()
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
 					io.write('   plm_t: ')
-					local plmName = sm.plmCmdNameForValue[plm.cmd]
+					local plmName = self.plmCmdNameForValue[plm.cmd]
 					if plmName then io.write(plmName..': ') end
 					print(plm)
 				end
@@ -1469,12 +1482,12 @@ function SMMap:mapPrint()
 			--]]
 			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do	
 				print('   enemyPop_t: '
-					..((sm.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
+					..((self.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
 					..': '..enemyPop)
 			end
 			for _,enemySet in ipairs(rs.enemySets) do
 				print('   enemySet_t: '
-					..((sm.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
+					..((self.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
 					..': '..enemySet)
 			end
 			for _,fx1 in ipairs(rs.fx1s) do
@@ -1497,7 +1510,7 @@ end
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
 	for _,m in ipairs(self.mdbs) do
-		local addr = topc(0x8e, m.addr)	
+		local addr = topc(self.mdbBank, m.addr)	
 		mem:add(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
 		for _,rs in ipairs(m.roomStates) do
 			assert(rs.select)
@@ -1509,13 +1522,13 @@ function SMMap:mapBuildMemoryMap(mem)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 			
-			mem:add(topc(0xa1, rs.ptr.enemyPop), 3 + #rs.enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
-			mem:add(topc(0xb4, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
-			mem:add(topc(0x83, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
-			mem:add(topc(0x8f, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
+			mem:add(topc(self.enemyPopBank, rs.ptr.enemyPop), 3 + #rs.enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', m)
+			mem:add(topc(self.enemySetBank, rs.ptr.enemySet), 10 + #rs.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', m)
+			mem:add(topc(self.fx1Bank, rs.ptr.fx1), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(topc(self.bgBank, rs.ptr.bgdata), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
 		end
 		
-		mem:add(topc(0x8e, m.ptr.doors), #m.doors * 2, 'dooraddrs', m)
+		mem:add(topc(self.doorAddrBank, m.ptr.doors), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
 			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
 			if door.doorCode then
@@ -1555,6 +1568,356 @@ function SMMap:mapBuildMemoryMap(mem)
 	for _,room in ipairs(self.rooms) do
 		mem:add(room.addr, room.compressedSize, 'room', room.mdbs[1])
 	end
+end
+
+function SMMap:mapWritePLMs()
+	local rom = self.rom
+	
+	-- [[ re-indexing the doors
+	--[=[
+	notes on doors:
+	plm_t of door_* has an x and y that matches up with the door region in the map
+	the plm arg low byte of each (non-blue) door is a unique index, contiguous 0x00..0x60 and 0x80..0xac
+	(probably used wrt savefiles, to know what doors have been opened)
+	certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x18, 0x90, 0x94
+	--]=]
+	print'all door plm ids:'
+	-- re-id all door plms?
+	local doorid = 0
+	for _,plmset in ipairs(self.plmsets) do
+		local eyeparts
+		local eyedoor
+		for _,plm in ipairs(plmset.plms) do
+			local name = self.plmCmdNameForValue[plm.cmd]
+			if name 
+			and name:match'^door_' 
+			then
+				-- if it's an eye door part then
+				--  find the associated eye door, and make sure their ids match up
+				if name:match'^door_eye_.*_part' then
+					eyeparts = eyeparts or table()
+					eyeparts:insert(plm)
+				elseif name:match'^door_eye_' then
+					assert(not eyedoor, "one eye door per room, I guess")
+					eyedoor = plm
+				end
+				
+				plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
+				doorid = doorid + 1
+				--print(name .. ' '..('.'):rep(maxnamelen - #name) .. ' '.. ('%04x'):format(tonumber(plm.args)))
+			end
+		end
+		if eyedoor then 
+			assert(eyeparts and #eyeparts > 0)
+			for _,part in ipairs(eyeparts) do
+				part.args = eyedoor.args
+			end
+		end
+	end
+	-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
+	if doorid >= 0xff then error("got too many doors: "..doorid) end
+	--]]
+	
+	-- [[ optimizing plms ... 
+	-- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
+	for _,plmset in ipairs(self.plmsets) do
+		if #plmset.plms == 0 then
+			for j=#plmset.roomStates,1,-1 do
+				local rs = plmset.roomStates[j]
+				rs.ptr.plm = 0
+				rs.plmset = nil
+				plmset.roomStates[j] = nil
+			end
+		end
+	end
+	-- [=[ remove empty plmsets
+	for i=#self.plmsets,1,-1 do
+		local plmset = self.plmsets[i]
+		if #plmset.plms == 0 then
+			self.plmsets:remove(i)
+		end
+	end
+	--]=]
+	-- get rid of any duplicate plmsets ... there are none by default
+	for i=1,#self.plmsets-1 do
+		local pi = self.plmsets[i]
+		for j=i+1,#self.plmsets do
+			local pj = self.plmsets[j]
+			if #pi.plms == #pj.plms 
+			-- a lot of zero-length plms match ... but what about non-zero-length plms? none match
+			and #pi.plms > 0
+			then
+				local differ
+				for k=1,#pi.plms do
+					if pi.plms[k] ~= pj.plms[k] then
+						differ = true
+						break
+					end
+				end
+				if not differ then
+					print('plms '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+				end
+			end
+		end
+	end
+	--]]
+
+	-- [[ writing back plms...
+	-- TODO this is causing a problem -- room 03/04, the main room of wrecked ship, isn't scrolling out of the room correctly
+	--[=[
+	plm memory ranges:
+	 0/ 0: $078000..$079193 (plm_t x174) 
+	 3/ 0: $07c215..$07c230 (plm_t x2) 
+		... 20 bytes of padding ...
+	 3/ 3: $07c245..$07c2fe (plm_t x15) 
+		... 26 bytes of padding ...
+	 3/ 3: $07c319..$07c8c6 (plm_t x91) 
+		... 199 bytes of padding ...
+	--]=]
+	-- where plms were written before, so should be safe, right?
+	-- ranges are inclusive
+	local plmWriteRanges = WriteRange('plm', {
+		{0x78000, 0x79193},	
+		-- then comes 100 bytes of layer handling code, then mdb's
+		{0x7c215, 0x7c8c6},
+		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
+		{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
+		-- then comes a lot of unknown data 
+		{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
+					-- however $7ff00 is where the door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
+	})
+
+	-- TODO any code that points to a PLM needs to be updated as well
+	-- like whatever changes doors around from blue to grey, etc
+	-- otherwise you'll find grey doors where you don't want them
+	print()
+	for _,plmset in ipairs(self.plmsets) do
+		local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
+		local addr, endaddr = plmWriteRanges:get(bytesToWrite)
+		plmset.addr = addr 
+
+		-- write
+		for _,plm in ipairs(plmset.plms) do
+			ffi.cast('plm_t*', rom + addr)[0] = plm
+			addr = addr + ffi.sizeof'plm_t'
+		end
+		-- write term
+		ffi.cast('uint16_t*', rom+addr)[0] = 0
+		addr = addr + ffi.sizeof'uint16_t'
+		assert(addr == endaddr)
+
+		local newofs = bit.band(0xffff, plmset.addr)
+		for _,rs in ipairs(plmset.roomStates) do
+			if newofs ~= rs.ptr.plm then
+				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plm)..' to '..('%04x'):format(newofs))
+				rs.ptr.plm = newofs
+			end
+		end
+	end
+	plmWriteRanges:print()
+	--]]
+end
+
+function SMMap:mapWriteMDBs()
+	local rom = self.rom
+	-- writing back mdb_t
+	-- if you move a mdb_t
+	-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
+	local mdbWriteRanges = WriteRange('mdb', {
+		{0x791f8, 0x7b769},	-- mdbs of regions 0-2
+		-- then comes bg_t's and door codes and plm_t's
+		{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
+		-- then comes db_t's and door codes 
+		{0x7e82c, 0x7e85a},	-- single mdb of region 7
+		-- then comes door code
+	})
+end
+
+function SMMap:mapWriteRooms()
+	local rom = self.rom
+	-- [[ write back compressed data
+	local roomWriteRanges = WriteRange('room', {
+		--[=[ there are some bytes outside compressed regions but between a few roomdatas
+		-- the metroid rom map says these are a part of the room data
+		-- this includes those breaks
+		{0x2142bb, 0x235d76},
+		{0x235ee0, 0x244da8},
+		{0x24559c, 0x272502},
+		{0x272823, 0x27322d},
+		--]=]
+		-- [=[ and this doesn't -- one giant contiguous region
+		{0x2142bb, 0x277fff},
+		--]=]
+	})
+	-- ... reduces to 56% of the original compressed data
+	-- but goes slow
+	local totalOriginalCompressedSize = 0
+	local totalRecompressedSize = 0
+	print()
+	for _,room in ipairs(self.rooms) do
+		local data = room:getData()
+		local recompressed = lz.compress(data)
+	--	print('recompressed size: '..ffi.sizeof(recompressed)..' vs original compressed size '..room.compressedSize)
+		assert(ffi.sizeof(recompressed) <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..ffi.sizeof(recompressed).." vs original "..room.compressedSize)
+		totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
+		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		
+		data = recompressed
+		room.compressedSize = ffi.sizeof(recompressed)
+		--[=[ now write back to the original location at addr
+		ffi.copy(rom + room.addr, data, ffi.sizeof(data))
+		--]=]
+		-- [=[ write back at a contiguous location
+		-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
+		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
+		local fromaddr, toaddr = roomWriteRanges:get(ffi.sizeof(data))
+
+		-- do the write
+		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
+		-- update room addr
+	--	print('updating room address '
+	--		..('%02x/%02x'):format(room.mdbs[1].ptr.region, room.mdbs[1].ptr.index)
+	--		..' from '..('$%06x'):format(room.addr)..' to '..('$%06x'):format(fromaddr))
+		room.addr = fromaddr
+		-- update any roomstate_t's that point to this data
+		for _,rs in ipairs(room.roomStates) do
+			rs.ptr.roomBank = bit.rshift(room.addr, 15) + 0x80 
+			rs.ptr.roomAddr = bit.band(room.addr, 0x7fff) + 0x8000
+		end
+		--]=]
+
+	--[=[ verify that compression works by decompressing and re-compressing
+		local data2, compressedSize2 = lz.decompress(rom, room.addr, 0x10000)
+		assert(compressedSize == compressedSize2)
+		assert(ffi.sizeof(data) == ffi.sizeof(data2))
+		for i=0,ffi.sizeof(data)-1 do
+			assert(data[i] == data2[i])
+		end
+	--]=]
+	end
+	print()
+	print('rooms recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+		', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
+		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
+
+	-- output memory ranges
+	roomWriteRanges:print()
+	--]]
+end
+
+function SMMap:mapWriteEnemyPops()
+	local rom = self.rom
+	--[[ get rid of duplicate enemy pops
+	-- this currently crashes the game
+	-- notice that re-writing the enemy pops is working fine
+	-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
+	for i=1,#self.enemyPopSets-1 do
+		local pi = self.enemyPopSets[i]
+		for j=#self.enemyPopSets,i+1,-1 do
+			local pj = self.enemyPopSets[j]
+			if #pi.enemyPops == #pj.enemyPops 
+			and pi.enemiesToKill == pj.enemiesToKill 
+			then
+				local differ
+				for k=1,#pi.enemyPops do
+					if pi.enemyPops[k] ~= pj.enemyPops[k] then
+						differ = true
+						break
+					end
+				end
+				if not differ then
+					print('enemyPops '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+					for _,rs in ipairs(pj.roomStates) do
+						rs.ptr.enemyPop = bit.band(0xffff, pi.addr)
+						rs.enemyPopSet = pi
+					end
+					self.enemyPopSets:remove(j)
+				end
+			end
+		end
+	end
+	--]]
+
+	--[[ update enemy pop
+	--[=[
+	with writing back plms removing onn-grey non-eye doors
+	and writing back room data, removing all breakable blocks and crumble blocks
+	and writing back enemy pop ranges
+	I did a playthrough and found the following bugs:
+	* a few grey doors - esp kill quota rooms - would not be solid
+	* one grey door was phantoon ... and walking outside mid-battle would show garbage tiles in the next room.
+		note that the room was normal before and after the battle.
+	* scroll glitch in the crab broke tube room in maridia
+	--]=]
+	local enemyPopWriteRanges = WriteRange('enemy pop sets', {
+		-- original pop goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
+		{0x108000, 0x10ffff},
+	})
+	for _,enemyPopSet in ipairs(self.enemyPopSets) do
+		local addr, endaddr = enemyPopWriteRanges:get(3 + #enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t')
+		enemyPopSet.addr = addr
+		for i,enemyPop in ipairs(enemyPopSet.enemyPops) do
+			ffi.cast('enemyPop_t*', rom + addr)[0] = enemyPop
+			addr = addr + ffi.sizeof'enemyPop_t'
+		end
+		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff
+		addr = addr + 2
+		rom[addr] = enemyPopSet.enemiesToKill
+		addr = addr + 1
+
+		assert(addr == endaddr)
+		local newofs = bit.band(0xffff, enemyPopSet.addr)
+		for _,rs in ipairs(enemyPopSet.roomStates) do
+			if newofs ~= rs.ptr.enemyPop then
+				print('updating roomstate enemyPop addr from '..('%04x'):format(rs.ptr.enemyPop)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemyPop = newofs
+			end
+		end
+	end
+	enemyPopWriteRanges:print()
+	--]]
+end
+	
+function SMMap:mapWriteEnemySets()
+	local rom = self.rom
+	--[[ update enemy set
+	-- I'm sure this will fail.  there's lots of mystery padding here.
+	local enemySetWriteRanges = WriteRange('enemy set sets', {
+		{0x1a0000, 0x1a12c5},
+		-- next comes a debug routine, listed as $9809-$981e
+		-- then next comes a routine at $9961 ...
+	})
+	for _,enemySetSet in ipairs(self.enemySetSets) do
+		local addr, endaddr = enemySetWriteRanges:get(#enemySetSet.enemySets * ffi.sizeof'enemySet_t')
+		enemySetSet.addr = addr
+		for i,enemySet in ipairs(enemySetSet.enemySets) do
+			ffi.cast('enemySet_t*', rom + addr)[0] = enemySet
+			addr = addr + ffi.sizeof'enemySet_t'
+		end
+		-- TODO tail ... which I'm not saving yet, and I don't know how long it should be
+
+		assert(addr == endaddr)
+		local newofs = bit.band(0x7fff, enemySetSet.addr) + 0x8000
+		for _,rs in ipairs(enemySetSet.roomStates) do
+			if newofs ~= rs.ptr.enemySet then
+				print('updating roomstate enemySet addr from '..('%04x'):format(rs.ptr.enemySet)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemySet = newofs
+			end
+		end
+	end
+	enemySetWriteRanges:print()
+	--]]
+end
+
+-- write back changes to the ROM
+-- right now my structures are mixed between ptrs and by-value copied objects
+-- so TODO eventually have all ROM writing in this routine
+function SMMap:mapWrite()
+	self:mapWritePLMs()	
+	self:mapWriteMDBs()	-- not yet
+	self:mapWriteRooms()
+	self:mapWriteEnemyPops()	-- buggy
+	self:mapWriteEnemySets()	-- not yet
 end
 
 return SMMap
