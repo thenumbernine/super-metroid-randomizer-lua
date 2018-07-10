@@ -2,7 +2,7 @@ local ffi = require 'ffi'
 
 local rom = sm.rom
 
---[[
+-- [[
 --[=[
 randomizing all doors ...
 1) enumerate all door regions
@@ -108,6 +108,14 @@ c0 = shootable / powerbomb, no respawn
 d0 = another bombable?
 f0 = bombable, no respawn
 
+ch3:
+01 = tile to the right too
+02 = tile below too
+04 = no respawn
+05 = crumble
+08 = super missile
+09 = power bomb
+0f = speed
 --]=]
 for _,room in ipairs(sm.rooms) do
 	local w,h = room.width, room.height
@@ -148,11 +156,14 @@ for _,room in ipairs(sm.rooms) do
 					room.blocks[1 + 3 * (i + w * j)] = 0
 					room.blocks[2 + 3 * (i + w * j)] = 0
 					--]=]
-					-- [=[ turn to shootable block
+					-- [=[ turn to destructable blocks
 					--room.blocks[0 + 3 * (i + w * j)] = 0
-					room.blocks[1 + 3 * (i + w * j)] = bit.bor(0xc0, bit.band(b, 0x0f))
-					-- don't set this to 0 for door regions?
-					room.blocks[2 + 3 * (i + w * j)] = 0
+					room.blocks[1 + 3 * (i + w * j)] = bit.bor(
+						0xc0, 	-- shootable
+						--0xf0,	-- bombable
+						bit.band(b, 0x0f))
+					-- ch3 4's bit means 'no respawn' ?
+					room.blocks[2 + 3 * (i + w * j)] = 4
 					--]=]
 					
 					--c = 0 -- means bombable/shootable, respawning
@@ -170,6 +181,7 @@ for _,room in ipairs(sm.rooms) do
 	end
 end
 --]]
+
 --[[ remove all doors, just leave exits
 --[=[ ok some important notes from doing this
 the doors themselves don't go away.  even with the plm gone, there are still physical things blocking me.
@@ -185,14 +197,52 @@ if not this then it seems like there is some extra data I'm missing that tells d
 for _,room in ipairs(sm.rooms) do
 	local w,h = room.width, room.height
 	for _,door in ipairs(room.doors) do
-		local i,j = door.x, door.y
-		for k=0,3 do
-			if door.dir == 0 or door.dir == 1 then	-- left/right
-				room.blocks[2 + 3 * ((i+k) + w * j)] = 0
-			elseif door.dir == 2 or door.dir == 3 then	-- up/down
-				room.blocks[2 + 3 * (i + w * (j+k))] = 0
-			else
-				error'here'
+		-- the doors that point to this door probably also need a flag set for 'don't spawn a door'
+		-- lets see, the door going to the tube to the right of the start ... is all zeros
+		-- in contrast, the other doors, some have 04 set on the direction, others have 01 on capX, some have 06 on capY, some have 04 on screenX 
+		-- [=[
+		local doorIsSpecial = true
+		for _,rs in ipairs(room.roomStates) do
+			assert(rs.plmset)
+			for i=#rs.plmset.plms,1,-1 do
+				local plm = rs.plmset.plms[i]
+				if plm.x == door.x and plm.y == door.y then
+					local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
+					assert(plmname:match'^door_')
+					if plmname:match'^door_grey_' 
+					or plmname:match'^door_eye_' 
+					then
+						doorIsSpecial = true
+					else
+						rs.plmset.plms:remove(i)
+					end
+				end
+			end
+--			local m = rs.m
+--			local _,door2 = m.doors:find(nil, function(door2) return door2.index == door.index+1 end) -- TODO change name
+--			door2.ptr.direction = bit.band(door2.ptr.direction, 3)
+		end
+		--]=]
+		-- found and removed all non-grey non-eye door plms
+		-- now to remove the tiles too
+		if not doorIsSpecial then	
+			local i,j = door.x, door.y
+			for k=0,3 do
+				if door.dir == 2 or door.dir == 3 then	-- left/right
+					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." mdb "..room.roomStates[1].m.ptr[0])
+					assert(j >= 0 and j < h)
+					room.blocks[0 + 3 * ((i+k) + w * j)] = 0xff
+					room.blocks[1 + 3 * ((i+k) + w * j)] = 0
+					room.blocks[2 + 3 * ((i+k) + w * j)] = 0
+				elseif door.dir == 0 or door.dir == 1 then	-- up/down
+					assert(i >= 0 and i < w)
+					assert(j+k >= 0 and j+k < h)
+					room.blocks[0 + 3 * (i + w * (j+k))] = 0xff
+					room.blocks[1 + 3 * (i + w * (j+k))] = 0
+					room.blocks[2 + 3 * (i + w * (j+k))] = 0
+				else
+					error'here'
+				end
 			end
 		end
 	end
@@ -209,6 +259,7 @@ doorptr.screenX = 3
 doorptr.screenY = 3
 --]]
 
+
 -- [[ make the first room have every item in the game
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
@@ -219,10 +270,11 @@ local newPLMSet = sm:newPLMSet{
 		and not name:match'_hidden$'
 		and not name:match'_chozo$'
 		then
+			local width = 7
 			return ffi.new('plm_t', {
 				cmd = cmd,
-				x = 40 + #t,
-				y = 70,
+				x = 42 + #t % width,
+				y = 74 + math.floor(#t / width),
 			}), #t+1
 		end
 	end),
@@ -231,7 +283,6 @@ startRoom.roomStates[2]:setPLMSet(newPLMSet)
 startRoom.roomStates[3]:setPLMSet(newPLMSet)
 startRoom.roomStates[4]:setPLMSet(newPLMSet)
 --]] -- write will match up the addrs
-
 
 -- write back changes
 sm:mapWrite()

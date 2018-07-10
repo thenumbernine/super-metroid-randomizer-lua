@@ -213,6 +213,10 @@ if config.randomizeItems then
 	require 'items'
 end
 
+if config.randomizeWeapons then
+	require 'weapons'
+end
+
 -- write out altered stuff
 sm:print()
 sm:mapSaveImage'map-random.png'

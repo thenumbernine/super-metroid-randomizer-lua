@@ -1813,7 +1813,8 @@ function SMMap:mapWriteRooms()
 		local data = room:getData()
 		local recompressed = lz.compress(data)
 	--	print('recompressed size: '..ffi.sizeof(recompressed)..' vs original compressed size '..room.compressedSize)
-		assert(ffi.sizeof(recompressed) <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..ffi.sizeof(recompressed).." vs original "..room.compressedSize)
+	-- this doesn't matter
+	--	assert(ffi.sizeof(recompressed) <= room.compressedSize, "recompressed to a larger size than the original.  recompressed "..ffi.sizeof(recompressed).." vs original "..room.compressedSize)
 		totalOriginalCompressedSize = totalOriginalCompressedSize + room.compressedSize
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 		
@@ -1893,7 +1894,7 @@ function SMMap:mapWriteEnemyPops()
 	end
 	--]]
 
-	--[[ update enemy pop
+	-- [[ update enemy pop
 	--[=[
 	with writing back plms removing onn-grey non-eye doors
 	and writing back room data, removing all breakable blocks and crumble blocks

@@ -6,7 +6,9 @@ return {
 	-- ... to make sure enemies aren't impossible
 
 	-- still WIP
-	randomizeRooms = true,
+--	randomizeRooms = true,
+
+	randomizeWeapons = true, 
 
 	-- skips the intro cutscene
 	skipIntro = true,
