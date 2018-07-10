@@ -2,7 +2,7 @@ local ffi = require 'ffi'
 
 local rom = sm.rom
 
--- [[
+--[[
 --[=[
 randomizing all doors ...
 1) enumerate all door regions
@@ -125,23 +125,35 @@ for _,room in ipairs(sm.rooms) do
 				local c = room.blocks[2 + 3 * (i + w * j)]
 --I'm still missing the bomable block in the loewr red room brinstar
 				-- notice that doors and platforms and IDs for doors and platforms can be just about anything
-				if false
-				or (bit.band(b, 0xf0) == 0xf0)	-- bombable
-				or (bit.band(b, 0xf0) == 0xb0)	-- crumble 
-				or (bit.band(b, 0xf0) == 0xc0)	-- shootable / powerbombable / super missile / speed booster?
+				if 
+-- [=[
+				false
+				--or bit.band(b, 0xf0) == 0x10	-- slope?
+				or bit.band(b, 0xf0) == 0x80	-- solid
+				or bit.band(b, 0xf0) == 0xb0	-- crumble 
+				or bit.band(b, 0xf0) == 0xc0	-- shootable / powerbombable / super missile / speed booster?
+				or bit.band(b, 0xf0) == 0xf0	-- bombable
 				
-				or (bit.band(b, 0xf0) == 0x50)	-- repeat? 
-				or (bit.band(b, 0xf0) == 0xd0)	-- repeat? 
-				
+				or bit.band(b, 0xf0) == 0x50	-- repeat? 
+				or bit.band(b, 0xf0) == 0xd0	-- repeat? 
+--]=]
 				--or (bit.band(b, 0x50) == 0x50 and c == 5)	-- fall through
 				--or (c >= 4 and c <= 7) 
 				--or c == 8 -- super missile
 				--or c == 9 -- power bomb .. if high byte high nibble is c
 				--or c == 0xf	-- speed block
 				then
+					--[=[ remove
 					room.blocks[0 + 3 * (i + w * j)] = 0xff
 					room.blocks[1 + 3 * (i + w * j)] = 0
 					room.blocks[2 + 3 * (i + w * j)] = 0
+					--]=]
+					-- [=[ turn to shootable block
+					--room.blocks[0 + 3 * (i + w * j)] = 0
+					room.blocks[1 + 3 * (i + w * j)] = bit.bor(0xc0, bit.band(b, 0x0f))
+					-- don't set this to 0 for door regions?
+					room.blocks[2 + 3 * (i + w * j)] = 0
+					--]=]
 					
 					--c = 0 -- means bombable/shootable, respawning
 					--c = 4	-- means bombable/shootable, no respawning, or it means fallthrough block
@@ -187,10 +199,39 @@ for _,room in ipairs(sm.rooms) do
 end
 --]]
 
--- make the first Ceres door go to Zebes
+--[[ make the first Ceres door go to Zebes
+-- screws up graphics ... permanently ...
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 local _,ceres = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 6 and m.ptr.index == 0 end))
-ceres.doors[1].ptr.dest_mdb = startRoom.addr
+local doorptr = ceres.doors[1].ptr
+doorptr.dest_mdb = startRoom.addr
+doorptr.screenX = 3
+doorptr.screenY = 3
+--]]
+
+-- [[ make the first room have every item in the game
+local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
+--start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
+local newPLMSet = sm:newPLMSet{
+	-- make a PLM of each item in the game
+	plms = sm.plmCmdValueForName:map(function(cmd,name,t)
+		if name:match'^item_' 
+		and not name:match'_hidden$'
+		and not name:match'_chozo$'
+		then
+			return ffi.new('plm_t', {
+				cmd = cmd,
+				x = 40 + #t,
+				y = 70,
+			}), #t+1
+		end
+	end),
+}
+startRoom.roomStates[2]:setPLMSet(newPLMSet)
+startRoom.roomStates[3]:setPLMSet(newPLMSet)
+startRoom.roomStates[4]:setPLMSet(newPLMSet)
+--]] -- write will match up the addrs
+
 
 -- write back changes
 sm:mapWrite()

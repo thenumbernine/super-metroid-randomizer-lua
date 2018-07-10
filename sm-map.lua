@@ -19,7 +19,7 @@ local SMMap = {}
 -- mdb = 'map database' I'm guessing?
 -- I am really tempted to defy convention and just call this 'room_t'
 -- and then call 'rooms' => 'roomblocks' or something, since it is the per-block data
-local mdb_t = struct'mdb_t'{	-- aka mdb_header_t
+local mdb_t = struct'mdb_t'{	-- aka mdb, aka mdb_header
 	{index = 'uint8_t'},		-- 0
 	{region = 'uint8_t'},		-- 1
 	{x = 'uint8_t'},			-- 2
@@ -252,8 +252,18 @@ SMMap.plmCmdValueForName = table{
 	item_xray			= 0xef0f,
 	item_spacejump 		= 0xef1b,
 	item_screwattack	= 0xef1f,
-
 }
+
+-- add 84 = 0x54 to items to get to chozo , another 84 = 0x54 to hidden
+for _,k in ipairs(SMMap.plmCmdValueForName:keys():filter(function(k)
+	return k:match'^item_'
+end)) do
+	local v = SMMap.plmCmdValueForName[k]
+	SMMap.plmCmdValueForName[k..'_chozo'] = v + 0x54
+	SMMap.plmCmdValueForName[k..'_hidden'] = v + 2*0x54
+end
+
+
 SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v end)
 
 local RoomState = class()
@@ -265,9 +275,35 @@ function RoomState:init(args)
 	self.bgs = self.bgs or table()
 end
 
+function RoomState:setPLMSet(plmset)
+	if self.plmset then
+		self.plmset.roomStates:removeObject(self)
+	end
+	self.plmset = plmset
+	if self.plmset then
+		self.plmset.roomStates:insert(self)
+	end
+end
+
+
+local PLMSet = class()
+
+function PLMSet:init(args)
+	self.addr = args.addr	--optional
+	self.plms = table(args.plms)
+	self.scrollmods = table()
+	self.roomStates = table()
+end
+
+function SMMap:newPLMSet(args)
+	local plmset = PLMSet(args)
+	self.plmsets:insert(plmset)
+	return plmset
+end
+
 -- table of all unique plm regions
 -- m is only used for MemoryMap.  you have to add to plmset.mdbs externally
-function SMMap:mapAddPLMSet(addr, m)
+function SMMap:mapAddPLMSetFromAddr(addr, m)
 	local rom = self.rom
 	local startaddr = addr
 	local _,plmset = self.plmsets:find(nil, function(plmset) return plmset.addr == addr end)
@@ -292,13 +328,10 @@ function SMMap:mapAddPLMSet(addr, m)
 	-- nil plmset for no plms
 	--if #plms == 0 then return end
 
-	local plmset = {
+	local plmset = self:newPLMSet{
 		addr = startaddr,
-		scrollmods = table(),
 		plms = plms,
-		roomStates = table(),
 	}
-	self.plmsets:insert(plmset)
 
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
@@ -786,10 +819,8 @@ function SMMap:mapInit()
 					local rs = m.roomStates[i]
 					if rs.ptr.plm ~= 0 then
 						local addr = topc(self.plmBank, rs.ptr.plm)
-						local plmset = self:mapAddPLMSet(addr, m)
-						
-						rs.plmset = plmset
-						plmset.roomStates:insert(rs)
+						local plmset = self:mapAddPLMSetFromAddr(addr, m)
+						rs:setPLMSet(plmset)
 					end
 				end
 
@@ -1607,7 +1638,6 @@ function SMMap:mapWritePLMs()
 				
 				plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
 				doorid = doorid + 1
-				--print(name .. ' '..('.'):rep(maxnamelen - #name) .. ' '.. ('%04x'):format(tonumber(plm.args)))
 			end
 		end
 		if eyedoor then 
@@ -1618,18 +1648,31 @@ function SMMap:mapWritePLMs()
 		end
 	end
 	-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
-	if doorid >= 0xff then error("got too many doors: "..doorid) end
+	assert(doorid <= 0xff, "got too many doors: "..doorid)
 	--]]
-	
+
+	-- [[ re-indexing the items ...
+	local itemid = 0
+	for _,plmset in ipairs(self.plmsets) do
+		for _,plm in ipairs(plmset.plms) do
+			local name = self.plmCmdNameForValue[plm.cmd]
+			if name and name:match'^item_' then
+				plm.args = itemid
+				itemid = itemid + 1 
+			end
+		end
+	end
+	--assert(itemid <= 100, "too many items (I think?)")
+	--]]
+
 	-- [[ optimizing plms ... 
 	-- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
 	for _,plmset in ipairs(self.plmsets) do
 		if #plmset.plms == 0 then
 			for j=#plmset.roomStates,1,-1 do
 				local rs = plmset.roomStates[j]
-				rs.ptr.plm = 0
-				rs.plmset = nil
-				plmset.roomStates[j] = nil
+				rs.ptr.plm = 0	-- don't need to change this -- it'll be reset later
+				rs:setPLMSet(nil)
 			end
 		end
 	end
@@ -1641,6 +1684,15 @@ function SMMap:mapWritePLMs()
 		end
 	end
 	--]=]
+	-- [[ remove plmsets not referenced by any roomstates
+	for i=#self.plmsets,1,-1 do
+		local plmset = self.plmsets[i]
+		if #plmset.roomStates == 0 then
+			print('!!! removing empty plmset !!!')	
+			self.plmsets:remove(i)
+		end
+	end
+	--]]
 	-- get rid of any duplicate plmsets ... there are none by default
 	for i=1,#self.plmsets-1 do
 		local pi = self.plmsets[i]
