@@ -1,3 +1,21 @@
+--[[
+Randomizing rooms, in conjunction with randomizing items, gives us room for a completely new approach at randomization.
+
+For example ... hidden items.  We don't have to put them where they used to be.  Now we can put them anywhere
+by replacing the old block they were at with a solid block, and moving them to any other location on the map (which is accessible by the player ... flood fill from the door_t entrance locations to find this out? 
+
+I could take it a step further and randomly bore holes into the ground to hide morph-dependent items.
+
+I can use the xx9xyy tiles to determine exit destinations, to determine connectivity of rooms.
+From there I'll have to insert subnodes within rooms, separated by blockades of arbitrary type (crumble, speed boost, etc).
+And from there I can use this graph to determine enter/exit accessibility automatically (right now it is manually entered for each item).
+Looks like hidden items can just be set over any solid block to replace it with an item.
+Looks like chozo items likewise can be set in any empty tile to be a solid, shootable egg.
+
+
+
+--]]
+
 local ffi = require 'ffi'
 
 local rom = sm.rom

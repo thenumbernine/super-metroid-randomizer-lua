@@ -6,7 +6,7 @@ return {
 	-- ... to make sure enemies aren't impossible
 
 	-- still WIP
-	randomizeRooms = true,
+--	randomizeRooms = true,
 
 --	randomizeWeapons = true, 
 

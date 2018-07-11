@@ -1010,16 +1010,17 @@ function SMMap:mapInit()
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				local dest_mdb = self.mdbs:find(nil, function(m) return m.addr == door.ptr.dest_mdb end)
-				if not dest_mdb then
-					error('!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
-				end
+				local dest_mdb = assert(
+					select(2, self.mdbs:find(nil, function(m) 
+						return m.addr == door.ptr.dest_mdb 
+					end)), 
+					'!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
 				-- points to the dest mdb
 				door.dest_mdb = dest_mdb
 			end
 		end
 	end
-
+	
 	--[[ get a table of doors based on their plm arg low byte
 	self.doorPLMForID = table()
 	for _,plmset in ipairs(self.plmsets) do
@@ -1212,17 +1213,18 @@ local ofsPerRegion = {
 }
 
 local function drawRoom(mapimg, m, blocks)
-	local ofsx, ofsy = ofsPerRegion[m.region+1](m)
+	local w, h = m.ptr.width, m.ptr.height
+	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
 	local xofs = roomSizeInPixels * (ofsx - 4)
 	local yofs = roomSizeInPixels * (ofsy + 1)
 	local firstcoord
-	for j=0,m.height-1 do
-		for i=0,m.width-1 do
+	for j=0,h-1 do
+		for i=0,w-1 do
 			for ti=0,blocksPerRoom-1 do
 				for tj=0,blocksPerRoom-1 do
 					local dx = ti + blocksPerRoom * i
 					local dy = tj + blocksPerRoom * j
-					local di = dx + blocksPerRoom * m.width * dy
+					local di = dx + blocksPerRoom * w * dy
 					-- blocks is 1-based
 					local d1 = blocks[0 + 3 * di] or 0
 					local d2 = blocks[1 + 3 * di] or 0
@@ -1243,10 +1245,10 @@ local function drawRoom(mapimg, m, blocks)
 					else
 						for pi=0,blockSizeInPixels-1 do
 							for pj=0,blockSizeInPixels-1 do
-								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.y + j))
-								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.x + i))
-				--for y=(m.y + j)* roomSizeInPixels + yofs, (m.y + m.height) * roomSizeInPixels - 1 + yofs do
-				--	for x=m.x * roomSizeInPixels + xofs, (m.x + m.width) * roomSizeInPixels - 1 + xofs do
+								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
+								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
+				--for y=(m.ptr.y + j)* roomSizeInPixels + yofs, (m.ptr.y + h) * roomSizeInPixels - 1 + yofs do
+				--	for x=m.ptr.x * roomSizeInPixels + xofs, (m.ptr.x + w) * roomSizeInPixels - 1 + xofs do
 								if x >= 0 and x < mapimg.width
 								and y >= 0 and y < mapimg.height 
 								then
@@ -1269,6 +1271,13 @@ local function drawRoom(mapimg, m, blocks)
 -- it'd be really nice to draw the mdb region/index next to the room ...
 -- now it'd be nice if i didn't draw over the numbers ... either by the room tile data, or by other numbers ...
 local digits = {
+	['$'] = {
+		' **',
+		'** ',
+		' * ',
+		' **',
+		'** ',
+	},
 	['-'] = {
 		'   ',
 		'   ',
@@ -1390,7 +1399,7 @@ local digits = {
 	},
 }
 
-	local function drawstr(s)
+	local function drawstr(s,pos)
 		for i=1,#s do
 			local ch = digits[s:sub(i,i)]
 			if ch then
@@ -1398,8 +1407,8 @@ local digits = {
 					for pi=0,2 do
 						local c = ch[pj+1]:byte(pi+1) == (' '):byte() and 0 or 255
 						if c ~= 0 then	
-							local x = firstcoord[1] + pi + (i-1)*4
-							local y = firstcoord[2] + pj
+							local x = pos[1] + pi + (i-1)*4
+							local y = pos[2] + pj
 						
 							if x >= 0 and x < mapimg.width
 							and y >= 0 and y < mapimg.height 
@@ -1414,7 +1423,61 @@ local digits = {
 			end
 		end
 	end
-	drawstr(('%x-%02x'):format(m.region, m.index))
+	drawstr(('%x-%02x'):format(m.ptr.region, m.ptr.index), firstcoord)
+	drawstr(('$%04x'):format(m.addr), {
+		firstcoord[1],
+		firstcoord[2] + 6,
+	})
+end
+
+
+local function drawRoomDoors(mapimg, m, blocks)
+	for _,door in ipairs(m.doors) do
+		if door.ctype == 'door_t' then
+			local m2 = assert(door.dest_mdb)
+			local ofsx, ofsy = ofsPerRegion[m2.ptr.region+1](m2.ptr)
+			local xofs = roomSizeInPixels * (ofsx - 4)
+			local yofs = roomSizeInPixels * (ofsy + 1)
+		
+			-- draw an arrow or something on the map where the door drops us off at
+			-- door.dest_mdb is the mdb
+			-- draw it at door.ptr.screenX by door.ptr.screenY
+			-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
+
+			local i = door.ptr.screenX
+			local j = door.ptr.screenY
+			local dir = bit.band(door.ptr.direction, 3)	-- 0-based
+			local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
+				
+			for k=0,blockSizeInPixels * 3-1 do
+				local pi, pj
+				if dir == 0 then		-- enter from left
+					pi = k
+					pj = bit.rshift(roomSizeInPixels, 1)
+				elseif dir == 1 then	-- enter from right
+					pi = roomSizeInPixels - k
+					pj = bit.rshift(roomSizeInPixels, 1)
+				elseif dir == 2 then	-- enter from top
+					pi = bit.rshift(roomSizeInPixels, 1)
+					pj = k
+				elseif dir == 3 then	-- enter from bottom
+					pi = bit.rshift(roomSizeInPixels, 1)
+					pj = roomSizeInPixels - k
+				end
+				
+				local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m2.ptr.x + i))
+				local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m2.ptr.y + j))
+	
+				if x >= 0 and x < mapimg.width
+				and y >= 0 and y < mapimg.height 
+				then
+					mapimg.buffer[0+3*(x+mapimg.width*y)] = 0xff
+					mapimg.buffer[1+3*(x+mapimg.width*y)] = 0xff
+					mapimg.buffer[2+3*(x+mapimg.width*y)] = 0xff
+				end
+			end
+		end
+	end
 end
 
 
@@ -1425,7 +1488,13 @@ function SMMap:mapSaveImage(filename)
 
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
-			drawRoom(mapimg, m.ptr, room.blocks)
+			drawRoom(mapimg, m, room.blocks)
+		end
+	end
+
+	for _,room in ipairs(self.rooms) do
+		for _,m in ipairs(room.mdbs) do
+			drawRoomDoors(mapimg, m, room.blocks)
 		end
 	end
 
