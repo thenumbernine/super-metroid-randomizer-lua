@@ -2,7 +2,7 @@ local ffi = require 'ffi'
 
 local rom = sm.rom
 
--- [[
+--[[
 --[=[
 randomizing all doors ...
 1) enumerate all door regions
@@ -64,7 +64,7 @@ print('created '..newDoorCount..' new doors')
 --]]
 
 
--- [[ do some modifications
+--[[ do some modifications
 --[=[ hmm, todo, don't write over the doors ...
 look out for 41-ff-fe-fd in horizontal or vertical order
 then, beside it will be the door ID #... don't change that ...
@@ -260,7 +260,7 @@ doorptr.screenY = 3
 --]]
 
 
--- [[ make the first room have every item in the game
+--[[ make the first room have every item in the game
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
 local newPLMSet = sm:newPLMSet{
@@ -283,6 +283,25 @@ startRoom.roomStates[2]:setPLMSet(newPLMSet)
 startRoom.roomStates[3]:setPLMSet(newPLMSet)
 startRoom.roomStates[4]:setPLMSet(newPLMSet)
 --]] -- write will match up the addrs
+
+
+-- [[ remove all scrollmods and make constant all scrolldata
+-- as soon as you walk into the old mother brain room, this causes the screen to permanently glitch where it draws things
+-- remove all scrollmod plms
+for _,plmset in ipairs(sm.plmsets) do
+	for i=#plmset.plms,1,-1 do
+		if plmset.plms[i].cmd == sm.plmCmdValueForName.scrollmod then
+			plmset.plms:remove(i)
+		end
+	end
+end
+-- change all scroll values to 01
+for _,m in ipairs(sm.mdbs) do
+	for _,rs in ipairs(m.roomStates) do
+		rs.ptr.scroll = 1
+	end
+end
+--]]
 
 -- write back changes
 sm:mapWrite()

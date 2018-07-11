@@ -54,8 +54,21 @@ local roomstate_t = struct'roomstate_t'{
 	{enemyPop = 'uint16_t'},
 	{enemySet = 'uint16_t'},
 	{layer2scrollData = 'uint16_t'},	-- TODO
+	
+	--[[
+	scroll is either a constant, or an offset in bank $8f to 1 byte per map block
+	if scroll is 0 or 1 then it is a constant -- to fill all map blocks with that scroll value
+	otherwise it is a ptr to an array of scroll values for each map block.
+	0 = don't scroll up/down, or past the scroll==0 boundaries at all
+	1 = scroll anywhere, but clip the top & bottom 2 blocks (which will hide vertical exits)
+	2 = scroll anywhere at all ... but keeps samus in the middle, which makes it bad for hallways
+	--]]
 	{scroll = 'uint16_t'},
-	{unknown = 'uint16_t'},				-- this is only used by the gold torizo room, and points to the extra data after mdb_t
+	
+	--[[
+	this is only used by the gold torizo room, and points to the extra data after mdb_t
+	--]]
+	{unknown = 'uint16_t'},				
 	{fx2 = 'uint16_t'},					-- TODO - aka 'main asm ptr'
 	{plm = 'uint16_t'},
 	{bgdata = 'uint16_t'},
@@ -335,7 +348,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
-		if plm.cmd == 0xb703 then
+		if plm.cmd == self.plmCmdValueForName.scrollmod then
 			local startaddr = 0x70000 + plm.args
 			local addr = startaddr
 			local data = table()
