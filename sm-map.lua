@@ -10,6 +10,7 @@ local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
 local WriteRange = require 'writerange'
+local vec2 = require 'vec.vec2'
 
 
 local SMMap = {}
@@ -538,19 +539,25 @@ function SMMap:mapAddRoom(addr, m)
 	assert(ofs <= ffi.sizeof(data), "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..ffi.sizeof(data))
 
 	-- keep track of doors
-	local doors = table()	-- x,y,w,h 
-	for j=2,h-3 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
-		for i=1,w-2 do
+	
+	-- ok, this correlates with the door plms, so it is useful
+	--  but it isn't general to all exits
+	local doors = table()	-- x,y,w,h
+	-- so that's where this comes in.  it is general to all exits.
+	-- 	key is the exit, value is a list of all positions of each exit xx9xyy block
+	local blocksForExit = table()
+	for j=0,h-1 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
+		for i=0,w-1 do
 			local a = blocks[0 + 3 * (i + w * j)]
 			local b = blocks[1 + 3 * (i + w * j)]
 			local c = blocks[2 + 3 * (i + w * j)]
 
---[[
+-- [[
 -- look for 0x9x in ch2 of of room.blocks
 			if bit.band(b, 0xf0) == 0x90 then
-				-- only now, look for a c==0x4x to either side of the 0x9x
-				-- notice that the 0x4x will be where the plm points to
-				-- that means we can have exits that use 0x9x that don't have doors associated with them ...
+				local exitindex = c
+				blocksForExit[exitindex] = blocksForExit[exitindex] or table()
+				blocksForExit[exitindex]:insert(vec2(i,j))
 			end
 --]]
 
@@ -588,7 +595,10 @@ however exits with no doors:
 so how does the map know when to distinguish those tiles from ordinary 00,01,etc shot tiles, especially with no plm there?
  and esp when the destination door_t structure doesn't say anything about the location from where the door is?
 --]]			
-			if c >= 0x40 and c <= 0x43 then
+			if i >= 1 and i <= w-2 
+			and j >= 2 and j <= h-3
+			and c >= 0x40 and c <= 0x43 
+			then
 				-- here's the upper-left of a door.  now, which way is it facing
 				if i<w-3
 				and (c == 0x42 or c == 0x43)
@@ -637,8 +647,7 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 		addr = addr,
 		mdbs = table(),
 		roomStates = table(),
-		doors = doors,
-		-- this is just 16*(w,h)
+		-- this is just 16 * mdb's (width, height)
 		width = w,
 		height = h,
 		-- rule of thumb: do not exceed this
@@ -647,6 +656,9 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 		head = head,	-- first 2 bytes of data
 		blocks = blocks,	-- interleaved 2-byte and 1-byte bts into 3-byte room block data
 		tail = tail,	-- last bytes after blocks 
+		-- extra stuff I'm trying to keep track of
+		doors = doors,
+		blocksForExit = blocksForExit,
 	}
 	room.mdbs:insert(m)
 	self.rooms:insert(room)
@@ -1430,26 +1442,64 @@ local digits = {
 	})
 end
 
+local function drawline(mapimg, x1,y1,x2,y2)
+	local dx = x2 - x1
+	local dy = y2 - y1
+	local adx = math.abs(dx)
+	local ady = math.abs(dy)
+	local d = math.max(adx, ady) + 1
+	for k=1,d do
+		local s = (k-.5)/d
+		local t = 1 - s
+		local x = math.round(s * x1 + t * x2)
+		local y = math.round(s * y1 + t * y2)
+		if x >= 0 and x < mapimg.width
+		and y >= 0 and y < mapimg.height 
+		then
+			mapimg.buffer[0+3*(x+mapimg.width*y)] = 0xff
+			mapimg.buffer[1+3*(x+mapimg.width*y)] = 0xff
+			mapimg.buffer[2+3*(x+mapimg.width*y)] = 0xff
+		end
+	end
+end
 
-local function drawRoomDoors(mapimg, m, blocks)
-	for _,door in ipairs(m.doors) do
-		if door.ctype == 'door_t' then
-			local m2 = assert(door.dest_mdb)
-			local ofsx, ofsy = ofsPerRegion[m2.ptr.region+1](m2.ptr)
-			local xofs = roomSizeInPixels * (ofsx - 4)
-			local yofs = roomSizeInPixels * (ofsy + 1)
-		
-			-- draw an arrow or something on the map where the door drops us off at
-			-- door.dest_mdb is the mdb
-			-- draw it at door.ptr.screenX by door.ptr.screenY
-			-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
+local function drawRoomDoors(mapimg, room)
+	local blocks = room.blocks
+	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
+	-- then, cycle through exits, and draw lines from each block to the exit destination
 
-			local i = door.ptr.screenX
-			local j = door.ptr.screenY
-			local dir = bit.band(door.ptr.direction, 3)	-- 0-based
-			local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
-				
-			for k=0,blockSizeInPixels * 3-1 do
+	for _,srcm in ipairs(room.mdbs) do
+		local srcm_ofsx, srcm_ofsy = ofsPerRegion[srcm.ptr.region+1](srcm.ptr)
+		local srcm_xofs = roomSizeInPixels * (srcm_ofsx - 4)
+		local srcm_yofs = roomSizeInPixels * (srcm_ofsy + 1)
+		for exitindex,blockpos in pairs(room.blocksForExit) do
+print('in mdb '..('%02x/%02x'):format(srcm.ptr.region, srcm.ptr.index)
+	..' looking for exit '..exitindex..' with '..#blockpos..' blocks')
+			-- TODO lifts will mess up the order of this, maybe?
+			local door = srcm.doors[exitindex+1]
+			if not door then
+print('found no door')
+			elseif door.ctype ~= 'door_t' then
+print("door isn't a ctype")
+			-- TODO handle lifts?
+			else
+				local dstm = assert(door.dest_mdb)
+				local dstm_ofsx, dstm_ofsy = ofsPerRegion[dstm.ptr.region+1](dstm.ptr)
+				local dstm_xofs = roomSizeInPixels * (dstm_ofsx - 4)
+				local dstm_yofs = roomSizeInPixels * (dstm_ofsy + 1)
+			
+				-- draw an arrow or something on the map where the door drops us off at
+				-- door.dest_mdb is the mdb
+				-- draw it at door.ptr.screenX by door.ptr.screenY
+				-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
+
+				local i = door.ptr.screenX
+				local j = door.ptr.screenY
+				local dir = bit.band(door.ptr.direction, 3)	-- 0-based
+				local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
+					
+				local k=blockSizeInPixels*3-1 
+					
 				local pi, pj
 				if dir == 0 then		-- enter from left
 					pi = k
@@ -1464,17 +1514,24 @@ local function drawRoomDoors(mapimg, m, blocks)
 					pi = bit.rshift(roomSizeInPixels, 1)
 					pj = roomSizeInPixels - k
 				end
+			
+				-- here's the pixel x & y of the door destination
+				local x1 = dstm_xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (dstm.ptr.x + i))
+				local y1 = dstm_yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (dstm.ptr.y + j))
+
+				-- [[
+				for _,pos in ipairs(blockpos) do
+					-- now for src block pos
+					local x2 = srcm_xofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[1] + blocksPerRoom * srcm.ptr.x)
+					local y2 = srcm_yofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[2] + blocksPerRoom * srcm.ptr.y)
 				
-				local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m2.ptr.x + i))
-				local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m2.ptr.y + j))
-	
-				if x >= 0 and x < mapimg.width
-				and y >= 0 and y < mapimg.height 
-				then
-					mapimg.buffer[0+3*(x+mapimg.width*y)] = 0xff
-					mapimg.buffer[1+3*(x+mapimg.width*y)] = 0xff
-					mapimg.buffer[2+3*(x+mapimg.width*y)] = 0xff
+					drawline(mapimg,x1,y1,x2,y2)
 				end
+				--]]
+				--[[
+				drawline(mapimg,x1+5,y1,x1-5,y1)
+				drawline(mapimg,x1,y1+5,x1,y1-5)
+				--]]
 			end
 		end
 	end
@@ -1493,9 +1550,7 @@ function SMMap:mapSaveImage(filename)
 	end
 
 	for _,room in ipairs(self.rooms) do
-		for _,m in ipairs(room.mdbs) do
-			drawRoomDoors(mapimg, m, room.blocks)
-		end
+		drawRoomDoors(mapimg, room)
 	end
 
 	mapimg:save(filename)
@@ -1527,6 +1582,7 @@ function SMMap:mapPrintRooms()
 		for _,door in ipairs(room.doors) do
 			print(' '..tolua(door))
 		end
+		print('blocksForExit'..tolua(room.blocksForExit))	-- exit information
 	end
 end
 
