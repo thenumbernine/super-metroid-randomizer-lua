@@ -1442,7 +1442,10 @@ local digits = {
 	})
 end
 
-local function drawline(mapimg, x1,y1,x2,y2)
+local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
+	r = r or 0xff
+	g = g or 0xff
+	b = b or 0xff
 	local dx = x2 - x1
 	local dy = y2 - y1
 	local adx = math.abs(dx)
@@ -1456,9 +1459,9 @@ local function drawline(mapimg, x1,y1,x2,y2)
 		if x >= 0 and x < mapimg.width
 		and y >= 0 and y < mapimg.height 
 		then
-			mapimg.buffer[0+3*(x+mapimg.width*y)] = 0xff
-			mapimg.buffer[1+3*(x+mapimg.width*y)] = 0xff
-			mapimg.buffer[2+3*(x+mapimg.width*y)] = 0xff
+			mapimg.buffer[0+3*(x+mapimg.width*y)] = r
+			mapimg.buffer[1+3*(x+mapimg.width*y)] = g
+			mapimg.buffer[2+3*(x+mapimg.width*y)] = b
 		end
 	end
 end
@@ -1519,24 +1522,43 @@ print("door isn't a ctype")
 				local x1 = dstm_xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (dstm.ptr.x + i))
 				local y1 = dstm_yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (dstm.ptr.y + j))
 
-				-- [[
 				for _,pos in ipairs(blockpos) do
 					-- now for src block pos
 					local x2 = srcm_xofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[1] + blocksPerRoom * srcm.ptr.x)
 					local y2 = srcm_yofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[2] + blocksPerRoom * srcm.ptr.y)
-				
 					drawline(mapimg,x1,y1,x2,y2)
 				end
-				--]]
-				--[[
-				drawline(mapimg,x1+5,y1,x1-5,y1)
-				drawline(mapimg,x1,y1+5,x1,y1-5)
-				--]]
 			end
 		end
 	end
 end
 
+function drawRoomPLMs(mapimg, room)
+	for _,rs in ipairs(room.roomStates) do
+		local m = rs.m
+		local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
+		local xofs = roomSizeInPixels * (ofsx - 4)
+		local yofs = roomSizeInPixels * (ofsy + 1)
+		if rs.plmset then
+			for _,plm in ipairs(rs.plmset.plms) do
+				local x = xofs + blockSizeInPixels/2 + blockSizeInPixels * (plm.x + blocksPerRoom * m.ptr.x)
+				local y = yofs + blockSizeInPixels/2 + blockSizeInPixels * (plm.y + blocksPerRoom * m.ptr.y)
+				drawline(mapimg,x+2,y,x-2,y, 0x00, 0xff, 0xff)
+				drawline(mapimg,x,y+2,x,y-2, 0x00, 0xff, 0xff)
+			end
+		end
+		--[[ what exactly are the coordinates of enemyPop ?
+		if rs.enemyPopSet then
+			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do
+				local x = xofs + blockSizeInPixels/2 + enemyPop.x + blockSizeInPixels * (blocksPerRoom * m.ptr.x)
+				local y = yofs + blockSizeInPixels/2 + enemyPop.y + blockSizeInPixels * (blocksPerRoom * m.ptr.y)
+				drawline(mapimg,x+2,y,x-2,y, 0xff, 0x00, 0xff)
+				drawline(mapimg,x,y+2,x,y-2, 0xff, 0x00, 0xff)
+			end
+		end
+		--]]
+	end
+end
 
 
 function SMMap:mapSaveImage(filename)
@@ -1551,6 +1573,7 @@ function SMMap:mapSaveImage(filename)
 
 	for _,room in ipairs(self.rooms) do
 		drawRoomDoors(mapimg, room)
+		drawRoomPLMs(mapimg, room)
 	end
 
 	mapimg:save(filename)
