@@ -1547,16 +1547,14 @@ function drawRoomPLMs(mapimg, room)
 				drawline(mapimg,x,y+2,x,y-2, 0x00, 0xff, 0xff)
 			end
 		end
-		--[[ what exactly are the coordinates of enemyPop ?
 		if rs.enemyPopSet then
 			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do
-				local x = xofs + blockSizeInPixels/2 + enemyPop.x + blockSizeInPixels * (blocksPerRoom * m.ptr.x)
-				local y = yofs + blockSizeInPixels/2 + enemyPop.y + blockSizeInPixels * (blocksPerRoom * m.ptr.y)
+				local x = math.round(xofs + blockSizeInPixels/2 + blockSizeInPixels * (enemyPop.x / 16 + blocksPerRoom * m.ptr.x))
+				local y = math.round(yofs + blockSizeInPixels/2 + blockSizeInPixels * (enemyPop.y / 16 + blocksPerRoom * m.ptr.y))
 				drawline(mapimg,x+2,y,x-2,y, 0xff, 0x00, 0xff)
 				drawline(mapimg,x,y+2,x,y-2, 0xff, 0x00, 0xff)
 			end
 		end
-		--]]
 	end
 end
 
