@@ -49,6 +49,6 @@ local addrs
 for _,addr in ipairs(weaponNameForDamageAddr:keys():sort()) do
 	local name = weaponNameForDamageAddr[addr]
 	local ptr = ffi.cast('uint16_t*', rom+addr)
-	ptr[0] = 0x999	--math.random(20, 0x200)
+	ptr[0] = math.random(20, 0x200)
 	print(('$%06x'):format(addr)..' = '..('%04x'):format(ptr[0])..' '..name)
 end

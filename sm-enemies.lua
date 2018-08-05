@@ -478,14 +478,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
 	for name,_ in pairs(dontChangeWeaknessSet) do
-		if self.enemyForName[name].ptr.weakness == addr then
+		if sm.enemyForName[name].ptr.weakness == addr then
 			return
 		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
 	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == self.enemyForName.Shaktool.ptr.weakness then
+	if addr == sm.enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
 	
