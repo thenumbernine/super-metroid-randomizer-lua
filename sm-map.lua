@@ -10,7 +10,6 @@ local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
 local WriteRange = require 'writerange'
-local vec2 = require 'vec.vec2'
 
 
 local SMMap = {}
@@ -557,7 +556,7 @@ function SMMap:mapAddRoom(addr, m)
 			if bit.band(b, 0xf0) == 0x90 then
 				local exitindex = c
 				blocksForExit[exitindex] = blocksForExit[exitindex] or table()
-				blocksForExit[exitindex]:insert(vec2(i,j))
+				blocksForExit[exitindex]:insert{i,j}
 			end
 --]]
 
@@ -1612,7 +1611,8 @@ function SMMap:mapPrint()
 	print()
 	print("all plm_t's:")
 	for _,plmset in ipairs(self.plmsets) do
-		print(' '..('$%06x'):format(plmset.addr)
+		print(' '
+			..(plmset.addr and ('$%06x'):format(plmset.addr) or 'nil')
 			..' mdbs: '..plmset.roomStates:map(function(rs)
 				local m = rs.m
 				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)

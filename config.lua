@@ -1,6 +1,6 @@
 return {
 	randomizeEnemies = true,
-  
+
 	randomizeItems = true,
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
@@ -8,7 +8,7 @@ return {
 	-- still WIP
 --	randomizeRooms = true,
 
---	randomizeWeapons = true, 
+	randomizeWeapons = true, 
 
 	-- skips the intro cutscene
 	skipIntro = true,

@@ -278,7 +278,7 @@ doorptr.screenY = 3
 --]]
 
 
---[[ make the first room have every item in the game
+-- [[ make the first room have every item in the game
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
 local newPLMSet = sm:newPLMSet{
@@ -303,7 +303,7 @@ startRoom.roomStates[4]:setPLMSet(newPLMSet)
 --]] -- write will match up the addrs
 
 
--- [[ remove all scrollmods and make constant all scrolldata
+--[[ remove all scrollmods and make constant all scrolldata
 -- as soon as you walk into the old mother brain room, this causes the screen to permanently glitch where it draws things
 -- remove all scrollmod plms
 for _,plmset in ipairs(sm.plmsets) do
