@@ -1,4 +1,6 @@
 return {
+	writeOutImage = false,
+	
 	randomizeEnemies = true,
 
 	randomizeItems = true,

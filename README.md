@@ -1,6 +1,10 @@
 # Super Metroid item randomizer
 
-Depends on LuaJIT
+Depends on:
+- LuaJIT
+- my lua ext library
+- my lua template library
+- my lua ips library
 
 randomizes the following:
 - enemies:

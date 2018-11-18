@@ -1194,7 +1194,6 @@ end
 
 
 
-local image = require 'image'
 local blockSizeInPixels = 4
 local blocksPerRoom = 16
 local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
@@ -1560,6 +1559,7 @@ end
 
 function SMMap:mapSaveImage(filename)
 	filename = filename or 'map.png'	
+	local image = require 'image'
 	local mapimg = image(roomSizeInPixels*68, roomSizeInPixels*58, 3, 'unsigned char')
 
 	for _,room in ipairs(self.rooms) do

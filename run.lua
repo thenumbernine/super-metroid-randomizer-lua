@@ -58,7 +58,7 @@ local outfilename = cmdline['out'] or 'sm-random.sfc'
 -- [[ apply patches
 file.__tmp = file[infilename]
 local function applyPatch(patchfilename)
-	local results = {os.execute('../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')}
+	local results = {os.execute('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')}
 	print('results', table.unpack(results))
 	file.__tmp = file.__tmp2
 	file.__tmp2 = nil
@@ -191,7 +191,9 @@ local SM = require 'sm'
 sm = SM(rom)
 
 -- write out unaltered stuff
-sm:mapSaveImage'map.png'
+if config.writeOutImage then
+	sm:mapSaveImage'map.png'
+end
 -- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 sm:buildMemoryMap():print'memorymap.txt'
 
