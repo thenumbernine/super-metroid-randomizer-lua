@@ -5,6 +5,7 @@ Depends on:
 - my lua ext library
 - my lua template library
 - my lua ips library
+- my lua image library, if you enable config.lua's writeOutImage
 
 randomizes the following:
 - enemies:
