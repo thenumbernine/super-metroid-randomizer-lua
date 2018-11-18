@@ -221,7 +221,9 @@ end
 
 -- write out altered stuff
 sm:print()
-sm:mapSaveImage'map-random.png'
+if config.writeOutImage then
+	sm:mapSaveImage'map-random.png'
+end
 sm:buildMemoryMap():print()
 
 
