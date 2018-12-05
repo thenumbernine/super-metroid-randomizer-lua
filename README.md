@@ -1,5 +1,10 @@
 # Super Metroid item randomizer
 
+A description of what you are up against:
+- The first item is often a missile tank, not a morph ball.
+- Next you will often get a power bomb.  Because the space pirates in old mother brain cannot yet be killed.
+- Good luck.
+
 Depends on:
 - LuaJIT
 - my lua ext library
