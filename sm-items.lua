@@ -443,7 +443,9 @@ local function escapeGauntletFirstRoom()
 end
 
 local function accessGauntletSecondRoom()
-	return accessGauntlet() and escapeGauntletFirstRoom()
+	return accessGauntlet() 
+	and escapeGauntletFirstRoom() 
+	and canUseBombs()	-- oh yeah, you need morph to get past the e-tank in gauntlet.  should that be escape?
 end
 
 -- here's another escape condition shared between items: only one of the two green pirate shaft items needs to be morph
@@ -570,9 +572,9 @@ items:insert{
 		and canKill'Spore Spawn'
 	end,
 	escape = function()
-		-- super missile door, super missile block, morph passage
+		-- super missile door, super missile block, morph passage, bomb to exit
 		return req.supermissile
-		and req.morph
+		and canDestroyBombWallsMorphed()
 	end
 }
 

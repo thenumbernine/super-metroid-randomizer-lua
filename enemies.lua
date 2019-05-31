@@ -64,7 +64,9 @@ end
 --]]
 
 for i,enemy in ipairs(sm.enemies) do
-	randomizeFieldExp(enemy.ptr, 'health')
+	if enemy.name ~= 'Spore Spawn' then
+		randomizeFieldExp(enemy.ptr, 'health')
+	end
 	randomizeFieldExp(enemy.ptr, 'damage')
 	randomizeFieldExp(enemy.ptr, 'hurtTime')
 	

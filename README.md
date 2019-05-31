@@ -3,6 +3,7 @@
 A description of what you are up against:
 - The first item is often a missile tank, not a morph ball.
 - Next you will often get a power bomb.  Because the space pirates in old mother brain cannot yet be killed.
+- With randomized weapon drops and enemy weaknesses, you will find yourself switching items very often just to try to kill something, and hunting through rooms just to reload one particular weapon.
 - Good luck.
 
 Depends on:

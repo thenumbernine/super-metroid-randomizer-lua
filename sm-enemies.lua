@@ -325,6 +325,7 @@ end
 local dontChangeWeaknessSet = {
 	["Kraid (body)"] = true, 
 	Metroid = true,
+	["Spore Spawn"] = true,
 }
 
 --[[
@@ -436,6 +437,12 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	local values = self.fields:map(function(field)
 		local fieldName, fieldType = next(field)
 
+		if config.forceEnemyWeakness
+		and config.forceEnemyWeakness[fieldName] 
+		then 
+			return config.forceEnemyWeakness[fieldName] 
+		end
+
 		local freezeField = iceFieldSet[fieldName]
 		
 		-- only if it's a freeze field 
@@ -451,7 +458,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 		else
 			-- exp(-x/7) has the following values for 0-15:
 			-- 1.0, 0.86687789975018, 0.75147729307529, 0.65143905753106, 0.56471812200776, 0.48954165955695, 0.42437284567695, 0.36787944117144, 0.31890655732397, 0.27645304662956, 0.23965103644178, 0.2077481871436, 0.18009231214795, 0.15611804531597, 0.13533528323661, 0.11731916609425
-			value = pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
+			value = 1	--pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
 		end	
 
 		if freezeField  then

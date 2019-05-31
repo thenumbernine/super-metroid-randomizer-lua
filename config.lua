@@ -6,9 +6,11 @@ return {
 	randomizeItems = true,
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
+	-- NOTICE - if you randomizeRooms and it re-writes the item order, then randomizeItems will fail.
+	-- FIXME: change the specific item access info with map access info, and choose for each item according to where it is placed
 
 	-- still WIP
---	randomizeRooms = true,
+	--randomizeRooms = true,
 
 	randomizeWeapons = true, 
 
@@ -24,13 +26,18 @@ return {
 	-- note: I just did another run and the space pirates did spawn.  hmm.
 	wakeZebesEarly = true,
 
+	-- force certain weakness values on all monsters:
+	forceEnemyWeakness = {
+		screwattack = 0,	-- make all monsters immune to screw attack
+	},
+
 	-- used by enemy randomization
 	randomizeEnemyProps = {
 	
 		palette = true,
 
 		weakness = true,
-		weaknessImmunityChance = .75,
+		weaknessImmunityChance = .25,
 		chanceToFreeze = 2/3,
 		chanceToInstaFreeze = .05,
 
@@ -38,10 +45,10 @@ return {
 		itemDropZeroChance = .75,	-- % of item drop percentage fields that are 0%
 
 		health = true,
-		healthScaleRange = {1/3, 3},	-- new health = 33% to 300% the old health
+		healthScaleRange = {10, 20},	-- new health = 33% to 300% the old health
 
 		damage = true,
-		damageScaleRange = {1/3, 3},
+		damageScaleRange = {10, 50},
 
 		-- hmm, these can't strictly be scaled always, because some enemies have 0 as values.  that doesn't scale well.
 		hurtTime = true,
@@ -64,7 +71,7 @@ return {
 		--]]
 	
 		shotDamage = true,
-		shotDamageScaleRange = {1/3, 3},
+		shotDamageScaleRange = {10, 50},
 	},
 
 	-- used by item randomization
@@ -86,7 +93,7 @@ return {
 
 		jumpAndMorph = true,
 
-		damageBoostToBrinstarEnergy = true,
+		damageBoostToBrinstarEnergy = false,	--true,	-- with high damage, this guarantees you to be killed
 
 		-- whether the player knows to use mockball to get into the green Brinstar item area
 		-- I think that's the only place it's really necessary
@@ -190,9 +197,9 @@ return {
 
 	-- every item type probability defaults to 1
 	-- however you can override any you want to see sooner
---[[	
+-- [[
 	itemPlacementProbability = {
-		bomb = .01,
+		bomb = .001,
 		charge = 1.5848931924611,
 		energy = .63095734448019,
 		grappling = 1.5848931924611,
@@ -202,14 +209,15 @@ return {
 		missile = 1,
 		morph = .01,
 		plasma = .63095734448019,
-		powerbomb = .01,
+		powerbomb = .001,
 		reserve = 10,
-		screwattack = .01,
+		--screwattack = .01,
+screwattack = 100,	-- screw attack first! and make all monsters immune to it! 
 		spacejump = .01,
 		spazer = 1.5848931924611,
 		speed = .01,
 		springball = .01,
-		supermissile = .01,
+		supermissile = .001,
 		varia = 1.5848931924611,
 		wave = 1.0471285480509,
 		xray = 1e+20,
