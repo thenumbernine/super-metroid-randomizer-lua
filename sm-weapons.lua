@@ -36,6 +36,10 @@ power bomb charge + plasma = 300 per shot, for 4 shots
 -- Taken from https://jathys.zophar.net/supermetroid/kejardon/EnemyResistence.txt
 -- but in the original there were some duplicated addresses for the plasma+charge entries
 SMWeapons.weaponDamages = table{
+	
+	-- hyper?
+	--{addr=0x983bf, name='?'},	-- 1000
+	
 	{addr=0x98431, name="normal"},						-- 20
 	{addr=0x98447, name="spazer"},						-- 40
 	{addr=0x9845d, name="spazer_ice"},					-- 60
@@ -63,8 +67,24 @@ SMWeapons.weaponDamages = table{
 	{addr=0x9862b, name="charge_plasma_wave"},			-- 750
 	
 	{addr=0x98641, name="missile"},						-- 100
+	
 	{addr=0x98657, name="supermissile"},				-- 300
+	
+	-- speed booster?
+	--{addr=0x9866d, name="?"},	-- 300
+	
 	{addr=0x98671, name="powerbomb"},					-- 200
+	
+	{addr=0x98675, name="bomb"},						-- 30 (my guess of address based on value that matches an online datasheet)
+
+	-- speed booster?
+	--{addr=0x98685, name="?"},	-- 300
+	--{addr=0x98689, name="?"},	-- 300
+	--{addr=0x9868d, name="?"},	-- 300
+	--{addr=0x986ab, name="?"},	-- 300
+
+	-- screw attack?
+	--{addr=0x980fb, name='?'},	-- 2000
 
 --[[
 shinespark			300 per frame ... (spark echoes deal 4096 per frame)

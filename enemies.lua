@@ -1,16 +1,8 @@
 local ffi = require 'ffi'
 local config = require 'config'
 local struct = require 'struct'
+local expRand = require 'exprand'
 local randomizeEnemyProps = config.randomizeEnemyProps
-
-
-
--- exponentially weighted
-local function expRand(min, max)
-	local logmin, logmax = math.log(min), math.log(max)
-	return math.exp(math.random() * (logmax - logmin) + logmin)
-end
-
 
 local typeinfo = {
 	uint8_t = {range={0,0xff}},
