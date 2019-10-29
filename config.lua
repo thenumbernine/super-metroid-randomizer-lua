@@ -28,7 +28,7 @@ return {
 
 	-- force certain weakness values on all monsters:
 	forceEnemyWeakness = {
-		screwattack = 0,	-- make all monsters immune to screw attack
+--		screwattack = 0,	-- make all monsters immune to screw attack
 	},
 
 	-- used by enemy randomization
@@ -37,7 +37,7 @@ return {
 		palette = true,
 
 		weakness = true,
-		weaknessImmunityChance = .25,
+		weaknessImmunityChance = .75,
 		chanceToFreeze = 2/3,
 		chanceToInstaFreeze = .05,
 
@@ -45,10 +45,10 @@ return {
 		itemDropZeroChance = .75,	-- % of item drop percentage fields that are 0%
 
 		health = true,
-		healthScaleRange = {10, 20},	-- new health = 33% to 300% the old health
+		healthScaleRange = {1/3, 3},	-- new health = 33% to 300% the old health
 
 		damage = true,
-		damageScaleRange = {10, 50},
+		damageScaleRange = {1/3, 3},
 
 		-- hmm, these can't strictly be scaled always, because some enemies have 0 as values.  that doesn't scale well.
 		hurtTime = true,
@@ -71,7 +71,7 @@ return {
 		--]]
 	
 		shotDamage = true,
-		shotDamageScaleRange = {10, 50},
+		shotDamageScaleRange = {1/3, 3},
 	},
 
 	-- used by item randomization
@@ -93,7 +93,7 @@ return {
 
 		jumpAndMorph = true,
 
-		damageBoostToBrinstarEnergy = false,	--true,	-- with high damage, this guarantees you to be killed
+		damageBoostToBrinstarEnergy = true,	--true,	-- with high damage, this guarantees you to be killed
 
 		-- whether the player knows to use mockball to get into the green Brinstar item area
 		-- I think that's the only place it's really necessary
@@ -199,7 +199,7 @@ return {
 	-- however you can override any you want to see sooner
 -- [[
 	itemPlacementProbability = {
-		bomb = .001,
+		bomb = .01,
 		charge = 1.5848931924611,
 		energy = .63095734448019,
 		grappling = 1.5848931924611,
@@ -209,15 +209,15 @@ return {
 		missile = 1,
 		morph = .01,
 		plasma = .63095734448019,
-		powerbomb = .001,
+		powerbomb = .01,
 		reserve = 10,
-		--screwattack = .01,
-screwattack = 100,	-- screw attack first! and make all monsters immune to it! 
+		screwattack = .01,
+		--screwattack = 100,	-- screw attack first! and make all monsters immune to it! 
 		spacejump = .01,
 		spazer = 1.5848931924611,
 		speed = .01,
 		springball = .01,
-		supermissile = .001,
+		supermissile = .01,
 		varia = 1.5848931924611,
 		wave = 1.0471285480509,
 		xray = 1e+20,

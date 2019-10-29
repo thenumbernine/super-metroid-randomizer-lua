@@ -21,7 +21,18 @@ local itemDrop_t_fields = table{
 }
 struct'itemDrop_t'(itemDrop_t_fields)
 
+--[[
+here's possible values:    
+	0 = no damage to enemy.
+    1 = 0.5x damage to enemy.
+    2 = default (1x) damage to enemy.
+    3 = 1.5x damage to enemy.
+    4 = 2x damage to enemy.
+    5 = 2.5x damage to enemy.
+    4-F = higher damage to enemy.
 
+in addition, the 0x80 bitflag is used for whether it can be frozen or not
+--]]
 local weakness_t_fields = table{
 	{normal = 'uint8_t'},
 	{wave = 'uint8_t'},
@@ -326,22 +337,11 @@ local dontChangeWeaknessSet = {
 	["Kraid (body)"] = true, 
 	Metroid = true,
 	["Spore Spawn"] = true,
+	['Mother Brain'] = true,
 }
 
 --[[
-here's possible values:    
-	0 = no damage to enemy.
-    1 = 0.5x damage to enemy.
-    2 = default (1x) damage to enemy.
-    3 = 1.5x damage to enemy.
-    4 = 2x damage to enemy.
-    5 = 2.5x damage to enemy.
-    4-F = higher damage to enemy.
-
-in addition, the 0x80 bitflag is used for whether it can be frozen or not
---]]
---[[
-here's the distribution of original values:
+here's the distribution of original weakness values:
   0x00 x385	<- can freeze / immune
   0x01 x17
   0x02 x488
@@ -639,7 +639,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xEB7F, name="Greenish Kihunter (wing)"},
 		{addr=0xEBBF, name="Red Kihunter"},
 		{addr=0xEBFF, name="Red Kihunter (wing)"},
-		{addr=0xEC3F, name="Mother Brain"},
+		{addr=0xEC3F, name="Mother Brain"},			-- this is the brain in a jar.  it needs to be weak against missiles and super missiles at least..   this is also the final form of mother brain's weakness (NOT Mother Brain (w/ Body))
 		{addr=0xEC7F, name="Mother Brain (w/ body)"},
 		{addr=0xECBF, name="??? (related to Mother Brain)"},
 		{addr=0xECFF, name="??? (related to Mother Brain)"},

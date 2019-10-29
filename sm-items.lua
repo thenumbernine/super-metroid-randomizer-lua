@@ -95,27 +95,56 @@ local function canKill(enemyName)
 	if notImmune(weak, 'ice_plasma') and req.ice and req.plasma then return true end
 	if notImmune(weak, 'wave_ice_plasma') and req.wave and req.ice and req.plasma then return true end
 	
-	if notImmune(weak, 'missile') and req.missile
-	-- TODO and the missile count vs the weakness can possibly kill the boss
-	then return true end
+	if notImmune(weak, 'missile')
+	and req.missile
+	-- TODO check all weaknesses vs all potential damage inflicted
+	and req.missile * sm.weaponDamageForName.missile.ptr[0] * bit.rshift(bit.band(weak.missile, 0xf), 1) >= enemy.ptr.health
+	then
+		return true
+	end
 	
-	if notImmune(weak, 'supermissile') and req.supermissile
 	-- TODO and the supermissile count vs the weakness can possibly kill the boss
-	then return true end
+	if notImmune(weak, 'supermissile') 
+	and req.supermissile 
+	and req.supermissile * sm.weaponDamageForName.supermissile.ptr[0] * bit.rshift(bit.band(weak.supermissile, 0xf), 1) >= enemy.ptr.health
+	then
+		return true
+	end
 
-	if notImmune(weak, 'bomb') and canUseBombs() then return true end
-	if notImmune(weak, 'powerbomb') and canUsePowerBombs() then return true end
-	if notImmune(weak, 'speed') and req.speed then return true end
+	if notImmune(weak, 'bomb') 
+	and canUseBombs() 
+	then 
+		return true 
+	end
 	
-	if notImmune(weak, 'sparkcharge') and req.speed
+	if notImmune(weak, 'powerbomb') 
+	and canUsePowerBombs() 
+	and req.powerbomb * sm.weaponDamageForName.powerbomb.ptr[0] * bit.rshift(bit.band(weak.powerbomb, 0xf), 1) >= enemy.ptr.health
+	then 
+		return true 
+	end
+
+	-- TODO and we have a runway
+	if notImmune(weak, 'speed') and req.speed then 
+		return true 
+	end
+	
 	-- TODO and we have a runway ...
-	then return true end
+	if notImmune(weak, 'sparkcharge') and req.speed then 
+		return true 
+	end
 	
-	if notImmune(weak, 'screwattack') and req.screwattack then return true end
+	if notImmune(weak, 'screwattack') and req.screwattack then 
+		return true 
+	end
+	
 	--if notImmune(weak, 'hyper') and req.hyper then return true end
 
 	-- charge-based screw attack
-	if notImmune(weak, 'pseudo_screwattack') and req.charge then return true end
+	-- TODO and your health / monster's touch damage >= monster's health / your pseudo-screw-attack touch damage
+	if notImmune(weak, 'pseudo_screwattack') and req.charge then 
+		return true 
+	end
 end
 
 
@@ -835,15 +864,15 @@ local function accessHeatedNorfair()
 		or (playerSkills.hellrun 
 			-- ... with high jump / space jump ... how many does this take?
 			and effectiveEnergyCount() >= 4 
-			and (req.hijump 
-				or req.spacejump 
-				-- without high jump and without suits it takes about 7 energy tanks
-				or (canUseBombs() and effectiveEnergyCount() >= 7)
-			)
 		)
 	) 
-	-- idk that you need these ... maybe you need some e-tanks, but otherwise ...
-	--and (req.spacejump or req.hijump) 
+	and (
+		req.hijump 
+		or req.spacejump 
+		-- without high jump and without suits it takes about 7 energy tanks
+		or (canUseBombs() and effectiveEnergyCount() >= 7)
+		or canFreeze 'Norfair Geemer'
+	)
 end
 
 items:insert{name='Missile (lava room)', addr=0x78AE4, access=accessHeatedNorfair}
