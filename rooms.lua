@@ -303,7 +303,7 @@ startRoom.roomStates[4]:setPLMSet(newPLMSet)
 --]] -- write will match up the addrs
 
 
--- [[ remove all previous items from the game
+--[[ remove all previous items from the game
 local removedItemCmds = table()
 for _,plmset in ipairs(sm.plmsets) do
 	for i=#plmset.plms,1,-1 do
@@ -325,9 +325,9 @@ for _,plmset in ipairs(sm.plmsets) do
 	end
 end
 --]]
--- [[ now re-add them in random locations ... making sure that they are accessible as you add them?
+--[[ now re-add them in random locations ... making sure that they are accessible as you add them?
 -- how to randomly place them...
-for rep=1,5 do
+for rep=1,7 do
 	for _,cmd in ipairs(removedItemCmds) do
 		local m = pickRandom(sm.mdbs)
 		-- now which room state do we apply it to? first? all?
@@ -381,7 +381,7 @@ for rep=1,5 do
 	end
 end
 --]]
--- [[ make sure morph ball is in the start room 
+--[[ make sure morph ball is in the start room 
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 -- they al have the same plm set btw.... you only need to do this once
 for _,rs in ipairs(startRoom.roomStates) do

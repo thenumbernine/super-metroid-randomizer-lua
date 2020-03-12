@@ -10,7 +10,7 @@ return {
 	-- FIXME: change the specific item access info with map access info, and choose for each item according to where it is placed
 
 	-- still WIP
-	--randomizeRooms = true,
+	randomizeRooms = true,
 
 	randomizeWeapons = true, 
 
@@ -27,6 +27,9 @@ return {
 	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
 	-- note: I just did another run and the space pirates did spawn.  hmm.
 	wakeZebesEarly = true,
+
+	-- skip item fanfare
+	skipItemFanfare = true,
 
 	-- force certain weakness values on all monsters:
 	forceEnemyWeakness = {
@@ -208,7 +211,7 @@ return {
 		gravity = .01,
 		hijump = .01,
 		ice = 1.5848931924611,
-		missile = 1,
+		missile = 10,
 		morph = .01,
 		plasma = .63095734448019,
 		powerbomb = .01,

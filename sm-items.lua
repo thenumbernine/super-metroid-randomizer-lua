@@ -596,7 +596,7 @@ items:insert{
 		-- getting into spore spawn
 		and canOpenMissileDoors()
 		-- getting into spore spawn room ...
-		and canKill'Green Kihunter (wing)'
+		and canKill'Green Kihunter'	-- I tried (wing) but the struct said it was weak when the game disagreed...
 		-- killing spore spawn
 		and canKill'Spore Spawn'
 	end,

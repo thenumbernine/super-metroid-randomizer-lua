@@ -55,7 +55,7 @@ end
 -- [[ reveal all items
 for _,item in ipairs(sm.items) do
 	local name = sm.itemTypeNameForValue[item.ptr[0]]
-
+assert(name)
 	-- save it as a flag for later -- whether this used to be chozo or hidden
 	item.isChozo = not not name:match'_chozo$' 
 	item.isHidden = not not name:match'_hidden$' 

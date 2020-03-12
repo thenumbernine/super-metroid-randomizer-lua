@@ -65,6 +65,7 @@ local function applyPatch(patchfilename)
 end
 if config.skipIntro then applyPatch'introskip_doorflags.ips' end
 if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
+if config.skipItemFanfare then applyPatch'itemsounds.ips' end
 --applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 romstr = file.__tmp
 file.__tmp = nil
@@ -200,9 +201,10 @@ sm:buildMemoryMap():print'memorymap.txt'
 -- randomize rooms?  still working on this
 -- *) enemy placement
 -- *) door placement
+-- *) item placement
 -- *) refinancin
 if config.randomizeRooms then
-	require 'rooms'
+-- 	require 'rooms'
 end
 
 -- do the enemy randomization

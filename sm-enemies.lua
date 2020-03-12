@@ -807,7 +807,7 @@ function SMEnemies:enemiesInit()
 		'sound',
 
 	-- doesn't look so great.
-	--	'palette',	
+		'palette',	
 		
 		-- don't pick from previous values here
 		--  because only 0,2,3,4 are used, but 1 is valid
