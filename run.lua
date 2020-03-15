@@ -203,11 +203,8 @@ sm:buildMemoryMap():print'memorymap.txt'
 -- *) door placement
 -- *) item placement
 -- *) refinancin
-if config.randomizeRooms then
--- 	require 'rooms'
-end
 
--- do the enemy randomization
+-- do the enemy field randomization
 if config.randomizeEnemies then
 	require 'enemies'
 end
@@ -216,9 +213,20 @@ if config.randomizeWeapons then
 	require 'weapons'
 end
 
+if config.randomizeRooms then
+	require 'rooms'	-- has nothing at the moment
+end
+
 -- do the item randomization
 if config.randomizeItems then
 	require 'items'
+end
+
+if config.randomizeRooms
+or config.randomizeItems 
+then
+	-- write back changes
+	sm:mapWrite()
 end
 
 -- write out altered stuff

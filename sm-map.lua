@@ -332,6 +332,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 			addr = addr + 2
 			break 
 		end
+
 		--inserting the struct by-value
 		-- why did I have to make a copy?
 		plms:insert(ffi.new('plm_t', ptr[0]))
@@ -1222,61 +1223,6 @@ local ofsPerRegion = {
 	function(m) return 7,47 end,	-- testing
 }
 
-local function drawRoom(mapimg, m, blocks)
-	local w, h = m.ptr.width, m.ptr.height
-	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
-	local xofs = roomSizeInPixels * (ofsx - 4)
-	local yofs = roomSizeInPixels * (ofsy + 1)
-	local firstcoord
-	for j=0,h-1 do
-		for i=0,w-1 do
-			for ti=0,blocksPerRoom-1 do
-				for tj=0,blocksPerRoom-1 do
-					local dx = ti + blocksPerRoom * i
-					local dy = tj + blocksPerRoom * j
-					local di = dx + blocksPerRoom * w * dy
-					-- blocks is 1-based
-					local d1 = blocks[0 + 3 * di] or 0
-					local d2 = blocks[1 + 3 * di] or 0
-					local d3 = blocks[2 + 3 * di] or 0
-			
-					-- empty background tiles:
-					-- ff0000
-					-- ff0083
-					-- ff00ff
-					-- ff8300
-					-- ff8383
-					-- ff83ff
-					if d1 == 0xff
-					--and d2 == 0x00
-					and (d2 == 0x00 or d2 == 0x83)
-					and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
-					then
-					else
-						for pi=0,blockSizeInPixels-1 do
-							for pj=0,blockSizeInPixels-1 do
-								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
-								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
-				--for y=(m.ptr.y + j)* roomSizeInPixels + yofs, (m.ptr.y + h) * roomSizeInPixels - 1 + yofs do
-				--	for x=m.ptr.x * roomSizeInPixels + xofs, (m.ptr.x + w) * roomSizeInPixels - 1 + xofs do
-								if x >= 0 and x < mapimg.width
-								and y >= 0 and y < mapimg.height 
-								then
-									if not firstcoord then
-										firstcoord = {x,y}
-									end
-									
-									mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
-									mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
-									mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end
 
 -- it'd be really nice to draw the mdb region/index next to the room ...
 -- now it'd be nice if i didn't draw over the numbers ... either by the room tile data, or by other numbers ...
@@ -1409,35 +1355,89 @@ local digits = {
 	},
 }
 
-	local function drawstr(s,pos)
-		for i=1,#s do
-			local ch = digits[s:sub(i,i)]
-			if ch then
-				for pj=0,4 do
-					for pi=0,2 do
-						local c = ch[pj+1]:byte(pi+1) == (' '):byte() and 0 or 255
-						if c ~= 0 then	
-							local x = pos[1] + pi + (i-1)*4
-							local y = pos[2] + pj
-						
-							if x >= 0 and x < mapimg.width
-							and y >= 0 and y < mapimg.height 
-							then
-								mapimg.buffer[0+3*(x+mapimg.width*y)] = c
-								mapimg.buffer[1+3*(x+mapimg.width*y)] = c
-								mapimg.buffer[2+3*(x+mapimg.width*y)] = c
-							end	
+local function drawstr(mapimg, posx, posy, s)
+	for i=1,#s do
+		local ch = digits[s:sub(i,i)]
+		if ch then
+			for pj=0,4 do
+				for pi=0,2 do
+					local c = ch[pj+1]:byte(pi+1) == (' '):byte() and 0 or 255
+					if c ~= 0 then	
+						local x = posx + pi + (i-1)*4
+						local y = posy + pj
+					
+						if x >= 0 and x < mapimg.width
+						and y >= 0 and y < mapimg.height 
+						then
+							mapimg.buffer[0+3*(x+mapimg.width*y)] = c
+							mapimg.buffer[1+3*(x+mapimg.width*y)] = c
+							mapimg.buffer[2+3*(x+mapimg.width*y)] = c
 						end	
+					end	
+				end
+			end
+		end
+	end
+end
+
+local function drawRoom(mapimg, m, blocks)
+	local w, h = m.ptr.width, m.ptr.height
+	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
+	local xofs = roomSizeInPixels * (ofsx - 4)
+	local yofs = roomSizeInPixels * (ofsy + 1)
+	local firstcoord
+	for j=0,h-1 do
+		for i=0,w-1 do
+			for ti=0,blocksPerRoom-1 do
+				for tj=0,blocksPerRoom-1 do
+					local dx = ti + blocksPerRoom * i
+					local dy = tj + blocksPerRoom * j
+					local di = dx + blocksPerRoom * w * dy
+					-- blocks is 1-based
+					local d1 = blocks[0 + 3 * di] or 0
+					local d2 = blocks[1 + 3 * di] or 0
+					local d3 = blocks[2 + 3 * di] or 0
+			
+					-- empty background tiles:
+					-- ff0000
+					-- ff0083
+					-- ff00ff
+					-- ff8300
+					-- ff8383
+					-- ff83ff
+					if d1 == 0xff
+					--and d2 == 0x00
+					and (d2 == 0x00 or d2 == 0x83)
+					and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
+					then
+					else
+						for pi=0,blockSizeInPixels-1 do
+							for pj=0,blockSizeInPixels-1 do
+								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
+								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
+				--for y=(m.ptr.y + j)* roomSizeInPixels + yofs, (m.ptr.y + h) * roomSizeInPixels - 1 + yofs do
+				--	for x=m.ptr.x * roomSizeInPixels + xofs, (m.ptr.x + w) * roomSizeInPixels - 1 + xofs do
+								if x >= 0 and x < mapimg.width
+								and y >= 0 and y < mapimg.height 
+								then
+									if not firstcoord then
+										firstcoord = {x,y}
+									end
+									
+									mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
+									mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
+									mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
+								end
+							end
+						end
 					end
 				end
 			end
 		end
 	end
-	drawstr(('%x-%02x'):format(m.ptr.region, m.ptr.index), firstcoord)
-	drawstr(('$%04x'):format(m.addr), {
-		firstcoord[1],
-		firstcoord[2] + 6,
-	})
+
+	drawstr(mapimg, firstcoord[1], firstcoord[2], ('%x-%02x'):format(m.ptr.region, m.ptr.index))
+	drawstr(mapimg, firstcoord[1], firstcoord[2]+6, ('$%04x'):format(m.addr))
 end
 
 local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
@@ -1543,6 +1543,7 @@ function drawRoomPLMs(mapimg, room)
 				local y = yofs + blockSizeInPixels/2 + blockSizeInPixels * (plm.y + blocksPerRoom * m.ptr.y)
 				drawline(mapimg,x+2,y,x-2,y, 0x00, 0xff, 0xff)
 				drawline(mapimg,x,y+2,x,y-2, 0x00, 0xff, 0xff)
+				drawstr(mapimg, x+5, y, ('$%x'):format(plm.cmd))
 			end
 		end
 		if rs.enemyPopSet then
@@ -1551,6 +1552,7 @@ function drawRoomPLMs(mapimg, room)
 				local y = math.round(yofs + blockSizeInPixels/2 + blockSizeInPixels * (enemyPop.y / 16 + blocksPerRoom * m.ptr.y))
 				drawline(mapimg,x+2,y,x-2,y, 0xff, 0x00, 0xff)
 				drawline(mapimg,x,y+2,x,y-2, 0xff, 0x00, 0xff)
+				drawstr(mapimg, x+5, y, ('$%x'):format(enemyPop.enemyAddr))
 			end
 		end
 	end
@@ -1823,7 +1825,7 @@ function SMMap:mapWritePLMs()
 	end
 	--assert(itemid <= 100, "too many items (I think?)")
 	--]]
-
+	
 	-- [[ optimizing plms ... 
 	-- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
 	for _,plmset in ipairs(self.plmsets) do

@@ -413,6 +413,3 @@ for _,m in ipairs(sm.mdbs) do
 	end
 end
 --]]
-
--- write back changes
-sm:mapWrite()

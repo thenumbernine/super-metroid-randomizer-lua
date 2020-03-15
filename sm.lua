@@ -28,8 +28,8 @@ function SM:init(rom)
 
 	self:weaponsInit()
 	self:enemiesInit()
-	self:itemsInit()
 	self:mapInit()
+	self:itemsInit()	-- itemsInit depends on mapInit
 end
 
 function SM:buildMemoryMap()

@@ -54,7 +54,9 @@ end
 
 -- [[ reveal all items
 for _,item in ipairs(sm.items) do
-	local name = sm.itemTypeNameForValue[item.ptr[0]]
+	--local name = sm.itemTypeNameForValue[item.ptr[0]]
+	local name = sm.itemTypeNameForValue[item:getCmd()]
+
 assert(name)
 	-- save it as a flag for later -- whether this used to be chozo or hidden
 	item.isChozo = not not name:match'_chozo$' 
@@ -63,7 +65,8 @@ assert(name)
 	name = name:gsub('_chozo', ''):gsub('_hidden', '')	
 
 	-- write back our change
-	item.ptr[0] = sm.itemTypes[name]
+	--item.ptr[0] = sm.itemTypes[name]
+	item:setCmd(sm.itemTypes[name])
 end
 --]]
 
@@ -80,7 +83,8 @@ args:
 --]]
 local function change(from, to, leave)
 	local found = sm.items:filter(function(item) 
-		return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
+		--return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
+		return itemTypeNameForValue[item:getCmd()]:match('^'..from) 
 	end)
 	if leave then
 		for i=1,leave do
@@ -89,13 +93,15 @@ local function change(from, to, leave)
 		end
 	end
 	for _,item in ipairs(found) do 
-		item.ptr[0] = sm.itemTypes[to] 
+		--item.ptr[0] = sm.itemTypes[to] 
+		item:setCmd(sm.itemTypes[to])
 	end
 end
 
 local function removeItem(itemName, withType)
 	local item = assert(sm.itemsForName[itemName], "couldn't find item "..itemName)
-	item.ptr[0] = sm.itemTypes[withType]
+	--item.ptr[0] = sm.itemTypes[withType]
+	item:setCmd(sm.itemTypes[withType])
 	
 	sm.items:removeObject(item)
 	sm.itemsForName[itemName] = nil
@@ -119,7 +125,8 @@ end
 req = {}
 
 -- deep copy, so the orginal items is intact
-local origItemValues = sm.items:map(function(item) return item.ptr[0] end)
+--local origItemValues = sm.items:map(function(item) return item.ptr[0] end)
+local origItemValues = sm.items:map(function(item) return item:getCmd() end)
 -- feel free to modify origItemValues to your hearts content ... like replacing all reserve tanks with missiles, etc
 -- I guess I'm doing this above alread with the change() and removeItem() functions
 
@@ -130,7 +137,8 @@ local itemValueIndexesLeft = range(#origItemValues)
 local currentItems = table(sm.items)
 
 for _,item in ipairs(sm.items) do
-	local value = item.ptr[0]
+	--local value = item.ptr[0]
+	local value = item:getCmd()
 	item.defaultTypeName = sm.itemTypeNameForValue[sm.itemTypeBaseForType[value]]
 end
 
@@ -236,7 +244,8 @@ end):map(function(item)
 		..'\t'..tolua(req))
 	
 	-- do the writing:
-	item.ptr[0] = value
+	--item.ptr[0] = value
+	item:setCmd(value)
 end)
 
 --[[

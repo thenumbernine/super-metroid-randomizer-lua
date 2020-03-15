@@ -1,5 +1,5 @@
 return {
-	writeOutImage = false,
+	writeOutImage = true,
 	
 	randomizeEnemies = true,
 
@@ -26,7 +26,10 @@ return {
 	-- it did allow the item left of morph ball behind the power bomb wall to be spawned fwiw.
 	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
 	-- note: I just did another run and the space pirates did spawn.  hmm.
-	wakeZebesEarly = true,
+	--wakeZebesEarly = true,
+	-- ever since switching to writing plms instead of specific item addresses, wake-early is failing ...
+	-- maybe this modifies plms?  then should I double-check the plm indexes and set indexes of the items?
+	wakeZebesEarly = false,
 
 	-- skip item fanfare
 	skipItemFanfare = true,
@@ -39,7 +42,7 @@ return {
 	-- used by enemy randomization
 	randomizeEnemyProps = {
 	
-		palette = true,
+		--palette = true,
 
 		weakness = true,
 		weaknessImmunityChance = .75,
@@ -202,12 +205,12 @@ return {
 
 	-- every item type probability defaults to 1
 	-- however you can override any you want to see sooner
--- [[
+--[[
 	itemPlacementProbability = {
 		bomb = .01,
 		charge = 1.5848931924611,
 		energy = .63095734448019,
-		grappling = 1.5848931924611,
+		grappling = .1,	--1.5848931924611,
 		gravity = .01,
 		hijump = .01,
 		ice = 1.5848931924611,

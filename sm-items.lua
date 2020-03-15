@@ -166,7 +166,7 @@ items fields:
 	escape = callback to determine what is required to escape the room after accessing the item
 	filter = callback to determine which items to allow here
 --]]
-local items = table()
+--[[local]] items = table()
 
 
 -- start run / pre-alarm items ...
@@ -177,6 +177,7 @@ local items = table()
 items:insert{
 	name = 'Morphing Ball', 
 	addr = 0x786DE, 
+	plmIndex=17, plmsetIndex=55,
 	access = function() return true end, 
 	-- looks like you always need morph in morph...
 	--filter = function(name) return name ~= 'morph' end,
@@ -201,6 +202,7 @@ end
 items:insert{
 	name='Power Bomb (blue Brinstar)', 
 	addr=0x7874C, 
+	plmIndex=18, plmsetIndex=56,
 	access=function()
 		-- this item doesn't appear until you activate the alarm
 		return (canWakeZebes() or config.wakeZebesEarly)
@@ -220,6 +222,7 @@ items:insert{
 items:insert{
 	name = 'Missile (blue Brinstar bottom)', 
 	addr = 0x78802, 
+	plmIndex=1, plmsetIndex=66,
 	access = function() return req.morph end,
 	-- but this doesn't have to be a missile =D
 	--filter = function(name) return name ~= 'missile' end,
@@ -240,6 +243,7 @@ end
 items:insert{
 	name = 'Missile (blue Brinstar middle)', 
 	addr = 0x78798, 
+	plmIndex=3, plmsetIndex=58,
 	access = function() 
 		return accessBlueBrinstarEnergyTankRoom() 
 		and req.morph 
@@ -265,8 +269,19 @@ local function accessBlueBrinstarDoubleMissileRoom()
 	)
 end
 
-items:insert{name='Missile (blue Brinstar top)', addr=0x78836, access=accessBlueBrinstarDoubleMissileRoom}
-items:insert{name='Missile (blue Brinstar behind missile)', addr=0x7883C, access=accessBlueBrinstarDoubleMissileRoom}
+items:insert{
+	name='Missile (blue Brinstar top)',
+	addr=0x78836,
+	plmIndex=1, plmsetIndex=71,
+	access=accessBlueBrinstarDoubleMissileRoom,
+}
+
+items:insert{
+	name='Missile (blue Brinstar behind missile)',
+	addr=0x7883C,
+	plmIndex=2, plmsetIndex=71,
+	access=accessBlueBrinstarDoubleMissileRoom,
+}
 
 local function canBombTechnique()
 	return playerSkills.bombTechnique and canUseBombs()
@@ -279,19 +294,24 @@ local function canGetUpWithRunway()
 	or canBombTechnique()
 end
 
-items:insert{name='Energy Tank (blue Brinstar)', addr=0x7879E, access=function() 
-	return accessBlueBrinstarEnergyTankRoom() 
-	and (
-		-- how to get up?
-		req.hijump 
-		or canGetUpWithRunway()
-		-- technically you can use a damage boost, so all you really need is missiles
-		--  however this doesn't work until after security is activated ...
-		or (playerSkills.damageBoostToBrinstarEnergy 
-			and (canWakeZebes() or config.wakeZebesEarly)
+items:insert{
+	name='Energy Tank (blue Brinstar)',
+	addr=0x7879E,
+	plmIndex=4, plmsetIndex=58,
+	access=function() 
+		return accessBlueBrinstarEnergyTankRoom() 
+		and (
+			-- how to get up?
+			req.hijump 
+			or canGetUpWithRunway()
+			-- technically you can use a damage boost, so all you really need is missiles
+			--  however this doesn't work until after security is activated ...
+			or (playerSkills.damageBoostToBrinstarEnergy 
+				and (canWakeZebes() or config.wakeZebesEarly)
+			)
 		)
-	)
-end}
+	end,
+}
 
 	-- Crateria pit room:
 
@@ -314,6 +334,7 @@ end
 items:insert{
 	name = 'Missile (Crateria bottom)', 
 	addr = 0x783EE, 
+	plmIndex=6, plmsetIndex=24,
 	access = function()
 		-- alarm needs to be activated or the missile won't appear
 		return canWakeZebes() 
@@ -348,6 +369,7 @@ end
 items:insert{
 	name = 'Bomb',
 	addr = 0x78404, 
+	plmIndex=2, plmsetIndex=26,
 	access = function() 
 		return accessUpperCrateriaAfterMorph()
 		and canOpenMissileDoors() 
@@ -364,14 +386,19 @@ items:insert{
 
 	-- Final missile bombway:
 
-items:insert{name='Missile (Crateria middle)', addr=0x78486, access=function()
-	-- without the alarm, this item is replaced with a security scanner
-	return (canWakeZebes()
-	-- or config.wakeZebesEarly
-	) and accessUpperCrateriaAfterMorph()
-	-- behind some bombable blocks in a morph passageway
-	and canDestroyBombWallsMorphed()
-end}
+items:insert{
+	name='Missile (Crateria middle)',
+	addr=0x78486,
+	plmIndex=1, plmsetIndex=40,
+	access=function()
+		-- without the alarm, this item is replaced with a security scanner
+		return (canWakeZebes()
+		-- or config.wakeZebesEarly
+		) and accessUpperCrateriaAfterMorph()
+		-- behind some bombable blocks in a morph passageway
+		and canDestroyBombWallsMorphed()
+	end,
+}
 
 	-- Terminator room:
 
@@ -389,7 +416,12 @@ local function accessTerminator()
 	or accessPinkBrinstarFromRight()
 end
 
-items:insert{name='Energy Tank (Crateria tunnel to Brinstar)', addr=0x78432, access=accessTerminator}
+items:insert{
+	name='Energy Tank (Crateria tunnel to Brinstar)',
+	addr=0x78432,
+	plmIndex=1, plmsetIndex=31,
+	access=accessTerminator,
+}
 
 
 -- Crateria surface
@@ -422,14 +454,19 @@ end
 
 	-- Crateria power bomb room:
 
-items:insert{name='Power Bomb (Crateria surface)', addr=0x781CC, access=function() 
-	-- get back to the surface
-	return accessLandingRoom()
-	-- to get up there
-	and canGetUpWithRunway()
-	-- to get in the door
-	and canUsePowerBombs()
-end}
+items:insert{
+	name='Power Bomb (Crateria surface)',
+	addr=0x781CC,
+	plmIndex=1, plmsetIndex=6,
+	access=function() 
+		-- get back to the surface
+		return accessLandingRoom()
+		-- to get up there
+		and canGetUpWithRunway()
+		-- to get in the door
+		and canUsePowerBombs()
+	end,
+}
 
 	-- Crateria gauntlet:
 
@@ -482,17 +519,37 @@ local function escapeGreenPirateShaftItems()
 	return req.morph
 end
 
-items:insert{name='Energy Tank (Crateria gauntlet)', addr=0x78264, access=accessGauntlet, escape=escapeGauntletFirstRoom}
+items:insert{
+	name='Energy Tank (Crateria gauntlet)', 
+	addr=0x78264, 
+	plmIndex=2, plmsetIndex=19,
+	access=accessGauntlet, 
+	escape=escapeGauntletFirstRoom,
+}
 
 	-- Green pirate shaft
 
-items:insert{name='Missile (Crateria gauntlet right)', addr=0x78464, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
-items:insert{name='Missile (Crateria gauntlet left)', addr=0x7846A, access=accessGauntletSecondRoom, escape=escapeGreenPirateShaftItems}
+items:insert{
+	name='Missile (Crateria gauntlet right)', 
+	addr=0x78464, 
+	plmIndex=5, plmsetIndex=35,
+	access=accessGauntletSecondRoom, 
+	escape=escapeGreenPirateShaftItems,
+}
+
+items:insert{
+	name='Missile (Crateria gauntlet left)', 
+	addr=0x7846A, 
+	plmIndex=6, plmsetIndex=35,
+	access=accessGauntletSecondRoom, 
+	escape=escapeGreenPirateShaftItems,
+}
 
 -- freeze boyon and speed boost and duck and jump up shaft, then grappling / space jump back 
 items:insert{
 	name='Super Missile (Crateria)',
 	addr=0x78478,
+	plmIndex=1, plmsetIndex=36,
 	access=function() 
 		-- power bomb doors
 		return canUsePowerBombs() 
@@ -515,14 +572,20 @@ local accessEnterGreenBrinstar = accessTerminator
 
 	-- early supers room:
 
-items:insert{name='Missile (green Brinstar below super missile)', addr=0x78518, access=function() 
-	return accessEnterGreenBrinstar()
-	-- missile door to enter room
-	and canOpenMissileDoors() 
-end, escape=function()
-	-- because you need to morph and bomb to get out ... 
-	return canDestroyBombWallsMorphed()	
-end}
+items:insert{
+	name='Missile (green Brinstar below super missile)', 
+	addr=0x78518, 
+	plmIndex=7, plmsetIndex=44,
+	access=function() 
+		return accessEnterGreenBrinstar()
+		-- missile door to enter room
+		and canOpenMissileDoors() 
+	end, 
+	escape=function()
+		-- because you need to morph and bomb to get out ... 
+		return canDestroyBombWallsMorphed()	
+	end,
+}
 
 -- accessing the items & escaping through the top ...
 local function accessEarlySupersRoomItems()
@@ -534,11 +597,21 @@ local function accessEarlySupersRoomItems()
 	and (playerSkills.touchAndGo or req.hijump)
 end
 
-items:insert{name='Super Missile (green Brinstar top)', addr=0x7851E, access=accessEarlySupersRoomItems}
+items:insert{
+	name='Super Missile (green Brinstar top)', 
+	addr=0x7851E, 
+	plmIndex=8, plmsetIndex=44,
+	access=accessEarlySupersRoomItems,
+}
 
 	-- Brinstar reserve tank room:
 
-items:insert{name='Reserve Tank (Brinstar)', addr=0x7852C, access=accessEarlySupersRoomItems}
+items:insert{
+	name='Reserve Tank (Brinstar)', 
+	addr=0x7852C, 
+	plmIndex=2, plmsetIndex=45,
+	access=accessEarlySupersRoomItems,
+}
 
 local function accessBrinstarReserveMissile()
 	return accessEarlySupersRoomItems()
@@ -546,32 +619,57 @@ local function accessBrinstarReserveMissile()
 	and req.morph 
 end
 
-items:insert{name='Missile (green Brinstar behind Reserve Tank)', addr=0x78538, access=accessBrinstarReserveMissile}
+items:insert{
+	name='Missile (green Brinstar behind Reserve Tank)', 
+	addr=0x78538, 
+	plmIndex=4, plmsetIndex=45,
+	access=accessBrinstarReserveMissile,
+}
 
-items:insert{name='Missile (green Brinstar behind missile)', addr=0x78532, access=function()
-	return accessBrinstarReserveMissile()
-	-- takes morph + power/bombs to get to this item ...
-	and canDestroyBombWallsMorphed()
-end}
+items:insert{
+	name='Missile (green Brinstar behind missile)', 
+	addr=0x78532, 
+	plmIndex=3, plmsetIndex=45,
+	access=function()
+		return accessBrinstarReserveMissile()
+		-- takes morph + power/bombs to get to this item ...
+		and canDestroyBombWallsMorphed()
+	end,
+}
 
 	-- etecoon energy tank room:
 local accessEtecoons = canUsePowerBombs
 
 -- takes power bombs to get through the floor
-items:insert{name='Energy Tank (green Brinstar bottom)', addr=0x787C2, access=accessEtecoons}
+items:insert{
+	name='Energy Tank (green Brinstar bottom)', 
+	addr=0x787C2, 
+	plmIndex=4, plmsetIndex=61,
+	access=accessEtecoons,
+}
 
-items:insert{name='Super Missile (green Brinstar bottom)', addr=0x787D0, access=function() 
-	return accessEtecoons() 
-	-- it's behind one more super missile door
-	and req.supermissile 
-end}
+items:insert{
+	name='Super Missile (green Brinstar bottom)', 
+	addr=0x787D0, 
+	plmIndex=1, plmsetIndex=62,
+	access=function() 
+		return accessEtecoons() 
+		-- it's behind one more super missile door
+		and req.supermissile 
+	end,
+}
 
-items:insert{name='Power Bomb (green Brinstar bottom)', addr=0x784AC, access=function()
-	return accessEtecoons()
-	-- technically ...
-	-- and playerSkills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
-	-- and technically you need morph, but you already need it to power bomb through the floor to get into etecoon area
-end}
+items:insert{
+	name='Power Bomb (green Brinstar bottom)', 
+	addr=0x784AC, 
+	plmIndex=6, plmsetIndex=41,
+	access=function()
+		return accessEtecoons()
+		-- technically ...
+		-- and playerSkills.touchAndGo	-- except you *always* need touch-and-go to get this item ...
+		-- and technically you need morph, but you already need it to power bomb through the floor to get into etecoon area
+	end,
+}
 
 
 -- pink Brinstar
@@ -590,6 +688,7 @@ end
 items:insert{
 	name = 'Super Missile (pink Brinstar)', 
 	addr = 0x784E4, 
+	plmIndex=3, plmsetIndex=42,
 	access=function() 
 		-- getting into pink brinstar
 		return accessPinkBrinstar() 
@@ -618,50 +717,80 @@ local function accessMissilesAtTopOfPinkBrinstar()
 	)
 end
 
-items:insert{name='Missile (pink Brinstar top)', addr=0x78608, access=accessMissilesAtTopOfPinkBrinstar}
+items:insert{
+	name='Missile (pink Brinstar top)', 
+	addr=0x78608, 
+	plmIndex=7, plmsetIndex=50,
+	access=accessMissilesAtTopOfPinkBrinstar,
+}
 
-items:insert{name='Power Bomb (pink Brinstar)', addr=0x7865C, access=function() 
-	return accessMissilesAtTopOfPinkBrinstar()
-	-- behind power bomb blocks
-	and canUsePowerBombs() 
-	-- behind a super missile block
-	and req.supermissile 
-end}
+items:insert{
+	name='Power Bomb (pink Brinstar)', 
+	addr=0x7865C, 
+	plmIndex=4, plmsetIndex=53,
+	access=function() 
+		return accessMissilesAtTopOfPinkBrinstar()
+		-- behind power bomb blocks
+		and canUsePowerBombs() 
+		-- behind a super missile block
+		and req.supermissile 
+	end,
+}
 
-items:insert{name='Missile (pink Brinstar bottom)', addr=0x7860E, access=function() 
-	return accessPinkBrinstar() 
-end}
+items:insert{
+	name='Missile (pink Brinstar bottom)', 
+	addr=0x7860E, 
+	plmIndex=8, plmsetIndex=50,
+	access=function() 
+		return accessPinkBrinstar() 
+	end,
+}
 
 local function accessCharge()
 	return accessPinkBrinstar() and canDestroyBombWallsMorphed()
 end
 
-items:insert{name='Charge Beam', addr=0x78614, access=accessCharge}
+items:insert{
+	name='Charge Beam', 
+	addr=0x78614, 
+	plmIndex=9, plmsetIndex=50,
+	access=accessCharge,
+}
 
 -- doesn't really need gravity, just helps
-items:insert{name='Energy Tank (pink Brinstar bottom)', addr=0x787FA, access=function() 
-	-- get to the charge room
-	return accessCharge()
-	-- power bomb block
-	and canUsePowerBombs() 
-	-- missile door
-	and canOpenMissileDoors() 
-	-- speed booster
-	and req.speed 
-	-- maybe gravity to get through the water
-	and (playerSkills.shortSpeedBoost or req.gravity)
-end}
+items:insert{
+	name='Energy Tank (pink Brinstar bottom)', 
+	addr=0x787FA, 
+	plmIndex=4, plmsetIndex=65,
+	access=function() 
+		-- get to the charge room
+		return accessCharge()
+		-- power bomb block
+		and canUsePowerBombs() 
+		-- missile door
+		and canOpenMissileDoors() 
+		-- speed booster
+		and req.speed 
+		-- maybe gravity to get through the water
+		and (playerSkills.shortSpeedBoost or req.gravity)
+	end,
+}
 
 local function canGetBackThroughBlueGates()
 	return (playerSkills.superMissileGateGlitch and req.supermissile) or req.wave
 end
 
 -- the only thing that needs wave:
-items:insert{name='Energy Tank (pink Brinstar top)', addr=0x78824, access=function() 
-	return accessPinkBrinstar()
-	and canUsePowerBombs() 
-	and canGetBackThroughBlueGates()
-end}
+items:insert{
+	name='Energy Tank (pink Brinstar top)', 
+	addr=0x78824, 
+	plmIndex=1, plmsetIndex=68,
+	access=function() 
+		return accessPinkBrinstar()
+		and canUsePowerBombs() 
+		and canGetBackThroughBlueGates()
+	end,
+}
 
 
 -- right side of Brinstar (lower green, red, Kraid, etc)
@@ -678,6 +807,7 @@ end
 items:insert{
 	name = 'Missile (green Brinstar pipe)',
 	addr = 0x78676,
+	plmIndex=4, plmsetIndex=54,
 	access = function() 
 		return accessLowerGreenBrinstar()
 		and (playerSkills.touchAndGo or req.hijump or req.spacejump) 
@@ -685,24 +815,31 @@ items:insert{
 --filter = function(name) return name == 'ice' end,
 }
 
--- what it takes to get into lower green Brinstar, and subsequently red Brinstar
+-- what it takes to get into lower green Brinstar
 -- either a supermissile through the pink Brinstar door
 -- or a powerbomb through the blue Brinstar below Crateria entrance
+-- ...
+-- what it takes to get into red brinstar is another supermissile door
 local function accessRedBrinstar() 
 	return canWakeZebes()
 	and accessLowerGreenBrinstar()
-	and (req.supermissile or canUsePowerBombs())
+	and req.supermissile
 end
 
-items:insert{name='X-Ray Visor', addr=0x78876, access=function()
-	return accessRedBrinstar() 
-	and canUsePowerBombs() 
-	and (
-		req.grappling 
-		or req.spacejump 
-		or (effectiveEnergyCount() >= 5 and canUseBombs() and playerSkills.bombTechnique)
-	)
-end}
+items:insert{
+	name='X-Ray Visor', 
+	addr=0x78876, 
+	plmIndex=1, plmsetIndex=76,
+	access=function()
+		return accessRedBrinstar() 
+		and canUsePowerBombs() 
+		and (
+			req.grappling 
+			or req.spacejump 
+			or (effectiveEnergyCount() >= 5 and canUseBombs() and playerSkills.bombTechnique)
+		)
+	end,
+}
 
 -- red Brinstar top:
 
@@ -736,6 +873,7 @@ end
 items:insert{
 	name = 'Power Bomb (red Brinstar spike room)', 
 	addr = 0x7890E, 
+	plmIndex=10, plmsetIndex=80,
 	access = function() 
 		return accessUpperRedBrinstar() 
 		-- behind a super missile door
@@ -747,13 +885,19 @@ items:insert{
 }
 
 -- behind a powerbomb wall 
-items:insert{name='Missile (red Brinstar spike room)', addr=0x78914, access=function() 
-	return accessUpperRedBrinstar() and canUsePowerBombs() 
-end}
+items:insert{
+	name='Missile (red Brinstar spike room)', 
+	addr=0x78914, 
+	plmIndex=11, plmsetIndex=80,
+	access=function() 
+		return accessUpperRedBrinstar() and canUsePowerBombs() 
+	end,
+}
 
 items:insert{
 	name = 'Power Bomb (red Brinstar sidehopper room)', 
 	addr = 0x788CA, 
+	plmIndex=3, plmsetIndex=79,
 	access = function() 
 		return accessUpperRedBrinstar() 
 		-- super missile door
@@ -769,16 +913,21 @@ items:insert{
 
 -- red Brinstar bottom:
 
-items:insert{name='Spazer', addr=0x7896E, access=function() 
-	-- getting there:
-	return accessRedBrinstar() 
-	-- getting up:
-	and (playerSkills.touchAndGo or playerSkills.bombTechnique or req.spacejump or req.hijump) 
-	-- getting over:
-	and canDestroyBombWallsMorphed() 
-	-- supermissile door:
-	and req.supermissile
-end}
+items:insert{
+	name='Spazer',
+	addr=0x7896E,
+	plmIndex=1, plmsetIndex=83,
+	access=function() 
+		-- getting there:
+		return accessRedBrinstar() 
+		-- getting up:
+		and (playerSkills.touchAndGo or playerSkills.bombTechnique or req.spacejump or req.hijump) 
+		-- getting over:
+		and canDestroyBombWallsMorphed() 
+		-- supermissile door:
+		and req.supermissile
+	end,
+}
 
 local function accessWarehouseKihunterRoom()
 	return accessRedBrinstar() 
@@ -788,9 +937,10 @@ local function accessWarehouseKihunterRoom()
 	and canDestroyBombWallsMorphed() 
 end
 
-items:insert
-	{name = 'Missile (Kraid)', 
+items:insert{
+	name = 'Missile (Kraid)', 
 	addr = 0x789EC, 
+	plmIndex=13, plmsetIndex=86,
 	access = function() 
 		return accessWarehouseKihunterRoom() 
 		and canUsePowerBombs()
@@ -821,13 +971,19 @@ end
 items:insert{
 	name = 'Energy Tank (Kraid)', 
 	addr = 0x7899C, 
+	plmIndex=2, plmsetIndex=85,
 	access = canKillKraid,
 	escape = function()
 		return canKill'Beetom'
 	end,
 }
 
-items:insert{name='Varia Suit', addr=0x78ACA, access=canKillKraid}
+items:insert{
+	name='Varia Suit', 
+	addr=0x78ACA, 
+	plmIndex=1, plmsetIndex=95,
+	access=canKillKraid,
+}
 
 
 -- Norfair
@@ -841,11 +997,26 @@ local function escapeRoomBeforeHiJumpItem()
 	and canDestroyBombWallsMorphed()
 end
 
-items:insert{name='Missile (Hi-Jump Boots)', addr=0x78BE6, access=accessEnterNorfair, escape=escapeRoomBeforeHiJumpItem}
-items:insert{name='Energy Tank (Hi-Jump Boots)', addr=0x78BEC, access=accessEnterNorfair, escape=escapeRoomBeforeHiJumpItem}
+items:insert{
+	name='Missile (Hi-Jump Boots)',
+	addr=0x78BE6,
+	plmIndex=6, plmsetIndex=111,
+	access=accessEnterNorfair,
+	escape=escapeRoomBeforeHiJumpItem,
+}
+
+items:insert{
+	name='Energy Tank (Hi-Jump Boots)',
+	addr=0x78BEC,
+	plmIndex=7, plmsetIndex=111,
+	access=accessEnterNorfair,
+	escape=escapeRoomBeforeHiJumpItem,
+}
+
 items:insert{
 	name='Hi-Jump Boots', 
 	addr=0x78BAC, 
+	plmIndex=1, plmsetIndex=109,
 	access=accessEnterNorfair, 
 	escape=function()
 		return escapeRoomBeforeHiJumpItem()
@@ -875,7 +1046,12 @@ local function accessHeatedNorfair()
 	)
 end
 
-items:insert{name='Missile (lava room)', addr=0x78AE4, access=accessHeatedNorfair}
+items:insert{
+	name='Missile (lava room)',
+	addr=0x78AE4,
+	plmIndex=1, plmsetIndex=99,
+	access=accessHeatedNorfair,
+}
 
 local function accessIce()
 	return accessKraid() 
@@ -890,13 +1066,23 @@ local function accessIce()
 	)
 end
 
-items:insert{name='Ice Beam', addr=0x78B24, access=accessIce} 
+items:insert{
+	name='Ice Beam',
+	addr=0x78B24,
+	plmIndex=1, plmsetIndex=104,
+	access=accessIce,
+}
 
 local function accessMissilesUnderIce()
 	return accessIce() and canUsePowerBombs() 
 end
 
-items:insert{name='Missile (below Ice Beam)', addr=0x78B46, access=accessMissilesUnderIce}
+items:insert{
+	name='Missile (below Ice Beam)',
+	addr=0x78B46,
+	plmIndex=1, plmsetIndex=106,
+	access=accessMissilesUnderIce,
+}
 
 -- crocomire takes either wave on the rhs or speed booster and power bombs on the lhs
 local function accessCrocomire() 
@@ -908,12 +1094,24 @@ local function accessCrocomire()
 	or (accessHeatedNorfair() and req.wave)
 end
 
-items:insert{name='Energy Tank (Crocomire)', addr=0x78BA4, access=accessCrocomire}
-items:insert{name='Missile (above Crocomire)', addr=0x78BC0, access=accessCrocomire}
+items:insert{
+	name='Energy Tank (Crocomire)',
+	addr=0x78BA4,
+	plmIndex=2, plmsetIndex=108,
+	access=accessCrocomire,
+}
+
+items:insert{
+	name='Missile (above Crocomire)',
+	addr=0x78BC0,
+	plmIndex=3, plmsetIndex=110,
+	access=accessCrocomire,
+}
 
 items:insert{
 	name='Power Bomb (Crocomire)',
 	addr=0x78C04,
+	plmIndex=1, plmsetIndex=114,
 	access=function() 
 		return accessCrocomire() 
 		and (
@@ -924,35 +1122,74 @@ items:insert{
 	end,
 }
 
-items:insert{name='Missile (below Crocomire)', addr=0x78C14, access=accessCrocomire}
+items:insert{
+	name='Missile (below Crocomire)',
+	addr=0x78C14,
+	plmIndex=1, plmsetIndex=116,
+	access=accessCrocomire,
+}
 
-items:insert{name='Missile (Grappling Beam)', addr=0x78C2A, access=function() 
-	return accessCrocomire() 
-	and (
-		req.spacejump 
-		or req.grappling 
-		or req.speed
-		or playerSkills.bombTechnique
-	)
-end}
+items:insert{
+	name='Missile (Grappling Beam)',
+	addr=0x78C2A,
+	plmIndex=1, plmsetIndex=118,
+	access=function() 
+		return accessCrocomire() 
+		and (
+			req.spacejump 
+			or req.grappling 
+			or req.speed
+			or playerSkills.bombTechnique
+		)
+	end,
+}
 
-items:insert{name='Grappling Beam', addr=0x78C36, access=function() 
-	return accessCrocomire() 
-	and (
-		req.spacejump 
-		or (req.speed and req.hijump)
-		or playerSkills.bombTechnique
-	) 
-end}
+items:insert{
+	name='Grappling Beam',
+	addr=0x78C36,
+	plmIndex=1, plmsetIndex=121,
+	access=function() 
+		return accessCrocomire() 
+		and (
+			req.spacejump 
+			or (req.speed and req.hijump)
+			or playerSkills.bombTechnique
+		) 
+	end,
+}
 
-items:insert{name='Missile (bubble Norfair)', addr=0x78C66, access=accessHeatedNorfair}
-items:insert{name='Missile (Speed Booster)', addr=0x78C74, access=accessHeatedNorfair}
-items:insert{name='Speed Booster', addr=0x78C82, access=accessHeatedNorfair}
-items:insert{name='Missile (Wave Beam)', addr=0x78CBC, access=accessHeatedNorfair}
+items:insert{
+	name='Missile (bubble Norfair)', 
+	addr=0x78C66, 
+	plmIndex=3, plmsetIndex=124,
+	access=accessHeatedNorfair,
+}
+
+items:insert{
+	name='Missile (Speed Booster)', 
+	addr=0x78C74, 
+	plmIndex=2, plmsetIndex=125,
+	access=accessHeatedNorfair,
+}
+
+items:insert{
+	name='Speed Booster', 
+	addr=0x78C82, 
+	plmIndex=1, plmsetIndex=126,
+	access=accessHeatedNorfair,
+}
+
+items:insert{
+	name='Missile (Wave Beam)', 
+	addr=0x78CBC, 
+	plmIndex=3, plmsetIndex=128,
+	access=accessHeatedNorfair,
+}
 
 items:insert{
 	name = 'Wave Beam',
 	addr = 0x78CCA, 
+	plmIndex=1, plmsetIndex=129,
 	access = function()
 		return accessHeatedNorfair() 
 		-- or take some damange and use touch and go ...
@@ -973,9 +1210,26 @@ local function accessNorfairReserve()
 end
 
 -- upper bubble room ... probably needs high jump or ice ... 
-items:insert{name='Missile (bubble Norfair green door)', addr=0x78C52, access=accessNorfairReserve}
-items:insert{name='Reserve Tank (Norfair)', addr=0x78C3E, access=accessNorfairReserve}
-items:insert{name='Missile (Norfair Reserve Tank)', addr=0x78C44, access=accessNorfairReserve}
+items:insert{
+	name='Missile (bubble Norfair green door)', 
+	addr=0x78C52, 
+	plmIndex=2, plmsetIndex=123,
+	access=accessNorfairReserve,
+}
+
+items:insert{
+	name='Reserve Tank (Norfair)', 
+	addr=0x78C3E, 
+	plmIndex=1, plmsetIndex=122,
+	access=accessNorfairReserve,
+}
+
+items:insert{
+	name='Missile (Norfair Reserve Tank)', 
+	addr=0x78C44, 
+	plmIndex=2, plmsetIndex=122,
+	access=accessNorfairReserve,
+}
 
 
 -- lower Norfair
@@ -1003,6 +1257,7 @@ end
 items:insert{
 	name='Missile (Gold Torizo)', 
 	addr=0x78E6E, 
+	plmIndex=9, plmsetIndex=153,
 	access=function()
 		return accessGoldTorizo() 
 		-- the chozo statue won't let you past the acid bath room without spacejump
@@ -1010,53 +1265,99 @@ items:insert{
 		--and req.spacejump
 	end,
 }
+
 items:insert{
 	name='Super Missile (Gold Torizo)',
 	addr=0x78E74,
+	plmIndex=10, plmsetIndex=153,
 	access=accessGoldTorizo,
 }
+
 items:insert{
 	name='Screw Attack',
 	addr=0x79110,
+	plmIndex=1, plmsetIndex=172,
 	access=accessGoldTorizo,
 }
 
-items:insert{name='Missile (Mickey Mouse room)', addr=0x78F30, access=accessLowerNorfair}
+items:insert{
+	name='Missile (Mickey Mouse room)', 
+	addr=0x78F30, 
+	plmIndex=16, plmsetIndex=160,
+	access=accessLowerNorfair,
+}
 
-items:insert{name='Energy Tank (lower Norfair fire flea room)', addr=0x79184, access=accessLowerNorfair}
-items:insert{name='Missile (lower Norfair above fire flea room)', addr=0x78FCA, access=accessLowerNorfair}
-items:insert{name='Power Bomb (lower Norfair above fire flea room)', addr=0x78FD2, access=accessLowerNorfair}
+items:insert{
+	name='Energy Tank (lower Norfair fire flea room)', 
+	addr=0x79184, 
+	plmIndex=19, plmsetIndex=173,
+	access=accessLowerNorfair,
+}
+
+items:insert{
+	name='Missile (lower Norfair above fire flea room)', 
+	addr=0x78FCA, 
+	plmIndex=14, plmsetIndex=165,
+	access=accessLowerNorfair,
+}
+
+items:insert{
+	name='Power Bomb (lower Norfair above fire flea room)', 
+	addr=0x78FD2, 
+	plmIndex=1, plmsetIndex=166,
+	access=accessLowerNorfair,
+}
 
 -- spade shaped room?
-items:insert{name='Missile (lower Norfair near Wave Beam)', addr=0x79100, access=accessLowerNorfair}
+items:insert{
+	name='Missile (lower Norfair near Wave Beam)', 
+	addr=0x79100, 
+	plmIndex=9, plmsetIndex=170,
+	access=accessLowerNorfair,
+}
 
-items:insert{name='Power Bomb (above Ridley)', addr=0x790C0, access=accessLowerNorfair}
+items:insert{
+	name='Power Bomb (above Ridley)', 
+	addr=0x790C0, 
+	plmIndex=24, plmsetIndex=168,
+	access=accessLowerNorfair,
+}
 
 -- these constraints are really for what it takes to kill Ridley
-items:insert{name='Energy Tank (Ridley)', addr=0x79108, access=function() 
-	return accessLowerNorfair() 
-	-- and you can get through the black zebesian rooms
-	and canKill'Black Zebesian (Fighter)'
-	-- how much health should we give?
-	and effectiveEnergyCount() >= 4 
-	-- and you can kill ridley
-	and canKill'Ridley'
-	-- TODO mix canKill flags with damage, health, etc
-	-- you don't need charge.  you can also kill him with a few hundred missiles
-	and (req.charge or effectiveMissileCount() >= 250)
-end}
+items:insert{
+	name='Energy Tank (Ridley)', 
+	addr=0x79108, 
+	plmIndex=1, plmsetIndex=171,
+	access=function() 
+		return accessLowerNorfair() 
+		-- and you can get through the black zebesian rooms
+		and canKill'Black Zebesian (Fighter)'
+		-- how much health should we give?
+		and effectiveEnergyCount() >= 4 
+		-- and you can kill ridley
+		and canKill'Ridley'
+		-- TODO mix canKill flags with damage, health, etc
+		-- you don't need charge.  you can also kill him with a few hundred missiles
+		and (req.charge or effectiveMissileCount() >= 250)
+	end,
+}
 
 
 -- Wrecked Ship
 
 
 -- on the way to wrecked ship
-items:insert{name='Missile (Crateria moat)', addr=0x78248, access=function() 
-	-- you need to access the landing room
-	return accessLandingRoom()
-	-- you just need to get through the doors, from there you can jump across
-	and req.supermissile and canUsePowerBombs()
-end}
+items:insert{
+	name='Missile (Crateria moat)', 
+	addr=0x78248, 
+	plmIndex=1, plmsetIndex=17,
+	access=function() 
+		-- you need to access the landing room
+		return accessLandingRoom()
+		-- you just need to get through the doors, from there you can jump across
+		and req.supermissile and canUsePowerBombs()
+	end,
+}
 
 local function accessWreckedShip() 
 	return 
@@ -1069,8 +1370,19 @@ local function accessWreckedShip()
 	and (playerSkills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
 end
 
-items:insert{name='Missile (outside Wrecked Ship bottom)', addr=0x781E8, access=accessWreckedShip}
-items:insert{name='Missile (Wrecked Ship middle)', addr=0x7C265, access=accessWreckedShip}
+items:insert{
+	name='Missile (outside Wrecked Ship bottom)', 
+	addr=0x781E8, 
+	plmIndex=3, plmsetIndex=8,
+	access=accessWreckedShip,
+}
+
+items:insert{
+	name='Missile (Wrecked Ship middle)', 
+	addr=0x7C265, 
+	plmIndex=6, plmsetIndex=183,
+	access=accessWreckedShip,
+}
 
 local function canKillPhantoon() 
 	return accessWreckedShip() 
@@ -1078,22 +1390,67 @@ local function canKillPhantoon()
 	and (req.gravity or req.varia or effectiveEnergyCount() >= 2) 
 end
 
-items:insert{name='Missile (outside Wrecked Ship top)', addr=0x781EE, access=canKillPhantoon}
-items:insert{name='Missile (outside Wrecked Ship middle)', addr=0x781F4, access=canKillPhantoon}
-items:insert{name='Reserve Tank (Wrecked Ship)', addr=0x7C2E9, access=function() return canKillPhantoon() and req.speed end}
-items:insert{name='Missile (Gravity Suit)', addr=0x7C2EF, access=canKillPhantoon}
-items:insert{name='Missile (Wrecked Ship top)', addr=0x7C319, access=canKillPhantoon}
+items:insert{
+	name='Missile (outside Wrecked Ship top)', 
+	addr=0x781EE, 
+	plmIndex=4, plmsetIndex=8,
+	access=canKillPhantoon,
+}
 
-items:insert{name='Energy Tank (Wrecked Ship)', addr=0x7C337, access=function() 
-	return canKillPhantoon() 
-	and (req.grappling or req.spacejump
-		or effectiveEnergyCount() >= 2
-	) 
-	--and req.gravity 
-end}
+items:insert{
+	name='Missile (outside Wrecked Ship middle)', 
+	addr=0x781F4, 
+	plmIndex=5, plmsetIndex=8,
+	access=canKillPhantoon,
+}
 
-items:insert{name='Super Missile (Wrecked Ship left)', addr=0x7C357, access=canKillPhantoon}
-items:insert{name='Super Missile (Wrecked Ship right)', addr=0x7C365, access=canKillPhantoon}
+items:insert{
+	name='Reserve Tank (Wrecked Ship)', 
+	addr=0x7C2E9, 
+	plmIndex=5, plmsetIndex=176,
+	access=function() return canKillPhantoon() and req.speed end,
+}
+
+items:insert{
+	name='Missile (Gravity Suit)', 
+	addr=0x7C2EF, 
+	plmIndex=6, plmsetIndex=176,
+	access=canKillPhantoon,
+}
+
+items:insert{
+	name='Missile (Wrecked Ship top)', 
+	addr=0x7C319, 
+	plmIndex=1, plmsetIndex=182,
+	access=canKillPhantoon,
+}
+
+items:insert{
+	name='Energy Tank (Wrecked Ship)', 
+	addr=0x7C337, 
+	plmIndex=1, plmsetIndex=189,
+	access=function() 
+		return canKillPhantoon() 
+		and (req.grappling or req.spacejump
+			or effectiveEnergyCount() >= 2
+		) 
+		--and req.gravity 
+	end,
+}
+
+items:insert{
+	name='Super Missile (Wrecked Ship left)', 
+	addr=0x7C357, 
+	plmIndex=1, plmsetIndex=198,
+	access=canKillPhantoon,
+}
+
+items:insert{
+	name='Super Missile (Wrecked Ship right)', 
+	addr=0x7C365, 
+	plmIndex=2, plmsetIndex=200,
+	access=canKillPhantoon,
+}
 
 local function accessCrateriaAboveWreckedShip()
 	-- first you have to kill phantoon
@@ -1106,7 +1463,12 @@ local function accessCrateriaAboveWreckedShip()
 end
 
 
-items:insert{name='Gravity Suit', addr=0x7C36D, access=canKillPhantoon}
+items:insert{
+	name='Gravity Suit', 
+	addr=0x7C36D, 
+	plmIndex=1, plmsetIndex=202,
+	access=canKillPhantoon,
+}
 
 
 -- Maridia
@@ -1132,10 +1494,33 @@ local function accessOuterMaridia()
 	)
 end
 
-items:insert{name='Missile (green Maridia shinespark)', addr=0x7C437, access=function() return accessOuterMaridia() and req.speed end}
-items:insert{name='Super Missile (green Maridia)', addr=0x7C43D, access=accessOuterMaridia}
-items:insert{name='Energy Tank (green Maridia)', addr=0x7C47D, access=function() return accessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end}
-items:insert{name='Missile (green Maridia tatori)', addr=0x7C483, access=accessOuterMaridia}
+items:insert{
+	name='Missile (green Maridia shinespark)', 
+	addr=0x7C437, 
+	plmIndex=3, plmsetIndex=208,
+	access=function() return accessOuterMaridia() and req.speed end,
+}
+
+items:insert{
+	name='Super Missile (green Maridia)', 
+	addr=0x7C43D, 
+	plmIndex=4, plmsetIndex=208,
+	access=accessOuterMaridia,
+}
+
+items:insert{
+	name='Energy Tank (green Maridia)', 
+	addr=0x7C47D, 
+	plmIndex=1, plmsetIndex=210,
+	access=function() return accessOuterMaridia() and (req.speed or req.grappling or req.spacejump) end,
+}
+
+items:insert{
+	name='Missile (green Maridia tatori)', 
+	addr=0x7C483, 
+	plmIndex=2, plmsetIndex=210,
+	access=accessOuterMaridia,
+}
 
 local function accessInnerMaridia() 
 	return accessOuterMaridia() 
@@ -1143,9 +1528,26 @@ local function accessInnerMaridia()
 end
 
 -- top of maridia
-items:insert{name='Super Missile (yellow Maridia)', addr=0x7C4AF, access=accessInnerMaridia}
-items:insert{name='Missile (yellow Maridia super missile)', addr=0x7C4B5, access=accessInnerMaridia}
-items:insert{name='Missile (yellow Maridia false wall)', addr=0x7C533, access=accessInnerMaridia}
+items:insert{
+	name='Super Missile (yellow Maridia)', 
+	addr=0x7C4AF, 
+	plmIndex=2, plmsetIndex=214,
+	access=accessInnerMaridia,
+}
+
+items:insert{
+	name='Missile (yellow Maridia super missile)', 
+	addr=0x7C4B5, 
+	plmIndex=3, plmsetIndex=214,
+	access=accessInnerMaridia,
+}
+
+items:insert{
+	name='Missile (yellow Maridia false wall)', 
+	addr=0x7C533, 
+	plmIndex=9, plmsetIndex=217,
+	access=accessInnerMaridia,
+}
 
 local function accessBotwoon()
 	return accessInnerMaridia() 
@@ -1174,6 +1576,7 @@ end
 items:insert{
 	name = 'Plasma Beam',
 	addr = 0x7C559,
+	plmIndex=2, plmsetIndex=221,
 	access = canKillDraygon,
 	escape = function()
 		-- either one of these to kill the space pirates and unlock the door
@@ -1196,42 +1599,90 @@ local function canUseSpringBall()
 	return req.morph and req.springball
 end
 
-items:insert{name='Missile (left Maridia sand pit room)', addr=0x7C5DD, access=function() 
-	return accessOuterMaridia() 
-	and (canUseBombs() or canUseSpringBall())
-end}
+items:insert{
+	name='Missile (left Maridia sand pit room)', 
+	addr=0x7C5DD, 
+	plmIndex=1, plmsetIndex=233,
+	access=function() 
+		return accessOuterMaridia() 
+		and (canUseBombs() or canUseSpringBall())
+	end,
+}
 
 -- also left sand pit room 
-items:insert{name='Reserve Tank (Maridia)', addr=0x7C5E3, access=function() 
-	return accessOuterMaridia() and (canUseBombs() or canUseSpringBall()) 
-end}
+items:insert{
+	name='Reserve Tank (Maridia)', 
+	addr=0x7C5E3, 
+	plmIndex=2, plmsetIndex=233,
+	access=function() 
+		return accessOuterMaridia() and (canUseBombs() or canUseSpringBall()) 
+	end,
+}
 
-items:insert{name='Missile (right Maridia sand pit room)', addr=0x7C5EB, access=accessOuterMaridia}
-items:insert{name='Power Bomb (right Maridia sand pit room)', addr=0x7C5F1, access=accessOuterMaridia}
+items:insert{
+	name='Missile (right Maridia sand pit room)', 
+	addr=0x7C5EB, 
+	plmIndex=1, plmsetIndex=234,
+	access=accessOuterMaridia,
+}
+
+items:insert{
+	name='Power Bomb (right Maridia sand pit room)', 
+	addr=0x7C5F1, 
+	plmIndex=2, plmsetIndex=234,
+	access=accessOuterMaridia,
+}
 
 -- room with the shell things
-items:insert{name='Missile (pink Maridia)', addr=0x7C603, access=function() return accessOuterMaridia() and req.speed end}
-items:insert{name='Super Missile (pink Maridia)', addr=0x7C609, access=function() return accessOuterMaridia() and req.speed end}
+items:insert{
+	name='Missile (pink Maridia)', 
+	addr=0x7C603, 
+	plmIndex=2, plmsetIndex=237,
+	access=function() return accessOuterMaridia() and req.speed end,
+}
+
+items:insert{
+	name='Super Missile (pink Maridia)', 
+	addr=0x7C609, 
+	plmIndex=3, plmsetIndex=237,
+	access=function() return accessOuterMaridia() and req.speed end,
+}
 
 -- here's another fringe item
 -- requires grappling, but what if we put something unimportant there? who cares about it then?
-items:insert{name='Spring Ball', addr=0x7C6E5, access=function() 
-	return accessOuterMaridia() 
-	and req.grappling 
-	and (playerSkills.touchAndGo or req.spacejump)
-end}
+items:insert{
+	name='Spring Ball', 
+	addr=0x7C6E5, 
+	plmIndex=1, plmsetIndex=242,
+	access=function() 
+		return accessOuterMaridia() 
+		and req.grappling 
+		and (playerSkills.touchAndGo or req.spacejump)
+	end,
+}
 
 -- missile right before draygon?
-items:insert{name='Missile (Draygon)', addr=0x7C74D, access=canKillDraygon}
+items:insert{
+	name='Missile (Draygon)', 
+	addr=0x7C74D, 
+	plmIndex=12, plmsetIndex=246,
+	access=canKillDraygon,
+}
 
 -- energy tank right after botwoon
-items:insert{name='Energy Tank (Botwoon)', addr=0x7C755, access=canKillBotwoon}
+items:insert{
+	name='Energy Tank (Botwoon)', 
+	addr=0x7C755, 
+	plmIndex=1, plmsetIndex=247,
+	access=canKillBotwoon,
+}
 
 -- technically you don't need gravity to get to this item 
 -- ... but you need it to escape Draygon's area
 items:insert{
 	name = 'Space Jump', 
 	addr = 0x7C7A7, 
+	plmIndex=1, plmsetIndex=255,
 	access = canKillDraygon,
 	escape = function()
 		-- if the player knows the crystal-flash-whatever trick then fine
@@ -1281,6 +1732,7 @@ SMItems.itemTypeNameForValue = SMItems.itemTypes:map(function(v,k) return k,v en
 
 function SMItems:itemsInit()
 	local rom = self.rom
+local sm = self
 
 	self.items = table(items)
 
@@ -1288,11 +1740,29 @@ function SMItems:itemsInit()
 		-- ptr to the item type
 		-- ANOTHER TODO: enemies[] addr is 16-bit, while items[] addr is PC /  24-bit. pick one method and stick with it.
 		-- TODO I bet this is part of a bigger structure, maybe with position, etc
-		item.ptr = ffi.cast('uint16_t*', rom + item.addr)
+		--item.ptr = ffi.cast('uint16_t*', rom + item.addr)
+
+		-- no need to use item.addr anymore, now we can use the plm
+		--local plm = self.plmsets[item.plmsetIndex].plms[item.plmIndex]
+		--assert(plm.cmd == item.ptr[0])
+	
+		item.plmset = assert(self.plmsets[item.plmsetIndex])
+		item.plm = self.plmsets[item.plmsetIndex].plms[item.plmIndex]
+
+		function item:getCmd()
+			return sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd
+		end
+		function item:setCmd(value)
+			sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd = value
+		end
+	
+local ptr = ffi.cast('uint16_t*', rom + item.addr)
+assert(ptr[0] == item:getCmd(), "looks like the item plm/plmset don't match up with the value at the original address.  maybe something changed the plms around before the map could read them.")	
 	end
 
 	self.itemsForName = self.items:map(function(item) return item, item.name end)
-	self.itemsForAddr = self.items:map(function(item) return item, item.addr end)
+-- don't use addr anymore
+--	self.itemsForAddr = self.items:map(function(item) return item, item.addr end)
 end
 
 
