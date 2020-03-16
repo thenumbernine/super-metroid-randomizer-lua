@@ -28,7 +28,7 @@ function SM:init(rom)
 
 	self:weaponsInit()
 	self:enemiesInit()
-	self:mapInit()
+	self:mapInit()		-- do this before itemsInit
 	self:itemsInit()	-- itemsInit depends on mapInit
 end
 

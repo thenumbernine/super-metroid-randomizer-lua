@@ -1927,10 +1927,16 @@ function SMMap:mapWritePLMs()
 	the plm arg low byte of each (non-blue) door is a unique index, contiguous 0x00..0x60 and 0x80..0xac
 	(probably used wrt savefiles, to know what doors have been opened)
 	certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x18, 0x90, 0x94
+	
+	TODO the plm is associated with a sm.rooms[i].doors[j]
+	is the plm:door relation always 1-1, or can you have multiple plms per door, as you can have multiple roomStates per room?
+	in that case, should I be duplicating IDs between PLMs?
+	or perhaps I should not reindex here, but instead I should use the PLM's index to look up the associated sm.rooms[].doors[]?
 	--]=]
 	print'all door plm ids:'
 	-- re-id all door plms?
-	local doorid = 0
+	-- door id 0 seems to not work ... or I just tried hard to find it but couldn't
+	local doorid = 1
 	for _,plmset in ipairs(self.plmsets) do
 		local eyeparts
 		local eyedoor
@@ -1948,8 +1954,12 @@ function SMMap:mapWritePLMs()
 					assert(not eyedoor, "one eye door per room, I guess")
 					eyedoor = plm
 				end
-				
-				plm.args = bit.bor(bit.band(0xff00, plm.args), doorid)
+
+				plm.args = bit.bor(
+					bit.band(0xff00, plm.args),
+					bit.band(0xff, doorid)
+				)
+
 				doorid = doorid + 1
 			end
 		end
@@ -1960,6 +1970,7 @@ function SMMap:mapWritePLMs()
 			end
 		end
 	end
+print("used a total of "..doorid.." special and non-special doors")	
 	-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
 	assert(doorid <= 0xff, "got too many doors: "..doorid)
 	--]]

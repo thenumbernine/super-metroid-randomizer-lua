@@ -1737,7 +1737,7 @@ SMItems.itemTypeNameForValue = SMItems.itemTypes:map(function(v,k) return k,v en
 
 function SMItems:itemsInit()
 	local rom = self.rom
-local sm = self
+	local sm = self
 
 	self.items = table(items)
 
@@ -1750,19 +1750,24 @@ local sm = self
 		-- no need to use item.addr anymore, now we can use the plm
 		--local plm = self.plmsets[item.plmsetIndex].plms[item.plmIndex]
 		--assert(plm.cmd == item.ptr[0])
-	
+
+		-- use the original plm reference so that, if we remove any plms later, we are still pointing to the original correct thing
 		item.plmset = assert(self.plmsets[item.plmsetIndex])
 		item.plm = self.plmsets[item.plmsetIndex].plms[item.plmIndex]
 
 		function item:getCmd()
-			return sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd
+			-- don't use plmsetIndex and plmIndex here in case we've removed a plm preceding this one 
+			--return sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd
+			return item.plm.cmd
 		end
 		function item:setCmd(value)
-			sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd = value
+			-- don't use plmsetIndex and plmIndex here in case we've removed a plm preceding this one 
+			--sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd = value
+			item.plm.cmd = value
 		end
 	
-local ptr = ffi.cast('uint16_t*', rom + item.addr)
-assert(ptr[0] == item:getCmd(), "looks like the item plm/plmset don't match up with the value at the original address.  maybe something changed the plms around before the map could read them.")	
+--local ptr = ffi.cast('uint16_t*', rom + item.addr)
+--assert(ptr[0] == item:getCmd(), "looks like the item plm/plmset don't match up with the value at the original address.  maybe something changed the plms around before the map could read them.")	
 	end
 
 	self.itemsForName = self.items:map(function(item) return item, item.name end)

@@ -16,11 +16,13 @@ Depends on:
 randomizes the following:
 - enemies:
 	- item drop percentages 
-	- weaknesses 
+	- weaknesses / immunities / freeze capability
 	- health
 	- touch damage
 	- shot damage
 - item placement
+- weapon damages
+- doors (NOTICE the item accessibility search doesn't take this into account yet)
 
 The item placement algorithm does a depth-first search to make sure that there is at least one possible run that will result in the game being won.
 
@@ -33,7 +35,7 @@ Item placement also allows you to replace certain items.  In case you wanted to 
 Item placement also allows for changing the probability of placing an item.  In case you wanted to put all the super missiles and e-tanks at the end of the game.
 
 
-My next goal is to randomize doors, then maybe even blocks in certain passageways.
+My next goal is to randomize blocks in certain passageways.
 
 ### I have added a dump of all memory ranges that I am using -- in an attempt to better chart out the ROM:
 

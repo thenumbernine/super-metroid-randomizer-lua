@@ -219,6 +219,7 @@ end
 
 -- do the item randomization
 if config.randomizeItems then
+	-- this is the in-place randomization algorithm
 	require 'items'
 end
 

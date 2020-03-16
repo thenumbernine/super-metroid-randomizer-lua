@@ -200,7 +200,7 @@ for _,room in ipairs(sm.rooms) do
 end
 --]]
 
---[[ remove all doors, just leave exits
+-- [[ remove all doors, just leave exits
 --[=[ ok some important notes from doing this
 the doors themselves don't go away.  even with the plm gone, there are still physical things blocking me.
 removing the 4x ff fe fd just remove the copy codes of the shootable block type
@@ -212,6 +212,8 @@ if not this then it seems like there is some extra data I'm missing that tells d
 ... not the door_t, I think, unless somewhere in there is x,y locations of where to put doors
 	or possibly which room / which side to put doors?
 --]=]
+local oldNumDoors = 0
+local oldDoors = table()	-- table of all door locations
 for _,room in ipairs(sm.rooms) do
 	local w,h = room.width, room.height
 	for _,door in ipairs(room.doors) do
@@ -219,8 +221,8 @@ for _,room in ipairs(sm.rooms) do
 		-- lets see, the door going to the tube to the right of the start ... is all zeros
 		-- in contrast, the other doors, some have 04 set on the direction, others have 01 on capX, some have 06 on capY, some have 04 on screenX 
 		-- [=[
-		local doorIsSpecial = true
 		for _,rs in ipairs(room.roomStates) do
+			local doorIsSpecial = false
 			assert(rs.plmset)
 			for i=#rs.plmset.plms,1,-1 do
 				local plm = rs.plmset.plms[i]
@@ -233,16 +235,21 @@ for _,room in ipairs(sm.rooms) do
 						doorIsSpecial = true
 					else
 						rs.plmset.plms:remove(i)
+						oldNumDoors = oldNumDoors + 1 
 					end
 				end
 			end
 --			local m = rs.m
 --			local _,door2 = m.doors:find(nil, function(door2) return door2.index == door.index+1 end) -- TODO change name
 --			door2.ptr.direction = bit.band(door2.ptr.direction, 3)
+			if not doorIsSpecial then
+				oldDoors:insert{room=room, rs=rs, door=door}
+			end
 		end
 		--]=]
 		-- found and removed all non-grey non-eye door plms
 		-- now to remove the tiles too
+		--[=[	
 		if not doorIsSpecial then	
 			local i,j = door.x, door.y
 			for k=0,3 do
@@ -263,7 +270,40 @@ for _,room in ipairs(sm.rooms) do
 				end
 			end
 		end
+		--]=]	
 	end
+end
+print('old # non-special non-blue doors: '..oldNumDoors)
+print('old # non-special doors: '..#oldDoors)
+-- re-add new doors
+local newNumDoors = 0
+for i=0,oldNumDoors-1 do
+	if #oldDoors == 0 then break end
+	local j = math.random(#oldDoors)
+	local od = oldDoors:remove(j)
+	local room, rs, door = od.room, od.rs, od.door
+	-- TODO make sure we only do this once per plmset?
+	local color = math.random(3)	-- red, green, orange, rest are blue options
+	do --if color <= 3 then	-- skip blue doors completely
+		color = ({'red', 'green', 'orange'})[color]
+		local dir = ({'right', 'left', 'down', 'up'})[door.dir+1]
+		local plm = ffi.new'plm_t'
+		local plmname = 'door_'..color..'_'..dir
+		plm.cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname)
+		plm.x = door.x
+		plm.y = door.y
+		plm.args = 0
+		rs.plmset.plms:insert(plm)
+		newNumDoors = newNumDoors + 1
+		
+		local region = rs.m.ptr.region
+		local index = rs.m.ptr.index
+		print('making new '..color..' door at '..door.x..', '..door.y..' region/room: '..('%02x/%02x'):format(region, index))
+	end
+end
+print('new # non-special doors: '..newNumDoors)
+if newNumDoors > oldNumDoors then
+	print"!!! WARNING !!! you are making more new doors than old.  the door opened flags might overflow."
 end
 --]]
 
@@ -325,6 +365,7 @@ for _,plmset in ipairs(sm.plmsets) do
 	end
 end
 --]]
+
 --[[ now re-add them in random locations ... making sure that they are accessible as you add them?
 -- how to randomly place them...
 for rep=1,7 do
@@ -381,6 +422,7 @@ for rep=1,7 do
 	end
 end
 --]]
+
 --[[ make sure morph ball is in the start room 
 local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 -- they al have the same plm set btw.... you only need to do this once
