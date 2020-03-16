@@ -64,7 +64,10 @@ local function applyPatch(patchfilename)
 	file.__tmp2 = nil
 end
 if config.skipIntro then applyPatch'introskip_doorflags.ips' end
-if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
+
+-- using the wake_zebes.ips patch
+--if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
+
 if config.skipItemFanfare then applyPatch'itemsounds.ips' end
 --applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 romstr = file.__tmp
@@ -83,7 +86,6 @@ end
 
 -- global so other files can see it
 local rom = ffi.cast('uint8_t*', romstr) 
-
 
 
 -- global stuff
@@ -185,6 +187,39 @@ banksRequested[bank] = true
 end
 
 
+
+-- [=[ using the ips contents of wake_zebes.ips
+-- if I skip writing the plms back then all works fine
+if config.wakeZebesEarly then
+	
+	wakeZebesEarlyDoorCode = 0xe51f		-- right after the last door code
+	--wakeZebesEarlyDoorCode = 0xe99b	-- somewhere further out
+	--wakeZebesEarlyDoorCode = 0xff00	-- original location.  works as long as I don't re-compress the plms and tiles.
+	
+	--patching offset 018eb4 size 0002
+	--local i = 0x018eb4	-- change the far right door code to $ff00
+	--rom[i] = bit.band(0xff, wakeZebesEarlyDoorCode) i=i+1
+	--rom[i] = bit.band(0xff, bit.rshift(wakeZebesEarlyDoorCode, 8)) i=i+1
+	
+	--patching offset 07ff00 size 0015
+	local data = tableToByteArray{
+		0xaf, 0x72, 0xd8, 0x7e,	-- LDA $7e:d872 
+		0x89, 0x00, 0x04,		-- BIT #$0004
+		0xf0, 0x0b, 			-- BEQ $0b (to the RTS at the end)
+		0xaf, 0x20, 0xd8, 0x7e,	-- LDA $7e:d820
+		0x09, 0x01, 0x00,		-- ORA #$0001
+		0x8f, 0x20, 0xd8, 0x7e, -- STA $7e:d820
+		0x60,					-- RTS
+	}
+	ffi.copy(rom + 0x070000 + wakeZebesEarlyDoorCode, data, ffi.sizeof(data))
+end
+--]=]
+
+
+
+
+
+
 -- make a single object for the representation of the ROM
 -- this way I can call stuff on it -- like making a memory map -- multiple times
 local SM = require 'sm'
@@ -197,6 +232,21 @@ if config.writeOutImage then
 end
 -- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 sm:buildMemoryMap():print'memorymap.txt'
+
+
+-- [[ manually change the wake condition instead of using the wake_zebes.ips patch
+for _,m in ipairs(sm.mdbs) do
+	-- 01/0e = blue brinstar first room
+	if m.ptr.index == 0x0e 
+	and m.ptr.region == 0x01
+	then
+		-- change the 2nd door
+		assert(m.doors[2].addr == 0x8eaa)
+		m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+	end
+end
+--]]
+
 
 -- randomize rooms?  still working on this
 -- *) enemy placement
@@ -213,19 +263,17 @@ if config.randomizeWeapons then
 	require 'weapons'
 end
 
-if config.randomizeRooms then
-	require 'rooms'	-- has nothing at the moment
+if config.randomizeDoors then
+	require 'rooms'
 end
 
--- do the item randomization
+-- do the item randomization. this is the in-place randomization algorithm
 if config.randomizeItems then
-	-- this is the in-place randomization algorithm
 	require 'items'
 end
 
-if config.randomizeRooms
-or config.randomizeItems 
-then
+-- writing back is screwing up the wakeZebesEarly stuff
+do --if config.randomizeDoors or config.randomizeItems then
 	-- write back changes
 	sm:mapWrite()
 end

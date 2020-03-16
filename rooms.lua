@@ -17,6 +17,7 @@ Looks like chozo items likewise can be set in any empty tile to be a solid, shoo
 --]]
 
 local ffi = require 'ffi'
+local config = require 'config'
 
 local rom = sm.rom
 
@@ -277,7 +278,8 @@ print('old # non-special non-blue doors: '..oldNumDoors)
 print('old # non-special doors: '..#oldDoors)
 -- re-add new doors
 local newNumDoors = 0
-for i=0,oldNumDoors-1 do
+local numDoorsToMake = config.numColoredDoors or oldNumDoors
+for i=0,numDoorsToMake-1 do
 	if #oldDoors == 0 then break end
 	local j = math.random(#oldDoors)
 	local od = oldDoors:remove(j)
@@ -303,7 +305,7 @@ for i=0,oldNumDoors-1 do
 end
 print('new # non-special doors: '..newNumDoors)
 if newNumDoors > oldNumDoors then
-	print"!!! WARNING !!! you are making more new doors than old.  the door opened flags might overflow."
+	print"!!! WARNING !!! you are making more new doors than old.  The door opened flags might overflow."
 end
 --]]
 

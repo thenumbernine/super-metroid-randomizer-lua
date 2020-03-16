@@ -280,7 +280,7 @@ SMMap.plmCmdValueForName = table{
 	door_blue_down_closing = 0xc8c2,
 	door_blue_up_closing = 0xc8c6,
 
---[[ these are all the door codes that are used in the game:
+--[[ these are all the door plm codes that are used in the game:
 0xc82a: 01/0d, 01/19, 01/24, 02/0c, 02/13, 02/1e, 02/22, 02/27, 02/38, 04/03, 04/07
 0xc836: 01/0d, 01/19, 01/24, 02/0c, 02/13, 02/1e, 02/22, 02/27, 02/38, 04/03, 04/07
 0xc842: 00/00, 00/00, 00/02, 00/05, 00/12, 00/12, 00/12, 00/12, 00/12, 00/13, 01/00, 01/02, 01/0c, 01/19, 01/25, 01/2b, 01/2d, 01/2d, 01/2f, 01/2f, 02/0d, 02/37, 02/37, 02/3a, 02/3a, 03/02, 03/02, 03/04, 03/04, 04/14, 04/22, 04/37, 04/37, 05/02, 05/02, 05/03, 05/03, 05/06, 05/06, 05/07, 05/07
@@ -1001,15 +1001,15 @@ function SMMap:mapInit()
 						--then
 						if true then
 							local fx1 = self:mapAddFX1(addr)
-	-- this misses 5 fx1_t's
-	local done = fx1.ptr.doorSelect == 0 
+-- this misses 5 fx1_t's
+local done = fx1.ptr.doorSelect == 0 
 							fx1.mdbs:insert(m)
 							rs.fx1s:insert(fx1)
 							
 							addr = addr + ffi.sizeof'fx1_t'
 
-	-- term of 0 past the first entry
-	if done then break end
+-- term of 0 past the first entry
+if done then break end
 						end
 					end
 				end
@@ -1020,15 +1020,15 @@ function SMMap:mapInit()
 						while true do
 							local ptr = ffi.cast('bg_t*', rom+addr)
 							
-	-- this is a bad test of validity
-	-- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
-	-- in fact, I never read more than 1 bg, and sometimes I read 0
-	--[[
+-- this is a bad test of validity
+-- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+-- in fact, I never read more than 1 bg, and sometimes I read 0
+--[[
 							if ptr.header ~= 0x04 then
 								addr = addr + 8
 								break
 							end
-	--]]
+--]]
 							-- so bgs[i].addr is the address where bgs[i].ptr was found
 							-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
 							-- a little confusing
@@ -1845,7 +1845,22 @@ function SMMap:mapPrint()
 				..' '..door.ptr[0])
 		end
 	end
-	
+
+	--[[ debugging: print all unique door codes
+	local doorcodes = table()
+	for _,m in ipairs(self.mdbs) do
+		for _,door in ipairs(m.doors) do
+			if door.ctype == 'door_t' then
+				doorcodes[door.ptr.code] = true
+			end
+		end
+	end
+	print('unique door codes:')
+	for _,doorcode in ipairs(doorcodes:keys():sort()) do
+		print(('$%04x'):format(doorcode))
+	end
+	--]]
+
 	self:mapPrintRooms()
 end
 
@@ -1935,8 +1950,7 @@ function SMMap:mapWritePLMs()
 	--]=]
 	print'all door plm ids:'
 	-- re-id all door plms?
-	-- door id 0 seems to not work ... or I just tried hard to find it but couldn't
-	local doorid = 1
+	local doorid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		local eyeparts
 		local eyedoor
@@ -1972,10 +1986,13 @@ function SMMap:mapWritePLMs()
 	end
 print("used a total of "..doorid.." special and non-special doors")	
 	-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
-	assert(doorid <= 0xff, "got too many doors: "..doorid)
+	if doorid > 0xff then
+		print("!!! WARNING !!! we made more doors than the save state could handle: "..doorid)
+	end
 	--]]
 
-	-- [[ re-indexing the items ...
+	--[[ re-indexing the items ...
+	-- FIXME somehow this is messing up the wake_zebes code ...
 	local itemid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
@@ -2057,13 +2074,17 @@ print("used a total of "..doorid.." special and non-special doors")
 	-- ranges are inclusive
 	local plmWriteRanges = WriteRange('plm', {
 		{0x78000, 0x79193},	
-		-- then comes 100 bytes of layer handling code, then mdb's
+		-- then comes 100 bytes of layer handling code
+		-- then mdb's (see mdbWriteRanges {0x791f8, 0x7b769})
+		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
 		{0x7c215, 0x7c8c6},
 		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
+		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
 		{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
 		-- then comes a lot of unknown data 
-		{0x7e99B, 0x7ffff},	-- this is listed as 'free data' in the metroid rom map
-					-- however $7ff00 is where the door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
+		-- this is listed as 'free data' in the metroid rom map
+		-- however $7ff00 is where the wake_zebes.ips door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
+		--{0x7e99b, 0x7ffff},	
 	})
 
 	-- TODO any code that points to a PLM needs to be updated as well
@@ -2104,9 +2125,12 @@ function SMMap:mapWriteMDBs()
 	-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
 	local mdbWriteRanges = WriteRange('mdb', {
 		{0x791f8, 0x7b769},	-- mdbs of regions 0-2
-		-- then comes bg_t's and door codes and plm_t's
+		-- then comes bg_t's 
+		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
+		-- then comes plm_t's
 		{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
-		-- then comes db_t's and door codes 
+		-- then comes db_t's 
+		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
 		{0x7e82c, 0x7e85a},	-- single mdb of region 7
 		-- then comes door code
 	})

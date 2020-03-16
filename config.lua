@@ -6,11 +6,11 @@ return {
 	randomizeItems = true,
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
-	-- NOTICE - if you randomizeRooms and it re-writes the item order, then randomizeItems will fail.
+	-- and same with doors
 	-- FIXME: change the specific item access info with map access info, and choose for each item according to where it is placed
 
 	-- still WIP
-	randomizeRooms = true,
+	randomizeDoors = true,
 
 	randomizeWeapons = true, 
 
@@ -26,10 +26,10 @@ return {
 	-- it did allow the item left of morph ball behind the power bomb wall to be spawned fwiw.
 	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
 	-- note: I just did another run and the space pirates did spawn.  hmm.
-	--wakeZebesEarly = true,
+	wakeZebesEarly = true,
 	-- ever since switching to writing plms instead of specific item addresses, wake-early is failing ...
 	-- maybe this modifies plms?  then should I double-check the plm indexes and set indexes of the items?
-	wakeZebesEarly = false,
+	--wakeZebesEarly = false,
 
 	-- skip item fanfare
 	skipItemFanfare = true,
@@ -80,6 +80,11 @@ return {
 	
 		shotDamage = true,
 		shotDamageScaleRange = {1/3, 3},
+	},
+
+	randomizeDoorProps = {
+		-- set this to override the # colored doors placed throughout the world
+		numColoredDoors = 128,
 	},
 
 	-- used by item randomization

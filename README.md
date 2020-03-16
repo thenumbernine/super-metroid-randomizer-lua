@@ -1,10 +1,7 @@
 # Super Metroid item randomizer
 
 A description of what you are up against:
-- The first item is often a missile tank, not a morph ball.
-- Next you will often get a power bomb.  Because the space pirates in old mother brain cannot yet be killed.
 - With randomized weapon drops and enemy weaknesses, you will find yourself switching items very often just to try to kill something, and hunting through rooms just to reload one particular weapon.
-- Good luck.
 
 Depends on:
 - LuaJIT
@@ -46,3 +43,25 @@ My next goal is to randomize blocks in certain passageways.
 ![map of Super Metroid](map.png)
 
 
+Sources: (you can find a full list with `grep http *`)
+http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+https://github.com/tewtal/smlib/SMLib/ROMHandler.cs
+http://www.romhacking.net/documents/243/
+http://pikensoft.com/docs/Zelda_LTTP_compression_(Piken).txt
+http://wiki.metroidconstruction.com/doku.php?id=super:enemy:list_of_enemies
+http://wiki.metroidconstruction.com/doku.php?id=super:technical_information:list_of_enemies
+http://metroidconstruction.com/SMMM/
+https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
+http://deanyd.net/sm/index.php?title=List_of_rooms
+http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
+http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
+http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+https://github.com/tewtal/smlib especially SMLib/ROMHandler.cs
+https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.hpp
+http://forum.metroidconstruction.com/index.php?topic=2476.0
+http://www.metroidconstruction.com/SMMM/plm_disassembly.txt
+http://metroidconstruction.com/SMMM/fx_values.txt
+http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+https://jathys.zophar.net/supermetroid/kejardon/EnemyResistence.txt
+http://patrickjohnston.org/bank/index.html
