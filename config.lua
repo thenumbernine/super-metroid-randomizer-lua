@@ -14,7 +14,7 @@ return {
 
 	randomizeWeapons = true, 
 
-	weaponDamageScaleRange = {.1, 1},	-- new weapon damage range is 10% to 100% of original
+	weaponDamageScaleRange = {1/3, 2},	-- new weapon damage range is 33% to 200% of original
 
 	-- skips the intro cutscene
 	skipIntro = true,

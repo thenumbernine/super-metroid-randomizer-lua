@@ -48,9 +48,14 @@ end
 
 local function notImmune(weak, field)
 	local value = weak[field]
+--print('checking', field, value)	
 	-- 0xff means freeze don't kill ..
 	-- does it also mean this for non-ice / non-beam weapons?
-	if value == 0xff then return false end
+	if value == 0xff then 
+--print('...returning false')		
+		return false 
+	end
+--print('...returning '..tostring(bit.band(value, 0xf) ~= 0))
 	return bit.band(value, 0xf) ~= 0
 end
 
@@ -78,9 +83,9 @@ local function canKill(enemyName)
 	
 	-- null weak means invincible
 	if weak == nil then return false end
-	weak = weak[0]
+--	weak = weak[0]
 
---print(' weakness '..weak..' vs items so far '..tolua(req))
+--print('weakness '..weak..' vs items so far '..tolua(req))
 
 	if notImmune(weak, 'normal') then return true end
 	if notImmune(weak, 'wave') and req.wave then return true end

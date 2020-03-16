@@ -76,6 +76,7 @@ local roomstate_t = struct'roomstate_t'{
 }
 
 -- plm = 'post-load modification'
+-- this is a non-enemy object in a map.
 local plm_t = struct'plm_t'{
 	{cmd = 'uint16_t'},
 	{x = 'uint8_t'},
@@ -83,6 +84,7 @@ local plm_t = struct'plm_t'{
 	{args = 'uint16_t'},
 }
 
+-- this is a single spawn location of an enemy.
 local enemyPop_t = struct'enemyPop_t'{
 	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
 	{x = 'uint16_t'},
@@ -188,22 +190,64 @@ local lift_t = struct'lift_t'{
 }
 
 SMMap.plmCmdValueForName = table{
-	-- normal exit
+	
+	-- I don't know about these ...
+
+	-- probably scroll stuff
 	exit_right = 0xb63b,
+	--0xb63b: 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/07, 00/07, 00/07, 00/07, 00/1c, 00/1c, 01/01, 01/03, 01/03, 01/08, 01/08, 01/08, 01/08, 01/08, 01/08, 01/08, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/0f, 01/13, 01/13, 01/20, 01/24, 01/25, 01/28, 01/28, 01/28, 01/28, 01/28, 01/28, 01/2e, 01/2e, 01/34, 01/34, 02/04, 02/24, 02/24, 02/24, 02/24, 02/2d, 02/2d, 02/2d, 02/2d, 02/2d, 02/36, 02/36, 02/36, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/37, 02/3c, 02/3c, 02/3e, 02/3e, 02/41, 02/41, 02/41, 02/41, 02/41, 02/41, 02/41, 02/41, 02/41, 02/43, 02/43, 02/43, 02/43, 02/43, 02/43, 02/43, 02/45, 02/45, 02/45, 02/45, 02/45, 02/45, 02/45, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 03/06, 03/06, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/0c, 04/1b, 04/1b, 04/1b, 04/1b, 04/1b, 04/1b, 04/1b, 04/1b, 04/1b, 04/24, 04/24, 04/24, 04/24, 04/24, 04/25, 04/25, 04/25, 04/25, 04/25, 04/25, 04/25, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a, 04/2a
+	
+	-- probably scroll stuff
+	-- Crateria climb
 	exit_left = 0xb63f,
+	--0xb63f: 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 01/08, 01/08, 01/08, 01/08, 01/08
+	
+	-- probably scroll stuff
+	-- in pink brinstar speed bird room - just below speed boost blocks - where the camera starts to scroll down as you fall
 	exit_down = 0xb643,
+	--0xb643: 01/08, 01/08, 01/08
+	
+	-- probably scroll stuff
+	-- found in the bombable blocks between the intro room and the Gauntlet - to allow left-scrolling
+	-- also found in the first room after the start, right at the point where the camera allows downward scrolling
+	-- also found in the bombable blocks in the pink brinstar speed bird room
 	exit_up = 0xb647,
+	--0xb647: 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/00, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 01/08, 01/08, 01/08, 01/08, 01/08, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/17, 01/17, 01/26, 01/26, 01/26, 01/26, 01/26, 01/26, 01/26, 01/26, 01/2c, 01/2c, 01/2c, 01/2c, 01/2c, 01/2c, 01/2c, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 01/34, 02/09, 02/09, 02/09, 02/09, 02/09, 02/09, 02/09, 02/09, 02/09, 02/1d, 02/1d, 02/21, 02/21, 02/21, 02/21, 02/21, 02/21, 02/21, 02/21, 02/22, 02/22, 02/22, 02/3e, 02/3e, 02/3e, 02/3e, 02/3e, 02/3e, 02/43, 02/43, 02/43, 02/45, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/48, 02/48, 02/48, 02/48, 02/48, 02/4b, 02/4b, 02/4b, 02/4b, 02/4b, 03/00, 03/00, 03/00, 03/00, 04/03, 04/03, 04/03, 04/03, 04/03, 04/03, 04/05, 04/05, 04/05, 04/05, 04/05, 04/05, 04/0b, 04/0b, 04/0b, 04/0b, 04/0b, 04/0b, 04/0d, 04/0d, 04/0d, 04/0d, 04/0d, 04/0d, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/24, 04/31, 04/31, 04/31
+
+
+	map_station = 0xb6d3,
+	--0xb6d3: 00/1b, 01/05, 02/2e, 03/09, 04/16
+
+	energy_refill_station = 0xb6df,
+	--0xb6df: 01/15, 01/31, 01/32, 02/2b, 02/39, 04/34, 05/09
+
+	missile_refill_station = 0xb6eb,
+	--0xb6eb: 01/07, 01/32, 04/2d, 05/09
 
 	scrollmod = 0xb703,
+	-- 0xb703: 00/00, 00/00, 00/00, 00/00, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/02, 00/07, 00/07, 00/08, 00/0f, 00/10, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/12, 00/13, 00/13, 00/13, 00/13, 00/13, 00/13, 00/14, 00/14, 00/19, 00/1c, 00/1c, 01/00, 01/00, 01/00, 01/00, 01/01, 01/03, 01/03, 01/03, 01/04, 01/08, 01/08, 01/08, 01/09, 01/09, 01/09, 01/09, 01/09, 01/09, 01/0c, 01/0c, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0e, 01/0f, 01/0f, 01/10, 01/10, 01/10, 01/10, 01/13, 01/17, 01/20, 01/24, 01/24, 01/24, 01/25, 01/26, 01/28, 01/28, 01/28, 01/28, 01/28, 01/28, 01/2a, 01/2a, 01/2a, 01/2a, 01/2c, 01/2c, 01/2c, 01/2c, 01/2c, 01/2e, 01/34, 01/34, 01/34, 01/34, 02/04, 02/07, 02/07, 02/07, 02/07, 02/09, 02/09, 02/09, 02/0d, 02/0d, 02/0d, 02/0d, 02/19, 02/1d, 02/1d, 02/1d, 02/21, 02/21, 02/21, 02/21, 02/22, 02/22, 02/22, 02/24, 02/24, 02/26, 02/2d, 02/2d, 02/2d, 02/35, 02/35, 02/36, 02/36, 02/36, 02/37, 02/37, 02/3c, 02/3c, 02/3e, 02/3e, 02/3e, 02/3e, 02/3e, 02/3e, 02/41, 02/43, 02/43, 02/43, 02/45, 02/45, 02/45, 02/45, 02/45, 02/45, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/46, 02/48, 02/48, 02/48, 02/4b, 02/4b, 02/4b, 02/4b, 03/00, 03/00, 03/00, 03/00, 03/04, 03/04, 03/04, 03/04, 03/04, 03/04, 03/04, 03/04, 03/04, 03/04, 03/06, 03/06, 03/08, 03/08, 03/08, 03/08, 03/0d, 03/0d, 04/01, 04/01, 04/01, 04/01, 04/01, 04/01, 04/03, 04/03, 04/03, 04/03, 04/04, 04/05, 04/05, 04/09, 04/09, 04/0a, 04/0b, 04/0b, 04/0c, 04/0d, 04/0d, 04/0e, 04/0e, 04/1b, 04/24, 04/24, 04/24, 04/24, 04/25, 04/25, 04/2a, 04/2a, 04/31, 04/31, 04/31
 	
+	--0xb70b: 01/00, 01/24, 02/03, 02/36, 04/13, 05/00
+
+	save_station = 0xb76f,
+	--0xb76f: 00/04, 01/1b, 01/1e, 01/1f, 01/36, 01/37, 02/0f, 02/2f, 02/32, 02/33, 02/34, 02/4c, 03/0f, 04/00, 04/17, 04/29, 04/2c, 05/0d, 05/12
+
+	-- found in the room before speed booster.  placed in the upper right corner.  maybe to do with the triggered lava raising?
+	lava_raise_maybe = 0xb8ac,
+	--0xb8ac: 02/1b
+	
+	-- this is in the chozo boss room.  the door starts open but closes later.
 	door_grey_right_closing = 0xbaf4,
 
+	-- in the top room of Wrecked Ship
+	--0xbb05: 03/02, 03/02
+
 	-- gates
-	normal_open_gate = 0xc826,
-	normal_close_gate = 0xc82a,
-	flipped_open_gate = 0xc82e,
-	flipped_close_gate = 0xc832,
-	shot_gate_top = 0xc836,
+	normal_open_gate = 0xc826,		-- not used
+	normal_close_gate = 0xc82a,		-- open/close gate (starting closed)
+	flipped_open_gate = 0xc82e,		-- not used
+	flipped_close_gate = 0xc832,	-- not used
+	shot_gate_top = 0xc836,			-- blue top of a open/close gate
 	-- grey
 	door_grey_right = 0xc842,
 	door_grey_left = 0xc848,
@@ -222,26 +266,93 @@ SMMap.plmCmdValueForName = table{
 	-- red
 	door_red_right = 0xc88a,
 	door_red_left = 0xc890,
-	door_red_down = 0xc896,
-	door_red_up = 0xc89c,
+	door_red_down = 0xc896,			-- not used
+	door_red_up = 0xc89c,			-- not used
 	-- blue
-	-- where are the regular blue doors?
-	door_blue_right_opening = 0xc8A2,
+	-- where are the regular blue doors? in the separate door structures / in the map tile data?
+	-- none of the door_blue_* are used: 
+	door_blue_right_opening = 0xc8a2,
 	door_blue_left_opening = 0xc8a8,
-	door_blue_down_opening = 0xc8aE,
+	door_blue_down_opening = 0xc8ae,
 	door_blue_up_opening = 0xc8b4,
-	door_blue_right_closing = 0xc8BA,
-	door_blue_left_closing = 0xc8bE,
+	door_blue_right_closing = 0xc8ba,
+	door_blue_left_closing = 0xc8be,
 	door_blue_down_closing = 0xc8c2,
 	door_blue_up_closing = 0xc8c6,
 
-	door_eye_left = 0xdb4c,
+--[[ these are all the door codes that are used in the game:
+0xc82a: 01/0d, 01/19, 01/24, 02/0c, 02/13, 02/1e, 02/22, 02/27, 02/38, 04/03, 04/07
+0xc836: 01/0d, 01/19, 01/24, 02/0c, 02/13, 02/1e, 02/22, 02/27, 02/38, 04/03, 04/07
+0xc842: 00/00, 00/00, 00/02, 00/05, 00/12, 00/12, 00/12, 00/12, 00/12, 00/13, 01/00, 01/02, 01/0c, 01/19, 01/25, 01/2b, 01/2d, 01/2d, 01/2f, 01/2f, 02/0d, 02/37, 02/37, 02/3a, 02/3a, 03/02, 03/02, 03/04, 03/04, 04/14, 04/22, 04/37, 04/37, 05/02, 05/02, 05/03, 05/03, 05/06, 05/06, 05/07, 05/07
+0xc848: 00/00, 00/02, 00/02, 00/02, 00/12, 00/12, 00/12, 00/13, 00/13, 00/15, 01/0a, 01/0e, 01/19, 01/2a, 01/2d, 01/2d, 01/2f, 01/2f, 00/33, 02/3a, 02/3a, 02/3e, 02/47, 03/00, 03/02, 03/02, 03/04, 03/04, 03/0a, 03/0a, 04/11, 04/31, 04/32, 04/32, 04/37, 04/37, 05/01, 05/01, 05/06, 05/06, 05/10, 05/11
+0xc84e: 00/02, 03/02, 05/04, 05/04
+0xc854: 01/0a, 02/0a, 02/0a, 05/0f
+0xc85a: 00/00, 00/00, 00/00, 00/07, 00/12, 00/12, 01/09, 01/0d
+0xc860: 01/20, 01/24, 02/03, 02/22
+
+orange door down:
+0xc866: 00/07, 00/0c, 02/45
+
+orange door up:
+0xc86c: 00/0f
+
+green door right:
+0xc872: 00/00, 00/00, 00/00, 00/05, 01/09, 01/11, 01/28, 01/2e, 02/01, 02/1a, 04/0c, 04/28, 04/28
+
+green door left:
+0xc878: 01/06, 01/13, 01/16, 01/20, 01/24, 01/24, 02/03, 02/1a, 02/46
+
+green door down:
+0xc87e: 01/0b, 01/0b, 02/09, 03/04, 03/04, 04/14
+
+green door up:
+0xc884: 04/1b
+
+red door right:
+0xc88a: 00/02, 00/02, 00/16, 00/16, 00/1c, 01/00, 01/00, 01/03, 01/09, 01/0f, 01/0f, 02/02, 02/11, 02/1b, 02/1d, 02/1e, 04/01, 04/01, 04/04, 04/05, 04/0e, 04/13, 04/28, 05/08
+
+red door left:
+0xc890: 01/00, 01/00, 01/00, 01/09, 01/21, 02/03, 02/0e, 03/06, 04/21, 05/0c
+--]]
+
+
+	-- something in the intro door of the room after the mother brain battle
+	--0xc8ca: 05/0e
+	
+	motherbrain_in_a_jar = 0xd6de,
+
+	-- in the crateria chozo boss room next to the item
+	--0xd6ea: 00/15, 00/15
+
+	powerbomb_glass_tube = 0xd70c,
+
+	-- in Crateria first room after start, just past the bombable block wall
+	-- in Crateria climb, but off screen
+	-- in the room before the chozo boss, middle of the first room
+	-- in the room of the chozo boss, middle of the room
+	-- also in a lot of Tourian rooms
+	--0xdb44: 00/00, 00/02, 00/12, 00/15, 00/16, 05/01, 05/01, 05/02, 05/02, 05/03, 05/03, 05/04, 05/04, 05/0e, 05/0f, 05/10, 05/11
+
 	door_eye_left_part2 = 0xdb48,
+	door_eye_left = 0xdb4c,
 	door_eye_left_part3 = 0xdb52,
 	
-	door_eye_right = 0xdb5a,
 	door_eye_right_part2 = 0xdb56,
+	door_eye_right = 0xdb5a,
 	door_eye_right_part3 = 0xdb60,
+
+	-- all in Draygon's room...
+	
+	draygon_turret_left = 0xdf59,			-- on the left wall, pointing to the right
+	--0xdf59: 04/37, 04/37
+
+	draygon_turret_left_broken = 0xdf65,	-- on the left wall, pointing to the right
+	--0xdf65: 04/37, 04/37
+	
+	draygon_turret_right = 0xdf71,			-- on the right wall, pointing to the left
+	--0xdf71: 04/37, 04/37, 04/37, 04/37
+
+	-- draygon_turret_right_broken = 0xdf7d, -- (me guessing) ... on the right, pointing to the left
 
 	-- items: (this is just like SMItems.itemTypes in sm-items.lua
 	item_energy 		= 0xeed7,
@@ -257,14 +368,14 @@ SMMap.plmCmdValueForName = table{
 	item_spazer 		= 0xeeff,
 	item_springball		= 0xef03,
 	item_varia			= 0xef07,
-	item_plasma			= 0xef13,
-	item_grappling		= 0xef17,
-	item_morph			= 0xef23,
-	item_reserve		= 0xef27,
 	item_gravity		= 0xef0b,
 	item_xray			= 0xef0f,
+	item_plasma			= 0xef13,
+	item_grappling		= 0xef17,
 	item_spacejump 		= 0xef1b,
 	item_screwattack	= 0xef1f,
+	item_morph			= 0xef23,
+	item_reserve		= 0xef27,
 }
 
 -- add 84 = 0x54 to items to get to chozo , another 84 = 0x54 to hidden
@@ -1624,6 +1735,47 @@ function SMMap:mapPrint()
 			print('  '..plm)
 		end
 	end
+
+	-- [[ debugging - show all rooms that each plm cmd is used in
+	local allPLMCmds = table()
+	for _,plmset in ipairs(self.plmsets) do
+		local rsstrs = table()
+		for _,rs in ipairs(plmset.roomStates) do
+			local region = assert(tonumber(rs.m.ptr.region))
+			local index = assert(tonumber(rs.m.ptr.index))
+			rsstrs:insert(('%02x/%02x'):format(region, index))
+		end
+		rsstrs = rsstrs:concat', '
+		for _,plm in ipairs(plmset.plms) do
+			local plmcmd = assert(tonumber(plm.cmd))
+			allPLMCmds[plmcmd] = true
+		end
+	end
+	print'room per plm_t cmd:'
+	for _,plmcmd in ipairs(table.keys(allPLMCmds):sort()) do
+		io.write(('%x: '):format(plmcmd))
+		local sep = ''
+		
+		for _,plmset in ipairs(self.plmsets) do
+			local rsstrs = table()
+			for _,rs in ipairs(plmset.roomStates) do
+				local region = assert(tonumber(rs.m.ptr.region))
+				local index = assert(tonumber(rs.m.ptr.index))
+				rsstrs:insert(('%02x/%02x'):format(region, index))
+			end
+			rsstrs = rsstrs:concat', '
+			for _,plm in ipairs(plmset.plms) do
+				local oplmcmd = assert(tonumber(plm.cmd))
+				if oplmcmd == plmcmd then
+					io.write(sep, rsstrs)
+					sep = ', '
+				end
+			end
+		end	
+		
+		print()
+	end
+	--]]
 
 	-- print bg info
 	print()

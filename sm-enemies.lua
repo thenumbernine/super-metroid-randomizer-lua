@@ -338,6 +338,7 @@ local dontChangeWeaknessSet = {
 	Metroid = true,
 	["Spore Spawn"] = true,
 	['Mother Brain'] = true,
+	["Walking Chozo Statue"] = true,	-- setting the normal beam weakness doesn't make it weak to normal beam
 }
 
 --[[
