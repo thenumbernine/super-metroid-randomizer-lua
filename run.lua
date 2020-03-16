@@ -192,9 +192,9 @@ end
 -- if I skip writing the plms back then all works fine
 if config.wakeZebesEarly then
 	
-	wakeZebesEarlyDoorCode = 0xe51f		-- right after the last door code
+	--wakeZebesEarlyDoorCode = 0xe51f		-- DONT USE THIS - THIS IS WHERE SOME CERES DOOR CODE IS.  right after the last door code
 	--wakeZebesEarlyDoorCode = 0xe99b	-- somewhere further out
-	--wakeZebesEarlyDoorCode = 0xff00	-- original location.  works as long as I don't re-compress the plms and tiles.
+	wakeZebesEarlyDoorCode = 0xff00	-- original location.  works as long as I don't re-compress the plms and tiles.
 	
 	--patching offset 018eb4 size 0002
 	--local i = 0x018eb4	-- change the far right door code to $ff00
@@ -217,9 +217,6 @@ end
 
 
 
-
-
-
 -- make a single object for the representation of the ROM
 -- this way I can call stuff on it -- like making a memory map -- multiple times
 local SM = require 'sm'
@@ -236,14 +233,24 @@ sm:buildMemoryMap():print'memorymap.txt'
 
 -- [[ manually change the wake condition instead of using the wake_zebes.ips patch
 for _,m in ipairs(sm.mdbs) do
-	-- 01/0e = blue brinstar first room
-	if m.ptr.index == 0x0e 
+	-- [=[ 01/0e = blue brinstar first room
+	if m.ptr.index == 0x0e
 	and m.ptr.region == 0x01
 	then
 		-- change the 2nd door
 		assert(m.doors[2].addr == 0x8eaa)
 		m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
 	end
+	--]=]
+	--[=[ 00/00 = first room ... doesn't seem to work
+	if m.ptr.index == 0x00
+	and m.ptr.region == 0x00
+	then
+		for _,door in ipairs(m.doors) do
+			door.code = assert(wakeZebesEarlyDoorCode)
+		end
+	end
+	--]=]
 end
 --]]
 
