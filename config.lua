@@ -13,7 +13,7 @@ return {
 	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
 	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
 	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
-	randomizeItems = true,
+--	randomizeItems = true,
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
 --	randomizeDoors = true,

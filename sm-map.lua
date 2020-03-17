@@ -1850,7 +1850,7 @@ function SMMap:mapPrint()
 	-- [[ debugging: print out a graphviz dot file of the rooms and doors
 	local f = assert(io.open('roomgraph.dot', 'w'))
 	f:write'digraph G {\n'
-	local showRoomStates = false
+	local showRoomStates = true
 	if showRoomStates then
 		f:write'\tcompound=true;\n'
 	end
@@ -1865,7 +1865,7 @@ function SMMap:mapPrint()
 			('%02x'..levelsep..'%02x'):format(m.ptr.region, m.ptr.index)
 	end
 	local function getClusterName(mname)
-		-- graphviz clusters can't have any symbols in their names ...
+		-- graphviz clusters have to have 'cluster' as a prefix
 		return 'cluster_'..mname
 	end
 	local function getRoomStateName(rs)
@@ -1880,17 +1880,20 @@ function SMMap:mapPrint()
 	
 			if showRoomStates then
 				f:write('\tsubgraph "',getClusterName(mname),'" {\n')
-				--f:write('\t\t"', mname, '";\n')
-				for _,rs in ipairs(room.roomStates) do
+				--f:write('\t\tlabel="', mname, '";\n')
+				f:write('\t\t"', mname, '";\n')
+				for _,rs in ipairs(m.roomStates) do
 					local rsName = getRoomStateName(rs)
-					f:write('\t\t"', mname, nl, rsName, '" [label="',rsName,'"];\n')
+					f:write('\t\t"', mname, nl, rsName, '"')
+					f:write(' [label="',rsName,'"]')
+					f:write(';\n')
 				end
 			end
 
 			-- for each mdb door, find the room door with a matching index
 			for mdbDoorIndex,mdbDoor in ipairs(m.doors) do
 				if mdbDoor.ctype == 'door_t' then
-					-- notice, if we reverse the search, and cycle through all room.doors and then lookup the associated mdb.door, we come up with only one rooom door that doesn't have a mdb door ...
+					-- notice, if we reverse the search, and cycle through all room.doors and then lookup the associated mdb.door, we come up with only one room door that doesn't have a mdb door ...
 					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated MDB door
 					local roomDoorIndex, roomDoor = room.doors:find(nil, function(roomDoor)
 						return roomDoor.index+1 == mdbDoorIndex
@@ -1908,15 +1911,15 @@ function SMMap:mapPrint()
 						--for _,rs in ipairs(room.roomStates) do
 						for _,rs in ipairs(m.roomStates) do	
 							local rsName = getRoomStateName(rs)
-	--print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+--print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
 						
 							local color
 							local doorarg = 0
 							
 							if rs.plmset then
 								for _,plm in ipairs(rs.plmset.plms) do
-	--local plmname = sm.plmCmdNameForValue[plm.cmd]
-	--print('   plm_t: '..plmname..' '..plm)
+--local plmname = sm.plmCmdNameForValue[plm.cmd]
+--print('   plm_t: '..plmname..' '..plm)
 									-- find a matching door plm
 									if plm.x == roomDoor.x and plm.y == roomDoor.y then
 										local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
@@ -1933,12 +1936,12 @@ function SMMap:mapPrint()
 							local dstNodeName = destmname
 							if showRoomStates then
 								srcNodeName = srcNodeName .. nl .. rsName
-								local destRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
-								dstNodeName = dstNodeName .. nl .. destRSName
+								--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
+								--dstNodeName = dstNodeName .. nl .. dstRSName
 							end
 							local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
 							if showRoomStates then
-								edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
+								--edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
 							end
 							edgecode = edgecode .. 'color=' .. color 
 							if color ~= 'blue' then
@@ -1954,9 +1957,17 @@ function SMMap:mapPrint()
 						-- create door edges from each roomstate to each mdb
 						local srcNodeName = mname
 						local dstNodeName = destmname
+						if showRoomStates then
+							--local srcRSName = getRoomStateName(assert(m.roomStates[1]))
+							--srcNodeName = srcNodeName .. nl .. srcRSName
+							--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))
+							--dstNodeName = dstNodeName .. nl .. dstRSName
+						end
 						local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
 						if showRoomStates then
-							edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
+							--edgecode = edgecode
+							--	..'lhead="'..getClusterName(destmname)..'" '
+							--	..'ltail="'..getClusterName(mname)..'" '
 						end
 						edgecode = edgecode .. ']'
 						edges:insert(edgecode)
@@ -1976,6 +1987,9 @@ function SMMap:mapPrint()
 	f:close()
 	-- I would use sfdp, but it groups all the nodes into one tiny location.  If I could just multiply their positions by 100 then it would look fine I'm sure.
 	-- fds looks good, but it goes slow
+	-- dot looks horrible for clusters.  
+	--  fds looks better, but doesn't respet the lhead/ltail attributes.
+	--  this could be fixed if I could find out where doors' target roomStates are stored.
 	exec'dot -Tsvg -o roomgraph.svg roomgraph.dot'
 	--]]
 
