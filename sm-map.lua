@@ -1915,8 +1915,13 @@ end
 						f:write('\t"'..mname..'" -> "nowhere'..('%08x'):format(math.random(0,0xffffffff))..'";\n')
 					else
 						local destmname = getMDBName(mdbDoor.dest_mdb)
-				
-						for _,rs in ipairs(room.roomStates) do
+			
+						-- we're getting multiple edges here
+						-- room pertains to block data, and it will be repeated for reused block data rooms (like save points, etc)
+						-- now this means room.roomStates will have as many roomStates as there are multiple mdbs which reference it
+						-- so we only want to look through the roomStates that pertain to our current mdb
+						--for _,rs in ipairs(room.roomStates) do
+						for _,rs in ipairs(m.roomStates) do	
 							local rsName = getRoomStateName(rs)
 --print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
 						
@@ -1989,7 +1994,8 @@ end
 	f:write'}\n'
 	f:close()
 	-- I would use sfdp, but it groups all the nodes into one tiny location.  If I could just multiply their positions by 100 then it would look fine I'm sure.
-	exec'fdp -Tsvg -o roomgraph.svg roomgraph.dot'
+	-- fds looks good, but it goes slow
+	exec'dot -Tsvg -o roomgraph.svg roomgraph.dot'
 	--]]
 
 	--[[ debugging: print all unique door codes
