@@ -1850,9 +1850,12 @@ function SMMap:mapPrint()
 	-- [[ debugging: print out a graphviz dot file of the rooms and doors
 	local f = assert(io.open('roomgraph.dot', 'w'))
 	f:write'digraph G {\n'
-	local showRoomStates = true
+	local showRoomStates = false
 	if showRoomStates then
 		f:write'\tcompound=true;\n'
+		f:write'\trankdir=TB;\n'
+		f:write'\tnode [pin=true];\n'
+		f:write'\toverlap=false;\n'
 	end
 	local nl = '\\n'	-- these work in labels, but clusters?
 	--local nl = '-'
@@ -1877,19 +1880,36 @@ function SMMap:mapPrint()
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
 			local mname = getMDBName(m)
-	
+			
 			if showRoomStates then
+				local itemIndex = 0
 				f:write('\tsubgraph "',getClusterName(mname),'" {\n')
+				f:write('\t\trank="same";\n')
 				--f:write('\t\tlabel="', mname, '";\n')
-				f:write('\t\t"', mname, '";\n')
-				for _,rs in ipairs(m.roomStates) do
+				f:write('\t\t"', mname, '" [pos="0,0" shape=box];\n')
+				for i,rs in ipairs(m.roomStates) do
 					local rsName = getRoomStateName(rs)
-					f:write('\t\t"', mname, nl, rsName, '"')
-					f:write(' [label="',rsName,'"]')
+					local rsNodeName = mname..nl..rsName
+					f:write('\t\t"', rsNodeName, '"')
+					f:write(' [pos="0,',tostring(-i),'" shape=box label="',rsName,'"]')
 					f:write(';\n')
+					
+					-- TODO make roomState a subcluster of the room ...
+					if rs.plmset then
+						for plmIndex,plm in ipairs(rs.plmset.plms) do
+							local plmname = sm.plmCmdNameForValue[plm.cmd]
+							if plmname and plmname:match'^item_' then
+								local itemNodeName = mname..nl..rsName..nl..plmIndex
+								f:write('\t\t"', itemNodeName, '" [pos="1,',tostring(-itemIndex),'" shape=box label="', plmname, '"];\n')
+								itemIndex = itemIndex + 1
+							
+								edges:insert('"'..itemNodeName..'" -> "'..rsNodeName..'"')
+							end
+						end
+					end
 				end
 			end
-
+			
 			-- for each mdb door, find the room door with a matching index
 			for mdbDoorIndex,mdbDoor in ipairs(m.doors) do
 				if mdbDoor.ctype == 'door_t' then
@@ -1990,7 +2010,8 @@ function SMMap:mapPrint()
 	-- dot looks horrible for clusters.  
 	--  fds looks better, but doesn't respet the lhead/ltail attributes.
 	--  this could be fixed if I could find out where doors' target roomStates are stored.
-	exec'dot -Tsvg -o roomgraph.svg roomgraph.dot'
+	-- ok now dot is crashing
+	exec'fdp -Tsvg -o roomgraph.svg roomgraph.dot'
 	--]]
 
 	--[[ debugging: print all unique door codes
