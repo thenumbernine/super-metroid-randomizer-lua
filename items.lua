@@ -83,8 +83,8 @@ args:
 --]]
 local function change(from, to, leave)
 	local found = sm.items:filter(function(item) 
-		--return itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
-		return itemTypeNameForValue[item:getCmd()]:match('^'..from) 
+		--return sm.itemTypeNameForValue[item.ptr[0]]:match('^'..from) 
+		return sm.itemTypeNameForValue[item:getCmd()]:match('^'..from) 
 	end)
 	if leave then
 		for i=1,leave do

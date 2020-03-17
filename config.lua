@@ -236,6 +236,11 @@ return {
 	},
 --]]	
 
+--[=[ enable this with damage boost and wake early and it is pretty interesting
+	itemPlacementProbability = {
+		supermissile = 1e+10,
+	},
+--]=]
 
 --[=[ here's an item scheme I'm working on:
 	itemChanges = {

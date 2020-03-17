@@ -203,7 +203,7 @@ if config.wakeZebesEarly then
 -- morph is item index 26, which is in oct 032, so the 3rd bit on the offset +3 byte 
 -- so I'm guessing our item bitflags start at $7e:d86f
 -- this only exists because multiple roomStates of the first blue brinstar room have different items
--- the morph is only in the intro state, so if you wake zebes without getting morph you'll never get it again
+-- the morph item is only in the intro roomstate, so if you wake zebes without getting morph you'll never get it again
 -- I'm going to fix this by manually merging the two plmsets of the two roomstates below
 		0xaf, 0x72, 0xd8, 0x7e,	-- LDA $7e:d872 
 		0x89, 0x00, 0x04,		-- BIT #$0004
@@ -305,6 +305,7 @@ if config.wakeZebesEarly then
 	rsIntro:setPLMSet(rsNormal.plmset)
 	-- TODO remove the rsIntroPLMSet from the list of all PLMSets
 	--  notice that, if you do this, you have to reindex all the items plmsetIndexes
+	--  also, if you don't do this, then the map write will automatically do it for you, so no worries
 	-- now add those last plms into the new plm set
 	local lastIntroPLM = rsIntroPLMSet.plms:remove()
 	assert(lastIntroPLM.cmd == sm.plmCmdValueForName.item_morph)
@@ -318,61 +319,12 @@ if config.wakeZebesEarly then
 	morphBallItem.plmIndex = 19		-- one past the powerbomb
 end
 --]]
---[[ debugging: show all rooms with multiple roomStates with item plms in each state
-print'all mdbs with duplicate roomstates that have items:'
-for _,m in ipairs(sm.mdbs) do
-	local roomStateItemPLMs = table()
-	for _,rs in ipairs(m.roomStates) do
-		local printedRoomState
-		if rs.plmset then
-			local itemPLMs = rs.plmset.plms:filter(function(plm)
-				local name = sm.plmCmdNameForValue[plm.cmd]
-				return name and name:match'^item_'
-			end)
-			if #itemPLMs > 0 then
-				roomStateItemPLMs:insert{rs=rs, itemPLMs=itemPLMs}
-			end
-		end
-	end
-	--if #roomStateItemPLMs > 1 then
-	if #m.roomStates > 1 then
-		local here
-		for _,rs in ipairs(m.roomStates) do
-			local _,info = roomStateItemPLMs:find(nil, function(info) return info.rs == rs end)
-			if info then
-				if #info.itemPLMs > 0 then
-					-- found a mdb with multiple roomstates and items inside some of them
-					here = true
-					break
-				end
-			end
-		end
-		if here then
-			print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
-			for _,rs in ipairs(m.roomStates) do
-				-- verify the plmsets are different
-				-- if the plmsets are matching then, even if the roomstates are different, it will still be the same plm
-				print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)
-					..' plmset '..(rs.plmset and ('$%04x'):format(rs.plmset.addr) or 'nil')
-				)
-				-- how well does == work with cdata?
-				local _,info = roomStateItemPLMs:find(nil, function(info) return info.rs == rs end)
-				if info then
-					for _,plm in ipairs(info.itemPLMs) do
-						local name = sm.plmCmdNameForValue[plm.cmd]
-						print('   plm_t: index='..plm.args..' name='..name)
-					end
-				end
-			end
-		end
-	end
-end
---]]
-
 
 
 
 -- [[ manually change the wake condition instead of using the wake_zebes.ips patch
+-- hmm sometimes it is only waking up the brinstar rooms, but not the crateria rooms (intro items were super x2, power x1, etank x2, speed)
+-- it seems Crateria won't wake up until you get your first missile tank ...
 if config.wakeZebesEarly then
 	for _,m in ipairs(sm.mdbs) do
 		--[=[ 01/0e = blue brinstar first room

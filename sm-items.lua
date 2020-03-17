@@ -1373,6 +1373,8 @@ local function accessWreckedShip()
 	and canUsePowerBombs() 
 	-- getting across the water
 	and (playerSkills.canJumpAcrossEntranceToWreckedShip or req.spacejump or req.grappling or req.speed)
+	-- and you have to make it back to the landing room
+	and accessLandingRoom()
 end
 
 items:insert{

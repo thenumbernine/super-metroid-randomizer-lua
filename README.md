@@ -31,6 +31,8 @@ Item placement also allows you to replace certain items.  In case you wanted to 
 
 Item placement also allows for changing the probability of placing an item.  In case you wanted to put all the super missiles and e-tanks at the end of the game.
 
+Notice if you randomize enemy weaknesses, then the item search algorithm can get possibly get stuck if it ever encounters a situation where you need to kill a certain enemy to access an item, but you can never access the item required to kill that enemy.  This is because right now the weakness randomizer and the item placement randomizer are separate for now, but maybe I will let the item placement determine enemy weaknesses in the future.
+
 
 My next goal is to randomize blocks in certain passageways.
 
