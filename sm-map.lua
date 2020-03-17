@@ -1988,7 +1988,8 @@ end
 	end
 	f:write'}\n'
 	f:close()
-	exec'dot -Tpng roomgraph.dot > roomgraph.png'
+	-- I would use sfdp, but it groups all the nodes into one tiny location.  If I could just multiply their positions by 100 then it would look fine I'm sure.
+	exec'fdp -Tsvg -o roomgraph.svg roomgraph.dot'
 	--]]
 
 	--[[ debugging: print all unique door codes

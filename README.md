@@ -46,7 +46,7 @@ My next goal is to randomize blocks in certain passageways.
 
 ### And here's a connectivity graph of the rooms.  Multiple arrows means multiple roomstates.
 
-![graph of Super Metroid rooms](roomgraph.png)
+![graph of Super Metroid rooms](roomgraph.svg)
 
 Sources: (you can find a full list with `grep http *`)
 http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
