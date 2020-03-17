@@ -1851,6 +1851,7 @@ function SMMap:mapPrint()
 	local f = assert(io.open('roomgraph.dot', 'w'))
 	f:write'digraph G {\n'
 	local showRoomStates = false
+	local showDoors = false
 	if showRoomStates then
 		f:write'\tcompound=true;\n'
 		f:write'\trankdir=TB;\n'
@@ -1867,9 +1868,9 @@ function SMMap:mapPrint()
 --			('%04x'):format(bit.band(0xffff, ffi.cast('uint8_t*', m.ptr) - rom))..nl..
 			('%02x'..levelsep..'%02x'):format(m.ptr.region, m.ptr.index)
 	end
-	local function getClusterName(mname)
+	local function getClusterName(mdbName)
 		-- graphviz clusters have to have 'cluster' as a prefix
-		return 'cluster_'..mname
+		return 'cluster_'..mdbName
 	end
 	local function getRoomStateName(rs)
 		return ('%04x'):format(bit.band(0xffff,ffi.cast('uint8_t*',rs.ptr)-rom))
@@ -1879,17 +1880,17 @@ function SMMap:mapPrint()
 	--for _,m in ipairs(self.mdbs) do
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
-			local mname = getMDBName(m)
+			local mdbName = getMDBName(m)
 			
 			if showRoomStates then
 				local itemIndex = 0
-				f:write('\tsubgraph "',getClusterName(mname),'" {\n')
+				f:write('\tsubgraph "',getClusterName(mdbName),'" {\n')
 				f:write('\t\trank="same";\n')
-				--f:write('\t\tlabel="', mname, '";\n')
-				f:write('\t\t"', mname, '" [pos="0,0" shape=box];\n')
+				--f:write('\t\tlabel="', mdbName, '";\n')
+				f:write('\t\t"', mdbName, '" [pos="0,0" shape=box];\n')
 				for i,rs in ipairs(m.roomStates) do
 					local rsName = getRoomStateName(rs)
-					local rsNodeName = mname..nl..rsName
+					local rsNodeName = mdbName..nl..rsName
 					f:write('\t\t"', rsNodeName, '"')
 					f:write(' [pos="0,',tostring(-i),'" shape=box label="',rsName,'"]')
 					f:write(';\n')
@@ -1899,7 +1900,7 @@ function SMMap:mapPrint()
 						for plmIndex,plm in ipairs(rs.plmset.plms) do
 							local plmname = sm.plmCmdNameForValue[plm.cmd]
 							if plmname and plmname:match'^item_' then
-								local itemNodeName = mname..nl..rsName..nl..plmIndex
+								local itemNodeName = mdbName..nl..rsName..nl..plmIndex
 								f:write('\t\t"', itemNodeName, '" [pos="1,',tostring(-itemIndex),'" shape=box label="', plmname, '"];\n')
 								itemIndex = itemIndex + 1
 							
@@ -1913,6 +1914,9 @@ function SMMap:mapPrint()
 			-- for each mdb door, find the room door with a matching index
 			for mdbDoorIndex,mdbDoor in ipairs(m.doors) do
 				if mdbDoor.ctype == 'door_t' then
+					assert(mdbDoor.dest_mdb)
+					local destMdbName = getMDBName(mdbDoor.dest_mdb)
+					
 					-- notice, if we reverse the search, and cycle through all room.doors and then lookup the associated mdb.door, we come up with only one room door that doesn't have a mdb door ...
 					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated MDB door
 					local roomDoorIndex, roomDoor = room.doors:find(nil, function(roomDoor)
@@ -1921,8 +1925,6 @@ function SMMap:mapPrint()
 					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
 					if roomDoor then
 						-- otherwise, lift_t is a suffix of a lift door_t
-						assert(mdbDoor.dest_mdb)
-						local destmname = getMDBName(mdbDoor.dest_mdb)
 			
 						-- we're getting multiple edges here
 						-- room pertains to block data, and it will be repeated for reused block data rooms (like save points, etc)
@@ -1951,46 +1953,77 @@ function SMMap:mapPrint()
 							color = color or 'blue'
 							if color == 'eye' then color = 'darkseagreen4' end
 							
+							if showDoors then
+								local srcNodeName = mdbName
+								local dstNodeName = destMdbName
+								local doorName = 'door'..('%04x'):format(mdbDoor.addr)
+								local doorNodeName = mdbName..':'..doorName
+								local colorTag = '[color='..color..']'
+								local labelTag = color == 'blue' and '[label=""]' or ('[label="'..('%04x'):format(doorarg)..'"]') 
+								f:write('\t"', doorNodeName, '"', colorTag, labelTag, ';\n')
+								-- TODO connect the src door with the dest door
+								-- look at the mdbDoor destination information
+								-- compare it to the room doors xy in the destination room 
+								-- just like in the drawRoomDoors code
+								-- if you have a match then pair the doors together
+								-- then TODO store this elsewhere
+								-- and TODO TODO then with a bidirectional graph, next add some extra nodes to that graph based on obstructions, and last use this graph for placement and traversal of items
+								edges:insert('"'..srcNodeName..'" -> "'..doorNodeName..'"'..colorTag)
+								edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
+							else
+								-- create door edges from each roomstate to each mdb
+								local srcNodeName = mdbName
+								local dstNodeName = destMdbName
+								if showRoomStates then
+									srcNodeName = srcNodeName .. nl .. rsName
+									--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
+									--dstNodeName = dstNodeName .. nl .. dstRSName
+								end
+								local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
+								if showRoomStates then
+									--edgecode = edgecode..'lhead="'..getClusterName(destMdbName)..'" '
+								end
+								edgecode = edgecode .. 'color=' .. color 
+								if color ~= 'blue' then
+									edgecode = edgecode .. ' label="' .. ('%04x'):format(doorarg)..'"'
+								end
+								edgecode = edgecode .. ']'
+								edges:insert(edgecode)
+							end
+						end
+					else	-- no roomDoor, so it's just a walk-out-the-wall door or a lift
+						if showDoors then
+							local srcNodeName = mdbName
+							local dstNodeName = destMdbName
+							local doorName = 'door'..('%04x'):format(mdbDoor.addr)
+							local doorNodeName = mdbName..':'..doorName
+							local colorTag = ''
+							local labelTag = '[label=""]'
+							f:write('\t"', doorNodeName, '"', colorTag, labelTag, ';\n')
+							edges:insert('"'..srcNodeName..'" -> "'..doorNodeName..'"'..colorTag)
+							edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
+						else
+							--if m.doors:last().ctype == 'lift_t' then
+							--local mdbDoor = m.doors[#m.doors-1]
+							local destMdbName = getMDBName(mdbDoor.dest_mdb)
 							-- create door edges from each roomstate to each mdb
-							local srcNodeName = mname
-							local dstNodeName = destmname
+							local srcNodeName = mdbName
+							local dstNodeName = destMdbName
 							if showRoomStates then
-								srcNodeName = srcNodeName .. nl .. rsName
-								--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
+								--local srcRSName = getRoomStateName(assert(m.roomStates[1]))
+								--srcNodeName = srcNodeName .. nl .. srcRSName
+								--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))
 								--dstNodeName = dstNodeName .. nl .. dstRSName
 							end
 							local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
 							if showRoomStates then
-								--edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
-							end
-							edgecode = edgecode .. 'color=' .. color 
-							if color ~= 'blue' then
-								edgecode = edgecode .. ' label="' .. ('%04x'):format(doorarg)..'"'
+								--edgecode = edgecode
+								--	..'lhead="'..getClusterName(destMdbName)..'" '
+								--	..'ltail="'..getClusterName(mdbName)..'" '
 							end
 							edgecode = edgecode .. ']'
 							edges:insert(edgecode)
 						end
-					else	-- no roomDoor, so it's just a walk-out-the-wall door or a lift
-						--if m.doors:last().ctype == 'lift_t' then
-						--local mdbDoor = m.doors[#m.doors-1]
-						local destmname = getMDBName(mdbDoor.dest_mdb)
-						-- create door edges from each roomstate to each mdb
-						local srcNodeName = mname
-						local dstNodeName = destmname
-						if showRoomStates then
-							--local srcRSName = getRoomStateName(assert(m.roomStates[1]))
-							--srcNodeName = srcNodeName .. nl .. srcRSName
-							--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))
-							--dstNodeName = dstNodeName .. nl .. dstRSName
-						end
-						local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
-						if showRoomStates then
-							--edgecode = edgecode
-							--	..'lhead="'..getClusterName(destmname)..'" '
-							--	..'ltail="'..getClusterName(mname)..'" '
-						end
-						edgecode = edgecode .. ']'
-						edges:insert(edgecode)
 					end
 				end
 			end
