@@ -209,7 +209,7 @@ return {
 
 	-- every item type probability defaults to 1
 	-- however you can override any you want to see sooner
---[[
+-- [[
 	itemPlacementProbability = {
 		bomb = .01,
 		charge = 1.5848931924611,

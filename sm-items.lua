@@ -700,7 +700,13 @@ items:insert{
 		-- getting into spore spawn
 		and canOpenMissileDoors()
 		-- getting into spore spawn room ...
-		and canKill'Green Kihunter'	-- I tried (wing) but the struct said it was weak when the game disagreed...
+	
+		-- TODO also make sure you can kill *all* of them
+		-- i.e. if the Green Kihunter is only weak to pseudo-screwattack
+		-- and you have to hit it 'k+1' times to to kill it (its health / your damage = k+1), 
+		-- that's k hits against you.  so make sure you have (its touch damage * k * number of Green Kihunters) effective health
+		and canKill'Green Kihunter'
+		
 		-- killing spore spawn
 		and canKill'Spore Spawn'
 	end,

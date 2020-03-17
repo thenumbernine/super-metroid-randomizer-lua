@@ -1874,20 +1874,9 @@ function SMMap:mapPrint()
 --print'building graph'			
 	local edges = table()
 	--for _,m in ipairs(self.mdbs) do
-	for roomIndex,room in ipairs(self.rooms) do
+	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
 			local mname = getMDBName(m)
---if #room.doors ~= #m.doors then
-	-- 57 of 268 rooms have non-matching mdb doors and room doors
-	-- sometimes room has more doors, sometimes mdb has more doors
-	-- mind you, room doors are determined by tile information
-	-- the MDB door is used to determine the destination MDB
-	-- the room door is used for the x,y and PLMs with matching x,y's in roomStates determine the door type
---	print('!!! WARNING !!! '..mname..' #room.doors=='..#room.doors..', #mdb.doors=='..#m.doors)
---else
---	print('#room.doors=='..#room.doors..', #mdb.doors=='..#m.doors)
---end	
---print(' mdb '..mname)
 	
 			if showRoomStates then
 				f:write('\tsubgraph "',getClusterName(mname),'" {\n')
@@ -1898,22 +1887,18 @@ function SMMap:mapPrint()
 				end
 			end
 
-			local mdbDoorsGot = table()
-
-			-- TODO these two don't match all the time ...
-			for roomDoorIndex=1,#room.doors do
-				local roomDoor = room.doors[roomDoorIndex]
-				local mdbDoor = m.doors[roomDoor.index+1]
-if not mdbDoor then
-	print('!!! WARNING !!! '..mname..' roomDoorIndex='..roomDoorIndex..' has no associated MDB door')
-end
---print('  door '..mdbDoor)
-				if mdbDoor and mdbDoor.ctype == 'door_t' then
-					-- otherwise, lift_t is a suffix of a lift door_t
-					if not mdbDoor.dest_mdb then
-						error'here'	-- this isn't ever encountered
-						f:write('\t"'..mname..'" -> "nowhere'..('%08x'):format(math.random(0,0xffffffff))..'";\n')
-					else
+			-- for each mdb door, find the room door with a matching index
+			for mdbDoorIndex,mdbDoor in ipairs(m.doors) do
+				if mdbDoor.ctype == 'door_t' then
+					-- notice, if we reverse the search, and cycle through all room.doors and then lookup the associated mdb.door, we come up with only one rooom door that doesn't have a mdb door ...
+					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated MDB door
+					local roomDoorIndex, roomDoor = room.doors:find(nil, function(roomDoor)
+						return roomDoor.index+1 == mdbDoorIndex
+					end)
+					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
+					if roomDoor then
+						-- otherwise, lift_t is a suffix of a lift door_t
+						assert(mdbDoor.dest_mdb)
 						local destmname = getMDBName(mdbDoor.dest_mdb)
 			
 						-- we're getting multiple edges here
@@ -1923,17 +1908,20 @@ end
 						--for _,rs in ipairs(room.roomStates) do
 						for _,rs in ipairs(m.roomStates) do	
 							local rsName = getRoomStateName(rs)
---print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+	--print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
 						
 							local color
+							local doorarg = 0
+							
 							if rs.plmset then
 								for _,plm in ipairs(rs.plmset.plms) do
---local plmname = sm.plmCmdNameForValue[plm.cmd]
---print('   plm_t: '..plmname..' '..plm)
+	--local plmname = sm.plmCmdNameForValue[plm.cmd]
+	--print('   plm_t: '..plmname..' '..plm)
 									-- find a matching door plm
 									if plm.x == roomDoor.x and plm.y == roomDoor.y then
 										local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
 										color = plmname:match'^door_([^_]*)'
+										doorarg = plm.args
 									end
 								end
 							end
@@ -1952,25 +1940,15 @@ end
 							if showRoomStates then
 								edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
 							end
-							edgecode = edgecode .. 'color=' .. color .. ']'
+							edgecode = edgecode .. 'color=' .. color 
+							if color ~= 'blue' then
+								edgecode = edgecode .. ' label="' .. ('%04x'):format(doorarg)..'"'
+							end
+							edgecode = edgecode .. ']'
 							edges:insert(edgecode)
-						
-							mdbDoorsGot[mdbDoor.addr] = true
 						end
-					end
-				end
-			end
-			
-			if showRoomStates then
-				f:write('\t}\n')
-			end
-		
-			-- if it's a lift then there won't be an associated roomState door
-			-- TODO how to exclude the colored doors from this list
-			for _,mdbDoor in ipairs(m.doors) do
-				if mdbDoor.ctype == 'door_t' then
-					if not mdbDoorsGot[mdbDoor.addr] then
-					--if m.doors:last().ctype == 'lift_t' then
+					else	-- no roomDoor, so it's just a walk-out-the-wall door or a lift
+						--if m.doors:last().ctype == 'lift_t' then
 						--local mdbDoor = m.doors[#m.doors-1]
 						local destmname = getMDBName(mdbDoor.dest_mdb)
 						-- create door edges from each roomstate to each mdb
@@ -1985,7 +1963,10 @@ end
 					end
 				end
 			end
-	
+			
+			if showRoomStates then
+				f:write('\t}\n')
+			end
 		end	
 	end
 	for _,edge in ipairs(edges) do
