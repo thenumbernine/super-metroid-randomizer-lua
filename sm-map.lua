@@ -1130,6 +1130,7 @@ if done then break end
 
 
 	-- link all doors to their mdbs
+	-- TODO in the future, maybe a door:setMDB function?
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
@@ -1845,6 +1846,150 @@ function SMMap:mapPrint()
 				..' '..door.ptr[0])
 		end
 	end
+
+	-- [[ debugging: print out a graphviz dot file of the rooms and doors
+	local f = assert(io.open('roomgraph.dot', 'w'))
+	f:write'digraph G {\n'
+	local showRoomStates = false
+	if showRoomStates then
+		f:write'\tcompound=true;\n'
+	end
+	local nl = '\\n'	-- these work in labels, but clusters?
+	--local nl = '-'
+	local levelsep = '/'	-- doesn't work with cluster labels
+	--local levelsep = ''
+	local function getMDBName(m)
+		return 
+			--('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)
+--			('%04x'):format(bit.band(0xffff, ffi.cast('uint8_t*', m.ptr) - rom))..nl..
+			('%02x'..levelsep..'%02x'):format(m.ptr.region, m.ptr.index)
+	end
+	local function getClusterName(mname)
+		-- graphviz clusters can't have any symbols in their names ...
+		return 'cluster_'..mname
+	end
+	local function getRoomStateName(rs)
+		return ('%04x'):format(bit.band(0xffff,ffi.cast('uint8_t*',rs.ptr)-rom))
+	end
+--print'building graph'			
+	local edges = table()
+	--for _,m in ipairs(self.mdbs) do
+	for roomIndex,room in ipairs(self.rooms) do
+		for _,m in ipairs(room.mdbs) do
+			local mname = getMDBName(m)
+--if #room.doors ~= #m.doors then
+	-- 57 of 268 rooms have non-matching mdb doors and room doors
+	-- sometimes room has more doors, sometimes mdb has more doors
+	-- mind you, room doors are determined by tile information
+	-- the MDB door is used to determine the destination MDB
+	-- the room door is used for the x,y and PLMs with matching x,y's in roomStates determine the door type
+--	print('!!! WARNING !!! '..mname..' #room.doors=='..#room.doors..', #mdb.doors=='..#m.doors)
+--else
+--	print('#room.doors=='..#room.doors..', #mdb.doors=='..#m.doors)
+--end	
+--print(' mdb '..mname)
+	
+			if showRoomStates then
+				f:write('\tsubgraph "',getClusterName(mname),'" {\n')
+				--f:write('\t\t"', mname, '";\n')
+				for _,rs in ipairs(room.roomStates) do
+					local rsName = getRoomStateName(rs)
+					f:write('\t\t"', mname, nl, rsName, '" [label="',rsName,'"];\n')
+				end
+			end
+
+			local mdbDoorsGot = table()
+
+			-- TODO these two don't match all the time ...
+			for roomDoorIndex=1,#room.doors do
+				local roomDoor = room.doors[roomDoorIndex]
+				local mdbDoor = m.doors[roomDoor.index+1]
+if not mdbDoor then
+	print('!!! WARNING !!! '..mname..' roomDoorIndex='..roomDoorIndex..' has no associated MDB door')
+end
+--print('  door '..mdbDoor)
+				if mdbDoor and mdbDoor.ctype == 'door_t' then
+					-- otherwise, lift_t is a suffix of a lift door_t
+					if not mdbDoor.dest_mdb then
+						error'here'	-- this isn't ever encountered
+						f:write('\t"'..mname..'" -> "nowhere'..('%08x'):format(math.random(0,0xffffffff))..'";\n')
+					else
+						local destmname = getMDBName(mdbDoor.dest_mdb)
+				
+						for _,rs in ipairs(room.roomStates) do
+							local rsName = getRoomStateName(rs)
+--print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+						
+							local color
+							if rs.plmset then
+								for _,plm in ipairs(rs.plmset.plms) do
+--local plmname = sm.plmCmdNameForValue[plm.cmd]
+--print('   plm_t: '..plmname..' '..plm)
+									-- find a matching door plm
+									if plm.x == roomDoor.x and plm.y == roomDoor.y then
+										local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
+										color = plmname:match'^door_([^_]*)'
+									end
+								end
+							end
+							color = color or 'blue'
+							if color == 'eye' then color = 'darkseagreen4' end
+							
+							-- create door edges from each roomstate to each mdb
+							local srcNodeName = mname
+							local dstNodeName = destmname
+							if showRoomStates then
+								srcNodeName = srcNodeName .. nl .. rsName
+								local destRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
+								dstNodeName = dstNodeName .. nl .. destRSName
+							end
+							local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
+							if showRoomStates then
+								edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
+							end
+							edgecode = edgecode .. 'color=' .. color .. ']'
+							edges:insert(edgecode)
+						
+							mdbDoorsGot[mdbDoor.addr] = true
+						end
+					end
+				end
+			end
+			
+			if showRoomStates then
+				f:write('\t}\n')
+			end
+		
+			-- if it's a lift then there won't be an associated roomState door
+			-- TODO how to exclude the colored doors from this list
+			for _,mdbDoor in ipairs(m.doors) do
+				if mdbDoor.ctype == 'door_t' then
+					if not mdbDoorsGot[mdbDoor.addr] then
+					--if m.doors:last().ctype == 'lift_t' then
+						--local mdbDoor = m.doors[#m.doors-1]
+						local destmname = getMDBName(mdbDoor.dest_mdb)
+						-- create door edges from each roomstate to each mdb
+						local srcNodeName = mname
+						local dstNodeName = destmname
+						local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
+						if showRoomStates then
+							edgecode = edgecode..'lhead="'..getClusterName(destmname)..'" '
+						end
+						edgecode = edgecode .. ']'
+						edges:insert(edgecode)
+					end
+				end
+			end
+	
+		end	
+	end
+	for _,edge in ipairs(edges) do
+		f:write('\t', edge, ';\n')
+	end
+	f:write'}\n'
+	f:close()
+	exec'dot -Tpng roomgraph.dot > roomgraph.png'
+	--]]
 
 	--[[ debugging: print all unique door codes
 	local doorcodes = table()

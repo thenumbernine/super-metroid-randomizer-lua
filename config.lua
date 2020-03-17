@@ -15,8 +15,8 @@ return {
 	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
 	randomizeItems = true,
 
-	-- still WIP
-	randomizeDoors = true,
+	-- TODO the item placement doesn't validate that the door colors are possible to pass
+--	randomizeDoors = true,
 
 	randomizeWeapons = true, 
 

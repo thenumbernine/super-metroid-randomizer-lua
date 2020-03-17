@@ -54,12 +54,17 @@ math.randomseed(seed)
 local infilename = cmdline['in'] or 'sm.sfc'
 local outfilename = cmdline['out'] or 'sm-random.sfc'
 
+function exec(s)
+	print('>'..s)
+	local results = table.pack(os.execute(s))
+	print('results', table.unpack(results, 1, results.n))
+	return table.unpack(results, 1, results.n)
+end
 
 -- [[ apply patches
 file.__tmp = file[infilename]
 local function applyPatch(patchfilename)
-	local results = {os.execute('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')}
-	print('results', table.unpack(results))
+	exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')
 	file.__tmp = file.__tmp2
 	file.__tmp2 = nil
 end
@@ -373,16 +378,14 @@ if config.randomizeWeapons then
 end
 
 if config.randomizeDoors then
---	require 'rooms'	-- still experimental 
+	require 'rooms'	-- still experimental.  this just adds colored doors, but doesn't test for playability. 
 end
 
--- do the item randomization. this is the in-place randomization algorithm
 if config.randomizeItems then
 	require 'items'
 end
 
--- writing back is screwing up the wakeZebesEarly stuff
-do --if config.randomizeDoors or config.randomizeItems then
+do --if config.randomizeDoors or config.randomizeItems or config.wakeZebesEarly then
 	-- write back changes
 	sm:mapWrite()
 end
