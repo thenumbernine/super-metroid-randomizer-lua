@@ -294,9 +294,12 @@ if config.wakeZebesEarly then
 	local rsIntro = m.roomStates[2]
 	rsIntro.ptr.musicTrack = rsNormal.ptr.musicTrack
 	rsIntro.ptr.musicControl = rsNormal.ptr.musicControl
-	rsIntro.ptr.fx1 = rsNormal.ptr.fx1
-	rsIntro.ptr.enemyPop = rsNormal.ptr.enemyPop
-	rsIntro.ptr.enemySet = rsNormal.ptr.enemySet
+-- the security cameras stay there, and if I update these then their palette gets messed up
+-- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall 
+-- however there's no way to get morph + powerbomb all in one go for the first time you're in the room, so I think I'll leave it this way for now
+--	rsIntro.ptr.fx1 = rsNormal.ptr.fx1
+--	rsIntro.ptr.enemyPop = rsNormal.ptr.enemyPop
+--	rsIntro.ptr.enemySet = rsNormal.ptr.enemySet
 	rsIntro.ptr.layerHandling = rsNormal.ptr.layerHandling
 	local rsIntroPLMSet = rsIntro.plmset
 	rsIntro:setPLMSet(rsNormal.plmset)
