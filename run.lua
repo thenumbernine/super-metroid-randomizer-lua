@@ -64,10 +64,6 @@ local function applyPatch(patchfilename)
 	file.__tmp2 = nil
 end
 if config.skipIntro then applyPatch'introskip_doorflags.ips' end
-
--- using the wake_zebes.ips patch
---if config.wakeZebesEarly then applyPatch'wake_zebes.ips' end
-
 if config.skipItemFanfare then applyPatch'itemsounds.ips' end
 --applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 romstr = file.__tmp
@@ -192,9 +188,9 @@ end
 -- if I skip writing the plms back then all works fine
 if config.wakeZebesEarly then
 	
-	--wakeZebesEarlyDoorCode = 0xe51f		-- DONT USE THIS - THIS IS WHERE SOME CERES DOOR CODE IS.  right after the last door code
+	--wakeZebesEarlyDoorCode = 0xe51f	-- DONT USE THIS - THIS IS WHERE SOME CERES DOOR CODE IS.  right after the last door code
 	--wakeZebesEarlyDoorCode = 0xe99b	-- somewhere further out
-	wakeZebesEarlyDoorCode = 0xff00	-- original location.  works as long as I don't re-compress the plms and tiles.
+	wakeZebesEarlyDoorCode = 0xff00		-- original location of the patch.  works as long as I don't re-compress the plms and tiles.
 	
 	--patching offset 018eb4 size 0002
 	--local i = 0x018eb4	-- change the far right door code to $ff00
@@ -203,9 +199,13 @@ if config.wakeZebesEarly then
 	
 	--patching offset 07ff00 size 0015
 	local data = tableToByteArray{
+--[[ this is testing whether you have morph
+-- morph is item index 26, which is in oct 032, so the 3rd bit on the offset +3 byte 
+-- so I'm guessing our item bitflags start at $7e:d86f
 		0xaf, 0x72, 0xd8, 0x7e,	-- LDA $7e:d872 
 		0x89, 0x00, 0x04,		-- BIT #$0004
 		0xf0, 0x0b, 			-- BEQ $0b (to the RTS at the end)
+--]]	
 		0xaf, 0x20, 0xd8, 0x7e,	-- LDA $7e:d820
 		0x09, 0x01, 0x00,		-- ORA #$0001
 		0x8f, 0x20, 0xd8, 0x7e, -- STA $7e:d820
@@ -271,7 +271,7 @@ if config.randomizeWeapons then
 end
 
 if config.randomizeDoors then
-	require 'rooms'
+	require 'rooms'	-- still experimental 
 end
 
 -- do the item randomization. this is the in-place randomization algorithm

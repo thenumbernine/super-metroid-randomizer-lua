@@ -1991,8 +1991,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	end
 	--]]
 
-	--[[ re-indexing the items ...
-	-- FIXME somehow this is messing up the wake_zebes code ...
+	-- [[ re-indexing the items ...
 	local itemid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do

@@ -3,11 +3,17 @@ return {
 	
 	randomizeEnemies = true,
 
-	randomizeItems = true,
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
 	-- and same with doors
-	-- FIXME: change the specific item access info with map access info, and choose for each item according to where it is placed
+	--
+	-- TODO new idea, possibly a separate algo:
+	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room mdb_t's and door_t's themselves.
+	-- 1) remove the door tests from 'can access' code.  instead just pick an item location arbitrarily.
+	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
+	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
+	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
+	randomizeItems = true,
 
 	-- still WIP
 	randomizeDoors = true,
@@ -19,17 +25,9 @@ return {
 	-- skips the intro cutscene
 	skipIntro = true,
 
-	-- wake zebes when you go through the room to the right.
-	-- but experimenting with this when I got morph ball -> power bombs, 
-	-- it seems I did wake up the monsters in the rooms in blue brinstar, 
-	-- but the space pirates in old mother brain are still not there.  hmm.
-	-- it did allow the item left of morph ball behind the power bomb wall to be spawned fwiw.
-	-- so with this enabled, now i can't go up through old mother brain *AND* I can't go left without killing the sidehoppers
-	-- note: I just did another run and the space pirates did spawn.  hmm.
+	-- wake zebes when you go through the room to the right of the first blue brinstar room.
+	-- notice that even if zebes is asleep, you can still get the two items in the room above the first missile... but you can't get the powerbomb behind the powerbomb walls behind morph ball.
 	wakeZebesEarly = true,
-	-- ever since switching to writing plms instead of specific item addresses, wake-early is failing ...
-	-- maybe this modifies plms?  then should I double-check the plm indexes and set indexes of the items?
-	--wakeZebesEarly = false,
 
 	-- skip item fanfare
 	skipItemFanfare = true,
@@ -84,6 +82,7 @@ return {
 
 	randomizeDoorProps = {
 		-- set this to override the # colored doors placed throughout the world
+		-- TODO one idea for overlapping door ids: make sure they have matching colors
 		numColoredDoors = 128,
 	},
 

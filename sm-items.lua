@@ -1765,10 +1765,135 @@ function SMItems:itemsInit()
 			--sm.plmsets[item.plmsetIndex].plms[item.plmIndex].cmd = value
 			item.plm.cmd = value
 		end
-	
+
 --local ptr = ffi.cast('uint16_t*', rom + item.addr)
 --assert(ptr[0] == item:getCmd(), "looks like the item plm/plmset don't match up with the value at the original address.  maybe something changed the plms around before the map could read them.")	
 	end
+
+	--[[ debugging - determine original item index order
+	print('item original indexing')
+	table(self.items):sort(function(a,b) return a.plm.args < b.plm.args end):mapi(function(item)
+		print(item.plm.args, item.name)	
+	end)
+	--[=[ and the values, separated in groups of 8:
+
+0	Power Bomb (Crateria surface)
+1	Missile (outside Wrecked Ship bottom)
+2	Missile (outside Wrecked Ship top)
+3	Missile (outside Wrecked Ship middle)
+4	Missile (Crateria moat)
+5	Energy Tank (Crateria gauntlet)
+6	Missile (Crateria bottom)
+7	Bomb
+
+8	Energy Tank (Crateria tunnel to Brinstar)
+9	Missile (Crateria gauntlet right)
+10	Missile (Crateria gauntlet left)
+11	Super Missile (Crateria)
+12	Missile (Crateria middle)
+13	Power Bomb (green Brinstar bottom)
+14	Super Missile (pink Brinstar)
+15	Missile (green Brinstar below super missile)
+
+16	Super Missile (green Brinstar top)
+17	Reserve Tank (Brinstar)
+18	Missile (green Brinstar behind missile)
+19	Missile (green Brinstar behind Reserve Tank)
+21	Missile (pink Brinstar top)
+22	Missile (pink Brinstar bottom)
+23	Charge Beam
+
+24	Power Bomb (pink Brinstar)
+25	Missile (green Brinstar pipe)
+26	Morphing Ball
+27	Power Bomb (blue Brinstar)
+28	Missile (blue Brinstar middle)
+29	Energy Tank (blue Brinstar)
+30	Energy Tank (green Brinstar bottom)
+31	Super Missile (green Brinstar bottom)
+
+33	Energy Tank (pink Brinstar bottom)
+34	Missile (blue Brinstar bottom)
+35	Energy Tank (pink Brinstar top)
+36	Missile (blue Brinstar top)
+37	Missile (blue Brinstar behind missile)
+38	X-Ray Visor
+39	Power Bomb (red Brinstar sidehopper room)
+
+40	Power Bomb (red Brinstar spike room)
+41	Missile (red Brinstar spike room)
+42	Spazer
+43	Energy Tank (Kraid)
+44	Missile (Kraid)
+
+48	Varia Suit
+49	Missile (lava room)
+50	Ice Beam
+51	Missile (below Ice Beam)
+52	Energy Tank (Crocomire)
+53	Hi-Jump Boots
+54	Missile (above Crocomire)
+55	Missile (Hi-Jump Boots)
+
+56	Energy Tank (Hi-Jump Boots)
+57	Power Bomb (Crocomire)
+58	Missile (below Crocomire)
+59	Missile (Grappling Beam)
+60	Grappling Beam
+61	Reserve Tank (Norfair)
+62	Missile (Norfair Reserve Tank)
+63	Missile (bubble Norfair green door)
+
+64	Missile (bubble Norfair)
+65	Missile (Speed Booster)
+66	Speed Booster
+67	Missile (Wave Beam)
+68	Wave Beam
+70	Missile (Gold Torizo)
+71	Super Missile (Gold Torizo)
+
+73	Missile (Mickey Mouse room)
+74	Missile (lower Norfair above fire flea room)
+75	Power Bomb (lower Norfair above fire flea room)
+76	Power Bomb (above Ridley)
+77	Missile (lower Norfair near Wave Beam)
+78	Energy Tank (Ridley)
+79	Screw Attack
+
+80	Energy Tank (lower Norfair fire flea room)
+
+128	Missile (Wrecked Ship middle)
+129	Reserve Tank (Wrecked Ship)
+130	Missile (Gravity Suit)
+131	Missile (Wrecked Ship top)
+132	Energy Tank (Wrecked Ship)
+133	Super Missile (Wrecked Ship left)
+134	Super Missile (Wrecked Ship right)
+135	Gravity Suit
+
+136	Missile (green Maridia shinespark)
+137	Super Missile (green Maridia)
+138	Energy Tank (green Maridia)
+139	Missile (green Maridia tatori)
+140	Super Missile (yellow Maridia)
+141	Missile (yellow Maridia super missile)
+142	Missile (yellow Maridia false wall)
+143	Plasma Beam
+
+144	Missile (left Maridia sand pit room)
+145	Reserve Tank (Maridia)
+146	Missile (right Maridia sand pit room)
+147	Power Bomb (right Maridia sand pit room)
+148	Missile (pink Maridia)
+149	Super Missile (pink Maridia)
+150	Spring Ball
+151	Missile (Draygon)
+
+152	Energy Tank (Botwoon)
+154	Space Jump
+
+	--]=]
+	--]]
 
 	self.itemsForName = self.items:map(function(item) return item, item.name end)
 -- don't use addr anymore
