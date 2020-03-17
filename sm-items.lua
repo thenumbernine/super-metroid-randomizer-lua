@@ -1698,28 +1698,29 @@ items:insert{
 }
 --]]
 
+-- this is a subset of plm cmds in sm-map
 SMItems.itemTypes = table{
-	energy 		= 0xeed7,
-	missile 	= 0xeedb,
-	supermissile = 0xeedf,
-	powerbomb	= 0xeee3,
-	bomb		= 0xeee7,
-	charge		= 0xeeeb,
-	ice			= 0xeeef,
-	hijump		= 0xeef3,
-	speed		= 0xeef7,
-	wave		= 0xeefb,
-	spazer 		= 0xeeff,
-	springball	= 0xef03,
-	varia		= 0xef07,
-	plasma		= 0xef13,
-	grappling	= 0xef17,
-	morph		= 0xef23,
-	reserve		= 0xef27,
-	gravity		= 0xef0b,
-	xray		= 0xef0f,
-	spacejump 	= 0xef1b,
-	screwattack	= 0xef1f,
+	energy 			= 0xeed7,
+	missile 		= 0xeedb,
+	supermissile	= 0xeedf,
+	powerbomb		= 0xeee3,
+	bomb			= 0xeee7,
+	charge			= 0xeeeb,
+	ice				= 0xeeef,
+	hijump			= 0xeef3,
+	speed			= 0xeef7,
+	wave			= 0xeefb,
+	spazer 			= 0xeeff,
+	springball		= 0xef03,
+	varia			= 0xef07,
+	plasma			= 0xef13,
+	grappling		= 0xef17,
+	morph			= 0xef23,
+	reserve			= 0xef27,
+	gravity			= 0xef0b,
+	xray			= 0xef0f,
+	spacejump 		= 0xef1b,
+	screwattack		= 0xef1f,
 }
 
 -- add 84 = 0x54 to get to chozo , another 84 = 0x54 to hidden
@@ -1770,12 +1771,12 @@ function SMItems:itemsInit()
 --assert(ptr[0] == item:getCmd(), "looks like the item plm/plmset don't match up with the value at the original address.  maybe something changed the plms around before the map could read them.")	
 	end
 
-	--[[ debugging - determine original item index order
-	print('item original indexing')
-	table(self.items):sort(function(a,b) return a.plm.args < b.plm.args end):mapi(function(item)
-		print(item.plm.args, item.name)	
-	end)
-	--[=[ and the values, separated in groups of 8:
+--[[ debugging - determine original item index order
+print('item original indexing')
+table(self.items):sort(function(a,b) return a.plm.args < b.plm.args end):mapi(function(item)
+	print(item.plm.args, item.name)	
+end)
+--[=[ and the values, separated in groups of 8:
 
 0	Power Bomb (Crateria surface)
 1	Missile (outside Wrecked Ship bottom)
@@ -1892,8 +1893,9 @@ function SMItems:itemsInit()
 152	Energy Tank (Botwoon)
 154	Space Jump
 
-	--]=]
-	--]]
+--]=]
+--]]
+
 
 	self.itemsForName = self.items:map(function(item) return item, item.name end)
 -- don't use addr anymore

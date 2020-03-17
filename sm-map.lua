@@ -1992,6 +1992,8 @@ print("used a total of "..doorid.." special and non-special doors")
 	--]]
 
 	-- [[ re-indexing the items ...
+	-- TODO what about duplicate roomStates with separate item plms in each state?
+	-- TODO TODO how about incorportaing this into sm-items as well?
 	local itemid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
@@ -2004,7 +2006,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	end
 	--assert(itemid <= 100, "too many items (I think?)")
 	--]]
-	
+
 	-- [[ optimizing plms ... 
 	-- if a plmset is empty then clear all rooms that point to it, and remove it from the plmset master list
 	for _,plmset in ipairs(self.plmsets) do

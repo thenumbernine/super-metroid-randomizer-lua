@@ -202,6 +202,9 @@ if config.wakeZebesEarly then
 --[[ this is testing whether you have morph
 -- morph is item index 26, which is in oct 032, so the 3rd bit on the offset +3 byte 
 -- so I'm guessing our item bitflags start at $7e:d86f
+-- this only exists because multiple roomStates of the first blue brinstar room have different items
+-- the morph is only in the intro state, so if you wake zebes without getting morph you'll never get it again
+-- I'm going to fix this by manually merging the two plmsets of the two roomstates below
 		0xaf, 0x72, 0xd8, 0x7e,	-- LDA $7e:d872 
 		0x89, 0x00, 0x04,		-- BIT #$0004
 		0xf0, 0x0b, 			-- BEQ $0b (to the RTS at the end)
@@ -231,26 +234,170 @@ end
 sm:buildMemoryMap():print'memorymap.txt'
 
 
--- [[ manually change the wake condition instead of using the wake_zebes.ips patch
+--[[
+for verificaiton: there is one plm per item throughout the game
+however some rooms have multiple room states where some roomstates have items and some don't 
+... however if ever multiple roomStates have items, they are always stored in the same plmset
+and in the case that different roomStates have different items (like the first blue brinstar room, intro roomState has morph, gameplay roomState has powerbomb)
+ there is still no duplicating those roomStates.
+
+but here's the problem: a few rooms have roomStates where the item comes and goes
+for example, the first blue brinstar room, where the item is morph the first time and powerbomb the second time.
+how can we get around this ...
+one easy way: merge those two plmsets
+how often do we have to merge separate plmsets if we only want to consolidate all items?
+	
+	this is safe, the item appears after wake-zebes:
+00/13 = Crateria former mother brain room, one plmset has nothing, the other has a missile (and space pirates)
+	idk when these happen but they are safe
+00/15 = Crateria chozo boss, there is a state where there is no bomb item ... 
+00/1f = Crateria first missiles after bombs, has a state without the item
+	
+!!!! here is the one problem child:
+01/0e = Brinstar first blue room.  one state has morph, the other has powerbombs (behind the powerbomb wall).
+	
+	these are safe, the items come back when triggered after killing Phantoon:
+03/00 = Wrecked Ship, reserve + missile in one state, not in the other
+03/03 = Wrecked Ship, missile in one state, not in the other
+03/07 = Wrecked Ship, energy in one state, not in the other (water / chozo holding energy?)
+03/0c = Wrecked Ship, super missile in one state, not in the other
+03/0d = Wrecked Ship, super missile in one state, not in the other
+03/0e = Wrecked Ship, gravty in one state, not in the other
+
+So how do we work around this, keeping a 1-1 copy of all items while not letting the player enter a game state where they can't get an essential item?
+By merging the two roomstates of 01/0e together.
+What do we have to do in order to merge them?
+the two roomstate_t's differ...
+- musicTrack: normal has 09, intro has 06
+- musicControl: normal has 05, intro has 07
+- fx1: normal has 81f4, intro has 8290
+- enemyPop: normal has 9478, intro has 94fb
+- enemySet: normal has 83b5, intro has 83d1
+- plm: normal has 86c3, intro has 8666 (stupid evil intro plmset that's what screwed everything up ... this is the one i will delete)
+- layerHandling: normal has 91bc, intro has 91d5
+the two plmsets differ...
+- only normal has:
+   plm_t: door_grey_left: {cmd=c848, x=01, y=26, args=0c31}
+   plm_t: item_powerbomb: {cmd=eee3, x=28, y=2a, args=001a}
+- only intro has:
+   plm_t: item_morph: {cmd=ef23, x=45, y=29, args=0019}
+--]]
+-- [[
+if config.wakeZebesEarly then
+	-- find mdb 01/0e, find its plmset
+	local _,m = sm.mdbs:find(nil, function(m)
+		return m.ptr.index == 0x0e and m.ptr.region == 0x01
+	end)
+	if not m then error'here' end
+	assert(#m.roomStates == 2)
+	local rsNormal = m.roomStates[1]
+	local rsIntro = m.roomStates[2]
+	rsIntro.ptr.musicTrack = rsNormal.ptr.musicTrack
+	rsIntro.ptr.musicControl = rsNormal.ptr.musicControl
+	rsIntro.ptr.fx1 = rsNormal.ptr.fx1
+	rsIntro.ptr.enemyPop = rsNormal.ptr.enemyPop
+	rsIntro.ptr.enemySet = rsNormal.ptr.enemySet
+	rsIntro.ptr.layerHandling = rsNormal.ptr.layerHandling
+	local rsIntroPLMSet = rsIntro.plmset
+	rsIntro:setPLMSet(rsNormal.plmset)
+	-- TODO remove the rsIntroPLMSet from the list of all PLMSets
+	--  notice that, if you do this, you have to reindex all the items plmsetIndexes
+	-- now add those last plms into the new plm set
+	local lastIntroPLM = rsIntroPLMSet.plms:remove()
+	assert(lastIntroPLM.cmd == sm.plmCmdValueForName.item_morph)
+	rsNormal.plmset.plms:insert(lastIntroPLM)
+	-- and finally, adjust the item randomizer plm indexes and sets
+	local _, morphBallItem = items:find(nil, function(item)
+		return item.name == 'Morphing Ball'
+	end)
+	assert(morphBallItem)
+	morphBallItem.plmsetIndex = 56	-- same as blue brinstar powerbomb item
+	morphBallItem.plmIndex = 19		-- one past the powerbomb
+end
+--]]
+--[[ debugging: show all rooms with multiple roomStates with item plms in each state
+print'all mdbs with duplicate roomstates that have items:'
 for _,m in ipairs(sm.mdbs) do
-	-- [=[ 01/0e = blue brinstar first room
-	if m.ptr.index == 0x0e
-	and m.ptr.region == 0x01
-	then
-		-- change the 2nd door
-		assert(m.doors[2].addr == 0x8eaa)
-		m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
-	end
-	--]=]
-	--[=[ 00/00 = first room ... doesn't seem to work
-	if m.ptr.index == 0x00
-	and m.ptr.region == 0x00
-	then
-		for _,door in ipairs(m.doors) do
-			door.code = assert(wakeZebesEarlyDoorCode)
+	local roomStateItemPLMs = table()
+	for _,rs in ipairs(m.roomStates) do
+		local printedRoomState
+		if rs.plmset then
+			local itemPLMs = rs.plmset.plms:filter(function(plm)
+				local name = sm.plmCmdNameForValue[plm.cmd]
+				return name and name:match'^item_'
+			end)
+			if #itemPLMs > 0 then
+				roomStateItemPLMs:insert{rs=rs, itemPLMs=itemPLMs}
+			end
 		end
 	end
-	--]=]
+	--if #roomStateItemPLMs > 1 then
+	if #m.roomStates > 1 then
+		local here
+		for _,rs in ipairs(m.roomStates) do
+			local _,info = roomStateItemPLMs:find(nil, function(info) return info.rs == rs end)
+			if info then
+				if #info.itemPLMs > 0 then
+					-- found a mdb with multiple roomstates and items inside some of them
+					here = true
+					break
+				end
+			end
+		end
+		if here then
+			print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
+			for _,rs in ipairs(m.roomStates) do
+				-- verify the plmsets are different
+				-- if the plmsets are matching then, even if the roomstates are different, it will still be the same plm
+				print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)
+					..' plmset '..(rs.plmset and ('$%04x'):format(rs.plmset.addr) or 'nil')
+				)
+				-- how well does == work with cdata?
+				local _,info = roomStateItemPLMs:find(nil, function(info) return info.rs == rs end)
+				if info then
+					for _,plm in ipairs(info.itemPLMs) do
+						local name = sm.plmCmdNameForValue[plm.cmd]
+						print('   plm_t: index='..plm.args..' name='..name)
+					end
+				end
+			end
+		end
+	end
+end
+--]]
+
+
+
+
+-- [[ manually change the wake condition instead of using the wake_zebes.ips patch
+if config.wakeZebesEarly then
+	for _,m in ipairs(sm.mdbs) do
+		--[=[ 01/0e = blue brinstar first room
+		if m.ptr.index == 0x0e
+		and m.ptr.region == 0x01
+		then
+			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+		end
+		--]=]
+		-- [=[ change the lift going down into blue brinstar
+		-- hmm, in all cases it seems the change doesn't happen until after you leave the next room
+		if m.ptr.index == 0x14
+		and m.ptr.region == 0x00
+		then
+			assert(m.doors[2].addr == 0x8b9e)
+			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+		end
+		--]=]
+		--[=[ 00/00 = first room ... doesn't seem to work
+		if m.ptr.index == 0x00
+		and m.ptr.region == 0x00
+		then
+			for _,door in ipairs(m.doors) do
+				door.code = assert(wakeZebesEarlyDoorCode)
+			end
+		end
+		--]=]
+	end
 end
 --]]
 
@@ -271,7 +418,7 @@ if config.randomizeWeapons then
 end
 
 if config.randomizeDoors then
-	require 'rooms'	-- still experimental 
+--	require 'rooms'	-- still experimental 
 end
 
 -- do the item randomization. this is the in-place randomization algorithm
