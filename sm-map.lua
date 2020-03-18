@@ -666,9 +666,9 @@ function SMMap:mapAddRoom(addr, m)
 -- [[
 -- look for 0x9x in ch2 of of room.blocks
 			if bit.band(b, 0xf0) == 0x90 then
-				local exitindex = c
-				blocksForExit[exitindex] = blocksForExit[exitindex] or table()
-				blocksForExit[exitindex]:insert{i,j}
+				local exitIndex = c
+				blocksForExit[exitIndex] = blocksForExit[exitIndex] or table()
+				blocksForExit[exitIndex]:insert{i,j}
 			end
 --]]
 
@@ -1585,11 +1585,11 @@ local function drawRoomDoors(mapimg, room)
 		local srcm_ofsx, srcm_ofsy = ofsPerRegion[srcm.ptr.region+1](srcm.ptr)
 		local srcm_xofs = roomSizeInPixels * (srcm_ofsx - 4)
 		local srcm_yofs = roomSizeInPixels * (srcm_ofsy + 1)
-		for exitindex,blockpos in pairs(room.blocksForExit) do
+		for exitIndex,blockpos in pairs(room.blocksForExit) do
 print('in mdb '..('%02x/%02x'):format(srcm.ptr.region, srcm.ptr.index)
-	..' looking for exit '..exitindex..' with '..#blockpos..' blocks')
+	..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
 			-- TODO lifts will mess up the order of this, maybe?
-			local door = srcm.doors[exitindex+1]
+			local door = srcm.doors[exitIndex+1]
 			if not door then
 print('found no door')
 			elseif door.ctype ~= 'door_t' then
@@ -1912,20 +1912,32 @@ function SMMap:mapPrint()
 			end
 			
 			-- for each mdb door, find the room door with a matching index
-			for mdbDoorIndex,mdbDoor in ipairs(m.doors) do
-				if mdbDoor.ctype == 'door_t' then
+			-- TODO maybe I should go by room doors.  room doors are based on map tiles, and they reference the mdb door with their index.
+			-- however lifts are not specified by room doors, but they are always the last mdb door.
+			-- and open exits are not room doors either ... this is where room.blocksForExit comes in handy 
+			for exitIndex, blockpos in pairs(room.blocksForExit) do
+				local mdbDoor = m.doors[exitIndex+1]
+				
+				if mdbDoor 
+				and mdbDoor.ctype == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
+				then
+
 					assert(mdbDoor.dest_mdb)
 					local destMdbName = getMDBName(mdbDoor.dest_mdb)
+				
+					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
+					local color
 					
 					-- notice, if we reverse the search, and cycle through all room.doors and then lookup the associated mdb.door, we come up with only one room door that doesn't have a mdb door ...
 					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated MDB door
-					local roomDoorIndex, roomDoor = room.doors:find(nil, function(roomDoor)
-						return roomDoor.index+1 == mdbDoorIndex
+					local _, roomDoor = room.doors:find(nil, function(roomDoor)
+						-- TODO is this always true?  the blockpos exitIndex matches the roomDoor.index?
+						return roomDoor.index == exitIndex
 					end)
-					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
 					if roomDoor then
-						-- otherwise, lift_t is a suffix of a lift door_t
-			
+						-- if there is a room door then the exit is a blue door by default ... unless we find a plm for the door
+						color = 'blue'
+
 						-- we're getting multiple edges here
 						-- room pertains to block data, and it will be repeated for reused block data rooms (like save points, etc)
 						-- now this means room.roomStates will have as many roomStates as there are multiple mdbs which reference it
@@ -2043,8 +2055,8 @@ function SMMap:mapPrint()
 	-- dot looks horrible for clusters.  
 	--  fds looks better, but doesn't respet the lhead/ltail attributes.
 	--  this could be fixed if I could find out where doors' target roomStates are stored.
-	-- ok now dot is crashing
-	exec'fdp -Tsvg -o roomgraph.svg roomgraph.dot'
+	-- ok now dot is crashing when showRoomStates is enabled
+	exec'dot -Tsvg -o roomgraph.svg roomgraph.dot'
 	--]]
 
 	--[[ debugging: print all unique door codes
