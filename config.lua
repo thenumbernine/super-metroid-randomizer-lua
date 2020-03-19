@@ -16,7 +16,7 @@ return {
 	randomizeItems = true,
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
---	randomizeDoors = true,
+	randomizeDoors = true,
 
 	randomizeWeapons = true, 
 

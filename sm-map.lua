@@ -1848,7 +1848,7 @@ function SMMap:mapPrint()
 	end
 
 	-- [[ debugging: print out a graphviz dot file of the rooms and doors
-	local f = assert(io.open('roomgraph.dot', 'w'))
+	local f = assert(io.open('roomgraph-random.dot', 'w'))
 	f:write'digraph G {\n'
 	local showRoomStates = false
 	local showDoors = false
@@ -2056,7 +2056,7 @@ function SMMap:mapPrint()
 	--  fds looks better, but doesn't respet the lhead/ltail attributes.
 	--  this could be fixed if I could find out where doors' target roomStates are stored.
 	-- ok now dot is crashing when showRoomStates is enabled
-	exec'dot -Tsvg -o roomgraph.svg roomgraph.dot'
+	exec'dot -Tsvg -o roomgraph-random.svg roomgraph-random.dot'
 	--]]
 
 	--[[ debugging: print all unique door codes

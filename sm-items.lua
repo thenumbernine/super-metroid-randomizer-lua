@@ -1401,6 +1401,7 @@ local function canKillPhantoon()
 	return accessWreckedShip() 
 	and req.charge 
 	and (req.gravity or req.varia or effectiveEnergyCount() >= 2) 
+	and canKill'Phantoon (body)'
 end
 
 items:insert{
