@@ -377,12 +377,19 @@ if config.randomizeWeapons then
 	require 'weapons'
 end
 
+-- this is just my testbed for map modification code
+--require 'rooms'
+
 if config.randomizeDoors then
-	require 'rooms'	-- still experimental.  this just adds colored doors, but doesn't test for playability. 
+	require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability. 
 end
 
 if config.randomizeItems then
 	require 'items'
+end
+
+if config.randomizeItemsScavengerHunt then
+	require 'item-scavenger'
 end
 
 do --if config.randomizeDoors or config.randomizeItems or config.wakeZebesEarly then

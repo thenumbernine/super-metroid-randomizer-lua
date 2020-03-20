@@ -20,6 +20,7 @@ randomizes the following:
 - item placement
 - weapon damages
 - doors (NOTICE the item accessibility search doesn't take this into account yet)
+- item placement / scavenger hunt mode.  If randomizing doors had no guarantees, this has even less.
 
 The item placement algorithm does a depth-first search to make sure that there is at least one possible run that will result in the game being won.
 
