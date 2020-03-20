@@ -63,6 +63,9 @@ local function findRandomPosInRoom(room)
 			end
 		end
 	end
+	local m = room.mdbs[1]
+	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+	print("ERROR couldn't find any locations in room "..roomid)
 end
 
 local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printing
@@ -113,6 +116,14 @@ local function placeInRoom(m, rs, room, cmd)
 	return true
 end
 
+local function getAllMDBPLMs(m)
+	local plmsets = table()
+	for _,rs in ipairs(m.roomStates) do
+		plmsets[rs.plmset] = true
+	end
+	plmsets = plmsets:keys()
+	return plmsets
+end
 
 --[[
 MAKE SURE TO PUT AT LEAST ONE MISSILE IN THE START (to wake up zebes)
@@ -131,14 +142,12 @@ local firstMissileMDBs = allMDBs:filter(function(m)
 end)
 do
 	local m = pickRandom(firstMissileMDBs)
-	for _,rs in ipairs(m.roomStates) do
-		assert(placeInRoom(m, rs, rs.room, sm.plmCmdValueForName.item_missile))
+	local pos = assert(findRandomPosInRoom(m.roomStates[1].room))
+	for _,plmset in ipairs(getAllMDBPLMs(m)) do
+		placeInPLMSet(plmset, pos, sm.plmCmdValueForName.item_missile, m)
 	end
 end
--- TODO maybe make sure there's something to destroy bomb blocks ... maybe ...
-
-
--- TODO don't put items in the intro or exiting room states' plms?
+-- TODO maybe make sure you get early something to destroy bomb blocks ... maybe ...
 
 
 -- [[ now re-add them in random locations ... making sure that they are accessible as you add them?
@@ -160,16 +169,7 @@ for rep=1,1 do
 			pos = findRandomPosInRoom(rs.room)
 		until pos
 
-		local plmsets = table()
-		for _,rs in ipairs(m.roomStates) do
-			plmsets[rs.plmset] = true
-		end
-		plmsets = plmsets:keys()
-
-		-- all roomstates share the same blocks, so why would i try this more than once?
-		-- if it fails once then i should pick a new mdb and try again
-		-- also, i should pick a location once, then write it to all the unique plms collected from all the roomstates
-		for _,plmset in ipairs(plmsets) do
+		for _,plmset in ipairs(getAllMDBPLMs(m)) do
 			placeInPLMSet(plmset, pos, cmd, m)
 		end
 	end
