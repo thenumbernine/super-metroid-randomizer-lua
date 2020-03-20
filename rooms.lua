@@ -117,24 +117,7 @@ high byte:
 low nibble:
 04 = flip up/down
 08 = flip left/right:
-high nibble:
-50 = crumble
-80 = solid
-90 = exit (see channel C for door index)
-B=b1, C=05 = crumble, no respawn
-B=b1, C=0f = speed
-c0 = shootable / powerbomb, no respawn
-d0 = another bombable?
-f0 = bombable, no respawn
 
-ch3:
-01 = tile to the right too
-02 = tile below too
-04 = no respawn
-05 = crumble
-08 = super missile
-09 = power bomb
-0f = speed
 --]=]
 for _,room in ipairs(sm.rooms) do
 	local w,h = room.width, room.height

@@ -171,7 +171,7 @@ items fields:
 	escape = callback to determine what is required to escape the room after accessing the item
 	filter = callback to determine which items to allow here
 --]]
---[[local]] items = table()
+local items = table()
 
 
 -- start run / pre-alarm items ...

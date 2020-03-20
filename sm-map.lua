@@ -1492,7 +1492,28 @@ local function drawstr(mapimg, posx, posy, s)
 	end
 end
 
-local function drawRoom(mapimg, m, blocks)
+local _4bitpal = {
+	0x000000,	-- 0
+	0x7f0000,	-- 1
+	0x007f00,	-- 2
+	0x7f7f00,	-- 3
+	0x00007f,	-- 4
+	0x7f007f,	-- 5
+	0x007f7f,	-- 6
+	0xbfbfbf,	-- 7
+	0x7f7f7f,	-- 8
+	0xff0000,	-- 9
+	0x00ff00,	-- a
+	0xffff00,	-- b
+	0x0000ff,	-- c
+	0xff00ff,	-- d
+	0x00ffff,	-- e
+	0xffffff,	-- f
+}
+
+local function drawRoom(ctx, m, blocks)
+	local mapimg = ctx.mapimg
+	local mapBinImage = ctx.mapBinImage
 	local w, h = m.ptr.width, m.ptr.height
 	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
 	local xofs = roomSizeInPixels * (ofsx - 4)
@@ -1543,6 +1564,129 @@ local function drawRoom(mapimg, m, blocks)
 							end
 						end
 					end
+
+					-- write out solid tiles only
+					--[[
+					looks like this is channel 2:
+					lower nibble channel 2 bits:
+					bit 0
+					bit 1
+					bit 2 = flip up/down
+					bit 3 = flip left/right
+					
+					upper-nibble channel 2 values:
+					0 = empty
+					1 = slope
+					2 = spikes
+						channel 3 lo:
+							0000b = 0 = 1x1 spike solid
+							0010b = 2 = 1x1 spike non-solid 
+					3 = conveyor
+						channel 3 lo:
+							0000b = 0 = down force x1 (maridia quicksand top of two secrets)
+							0001b = 1 = down force x2 (maridia quicksand in bottom of two secret rooms)
+							0010b = 2 = down force x3 (maridia quicksand)
+							0011b = 3 = down force x4 - can't jump up from (maridia sand downward shafts)
+							0101b = 5 = down force x.5 - (maridia sand falling from ceiling)
+							1000b = 8 = right
+							1001b = 9 = left
+					4 =
+					5 = copy what's to the left
+					6 =
+					7 =
+					8 = solid
+					9 = door
+					a = spikes / invis blocks
+						channel 3:
+							0000b = 0 = spikes solid 
+							0011b = 3 = spikes non-solid destroyed by walking chozo statue
+							1110b = e = invis blocks
+							1111b = f = spikes non-solid destroyed by walking chozo statue
+									  = also solid sand blocks destroyed by that thing in maridia
+					b = crumble / speed
+						channel 3 lo:
+							0000b = 0 = 1x1 crumble regen
+							0001b = 1 = 2x1 crumble regen
+							0010b = 2 = 1x2 crumble regen
+							0011b = 3 = 2x2 crumble regen
+							
+							0100b = 4 = 1x1 crumble noregen
+							0101b = 5 = 2x1 crumble noregen
+							0110b = 6 = 1x1 crumble noregen
+							0111b = 7 = 2x2 crumble noregen
+							
+							1110b = e = 1x1 speed regen
+							1111b = f = 1x1 speed noregen
+					c = break by beam / supermissile / powerbomb
+						channel 3 lo:
+							0000b = 0 = 1x1 beam regen
+							0001b = 1 = 1x2 beam regen
+							0010b = 2 = 2x1 beam regen
+							0011b = 3 = 2x2 beam regen
+							
+							0100b = 4 = 1x1 beam noregen
+							0101b = 5 = 2x1 beam noregen
+							0110b = 6 = 1x2 beam noregen
+							0111b = 7 = 2x2 beam noregen
+							
+							1001b = 9 = 1x1 power bomb noregen
+							1010b = a = 1x1 super missile regen
+							1011b = b = 1x1 super missile noregen
+					d = copy what's above 
+					e = grappling
+						channel 3 bit 1:
+							0000b = 0 = 1x1 grappling
+							0001b = 1 = 1x1 grappling breaking regen
+							0010b = 2 = 1x1 grappling breaking noregen
+					f = bombable 
+						channel 3 lo:
+							0000b = 0 = 1x1 bomb regen
+							0001b = 1 = 2x1 bomb regen
+							0010b = 2 = 1x2 bomb regen
+							0011b = 3 = 2x2 bomb regen
+							
+							0100b = 4 = 1x1 bomb noregen
+							0101b = 5 = 2x1 bomb noregen
+							0110b = 6 = 1x2 bomb noregen
+							0111b = 7 = 2x2 bomb noregen
+					--]]
+					local d2lo = bit.band(0xf, d2)
+					local d2hi = bit.band(0xf, bit.rshift(d2, 4))
+					local d3lo = bit.band(0xf, d3)
+					local d3hi = bit.band(0xf, bit.rshift(d3, 4))
+					do
+						local d2loColor = _4bitpal[d2lo+1]
+						local d2hiColor = _4bitpal[d2hi+1]
+						local d3loColor = _4bitpal[d3lo+1]
+						local d3hiColor = _4bitpal[d3hi+1]
+						for pi=0,blockSizeInPixels-1 do
+							for pj=0,blockSizeInPixels-1 do
+								local color
+								local pil = pi < bit.rshift(blockSizeInPixels, 1)
+								local pjl = pj < bit.rshift(blockSizeInPixels, 1)
+								if pil then	
+									color = d2hiColor
+								else
+									color = d3loColor
+								end
+								if pi == 0 or pi == blockSizeInPixels-1 
+								or pj == 0 or pj == blockSizeInPixels-1 
+								then
+									color = 0x000000
+								end
+								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
+								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
+								if x >= 0 and x < mapimg.width
+								and y >= 0 and y < mapimg.height 
+								then
+									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = bit.band(0xff, bit.rshift(color, 16))
+									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = bit.band(0xff, bit.rshift(color, 8))
+									mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = bit.band(0xff, color)
+								end
+							end
+						end
+					end
+				
 				end
 			end
 		end
@@ -1576,7 +1720,8 @@ local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
 	end
 end
 
-local function drawRoomDoors(mapimg, room)
+local function drawRoomDoors(ctx, room)
+	local mapimg = ctx.mapimg
 	local blocks = room.blocks
 	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
 	-- then, cycle through exits, and draw lines from each block to the exit destination
@@ -1643,7 +1788,8 @@ print("door isn't a ctype")
 	end
 end
 
-function drawRoomPLMs(mapimg, room)
+function drawRoomPLMs(ctx, room)
+	local mapimg = ctx.mapimg
 	for _,rs in ipairs(room.roomStates) do
 		local m = rs.m
 		local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
@@ -1671,23 +1817,33 @@ function drawRoomPLMs(mapimg, room)
 end
 
 
-function SMMap:mapSaveImage(filename)
-	filename = filename or 'map.png'	
-	local image = require 'image'
-	local mapimg = image(roomSizeInPixels*68, roomSizeInPixels*58, 3, 'unsigned char')
+function SMMap:mapSaveImage(filenamePrefix)
+	local Image = require 'image'
+	
+	filenamePrefix = filenamePrefix or 'map'
+
+	local w = roomSizeInPixels*68
+	local h = roomSizeInPixels*58
+	local mapimg = Image(w, h, 3, 'unsigned char')
+	local mapBinImage = Image(w, h, 3, 'unsigned char')
+	local ctx = {
+		mapimg = mapimg,
+		mapBinImage = mapBinImage,
+	}
 
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
-			drawRoom(mapimg, m, room.blocks)
+			drawRoom(ctx, m, room.blocks)
 		end
 	end
 
 	for _,room in ipairs(self.rooms) do
-		drawRoomDoors(mapimg, room)
-		drawRoomPLMs(mapimg, room)
+		drawRoomDoors(ctx, room)
+		drawRoomPLMs(ctx, room)
 	end
 
-	mapimg:save(filename)
+	mapimg:save(filenamePrefix..'.png')
+	mapBinImage:save(filenamePrefix..'-mask.png')
 end
 
 

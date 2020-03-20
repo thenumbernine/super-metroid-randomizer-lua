@@ -233,7 +233,7 @@ sm = SM(rom)
 
 -- write out unaltered stuff
 if config.writeOutImage then
-	sm:mapSaveImage'map.png'
+	sm:mapSaveImage'map'
 end
 -- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 sm:buildMemoryMap():print'memorymap.txt'
@@ -316,7 +316,7 @@ if config.wakeZebesEarly then
 	assert(lastIntroPLM.cmd == sm.plmCmdValueForName.item_morph)
 	rsNormal.plmset.plms:insert(lastIntroPLM)
 	-- and finally, adjust the item randomizer plm indexes and sets
-	local _, morphBallItem = items:find(nil, function(item)
+	local _, morphBallItem = sm.items:find(nil, function(item)
 		return item.name == 'Morphing Ball'
 	end)
 	assert(morphBallItem)
@@ -393,7 +393,7 @@ end
 -- write out altered stuff
 sm:print()
 if config.writeOutImage then
-	sm:mapSaveImage'map-random.png'
+	sm:mapSaveImage'map-random'
 end
 sm:buildMemoryMap():print()
 
