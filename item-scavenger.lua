@@ -29,7 +29,7 @@ for _,plmset in ipairs(sm.plmsets) do
 end
 --]]
 
-local function placeInRoom(m, rs, room, cmd)
+local function findRandomPosInRoom(room)
 	-- TODO !issolid doesn't mean isempty...
 	local function tileType(x,y)
 		local bi = 3 * (x + room.width * y)
@@ -47,8 +47,6 @@ local function placeInRoom(m, rs, room, cmd)
 
 	-- TODO pick a location that is solid and next to empty
 	local x,y
-	local offsetDir
-	local found
 	for tries=1,100 do
 		x = math.random(2, room.width - 3)	-- avoid edges
 		y = math.random(2, room.height - 3)
@@ -60,25 +58,23 @@ local function placeInRoom(m, rs, room, cmd)
 				{0,-1},
 			} do
 				if isempty(x+offset[1], y+offset[2]) then 
-					offsetDir = i
-					found = true
-					break 
+					return {x,y}
 				end
 			end
-			if found then break end
 		end
 	end
-	if not found then
-		print("ERROR - couldn't find placement for item "..sm.plmCmdNameForValue[cmd])
-	end
-		
+end
+
+local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printing
+	local x,y = table.unpack(pos)	
 	local name = sm.plmCmdNameForValue[cmd]
+	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+		
 	print('placing in room '
-		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+		..roomid
 		..' at '..x..', '..y
-		..' offset '..offsetDir
 		..' item '..name)
-	rs.plmset.plms:insert(
+	plmset.plms:insert(
 		ffi.new('plm_t', {
 			cmd = cmd,
 			x = x,
@@ -86,6 +82,37 @@ local function placeInRoom(m, rs, room, cmd)
 		})
 	)
 end
+
+-- remove the debug mdbs
+local allMDBs = sm.mdbs:filter(function(m)
+	-- remove unfinished rooms
+	if m.ptr.region == 2 and m.ptr.index == 0x3d then return false end
+	if m.ptr.region == 4 and m.ptr.index == 0x1f then return false end
+	
+	-- remove debug region
+	if m.ptr.region >= 7 then return false end
+	
+	-- remove crateria?
+	if m.ptr.region == 6 then return false end
+
+	-- remove tourian?
+	if m.ptr.region == 5 then return false end
+
+	-- TODO remove intro room?  or at least remove their plmsets until after you wake zebes?
+	-- TODO also remove escape plmsets
+	-- TODO also remove plmsets from pre-wake wrecked ship
+
+	return true
+end)
+
+
+local function placeInRoom(m, rs, room, cmd)
+	local pos = findRandomPosInRoom(room)
+	if not pos then return false end
+	placeInPLMSet(rs.plmset, pos, cmd, m)
+	return true
+end
+
 
 --[[
 MAKE SURE TO PUT AT LEAST ONE MISSILE IN THE START (to wake up zebes)
@@ -95,7 +122,7 @@ rooms to put a missile tank in:
 01/18 = missile room
 01/10 = next room ... but there is a risk of it going in the top
 --]]
-local firstMissileMDBs = sm.mdbs:filter(function(m)
+local firstMissileMDBs = allMDBs:filter(function(m)
 	return m.ptr.region == 1
 	and (
 		m.ptr.index == 0xf
@@ -105,10 +132,14 @@ end)
 do
 	local m = pickRandom(firstMissileMDBs)
 	for _,rs in ipairs(m.roomStates) do
-		placeInRoom(m, rs, rs.room, sm.plmCmdValueForName.item_missile)
+		assert(placeInRoom(m, rs, rs.room, sm.plmCmdValueForName.item_missile))
 	end
 end
 -- TODO maybe make sure there's something to destroy bomb blocks ... maybe ...
+
+
+-- TODO don't put items in the intro or exiting room states' plms?
+
 
 -- [[ now re-add them in random locations ... making sure that they are accessible as you add them?
 -- how to randomly place them...
@@ -117,19 +148,36 @@ for rep=1,1 do
 		-- reveal all items for now
 		local name = sm.plmCmdNameForValue[cmd]
 		name = name:gsub('_chozo', ''):gsub('_hidden', '')	
+		if config.randomizeItemsScavengerHuntHidden then
+			name = name .. '_hidden'
+		end
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
-		
-		local m = pickRandom(sm.mdbs)
-		-- now which room state do we apply it to? first? all?
+	
+		local m, pos
+		repeat
+			m = pickRandom(allMDBs)
+			local rs = m.roomStates[1]	-- assert all room states point to the same room
+			pos = findRandomPosInRoom(rs.room)
+		until pos
+
+		local plmsets = table()
 		for _,rs in ipairs(m.roomStates) do
-			placeInRoom(m, rs, rs.room, cmd)
+			plmsets[rs.plmset] = true
+		end
+		plmsets = plmsets:keys()
+
+		-- all roomstates share the same blocks, so why would i try this more than once?
+		-- if it fails once then i should pick a new mdb and try again
+		-- also, i should pick a location once, then write it to all the unique plms collected from all the roomstates
+		for _,plmset in ipairs(plmsets) do
+			placeInPLMSet(plmset, pos, cmd, m)
 		end
 	end
 end
 --]]
 
 --[[ make sure morph ball is in the start room 
-local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
+local _,startRoom = assert(allMDBs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
 -- they al have the same plm set btw.... you only need to do this once
 for _,rs in ipairs(startRoom.roomStates) do
 	rs.plmset.plms:insert(

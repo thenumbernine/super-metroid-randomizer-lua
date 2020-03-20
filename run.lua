@@ -381,7 +381,7 @@ end
 --require 'rooms'
 
 if config.randomizeDoors then
-	require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability. 
+	require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability.
 end
 
 if config.randomizeItems then
