@@ -578,12 +578,15 @@ end
 
 
 local Room = class()
+SMMap.Room = Room
+
 function Room:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
 	self.mdbs = table()
 end
+
 function Room:getData()
 	local w, h = self.width, self.height
 	local ch12 = ffi.new('uint8_t[?]', 2 * w * h)

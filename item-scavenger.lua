@@ -29,6 +29,62 @@ for _,plmset in ipairs(sm.plmsets) do
 end
 --]]
 
+
+-- remove the debug mdbs
+local allMDBs = sm.mdbs:filter(function(m)
+	-- remove unfinished rooms
+	if m.ptr.region == 2 and m.ptr.index == 0x3d then return false end
+	if m.ptr.region == 4 and m.ptr.index == 0x1f then return false end
+	
+	-- remove debug region
+	if m.ptr.region >= 7 then return false end
+	
+	-- remove crateria?
+	if m.ptr.region == 6 then return false end
+
+	-- remove tourian?
+	if m.ptr.region == 5 then return false end
+
+	-- TODO remove intro room?  or at least remove their plmsets until after you wake zebes?
+	-- TODO also remove escape plmsets
+	-- TODO also remove plmsets from pre-wake wrecked ship
+
+	return true
+end)
+-- TODO use m.ptr instead?
+local allMDBSet = allMDBs:mapi(function(m) return true, m end)
+
+local function getRoomsForMDBs(mdbs)
+	local rooms = table()
+	for _,m in ipairs(mdbs) do
+		for i,rs in ipairs(m.roomStates) do
+			assert(rs.room)
+			rooms[rs.room] = true
+		end
+	end
+	return rooms:keys()
+end
+
+local allRooms = getRoomsForMDBs(allMDBs)
+
+local allLocs = table()
+local locsPerRoom = table()
+for _,room in ipairs(allRooms) do
+	for y=0,room.height-1 do
+		for x=0,room.width-1 do
+			if room:isBorder(x,y) then
+				allLocs:insert{x,y,room}
+				local roomLocs = locsPerRoom[room]
+				if not roomLocs then
+					roomLocs = table()
+					locsPerRoom[room] = roomLocs 
+				end
+				roomLocs:insert{x,y,room}
+			end
+		end
+	end
+end
+
 -- TODO store all borders up front, put them in an array (assoc with room), and let the rando pick from all tiles evenly weighted
 local function findRandomPosInRoom(room)
 	local x,y
@@ -60,28 +116,6 @@ local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printin
 		})
 	)
 end
-
--- remove the debug mdbs
-local allMDBs = sm.mdbs:filter(function(m)
-	-- remove unfinished rooms
-	if m.ptr.region == 2 and m.ptr.index == 0x3d then return false end
-	if m.ptr.region == 4 and m.ptr.index == 0x1f then return false end
-	
-	-- remove debug region
-	if m.ptr.region >= 7 then return false end
-	
-	-- remove crateria?
-	if m.ptr.region == 6 then return false end
-
-	-- remove tourian?
-	if m.ptr.region == 5 then return false end
-
-	-- TODO remove intro room?  or at least remove their plmsets until after you wake zebes?
-	-- TODO also remove escape plmsets
-	-- TODO also remove plmsets from pre-wake wrecked ship
-
-	return true
-end)
 
 
 local function placeInRoom(m, rs, room, cmd)
@@ -116,11 +150,24 @@ local firstMissileMDBs = allMDBs:filter(function(m)
 	)
 end)
 do
-	local m = pickRandom(firstMissileMDBs)
-	local pos = assert(findRandomPosInRoom(m.roomStates[1].room))
+	local rooms = getRoomsForMDBs(firstMissileMDBs)
+	local poss = table():append(rooms:mapi(function(room) return assert(locsPerRoom[room]) end):unpack())
+	local pos = pickRandom(poss)
+	local x,y,room = table.unpack(pos)
+	assert(room.mdbs, "found a room without any mdbs: "..(function()
+		local s = ''
+		for k,v in pairs(room) do
+			s = s .. tostring(k) .. ' = ' .. tostring(v) .. '\n'
+		end
+		return s
+	end)())
+	local m = pickRandom(room.mdbs:filter(function(m) 
+		return firstMissileMDBs:find(m)
+	end))
 	for _,plmset in ipairs(getAllMDBPLMs(m)) do
 		placeInPLMSet(plmset, pos, sm.plmCmdValueForName.item_missile, m)
 	end
+	-- TODO and remove the location from the list of being picked again?
 end
 -- TODO maybe make sure you get early something to destroy bomb blocks ... maybe ...
 
@@ -136,13 +183,12 @@ for rep=1,1 do
 			name = name .. '_hidden'
 		end
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
-	
-		local m, pos
-		repeat
-			m = pickRandom(allMDBs)
-			local rs = m.roomStates[1]	-- assert all room states point to the same room
-			pos = findRandomPosInRoom(rs.room)
-		until pos
+
+		local pos = pickRandom(allLocs)
+		local x,y,room = table.unpack(pos)
+		local m = pickRandom(room.mdbs:filter(function(m)
+			return allMDBSet[m]
+		end))
 
 		for _,plmset in ipairs(getAllMDBPLMs(m)) do
 			placeInPLMSet(plmset, pos, cmd, m)
