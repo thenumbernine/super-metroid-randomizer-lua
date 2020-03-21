@@ -145,6 +145,14 @@ function byteArrayToTable(src)
 	return dest
 end
 
+function byteArraySubset(src, ofs, len)
+	assert(ofs + len <= ffi.sizeof(src))
+	local dest = ffi.new('uint8_t[?]', len)
+	src = ffi.cast('uint8_t*', src)
+	ffi.copy(dest, src + ofs, len)
+	return dest
+end
+
 function hexStrToByteArray(src)
 	local n = #src/2
 	assert(n == math.floor(n))
@@ -155,12 +163,14 @@ function hexStrToByteArray(src)
 	return dest
 end
 
-function byteArraySubset(src, ofs, len)
-	assert(ofs + len <= ffi.sizeof(src))
-	local dest = ffi.new('uint8_t[?]', len)
+function byteArrayToHexStr(src, len)
+	len = len or ffi.sizeof(src)
 	src = ffi.cast('uint8_t*', src)
-	ffi.copy(dest, src + ofs, len)
-	return dest
+	local s = ''
+	for i=1,len do
+		s = s .. ('%02x'):format(src[i-1])
+	end
+	return s
 end
 
 function mergeByteArrays(...)
@@ -211,7 +221,7 @@ if config.skipIntro then
 	--applyPatch'introskip_doorflags.ips' 
 	copy(rom + 0x016eda, hexStrToByteArray'1f')
 	copy(rom + 0x010067, hexStrToByteArray'2200ff80')
-	copy(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b') 
+	copy(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
 end
 
 
@@ -358,11 +368,14 @@ end
 -- it seems Crateria won't wake up until you get your first missile tank ...
 if config.wakeZebesEarly then
 	for _,m in ipairs(sm.mdbs) do
-		--[=[ 01/0e = blue brinstar first room
-		if m.ptr.index == 0x0e
-		and m.ptr.region == 0x01
+		--[=[ 00/00 = first room ... doesn't seem to work
+		-- maybe this has to be set only after the player walks through old mother brain room?
+		if m.ptr.index == 0x00
+		and m.ptr.region == 0x00
 		then
-			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+			for _,door in ipairs(m.doors) do
+				door.code = assert(wakeZebesEarlyDoorCode)
+			end
 		end
 		--]=]
 		-- [=[ change the lift going down into blue brinstar
@@ -374,13 +387,11 @@ if config.wakeZebesEarly then
 			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
 		end
 		--]=]
-		--[=[ 00/00 = first room ... doesn't seem to work
-		if m.ptr.index == 0x00
-		and m.ptr.region == 0x00
+		--[=[ 01/0e = blue brinstar first room
+		if m.ptr.index == 0x0e
+		and m.ptr.region == 0x01
 		then
-			for _,door in ipairs(m.doors) do
-				door.code = assert(wakeZebesEarlyDoorCode)
-			end
+			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
 		end
 		--]=]
 	end
@@ -394,7 +405,8 @@ do
 	end))
 	local rs = m.roomStates[2]	-- sleeping old mother brain
 	local plmset = rs.plmset
-	plmset.plms:remove(4)		-- remove the grey door
+	local plm = plmset.plms:remove(4)		-- remove the grey door
+	assert(plm.cmd == sm.plmCmdValueForName.door_grey_left)
 end
 
 -- also while I'm here, lets remove the unfinished/unused rooms
@@ -409,7 +421,69 @@ for i=#sm.mdbs,1,-1 do
 	end
 end
 
+--[=[
+-- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
+-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
+-- I might have to just excise regions from the item-scavenger instead
+for _,info in ipairs{
+	{0, 0x00, 0,0,16,32},
+	{0, 0x00, 0,48,16,16},
+	
+	{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room 
 
+	{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
+	--{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
+	{1, 0x18, 0,16-3,16,3},			-- brinstar first missile room
+	{1, 0x24, 0,0,16,32+6},			-- brinstar right elevator to crateria.
+	{1, 0x34, 0,16,16,16},			-- brinstar elevator to norfair / entrance to kraid
+
+	{2, 0x03, 0,0,16,32},			-- brinstar elevator to norfair
+	{2, 0x26, 0,16-6,16,6},			-- brinstar elevator to lower norfair
+	{2, 0x36, 64,0,16,32+6},
+	{2, 0x48, 2, 3*16-4, 1,1},		-- return from lower norfair spade room
+	{2, 0x48, 16-2, 3*16-4, 1,1},	-- "
+
+	{4, 0x04, 29, 11, 3, 3},		-- maridia big room - under top door pillars
+	{4, 0x08, 1, 11, 3, 4},			-- maridia next big room - under top door pillars
+	{4, 0x08, 5, 13, 1, 4},			-- "
+	{4, 0x08, 5*16, 2*16, 16,16},	-- maridia next big room - debug area not fully developed
+	{4, 0x0b, 16, 0, 16, 16},		-- maridia top left room to missile and super
+	{4, 0x0e, 1,16+3,1,2},			-- maridia crab room before refill
+	{4, 0x0e, 14,16+3,1,2},			-- "
+	{4, 0x0e, 1,16+11,1,2},			-- "
+	{4, 0x0e, 14,16+11,1,2},		-- "
+	{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
+	{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side 
+	{4, 0x1b, 0, 32-5, 16, 4},		-- maridia green pipe in the middle pillars underneath
+	{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side 
+	{4, 0x1c, 3*16-4, 16-5, 4, 4},	-- maridia second sand area pillars under door on right side 
+	{4, 0x24, 0, 64-5, 4, 4},		-- maridia lower right sand area
+	{4, 0x24, 16-4, 64-5, 8, 4},	-- "
+	{4, 0x24, 32-4, 64-5, 4, 4},	-- "
+	{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
+	{4, 0x25, 16-4, 48-5, 4, 4},	-- "
+	{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
+
+	{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
+} do
+	local region, index, x1,y1,w,h = table.unpack(info)
+	local m = select(2, sm.mdbs:find(nil, function(m) 
+		return m.ptr.region == region and m.ptr.index == index
+	end))
+	assert(m)
+	local room = m.roomStates[1].room	-- TODO assert all roomStates have matching rooms?
+	for j=0,h-1 do
+		local y = y1 + j
+		assert(y >= 0 and y < room.height)
+		for i=0,w-1 do
+			local x = x1 + i
+			assert(x >= 0 and x < room.width)
+			local bi = 1 + 3 * (x + room.width * y)
+			room.blocks[bi] = bit.bor(bit.band(room.blocks[bi], 0x0f), 0x80)
+		end
+	end
+end
+--]=]
 
 -- randomize rooms?  still working on this
 -- *) enemy placement

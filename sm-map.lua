@@ -706,7 +706,7 @@ Room.tileTypes = {
 	spikes_or_invis		= 0xa,
 	crumble_or_speed	= 0xb,
 	breakable 			= 0xc,
-	copy_above 			= 0xd,
+	copy_up 			= 0xd,
 	grappling			= 0xe,
 	bombable			= 0xf,
 }
@@ -761,6 +761,16 @@ Room.extTileTypes = {
 
 Room.oobType = Room.tileTypes.solid -- consider the outside to be solid
 
+function Room:tileData(x,y)
+	assert(x >= 0 and x < self.width)
+	assert(y >= 0 and y < self.height)
+	local bi = 3 * (x + self.width * y)
+	local ch1 = self.blocks[0 + bi]
+	local ch2 = self.blocks[1 + bi]
+	local ch3 = self.blocks[2 + bi]
+	return ch1, ch2, ch3
+end
+
 --[[
 returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
 --]]
@@ -771,12 +781,10 @@ function Room:tileType(x,y)
 		then 
 			return self.oobType
 		end
-		
-		local bi = 3 * (x + self.width * y)
-		local ch2 = self.blocks[1 + bi]
-		local ch3 = self.blocks[2 + bi]
+	
+		local ch1, ch2, ch3 = self:tileData(x,y)
 		local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
-		if ch2hi == self.tileTypes.copy_above then
+		if ch2hi == self.tileTypes.copy_up then
 			y = y - 1
 		elseif ch2hi == self.tileTypes.copy_left then
 			x = x - 1
@@ -789,6 +797,25 @@ function Room:tileType(x,y)
 		end
 	end
 	error'here'
+end
+
+-- returns true if this is a 'is copy up / left' tile
+function Room:isCopy(x,y)
+	-- don't use tileType because this uses the copy_*
+	local _, ch2 = self:tileData(x,y)
+	return ch2 == self.tileTypes.copy_left 
+		or ch2 == self.tileTypes.copy_up
+end
+
+-- returns true if this is targetted by a 'copy up / left' tile
+function Room:isCopied(x,y)
+	if x < self.width-1 then
+		if select(2, self:tileData(x+1,y)) == self.tileTypes.copy_left then return true end
+	end
+	if y < self.height-1 then
+		if select(2, self:tileData(x,y+1)) == self.tileTypes.copy_up then return true end
+	end
+	return false
 end
 
 function Room:isSolid(x,y) 
@@ -1109,11 +1136,11 @@ function SMMap:mapInit()
 				local ctype
 				if testcode == 0xe5e6 then 
 					ctype = 'uint16_t'
-				elseif testcode == 0xE612
-				or testcode == 0xE629
+				elseif testcode == 0xe612
+				or testcode == 0xe629
 				then
 					ctype = 'roomselect_t'
-				elseif testcode == 0xE5EB then
+				elseif testcode == 0xe5eb then
 					-- this is never reached
 					error'here' 
 					-- I'm not using this just yet
@@ -1455,7 +1482,10 @@ if done then break end
 		-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		-- says it is just part of the speed booster room
 		if mdbaddr == 0x07ad1b then
-print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
+			local data = ffi.new('uint8_t[?]', 26)
+			ffi.copy(data, d, 26)
+			m.speedBoosterRoomExtraData = data
+print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..byteArrayToHexStr(data))
 			d = d + 26
 		end
 		local dooraddr = topc(self.doorAddrBank, m.ptr.doors)
@@ -1720,25 +1750,6 @@ local function drawstr(mapimg, posx, posy, s)
 	end
 end
 
-local _4bitpal = {
-	0x000000,	-- 0
-	0x7f0000,	-- 1
-	0x007f00,	-- 2
-	0x7f7f00,	-- 3
-	0x00007f,	-- 4
-	0x7f007f,	-- 5
-	0x007f7f,	-- 6
-	0xbfbfbf,	-- 7
-	0x7f7f7f,	-- 8
-	0xff0000,	-- 9
-	0x00ff00,	-- a
-	0xffff00,	-- b
-	0x0000ff,	-- c
-	0xff00ff,	-- d
-	0x00ffff,	-- e
-	0xffffff,	-- f
-}
-
 local function drawRoom(ctx, room, m)
 	local mapimg = ctx.mapimg
 	local mapBinImage = ctx.mapBinImage
@@ -1799,8 +1810,11 @@ local function drawRoom(ctx, room, m)
 					
 					
 					-- write out solid tiles only
-					
-					if room:isBorder(dx,dy) then
+
+					-- TODO isSolid will overlap between a few rooms
+					local isBorder = room:isBorder(dx,dy)
+					do --if isBorder or isSolid then
+						local isSolid = room:isSolid(dx,dy)
 						for pi=0,blockSizeInPixels-1 do
 							for pj=0,blockSizeInPixels-1 do
 								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
@@ -1808,14 +1822,13 @@ local function drawRoom(ctx, room, m)
 								if x >= 0 and x < mapimg.width
 								and y >= 0 and y < mapimg.height 
 								then
-									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = 0xff
-									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = 0xff
+									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = isBorder and 0xff or 0x00
+									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = isSolid and 0xff or 0x00
 									mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = 0xff
 								end
 							end
 						end
 					end
-				
 				end
 			end
 		end
@@ -2094,7 +2107,11 @@ function SMMap:mapPrint()
 		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
-			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..rs.select[0]) 
+			
+			local selectStr = rs.select_ctype == 'uint16_t' 
+				and ('%04x'):format(rs.select[0])
+				or tostring(rs.select[0])
+			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..selectStr)
 			-- [[
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
@@ -2129,6 +2146,9 @@ function SMMap:mapPrint()
 			print('  '..door.ctype..': '
 				..('$83:%04x'):format(door.addr)
 				..' '..door.ptr[0])
+			if door.doorCode then
+				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat())
+			end
 		end
 	end
 

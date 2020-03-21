@@ -58,6 +58,12 @@ local function getRoomsForMDBs(mdbs)
 	return rooms:keys()
 end
 
+local function isBorderAndNotCopy(room,x,y)
+	return room:isBorder(x,y) 
+		and not room:isCopy(x,y) 
+		and room:isCopied(x,y)
+end
+
 local allRooms = getRoomsForMDBs(allMDBs)
 
 local allLocs = table()
@@ -65,7 +71,7 @@ local locsPerRoom = table()
 for _,room in ipairs(allRooms) do
 	for y=0,room.height-1 do
 		for x=0,room.width-1 do
-			if room:isBorder(x,y) then
+			if isBorderAndNotCopy(room,x,y) then
 				allLocs:insert{x,y,room}
 				local roomLocs = locsPerRoom[room]
 				if not roomLocs then
@@ -85,7 +91,7 @@ local function findRandomPosInRoom(room)
 		x = math.random(2, room.width - 3)	-- avoid edges
 		y = math.random(2, room.height - 3)
 		-- TODO don't pick copy or copied tiles 
-		if room:isBorder(x,y) then return {x,y} end
+		if isBorderAndNotCopy(room,x,y) then return {x,y} end
 	end
 	local m = room.mdbs[1]
 	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
