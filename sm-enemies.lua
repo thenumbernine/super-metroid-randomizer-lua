@@ -334,12 +334,15 @@ local function pickWeighted(t)
 end
 
 local dontChangeWeaknessSet = {
+	-- don't randomize Kraid's weaknesses ... for now
 	["Kraid (body)"] = true, 
 	Metroid = true,
 	["Spore Spawn"] = true,
 	['Mother Brain'] = true,
 	["Walking Chozo Statue"] = true,	-- setting the normal beam weakness doesn't make it weak to normal beam
 	["Destructible Shutter (vertical)"] = true,	-- shutters in the room after mother brain
+	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
+	Shaktool = true,
 }
 
 --[[
@@ -507,12 +510,7 @@ function EnemyWeaknessTable:randomizeEnemy(enemy)
 	-- we choose to allow re-rolling of weaknesses
 	-- then they will have to work around the fact that these certain enemies shouldn't re-roll
 	
-	-- don't randomize Kraid's weaknesses ... for now
-	-- leave this at 0
-	if dontChangeWeaknessSet[enemy.name] 
-	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
-	or enemy.name == Shaktool
-	then
+	if dontChangeWeaknessSet[enemy.name] then
 		print('NOT WRITING WEAKNESS OF '..enemy.name)
 		return
 	end

@@ -76,6 +76,13 @@ for _,room in ipairs(sm.rooms) do
 		--]=]	
 	end
 end
+
+-- remove all tourian doors
+-- TODO remove intro run doors also?
+oldDoors = oldDoors:filter(function(od)
+	return od.rs.m.ptr.index ~= 5
+end)
+
 print('old # non-special non-blue doors: '..oldNumDoors)
 print('old # non-special doors: '..#oldDoors)
 -- re-add new doors

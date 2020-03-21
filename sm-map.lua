@@ -4,8 +4,6 @@
 -- http://forum.metroidconstruction.com/index.php?topic=2476.0
 -- http://www.metroidconstruction.com/SMMM/plm_disassembly.txt
 
-
-
 local ffi = require 'ffi'
 local struct = require 'struct'
 local lz = require 'lz'
@@ -606,6 +604,233 @@ function Room:getData()
 		ch3,
 		self.tail
 	)
+end
+
+--[[ for the room tile data:
+looks like this is channel 2:
+lower nibble channel 2 bits:
+bit 0
+bit 1
+bit 2 = flip up/down
+bit 3 = flip left/right
+
+upper-nibble channel 2 values:
+0 = empty
+1 = slope
+2 = spikes
+	channel 3 lo:
+		0000b = 0 = 1x1 spike solid
+		0010b = 2 = 1x1 spike non-solid 
+3 = push
+	channel 3 lo:
+		0000b = 0 = down force x1 (maridia quicksand top of two secrets)
+		0001b = 1 = down force x2 (maridia quicksand in bottom of two secret rooms)
+		0010b = 2 = down force x3 (maridia quicksand)
+		0011b = 3 = down force x4 - can't jump up from (maridia sand downward shafts)
+		0101b = 5 = down force x.5 - (maridia sand falling from ceiling)
+		1000b = 8 = right
+		1001b = 9 = left
+4 =
+5 = copy what's to the left
+6 =
+7 =
+8 = solid
+9 = door
+a = spikes / invis blocks
+	channel 3:
+		0000b = 0 = spikes solid 
+		0011b = 3 = spikes non-solid destroyed by walking chozo statue
+		1110b = e = invis blocks
+		1111b = f = spikes non-solid destroyed by walking chozo statue
+				  = also solid sand blocks destroyed by that thing in maridia
+b = crumble / speed
+	channel 3 lo:
+		0000b = 0 = 1x1 crumble regen
+		0001b = 1 = 2x1 crumble regen
+		0010b = 2 = 1x2 crumble regen
+		0011b = 3 = 2x2 crumble regen
+		
+		0100b = 4 = 1x1 crumble noregen
+		0101b = 5 = 2x1 crumble noregen
+		0110b = 6 = 1x1 crumble noregen
+		0111b = 7 = 2x2 crumble noregen
+		
+		1110b = e = 1x1 speed regen
+		1111b = f = 1x1 speed noregen
+c = break by beam / supermissile / powerbomb
+	channel 3 lo:
+		0000b = 0 = 1x1 beam regen
+		0001b = 1 = 1x2 beam regen
+		0010b = 2 = 2x1 beam regen
+		0011b = 3 = 2x2 beam regen
+		
+		0100b = 4 = 1x1 beam noregen
+		0101b = 5 = 2x1 beam noregen
+		0110b = 6 = 1x2 beam noregen
+		0111b = 7 = 2x2 beam noregen
+		
+		1001b = 9 = 1x1 power bomb noregen
+		1010b = a = 1x1 super missile regen
+		1011b = b = 1x1 super missile noregen
+d = copy what's above 
+e = grappling
+	channel 3 bit 1:
+		0000b = 0 = 1x1 grappling
+		0001b = 1 = 1x1 grappling breaking regen
+		0010b = 2 = 1x1 grappling breaking noregen
+f = bombable 
+	channel 3 lo:
+		0000b = 0 = 1x1 bomb regen
+		0001b = 1 = 2x1 bomb regen
+		0010b = 2 = 1x2 bomb regen
+		0011b = 3 = 2x2 bomb regen
+		
+		0100b = 4 = 1x1 bomb noregen
+		0101b = 5 = 2x1 bomb noregen
+		0110b = 6 = 1x2 bomb noregen
+		0111b = 7 = 2x2 bomb noregen
+--]]
+
+-- this is ch2hi
+Room.tileTypes = {
+	empty 				= 0x0,
+	slope				= 0x1,
+	spikes				= 0x2,
+	push				= 0x3,
+	copy_left 	 	 	= 0x5,
+	solid 				= 0x8,
+	door				= 0x9,
+	spikes_or_invis		= 0xa,
+	crumble_or_speed	= 0xb,
+	breakable 			= 0xc,
+	copy_above 			= 0xd,
+	grappling			= 0xe,
+	bombable			= 0xf,
+}
+-- this is ch3lo:ch2hi
+Room.extTileTypes = {
+	spike_solid_1x1			= 0x0200,
+	spike_notsolid_1x1		= 0x0202,
+	push_quicksand1			= 0x0300,
+	push_quicksand2			= 0x0301,
+	push_quicksand3			= 0x0302,
+	push_quicksand4			= 0x0303,
+	push_quicksand1_2		= 0x0305,
+	push_conveyor_right		= 0x0308,
+	push_conveyor_left		= 0x0309,
+	spike_solid2_1x1		= 0x0a00,
+	spike_notsolid2_1x1		= 0x0a03,
+	invisble_solid			= 0x0a0e,
+	spike_notsolid3_1x1		= 0x0a0f,
+	crumble_1x1_regen		= 0x0b00,
+	crumble_2x1_regen		= 0x0b01,
+	crumble_1x2_regen		= 0x0b02,
+	crumble_2x2_regen		= 0x0b03,
+	crumble_1x1				= 0x0b04,
+	crumble_2x1				= 0x0b05,
+	crumble_1x2				= 0x0b06,
+	crumble_2x2				= 0x0b07,
+	speed_regen				= 0x0b0e,
+	speed					= 0x0b0f,
+	beam_1x1_regen			= 0x0c00,
+	beam_2x1_regen			= 0x0c01,
+	beam_1x2_regen			= 0x0c02,
+	beam_2x2_regen			= 0x0c03,
+	beam_1x1				= 0x0c04,
+	beam_2x1				= 0x0c05,
+	beam_1x2				= 0x0c06,
+	beam_2x2				= 0x0c07,
+	powerbomb_1x1			= 0x0c09,
+	supermissile_1x1_regen	= 0x0c0a,
+	supermissile_1x1		= 0x0c0b,
+	grappling				= 0x0e00,
+	grappling_break_regen 	= 0x0e01,
+	grappling_break			= 0x0e02,
+	bombable_1x1_regen		= 0x0f00,
+	bombable_2x1_regen		= 0x0f01,
+	bombable_1x2_regen		= 0x0f02,
+	bombable_2x2_regen		= 0x0f03,
+	bombable_1x1			= 0x0f04,
+	bombable_2x1			= 0x0f05,
+	bombable_1x2			= 0x0f06,
+	bombable_2x2			= 0x0f07,
+}
+
+Room.oobType = Room.tileTypes.solid -- consider the outside to be solid
+
+--[[
+returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
+--]]
+function Room:tileType(x,y)
+	while true do
+		if x < 0 or x >= self.width
+		or y < 0 or y >= self.height
+		then 
+			return self.oobType
+		end
+		
+		local bi = 3 * (x + self.width * y)
+		local ch2 = self.blocks[1 + bi]
+		local ch3 = self.blocks[2 + bi]
+		local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
+		if ch2hi == self.tileTypes.copy_above then
+			y = y - 1
+		elseif ch2hi == self.tileTypes.copy_left then
+			x = x - 1
+		else
+			return ch2hi,
+				bit.bor(
+					bit.band(ch3, 0xf),
+					bit.lshift(ch2hi, 4)
+				)
+		end
+	end
+	error'here'
+end
+
+function Room:isSolid(x,y) 
+	return self:tileType(x,y) == self.tileTypes.solid
+end
+
+function Room:isAccessible(x,y) 
+	local tt, ett = self:tileType(x,y)
+	return tt == self.tileTypes.empty 
+		or tt == self.tileTypes.crumble_or_speed
+		or tt == self.tileTypes.breakable
+		or ett == self.extTileTypes.grappling_break
+		or ett == self.extTileTypes.grappling_break_regen
+		or tt == self.tileTypes.bombable
+end
+
+--[[
+TODO there's a small # of borders inaccessible
+how to determine them?
+1) flood fill per-room, starting at all doors
+2) just manually excise them
+they are:
+landing room, left side of the room
+first missile ever, under the floor
+vertical of just about all the lifts in the game
+top left of maridia's big room in the top left of the map
+the next room over, the crab room, has lots of internal borders
+the next room over from that, the hermit crab room, has lots of internal borders
+the speed room before the mocktroids has a few internal borders
+--]]
+function Room:isBorder(x,y)
+	--if x == 0 or y == 0 or x == self.width-1 or y == self.height-1 then return false end
+	if self:isSolid(x,y) then
+		for i,offset in ipairs{
+			{1,0},
+			{-1,0},
+			{0,1},
+			{0,-1},
+		} do
+			if self:isAccessible(x+offset[1], y+offset[2]) then 
+				return true
+			end
+		end
+	end
+	return false
 end
 
 -- this is the block data of the rooms
@@ -1511,14 +1736,17 @@ local _4bitpal = {
 	0xffffff,	-- f
 }
 
-local function drawRoom(ctx, m, blocks)
+local function drawRoom(ctx, room, m)
 	local mapimg = ctx.mapimg
 	local mapBinImage = ctx.mapBinImage
-	local w, h = m.ptr.width, m.ptr.height
+	local blocks = room.blocks
+	local w = room.width / blocksPerRoom
+	local h = room.height / blocksPerRoom
 	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
 	local xofs = roomSizeInPixels * (ofsx - 4)
 	local yofs = roomSizeInPixels * (ofsy + 1)
 	local firstcoord
+
 	for j=0,h-1 do
 		for i=0,w-1 do
 			for ti=0,blocksPerRoom-1 do
@@ -1565,123 +1793,21 @@ local function drawRoom(ctx, m, blocks)
 						end
 					end
 
-					-- write out solid tiles only
-					--[[
-					looks like this is channel 2:
-					lower nibble channel 2 bits:
-					bit 0
-					bit 1
-					bit 2 = flip up/down
-					bit 3 = flip left/right
 					
-					upper-nibble channel 2 values:
-					0 = empty
-					1 = slope
-					2 = spikes
-						channel 3 lo:
-							0000b = 0 = 1x1 spike solid
-							0010b = 2 = 1x1 spike non-solid 
-					3 = conveyor
-						channel 3 lo:
-							0000b = 0 = down force x1 (maridia quicksand top of two secrets)
-							0001b = 1 = down force x2 (maridia quicksand in bottom of two secret rooms)
-							0010b = 2 = down force x3 (maridia quicksand)
-							0011b = 3 = down force x4 - can't jump up from (maridia sand downward shafts)
-							0101b = 5 = down force x.5 - (maridia sand falling from ceiling)
-							1000b = 8 = right
-							1001b = 9 = left
-					4 =
-					5 = copy what's to the left
-					6 =
-					7 =
-					8 = solid
-					9 = door
-					a = spikes / invis blocks
-						channel 3:
-							0000b = 0 = spikes solid 
-							0011b = 3 = spikes non-solid destroyed by walking chozo statue
-							1110b = e = invis blocks
-							1111b = f = spikes non-solid destroyed by walking chozo statue
-									  = also solid sand blocks destroyed by that thing in maridia
-					b = crumble / speed
-						channel 3 lo:
-							0000b = 0 = 1x1 crumble regen
-							0001b = 1 = 2x1 crumble regen
-							0010b = 2 = 1x2 crumble regen
-							0011b = 3 = 2x2 crumble regen
-							
-							0100b = 4 = 1x1 crumble noregen
-							0101b = 5 = 2x1 crumble noregen
-							0110b = 6 = 1x1 crumble noregen
-							0111b = 7 = 2x2 crumble noregen
-							
-							1110b = e = 1x1 speed regen
-							1111b = f = 1x1 speed noregen
-					c = break by beam / supermissile / powerbomb
-						channel 3 lo:
-							0000b = 0 = 1x1 beam regen
-							0001b = 1 = 1x2 beam regen
-							0010b = 2 = 2x1 beam regen
-							0011b = 3 = 2x2 beam regen
-							
-							0100b = 4 = 1x1 beam noregen
-							0101b = 5 = 2x1 beam noregen
-							0110b = 6 = 1x2 beam noregen
-							0111b = 7 = 2x2 beam noregen
-							
-							1001b = 9 = 1x1 power bomb noregen
-							1010b = a = 1x1 super missile regen
-							1011b = b = 1x1 super missile noregen
-					d = copy what's above 
-					e = grappling
-						channel 3 bit 1:
-							0000b = 0 = 1x1 grappling
-							0001b = 1 = 1x1 grappling breaking regen
-							0010b = 2 = 1x1 grappling breaking noregen
-					f = bombable 
-						channel 3 lo:
-							0000b = 0 = 1x1 bomb regen
-							0001b = 1 = 2x1 bomb regen
-							0010b = 2 = 1x2 bomb regen
-							0011b = 3 = 2x2 bomb regen
-							
-							0100b = 4 = 1x1 bomb noregen
-							0101b = 5 = 2x1 bomb noregen
-							0110b = 6 = 1x2 bomb noregen
-							0111b = 7 = 2x2 bomb noregen
-					--]]
-					local d2lo = bit.band(0xf, d2)
-					local d2hi = bit.band(0xf, bit.rshift(d2, 4))
-					local d3lo = bit.band(0xf, d3)
-					local d3hi = bit.band(0xf, bit.rshift(d3, 4))
-					do
-						local d2loColor = _4bitpal[d2lo+1]
-						local d2hiColor = _4bitpal[d2hi+1]
-						local d3loColor = _4bitpal[d3lo+1]
-						local d3hiColor = _4bitpal[d3hi+1]
+					
+					-- write out solid tiles only
+					
+					if room:isBorder(dx,dy) then
 						for pi=0,blockSizeInPixels-1 do
 							for pj=0,blockSizeInPixels-1 do
-								local color
-								local pil = pi < bit.rshift(blockSizeInPixels, 1)
-								local pjl = pj < bit.rshift(blockSizeInPixels, 1)
-								if pil then	
-									color = d2hiColor
-								else
-									color = d3loColor
-								end
-								if pi == 0 or pi == blockSizeInPixels-1 
-								or pj == 0 or pj == blockSizeInPixels-1 
-								then
-									color = 0x000000
-								end
 								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
 								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
 								if x >= 0 and x < mapimg.width
 								and y >= 0 and y < mapimg.height 
 								then
-									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = bit.band(0xff, bit.rshift(color, 16))
-									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = bit.band(0xff, bit.rshift(color, 8))
-									mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = bit.band(0xff, color)
+									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = 0xff
+									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = 0xff
+									mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = 0xff
 								end
 							end
 						end
@@ -1833,7 +1959,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 
 	for _,room in ipairs(self.rooms) do
 		for _,m in ipairs(room.mdbs) do
-			drawRoom(ctx, m, room.blocks)
+			drawRoom(ctx, room, m)
 		end
 	end
 

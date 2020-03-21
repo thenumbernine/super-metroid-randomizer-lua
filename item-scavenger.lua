@@ -29,39 +29,14 @@ for _,plmset in ipairs(sm.plmsets) do
 end
 --]]
 
+-- TODO store all borders up front, put them in an array (assoc with room), and let the rando pick from all tiles evenly weighted
 local function findRandomPosInRoom(room)
-	-- TODO !issolid doesn't mean isempty...
-	local function tileType(x,y)
-		local bi = 3 * (x + room.width * y)
-		--local a = room.blocks[0 + bi]
-		local b = room.blocks[1 + bi]
-		--local c = room.blocks[2 + bi]
-		return bit.band(0xf, bit.rshift(b, 4))
-		-- TODO consider block type based on copy left / copy up
-		-- TODO TODO don't pick blocks that are copied for replacing with items
-		--or bit.band(b, 0xf0) == 0x50	-- copy left
-		--or bit.band(b, 0xf0) == 0xd0	-- copy above
-	end
-	local function issolid(x,y) return tileType(x,y) == 8 end
-	local function isempty(x,y) return tileType(x,y) == 0 end
-
-	-- TODO pick a location that is solid and next to empty
 	local x,y
 	for tries=1,100 do
 		x = math.random(2, room.width - 3)	-- avoid edges
 		y = math.random(2, room.height - 3)
-		if issolid(x,y) then
-			for i,offset in ipairs{
-				{1,0},
-				{-1,0},
-				{0,1},
-				{0,-1},
-			} do
-				if isempty(x+offset[1], y+offset[2]) then 
-					return {x,y}
-				end
-			end
-		end
+		-- TODO don't pick copy or copied tiles 
+		if room:isBorder(x,y) then return {x,y} end
 	end
 	local m = room.mdbs[1]
 	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)

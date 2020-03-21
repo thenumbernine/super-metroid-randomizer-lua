@@ -18,10 +18,10 @@ return {
 	-- set this to remove all items and just spread them everywhere in the world randomly.
 	-- I predict the items are accessible 91.9999repeating% of the time
 	randomizeItemsScavengerHunt = true,
-	randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
+	--randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
---	randomizeDoors = true,
+	randomizeDoors = true,
 
 	randomizeWeapons = true, 
 
