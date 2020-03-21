@@ -1455,7 +1455,7 @@ if done then break end
 		-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		-- says it is just part of the speed booster room
 		if mdbaddr == 0x07ad1b then
-	print('speed booster room extra trailing data: '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
+print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..range(26):map(function(i) return (' %02x'):format(d[i-1]) end):concat())
 			d = d + 26
 		end
 		local dooraddr = topc(self.doorAddrBank, m.ptr.doors)

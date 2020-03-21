@@ -64,11 +64,10 @@ end
 -- [[ apply patches
 file.__tmp = file[infilename]
 local function applyPatch(patchfilename)
-	exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2')
+	exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2 show')
 	file.__tmp = file.__tmp2
 	file.__tmp2 = nil
 end
-if config.skipIntro then applyPatch'introskip_doorflags.ips' end
 if config.skipItemFanfare then applyPatch'itemsounds.ips' end
 --applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 romstr = file.__tmp
@@ -118,6 +117,16 @@ function shuffle(x)
 	return x
 end
 
+local function copy(dst, src, len)
+	if len == nil then
+		if type(src) == 'cdata' then
+			len = ffi.sizeof(src)
+		else
+			error'here'
+		end
+	end
+	ffi.copy(dst, src, len)
+end
 
 function tableToByteArray(src)
 	local dest = ffi.new('uint8_t[?]', #src)
@@ -132,6 +141,16 @@ function byteArrayToTable(src)
 	local dest = table()
 	for i=1,ffi.sizeof(src) do
 		dest[i] = src[i-1]
+	end
+	return dest
+end
+
+function hexStrToByteArray(src)
+	local n = #src/2
+	assert(n == math.floor(n))
+	local dest = ffi.new('uint8_t[?]', n)
+	for i=1,n do
+		dest[i-1] = tonumber(src:sub(2*i-1, 2*i), 16)
 	end
 	return dest
 end
@@ -153,8 +172,9 @@ function mergeByteArrays(...)
 	local dest = ffi.new('uint8_t[?]', totalSize)
 	local k = 0
 	for _,src in ipairs(srcs) do
-		ffi.copy(dest + k, src, ffi.sizeof(src))
-		k = k + ffi.sizeof(src)
+		local len = ffi.sizeof(src)
+		ffi.copy(dest + k, src, len)
+		k = k + len
 	end
 	assert(k == totalSize)
 	return dest
@@ -187,6 +207,12 @@ banksRequested[bank] = true
 	return bit.lshift(bit.band(bank,0x7f), 15) + offset
 end
 
+if config.skipIntro then 
+	--applyPatch'introskip_doorflags.ips' 
+	copy(rom + 0x016eda, hexStrToByteArray'1f')
+	copy(rom + 0x010067, hexStrToByteArray'2200ff80')
+	copy(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b') 
+end
 
 
 -- [=[ using the ips contents of wake_zebes.ips
@@ -219,7 +245,7 @@ if config.wakeZebesEarly then
 		0x8f, 0x20, 0xd8, 0x7e, -- STA $7e:d820
 		0x60,					-- RTS
 	}
-	ffi.copy(rom + 0x070000 + wakeZebesEarlyDoorCode, data, ffi.sizeof(data))
+	copy(rom + 0x070000 + wakeZebesEarlyDoorCode, data)
 end
 --]=]
 
