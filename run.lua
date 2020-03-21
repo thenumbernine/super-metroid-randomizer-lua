@@ -361,6 +361,29 @@ if config.wakeZebesEarly then
 end
 --]]
 
+-- also (only for wake zebes early?) open the grey door from old mother brain so you don't need morph to get back?
+do
+	local m = select(2, sm.mdbs:find(nil, function(m) 
+		return m.ptr.region == 0 and m.ptr.index == 0x13 
+	end))
+	local rs = m.roomStates[2]	-- sleeping old mother brain
+	local plmset = rs.plmset
+	plmset.plms:remove(4)		-- remove the grey door
+end
+
+-- also while I'm here, lets remove the unfinished/unused rooms
+for i=#sm.mdbs,1,-1 do
+	local m = sm.mdbs[i]
+	if (m.ptr.region == 2 and m.ptr.index == 0x3d) 
+	or (m.ptr.region == 4 and m.ptr.index == 0x1f)
+	or m.ptr.region == 7
+	then
+		sm.mdbs:remove(i)
+		-- TODO remove all unused roomStates as well? or just let mapWriteMDBs take care of it?
+	end
+end
+
+
 
 -- randomize rooms?  still working on this
 -- *) enemy placement

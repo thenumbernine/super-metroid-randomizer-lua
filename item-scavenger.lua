@@ -32,13 +32,6 @@ end
 
 -- remove the debug mdbs
 local allMDBs = sm.mdbs:filter(function(m)
-	-- remove unfinished rooms
-	if m.ptr.region == 2 and m.ptr.index == 0x3d then return false end
-	if m.ptr.region == 4 and m.ptr.index == 0x1f then return false end
-	
-	-- remove debug region
-	if m.ptr.region >= 7 then return false end
-	
 	-- remove crateria?
 	if m.ptr.region == 6 then return false end
 

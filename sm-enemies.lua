@@ -343,6 +343,9 @@ local dontChangeWeaknessSet = {
 	["Destructible Shutter (vertical)"] = true,	-- shutters in the room after mother brain
 	-- don't randomize Shaktool -- leave it at its default weakness entry (which is unshared by default)
 	Shaktool = true,
+	-- either make sure Black Pirates have weak to hyper, or just don't touch their weakness
+	["Black Zebesian"] = true,
+	["Black Zebesian (Wall)"] = true,
 }
 
 --[[

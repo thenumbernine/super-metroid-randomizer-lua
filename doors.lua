@@ -77,10 +77,9 @@ for _,room in ipairs(sm.rooms) do
 	end
 end
 
--- remove all tourian doors
--- TODO remove intro run doors also?
+-- remove all tourian and ceres doors
 oldDoors = oldDoors:filter(function(od)
-	return od.rs.m.ptr.index ~= 5
+	return od.rs.m.ptr.region < 5
 end)
 
 print('old # non-special non-blue doors: '..oldNumDoors)
