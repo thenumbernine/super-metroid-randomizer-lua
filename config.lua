@@ -1,34 +1,5 @@
 return {
 	writeOutImage = true,
-	
-	randomizeEnemies = true,
-
-	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
-	-- ... to make sure enemies aren't impossible
-	-- and same with doors
-	--
-	-- TODO new idea, possibly a separate algo:
-	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room mdb_t's and door_t's themselves.
-	-- 1) remove the door tests from 'can access' code.  instead just pick an item location arbitrarily.
-	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
-	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
-	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
---	randomizeItems = true,
-	
-	-- set this to remove all items and just spread them everywhere in the world randomly.
-	-- I predict the items are accessible 91.9999repeating% of the time
-	randomizeItemsScavengerHunt = true,
-	--randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
-
-	-- TODO the item placement doesn't validate that the door colors are possible to pass
-	randomizeDoors = true,
-
-	randomizeWeapons = true, 
-
-	weaponDamageScaleRange = {1/3, 2},	-- new weapon damage range is 33% to 200% of original
-
-	-- skips the intro cutscene
-	skipIntro = true,
 
 	-- wake zebes when you go through the room to the right of the first blue brinstar room.
 	-- notice that even if zebes is asleep, you can still get the two items in the room above the first missile... but you can't get the powerbomb behind the powerbomb walls behind morph ball.
@@ -36,6 +7,40 @@ return {
 
 	-- skip item fanfare
 	skipItemFanfare = true,
+
+	-- skips the intro cutscene
+	skipIntro = true,
+	
+--	randomizeEnemies = true,
+
+	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
+	-- ... to make sure enemies aren't impossible
+	-- and same with doors
+	--
+	-- TODO new idea, possibly a separate algo: (items2.lua)
+	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room mdb_t's and door_t's themselves.
+	-- 1) remove the door tests from 'can access' code.  instead just pick an item location arbitrarily.
+	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
+	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
+	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
+--	randomizeItems = true,
+	
+	-- Set this to remove all items and just spread them everywhere in the world randomly.
+	-- NOTICE This is exclusive with randomizeItems
+	-- I predict the items are accessible 91.9999repeating% of the time
+--	randomizeItemsScavengerHunt = true,
+--	randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
+
+	-- TODO the item placement doesn't validate that the door colors are possible to pass
+--	randomizeDoors = true,
+
+--	randomizeWeapons = true, 
+
+	-- properties for each of the randomizations above
+
+	randomizeWeapons = {
+		weaponDamageScaleRange = {1/3, 2},	-- new weapon damage range is 33% to 200% of original
+	},
 
 	-- force certain weakness values on all monsters:
 	forceEnemyWeakness = {
@@ -294,6 +299,4 @@ return {
 		xray = 1000,	-- replaced
 	},
 --]=]
-
-
 }

@@ -2558,7 +2558,6 @@ print("used a total of "..doorid.." special and non-special doors")
 	--]]
 
 	-- [[ writing back plms...
-	-- TODO this is causing a problem -- room 03/04, the main room of wrecked ship, isn't scrolling out of the room correctly
 	--[=[
 	plm memory ranges:
 	 0/ 0: $078000..$079193 (plm_t x174) 
@@ -2633,6 +2632,15 @@ function SMMap:mapWriteMDBs()
 		{0x7e82c, 0x7e85a},	-- single mdb of region 7
 		-- then comes door code
 	})
+
+	for _,m in ipairs(self.mdbs) do
+		-- write the mdb_t
+		-- write the roomselects
+		-- write the roomstates
+		-- write the dooraddrs
+		-- write the scrolldata ... (who points to this?)
+		-- write the plm scrollmod stuff ... (who points to this?)
+	end
 end
 
 function SMMap:mapWriteRooms()
