@@ -312,7 +312,7 @@ the two roomstate_t's differ...
 - musicTrack: normal has 09, intro has 06
 - musicControl: normal has 05, intro has 07
 - fx1: normal has 81f4, intro has 8290
-- enemyPop: normal has 9478, intro has 94fb
+- enemySpawn: normal has 9478, intro has 94fb
 - enemySet: normal has 83b5, intro has 83d1
 - plm: normal has 86c3, intro has 8666 (stupid evil intro plmset that's what screwed everything up ... this is the one i will delete)
 - layerHandling: normal has 91bc, intro has 91d5
@@ -339,7 +339,7 @@ if config.wakeZebesEarly then
 -- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall 
 -- however there's no way to get morph + powerbomb all in one go for the first time you're in the room, so I think I'll leave it this way for now
 --	rsIntro.ptr.fx1 = rsNormal.ptr.fx1
---	rsIntro.ptr.enemyPop = rsNormal.ptr.enemyPop
+--	rsIntro.ptr.enemySpawn = rsNormal.ptr.enemySpawn
 --	rsIntro.ptr.enemySet = rsNormal.ptr.enemySet
 	rsIntro.ptr.layerHandling = rsNormal.ptr.layerHandling
 	local rsIntroPLMSet = rsIntro.plmset

@@ -49,8 +49,8 @@ local roomstate_t = struct'roomstate_t'{
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
 	{fx1 = 'uint16_t'},
-	{enemyPop = 'uint16_t'},
-	{enemySet = 'uint16_t'},
+	{enemySpawn = 'uint16_t'},
+	{enemyGFX = 'uint16_t'},
 	{layer2scrollData = 'uint16_t'},	-- TODO
 	
 	--[[
@@ -83,7 +83,7 @@ local plm_t = struct'plm_t'{
 }
 
 -- this is a single spawn location of an enemy.
-local enemyPop_t = struct'enemyPop_t'{
+local enemySpawn_t = struct'enemySpawn_t'{
 	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
 	{x = 'uint16_t'},
 	{y = 'uint16_t'},
@@ -94,8 +94,9 @@ local enemyPop_t = struct'enemyPop_t'{
 	{roomArg2 = 'uint16_t'},-- 'speed 2'
 }
 
--- what is this really?  'enemySet_t' seems like a bad name
-local enemySet_t = struct'enemySet_t'{
+-- enemy sets have a list of entries
+-- each entry points to an enemy and a palette
+local enemyGFX_t = struct'enemyGFX_t'{
 	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
 	{palette = 'uint16_t'},
 }
@@ -481,69 +482,68 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 end
 
 
-function SMMap:mapAddEnemyPopSet(addr)
+function SMMap:mapAddEnemySpawnSet(addr)
 	local rom = self.rom
-	local _,enemyPopSet = self.enemyPopSets:find(nil, function(enemyPopSet)
-		return enemyPopSet.addr == addr
+	local _,enemySpawnSet = self.enemySpawnSets:find(nil, function(enemySpawnSet)
+		return enemySpawnSet.addr == addr
 	end)
-	if enemyPopSet then return enemyPopSet end
+	if enemySpawnSet then return enemySpawnSet end
 
 	local startaddr = addr
-	local enemyPops = table()
+	local enemySpawns = table()
 	local enemiesToKill 
 	while true do
-		local ptr = ffi.cast('enemyPop_t*', rom + addr)
+		local ptr = ffi.cast('enemySpawn_t*', rom + addr)
 		if ptr.enemyAddr == 0xffff then
 			-- include term and enemies-to-kill
 			addr = addr + 2
 			break
 		end
-		enemyPops:insert(ffi.new('enemyPop_t', ptr[0]))
-		addr = addr + ffi.sizeof'enemyPop_t'
+		enemySpawns:insert(ffi.new('enemySpawn_t', ptr[0]))
+		addr = addr + ffi.sizeof'enemySpawn_t'
 	end
 	enemiesToKill = rom[addr]
 	addr = addr + 1
 
-	local enemyPopSet = {
+	local enemySpawnSet = {
 		addr = startaddr,
-		enemyPops = enemyPops,
+		enemySpawns = enemySpawns,
 		enemiesToKill = enemiesToKill, 
 		roomStates = table(),
 	}
-	self.enemyPopSets:insert(enemyPopSet)
-	return enemyPopSet
+	self.enemySpawnSets:insert(enemySpawnSet)
+	return enemySpawnSet
 end
 
-function SMMap:mapAddEnemySetSet(addr)
+function SMMap:mapAddEnemyGFXSet(addr)
 	local rom = self.rom
-	local _,enemySetSet = self.enemySetSets:find(nil, function(enemySetSet)
-		return enemySetSet.addr == addr
+	local _,enemyGFXSet = self.enemyGFXSets:find(nil, function(enemyGFXSet)
+		return enemyGFXSet.addr == addr
 	end)
-	if enemySetSet then return enemySetSet end
+	if enemyGFXSet then return enemyGFXSet end
 
 	local startaddr = addr
-	local enemySets = table()
+	local enemyGFXs = table()
+
+	-- NOTICE the name is padded at the beginning with terms
+	-- and it is 8 bytes long
+	local name = range(0,7):map(function(i) return string.char(rom[startaddr-8+i]) end):concat()
 
 	while true do
-		local ptr = ffi.cast('enemySet_t*', rom+addr)
-		if ptr.enemyAddr == 0xffff then 
--- looks like there is consistently 10 bytes of data trailing enemySet_t, starting with 0xffff
---print('   enemySet_t term: '..range(0,9):map(function(i) return ('%02x'):format(data[i]) end):concat' ')
-			-- include terminator
-			addr = addr + 10
-			break 
-		end
-		enemySets:insert(ffi.new('enemySet_t', ptr[0]))
-		addr = addr + ffi.sizeof'enemySet_t'
+		if ffi.cast('uint16_t*', rom+addr)[0] == 0xffff then break end
+		local ptr = ffi.cast('enemyGFX_t*', rom+addr)
+		enemyGFXs:insert(ffi.new('enemyGFX_t', ptr[0]))
+		addr = addr + ffi.sizeof'enemyGFX_t'
 	end
 
-	local enemySetSet = {
+	local enemyGFXSet = {
 		addr = startaddr,
-		enemySets = enemySets,
+		name = name,
+		enemyGFXs = enemyGFXs,
 		roomStates = table(),
 	}
-	self.enemySetSets:insert(enemySetSet)
-	return enemySetSet
+	self.enemyGFXSets:insert(enemyGFXSet)
+	return enemyGFXSet
 end
 
 
@@ -1061,8 +1061,8 @@ end
 SMMap.scrollBank = 0x8f
 SMMap.mdbBank = 0x8e
 SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
-SMMap.enemyPopBank = 0xa1
-SMMap.enemySetBank = 0xb4
+SMMap.enemySpawnBank = 0xa1
+SMMap.enemyGFXBank = 0xb4
 SMMap.fx1Bank = 0x83
 SMMap.bgBank = 0x8f
 SMMap.layerHandlingBank = 0x8f
@@ -1084,8 +1084,8 @@ function SMMap:mapInit()
 	self.layerHandlings = table()
 	
 	self.plmsets = table()
-	self.enemyPopSets = table()
-	self.enemySetSets = table()
+	self.enemySpawnSets = table()
+	self.enemyGFXSets = table()
 
 	--[[
 	from $078000 to $079193 is plm_t data
@@ -1215,16 +1215,16 @@ function SMMap:mapInit()
 					end
 				end
 
-				-- enemyPopSet
-				-- but notice, for writing back enemy populations, sometimes there's odd padding in there, like -1, 3, etc
+				-- enemySpawnSet
+				-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
 				for _,rs in ipairs(m.roomStates) do
-					rs.enemyPopSet = self:mapAddEnemyPopSet(topc(self.enemyPopBank, rs.ptr.enemyPop))
-					rs.enemyPopSet.roomStates:insert(rs)
+					rs.enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.ptr.enemySpawn))
+					rs.enemySpawnSet.roomStates:insert(rs)
 				end
 				
 				for _,rs in ipairs(m.roomStates) do
-					rs.enemySetSet = self:mapAddEnemySetSet(topc(self.enemySetBank, rs.ptr.enemySet))
-					rs.enemySetSet.roomStates:insert(rs)
+					rs.enemyGFXSet = self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.ptr.enemyGFX))
+					rs.enemyGFXSet.roomStates:insert(rs)
 				end
 
 				-- some rooms use the same fx1 ptr
@@ -1989,13 +1989,13 @@ function drawRoomPLMs(ctx, room)
 				drawstr(mapimg, x+5, y, ('$%x'):format(plm.cmd))
 			end
 		end
-		if rs.enemyPopSet then
-			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do
-				local x = math.round(xofs + blockSizeInPixels/2 + blockSizeInPixels * (enemyPop.x / 16 + blocksPerRoom * m.ptr.x))
-				local y = math.round(yofs + blockSizeInPixels/2 + blockSizeInPixels * (enemyPop.y / 16 + blocksPerRoom * m.ptr.y))
+		if rs.enemySpawnSet then
+			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
+				local x = math.round(xofs + blockSizeInPixels/2 + blockSizeInPixels * (enemySpawn.x / 16 + blocksPerRoom * m.ptr.x))
+				local y = math.round(yofs + blockSizeInPixels/2 + blockSizeInPixels * (enemySpawn.y / 16 + blocksPerRoom * m.ptr.y))
 				drawline(mapimg,x+2,y,x-2,y, 0xff, 0x00, 0xff)
 				drawline(mapimg,x,y+2,x,y-2, 0xff, 0x00, 0xff)
-				drawstr(mapimg, x+5, y, ('$%x'):format(enemyPop.enemyAddr))
+				drawstr(mapimg, x+5, y, ('$%x'):format(enemySpawn.enemyAddr))
 			end
 		end
 	end
@@ -2061,141 +2061,9 @@ function SMMap:mapPrintRooms()
 	end
 end
 
-function SMMap:mapPrint()
+function SMMap:mapWriteGraphDot()
 	local rom = self.rom
-	print()
-	print("all plm_t's:")
-	for _,plmset in ipairs(self.plmsets) do
-		print(' '
-			..(plmset.addr and ('$%06x'):format(plmset.addr) or 'nil')
-			..' mdbs: '..plmset.roomStates:map(function(rs)
-				local m = rs.m
-				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-			end):concat' '
-		)
-		for _,plm in ipairs(plmset.plms) do
-			print('  '..plm)
-		end
-	end
 
-	-- [[ debugging - show all rooms that each plm cmd is used in
-	local allPLMCmds = table()
-	for _,plmset in ipairs(self.plmsets) do
-		local rsstrs = table()
-		for _,rs in ipairs(plmset.roomStates) do
-			local region = assert(tonumber(rs.m.ptr.region))
-			local index = assert(tonumber(rs.m.ptr.index))
-			rsstrs:insert(('%02x/%02x'):format(region, index))
-		end
-		rsstrs = rsstrs:concat', '
-		for _,plm in ipairs(plmset.plms) do
-			local plmcmd = assert(tonumber(plm.cmd))
-			allPLMCmds[plmcmd] = true
-		end
-	end
-	print'room per plm_t cmd:'
-	for _,plmcmd in ipairs(table.keys(allPLMCmds):sort()) do
-		io.write(('%x: '):format(plmcmd))
-		local sep = ''
-		
-		for _,plmset in ipairs(self.plmsets) do
-			local rsstrs = table()
-			for _,rs in ipairs(plmset.roomStates) do
-				local region = assert(tonumber(rs.m.ptr.region))
-				local index = assert(tonumber(rs.m.ptr.index))
-				rsstrs:insert(('%02x/%02x'):format(region, index))
-			end
-			rsstrs = rsstrs:concat', '
-			for _,plm in ipairs(plmset.plms) do
-				local oplmcmd = assert(tonumber(plm.cmd))
-				if oplmcmd == plmcmd then
-					io.write(sep, rsstrs)
-					sep = ', '
-				end
-			end
-		end	
-		
-		print()
-	end
-	--]]
-
-	-- print bg info
-	print()
-	print("all bg_t's:")
-	self.bgs:sort(function(a,b) return a.addr < b.addr end)
-	for _,bg in ipairs(self.bgs) do
-		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
-			..' mdbs: '..bg.mdbs:map(function(m)
-				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-			end):concat' '
-		)
-	end
-
-	-- print fx1 info
-	print()
-	print("all fx1_t's:")
-	self.fx1s:sort(function(a,b) return a.addr < b.addr end)
-	for _,fx1 in ipairs(self.fx1s) do
-		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
-			..' mdbs: '..fx1.mdbs:map(function(m)
-				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-			end):concat' '
-		)
-	end
-
-	-- print mdb info
-	print()
-	print("all mdb_t's:")
-	for _,m in ipairs(self.mdbs) do
-		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
-		for _,rs in ipairs(m.roomStates) do
-			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
-			
-			local selectStr = rs.select_ctype == 'uint16_t' 
-				and ('%04x'):format(rs.select[0])
-				or tostring(rs.select[0])
-			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..selectStr)
-			-- [[
-			if rs.plmset then
-				for _,plm in ipairs(rs.plmset.plms) do
-					io.write('   plm_t: ')
-					local plmName = self.plmCmdNameForValue[plm.cmd]
-					if plmName then io.write(plmName..': ') end
-					print(plm)
-				end
-				for _,scrollmod in ipairs(rs.plmset.scrollmods) do
-					print('   plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
-				end
-			end
-			--]]
-			for _,enemyPop in ipairs(rs.enemyPopSet.enemyPops) do	
-				print('   enemyPop_t: '
-					..((self.enemyForAddr[enemyPop.enemyAddr] or {}).name or '')
-					..': '..enemyPop)
-			end
-			for _,enemySet in ipairs(rs.enemySetSet.enemySets) do
-				print('   enemySet_t: '
-					..((self.enemyForAddr[enemySet.enemyAddr] or {}).name or '')
-					..': '..enemySet)
-			end
-			for _,fx1 in ipairs(rs.fx1s) do
-				print('   fx1_t: '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
-			end
-			for _,bg in ipairs(rs.bgs) do
-				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
-			end
-		end
-		for _,door in ipairs(m.doors) do
-			print('  '..door.ctype..': '
-				..('$83:%04x'):format(door.addr)
-				..' '..door.ptr[0])
-			if door.doorCode then
-				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat())
-			end
-		end
-	end
-
-	-- [[ debugging: print out a graphviz dot file of the rooms and doors
 	local f = assert(io.open('roomgraph-random.dot', 'w'))
 	f:write'digraph G {\n'
 	local showRoomStates = false
@@ -2405,7 +2273,172 @@ function SMMap:mapPrint()
 	--  this could be fixed if I could find out where doors' target roomStates are stored.
 	-- ok now dot is crashing when showRoomStates is enabled
 	exec'dot -Tsvg -o roomgraph-random.svg roomgraph-random.dot'
+end
+
+function SMMap:mapPrint()
+	local rom = self.rom
+	print()
+	print("all plm_t's:")
+	for _,plmset in ipairs(self.plmsets) do
+		print(' '
+			..(plmset.addr and ('$%06x'):format(plmset.addr) or 'nil')
+			..' mdbs: '..plmset.roomStates:map(function(rs)
+				local m = rs.m
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+			end):concat' '
+		)
+		for _,plm in ipairs(plmset.plms) do
+			io.write('  '..plm)
+			local plmName = self.plmCmdNameForValue[plm.cmd]
+			if plmName then io.write(' ',plmName) end
+			print()
+		end
+	end
+
+	-- [[ debugging - show all rooms that each plm cmd is used in
+	local allPLMCmds = table()
+	for _,plmset in ipairs(self.plmsets) do
+		local rsstrs = table()
+		for _,rs in ipairs(plmset.roomStates) do
+			local region = assert(tonumber(rs.m.ptr.region))
+			local index = assert(tonumber(rs.m.ptr.index))
+			rsstrs:insert(('%02x/%02x'):format(region, index))
+		end
+		rsstrs = rsstrs:concat', '
+		for _,plm in ipairs(plmset.plms) do
+			local plmcmd = assert(tonumber(plm.cmd))
+			allPLMCmds[plmcmd] = true
+		end
+	end
+	print'room per plm_t cmd:'
+	for _,plmcmd in ipairs(table.keys(allPLMCmds):sort()) do
+		io.write(('%x: '):format(plmcmd))
+		local sep = ''
+		
+		for _,plmset in ipairs(self.plmsets) do
+			local rsstrs = table()
+			for _,rs in ipairs(plmset.roomStates) do
+				local region = assert(tonumber(rs.m.ptr.region))
+				local index = assert(tonumber(rs.m.ptr.index))
+				rsstrs:insert(('%02x/%02x'):format(region, index))
+			end
+			rsstrs = rsstrs:concat', '
+			for _,plm in ipairs(plmset.plms) do
+				local oplmcmd = assert(tonumber(plm.cmd))
+				if oplmcmd == plmcmd then
+					io.write(sep, rsstrs)
+					sep = ', '
+				end
+			end
+		end	
+		
+		print()
+	end
 	--]]
+
+	-- print bg info
+	print()
+	print("all bg_t's:")
+	self.bgs:sort(function(a,b) return a.addr < b.addr end)
+	for _,bg in ipairs(self.bgs) do
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
+			..' mdbs: '..bg.mdbs:map(function(m)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+			end):concat' '
+		)
+	end
+
+	-- print fx1 info
+	print()
+	print("all fx1_t's:")
+	self.fx1s:sort(function(a,b) return a.addr < b.addr end)
+	for _,fx1 in ipairs(self.fx1s) do
+		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
+			..' mdbs: '..fx1.mdbs:map(function(m)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+			end):concat' '
+		)
+	end
+
+	-- print mdb info
+	print()
+	print("all mdb_t's:")
+	for _,m in ipairs(self.mdbs) do
+		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
+		for _,rs in ipairs(m.roomStates) do
+			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+			
+			local selectStr = rs.select_ctype == 'uint16_t' 
+				and ('%04x'):format(rs.select[0])
+				or tostring(rs.select[0])
+			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..selectStr)
+			-- [[
+			if rs.plmset then
+				for _,plm in ipairs(rs.plmset.plms) do
+					io.write('   plm_t: ')
+					local plmName = self.plmCmdNameForValue[plm.cmd]
+					if plmName then io.write(plmName..': ') end
+					print(plm)
+				end
+				for _,scrollmod in ipairs(rs.plmset.scrollmods) do
+					print('   plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+				end
+			end
+			--]]
+			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do	
+				print('   enemySpawn_t: '
+					..((self.enemyForAddr[enemySpawn.enemyAddr] or {}).name or '')
+					..': '..enemySpawn)
+			end
+			print('   enemyGFXSet: '..rs.enemyGFXSet.name)	--:match'\0*(.*)')
+			for _,enemyGFX in ipairs(rs.enemyGFXSet.enemyGFXs) do
+				print('    enemyGFX_t: '
+					..((self.enemyForAddr[enemyGFX.enemyAddr] or {}).name or '')
+					..': '..enemyGFX)
+			end
+			for _,fx1 in ipairs(rs.fx1s) do
+				print('   fx1_t: '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
+			end
+			for _,bg in ipairs(rs.bgs) do
+				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
+			end
+		end
+		for _,door in ipairs(m.doors) do
+			print('  '..door.ctype..': '
+				..('$83:%04x'):format(door.addr)
+				..' '..door.ptr[0])
+			if door.doorCode then
+				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat())
+			end
+		end
+	end
+
+	--[[ print plmset information
+	-- half this is in the all plms_ts and the other half is in all mdb_ts
+	print()
+	print'all plmsets:'
+	for i,plmset in ipairs(self.plmsets) do
+		print(' plmset '..('$%06x'):format(plmset.addr))
+		for _,rs in ipairs(plmset.roomStates) do
+			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+		end
+		for _,plm in ipairs(plmset.plms) do
+			io.write('  plm_t: ')
+			local plmName = self.plmCmdNameForValue[plm.cmd]
+			if plmName then io.write(plmName..': ') end
+			print(plm)
+		end
+		for _,scrollmod in ipairs(plmset.scrollmods) do
+			print('  plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+		end
+	end
+	--]]
+
+	-- [[ debugging: print out a graphviz dot file of the rooms and doors
+	self:mapWriteGraphDot()
+	--]]
+
+	self:mapPrintRooms()
 
 	--[[ debugging: print all unique door codes
 	local doorcodes = table()
@@ -2421,8 +2454,6 @@ function SMMap:mapPrint()
 		print(('$%04x'):format(doorcode))
 	end
 	--]]
-
-	self:mapPrintRooms()
 end
 
 function SMMap:mapBuildMemoryMap(mem)
@@ -2457,11 +2488,12 @@ function SMMap:mapBuildMemoryMap(mem)
 		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].m)
 	end
 
-	for _,enemyPopSet in ipairs(self.enemyPopSets) do
-		mem:add(enemyPopSet.addr, 3 + #enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t', 'enemyPop_t', enemyPopSet.roomStates[1].m)
+	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
+		mem:add(enemySpawnSet.addr, 3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t', 'enemySpawn_t', enemySpawnSet.roomStates[1].m)
 	end
-	for _,enemySetSet in ipairs(self.enemySetSets) do
-		mem:add(enemySetSet.addr, 10 + #enemySetSet.enemySets * ffi.sizeof'enemySet_t', 'enemySet_t', enemySetSet.roomStates[1].m)
+	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
+		-- 10 = 8 for name, 2 for term
+		mem:add(enemyGFXSet.addr - 8, 10 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t', 'enemyGFX_t', enemyGFXSet.roomStates[1].m)
 	end
 
 	for _,plmset in ipairs(self.plmsets) do
@@ -2574,7 +2606,7 @@ print("used a total of "..doorid.." special and non-special doors")
 		if #plmset.plms == 0 then
 			for j=#plmset.roomStates,1,-1 do
 				local rs = plmset.roomStates[j]
-				rs.ptr.plm = 0	-- don't need to change this -- it'll be reset later
+				rs.ptr.plm = 0
 				rs:setPLMSet(nil)
 			end
 		end
@@ -2583,6 +2615,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	for i=#self.plmsets,1,-1 do
 		local plmset = self.plmsets[i]
 		if #plmset.plms == 0 then
+			print('!!! removing empty plmset !!! '..('%06x'):format(plmset.addr))
 			self.plmsets:remove(i)
 		end
 	end
@@ -2591,7 +2624,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	for i=#self.plmsets,1,-1 do
 		local plmset = self.plmsets[i]
 		if #plmset.roomStates == 0 then
-			print('!!! removing empty plmset !!!')	
+			print('!!! removing plmset that is never referenced !!! '..('%06x'):format(plmset.addr))
 			self.plmsets:remove(i)
 		end
 	end
@@ -2779,40 +2812,42 @@ function SMMap:mapWriteRooms()
 	--]]
 end
 
-function SMMap:mapWriteEnemyPops()
+function SMMap:mapWriteEnemySpawnSets()
 	local rom = self.rom
-	--[[ get rid of duplicate enemy pops
+	-- [[ get rid of duplicate enemy pops
 	-- this currently crashes the game
 	-- notice that re-writing the enemy pops is working fine
 	-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
-	for i=1,#self.enemyPopSets-1 do
-		local pi = self.enemyPopSets[i]
-		for j=#self.enemyPopSets,i+1,-1 do
-			local pj = self.enemyPopSets[j]
-			if #pi.enemyPops == #pj.enemyPops 
+	for i=1,#self.enemySpawnSets-1 do
+		local pi = self.enemySpawnSets[i]
+		for j=#self.enemySpawnSets,i+1,-1 do
+			local pj = self.enemySpawnSets[j]
+			if #pi.enemySpawns == #pj.enemySpawns 
 			and pi.enemiesToKill == pj.enemiesToKill 
 			then
 				local differ
-				for k=1,#pi.enemyPops do
-					if pi.enemyPops[k] ~= pj.enemyPops[k] then
+				for k=1,#pi.enemySpawns do
+					if pi.enemySpawns[k] ~= pj.enemySpawns[k] then
 						differ = true
 						break
 					end
 				end
 				if not differ then
-					print('enemyPops '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+					local piaddr = ('$%06x'):format(pi.addr)
+					local pjaddr = ('$%06x'):format(pj.addr)
+					print('enemySpawns '..piaddr..' and '..pjaddr..' are matching --- removing '..pjaddr)
 					for _,rs in ipairs(pj.roomStates) do
-						rs.ptr.enemyPop = bit.band(0xffff, pi.addr)
-						rs.enemyPopSet = pi
+						rs.ptr.enemySpawn = bit.band(0xffff, pi.addr)
+						rs.enemySpawnSet = pi
 					end
-					self.enemyPopSets:remove(j)
+					self.enemySpawnSets:remove(j)
 				end
 			end
 		end
 	end
 	--]]
 
-	-- [[ update enemy pop
+	--[[ update enemy pop
 	--[=[
 	with writing back plms removing onn-grey non-eye doors
 	and writing back room data, removing all breakable blocks and crumble blocks
@@ -2823,36 +2858,36 @@ function SMMap:mapWriteEnemyPops()
 		note that the room was normal before and after the battle.
 	* scroll glitch in the crab broke tube room in maridia
 	--]=]
-	local enemyPopWriteRanges = WriteRange('enemy pop sets', {
+	local enemySpawnWriteRanges = WriteRange('enemy pop sets', {
 		-- original pop goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
 		{0x108000, 0x10ffff},
 	})
-	for _,enemyPopSet in ipairs(self.enemyPopSets) do
-		local addr, endaddr = enemyPopWriteRanges:get(3 + #enemyPopSet.enemyPops * ffi.sizeof'enemyPop_t')
-		enemyPopSet.addr = addr
-		for i,enemyPop in ipairs(enemyPopSet.enemyPops) do
-			ffi.cast('enemyPop_t*', rom + addr)[0] = enemyPop
-			addr = addr + ffi.sizeof'enemyPop_t'
+	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
+		local addr, endaddr = enemySpawnWriteRanges:get(3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t')
+		enemySpawnSet.addr = addr
+		for i,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do
+			ffi.cast('enemySpawn_t*', rom + addr)[0] = enemySpawn
+			addr = addr + ffi.sizeof'enemySpawn_t'
 		end
 		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff
 		addr = addr + 2
-		rom[addr] = enemyPopSet.enemiesToKill
+		rom[addr] = enemySpawnSet.enemiesToKill
 		addr = addr + 1
 
 		assert(addr == endaddr)
-		local newofs = bit.band(0xffff, enemyPopSet.addr)
-		for _,rs in ipairs(enemyPopSet.roomStates) do
-			if newofs ~= rs.ptr.enemyPop then
-				print('updating roomstate enemyPop addr from '..('%04x'):format(rs.ptr.enemyPop)..' to '..('%04x'):format(newofs))
-				rs.ptr.enemyPop = newofs
+		local newofs = bit.band(0xffff, enemySpawnSet.addr)
+		for _,rs in ipairs(enemySpawnSet.roomStates) do
+			if newofs ~= rs.ptr.enemySpawn then
+				print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawn)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemySpawn = newofs
 			end
 		end
 	end
-	enemyPopWriteRanges:print()
+	enemySpawnWriteRanges:print()
 	--]]
 end
 	
-function SMMap:mapWriteEnemySets()
+function SMMap:mapWriteEnemyGFXSets()
 	local rom = self.rom
 	--[[ update enemy set
 	-- I'm sure this will fail.  there's lots of mystery padding here.
@@ -2861,21 +2896,21 @@ function SMMap:mapWriteEnemySets()
 		-- next comes a debug routine, listed as $9809-$981e
 		-- then next comes a routine at $9961 ...
 	})
-	for _,enemySetSet in ipairs(self.enemySetSets) do
-		local addr, endaddr = enemySetWriteRanges:get(#enemySetSet.enemySets * ffi.sizeof'enemySet_t')
-		enemySetSet.addr = addr
-		for i,enemySet in ipairs(enemySetSet.enemySets) do
-			ffi.cast('enemySet_t*', rom + addr)[0] = enemySet
-			addr = addr + ffi.sizeof'enemySet_t'
+	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
+		local addr, endaddr = enemySetWriteRanges:get(#enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t')
+		enemyGFXSet.addr = addr
+		for i,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
+			ffi.cast('enemyGFX_t*', rom + addr)[0] = enemyGFX
+			addr = addr + ffi.sizeof'enemyGFX_t'
 		end
 		-- TODO tail ... which I'm not saving yet, and I don't know how long it should be
 
 		assert(addr == endaddr)
-		local newofs = bit.band(0x7fff, enemySetSet.addr) + 0x8000
-		for _,rs in ipairs(enemySetSet.roomStates) do
-			if newofs ~= rs.ptr.enemySet then
-				print('updating roomstate enemySet addr from '..('%04x'):format(rs.ptr.enemySet)..' to '..('%04x'):format(newofs))
-				rs.ptr.enemySet = newofs
+		local newofs = bit.band(0x7fff, enemyGFXSet.addr) + 0x8000
+		for _,rs in ipairs(enemyGFXSet.roomStates) do
+			if newofs ~= rs.ptr.enemyGFX then
+				print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.ptr.enemyGFX)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemyGFX = newofs
 			end
 		end
 	end
@@ -2887,11 +2922,14 @@ end
 -- right now my structures are mixed between ptrs and by-value copied objects
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
+	-- write these before mdb_ts so they can be updated
+	self:mapWriteEnemyGFXSets()		-- not yet
+	--self:mapWriteEnemySpawnSets()	-- buggy
 	self:mapWritePLMs()	
+	
 	self:mapWriteMDBs()	-- not yet
+	
 	self:mapWriteRooms()
-	self:mapWriteEnemyPops()	-- buggy
-	self:mapWriteEnemySets()	-- not yet
 end
 
 return SMMap

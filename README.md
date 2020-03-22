@@ -17,7 +17,7 @@ randomizes the following:
 	- health
 	- touch damage
 	- shot damage
-- item placement
+- item shuffle previous locations
 - weapon damages
 - doors (NOTICE the item accessibility search doesn't take this into account yet)
 - item placement / scavenger hunt mode.  If randomizing doors had no guarantees, this has even less.
