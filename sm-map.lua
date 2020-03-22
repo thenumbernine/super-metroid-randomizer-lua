@@ -2310,6 +2310,7 @@ function SMMap:mapPrint()
 			allPLMCmds[plmcmd] = true
 		end
 	end
+	
 	print'room per plm_t cmd:'
 	for _,plmcmd in ipairs(table.keys(allPLMCmds):sort()) do
 		io.write(('%x: '):format(plmcmd))
@@ -2336,16 +2337,44 @@ function SMMap:mapPrint()
 	end
 	--]]
 
-	-- print bg info
 	print()
-	print("all bg_t's:")
-	self.bgs:sort(function(a,b) return a.addr < b.addr end)
-	for _,bg in ipairs(self.bgs) do
-		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
-			..' mdbs: '..bg.mdbs:map(function(m)
-				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+	print"all enemySpawn_t's:"
+	self.enemySpawnSets:sort(function(a,b) return a.addr < b.addr end)
+	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
+		print(' '..('$%06x'):format(enemySpawnSet.addr)..' '..tolua{
+			enemiesToKill = enemySpawnSet.enemiesToKill, 
+		}
+			..' mdbs: '..enemySpawnSet.roomStates:map(function(rs)
+				return ('%02x/%02x'):format(rs.m.ptr.region, rs.m.ptr.index)
 			end):concat' '
 		)
+		for _,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do	
+			io.write('  '..enemySpawn)
+			local enemyName = (self.enemyForAddr[enemySpawn.enemyAddr] or {}).name
+			if enemyName then
+				io.write(' '..enemyName)
+			end
+			print()
+		end
+	end
+
+	print()
+	print"all enemyGFX_t's:"
+	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
+	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
+		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '..enemyGFXSet.name
+			..' mdbs: '..enemyGFXSet.roomStates:map(function(rs)
+				return ('%02x/%02x'):format(rs.m.ptr.region, rs.m.ptr.index)
+			end):concat' '
+		)
+		for _,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
+			io.write('  '..enemyGFX)
+			local enemyName = (self.enemyForAddr[enemyGFX.enemyAddr] or {}).name
+			if enemyName then
+				io.write(' '..enemyName)
+			end
+			print()
+		end
 	end
 
 	-- print fx1 info
@@ -2355,6 +2384,18 @@ function SMMap:mapPrint()
 	for _,fx1 in ipairs(self.fx1s) do
 		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
 			..' mdbs: '..fx1.mdbs:map(function(m)
+				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+			end):concat' '
+		)
+	end
+
+	-- print bg info
+	print()
+	print("all bg_t's:")
+	self.bgs:sort(function(a,b) return a.addr < b.addr end)
+	for _,bg in ipairs(self.bgs) do
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
+			..' mdbs: '..bg.mdbs:map(function(m)
 				return ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 			end):concat' '
 		)
@@ -2585,8 +2626,12 @@ print("used a total of "..doorid.." special and non-special doors")
 	--]]
 
 	-- [[ re-indexing the items ...
-	-- TODO what about duplicate roomStates with separate item plms in each state?
-	-- TODO TODO how about incorportaing this into sm-items as well?
+	-- what about duplicate roomStates with separate item plms in each state?
+	-- in the origial metroid, there is only 1 item per unique name -- no reuised item ids spanning multiple plmsets
+	-- how about incorportaing this into sm-items as well? maybe.
+	-- how about not doing this at all, since sm-items will just rearrange things but not inc/dec?
+	-- how about when I do item-scavenger and I duplicate items across their multiple PLMs?
+	--  then I want to write the item id there and not here ...
 	local itemid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
@@ -2666,7 +2711,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	--]=]
 	-- where plms were written before, so should be safe, right?
 	-- ranges are inclusive
-	local plmWriteRanges = WriteRange('plm', {
+	local plmWriteRanges = WriteRange('plm_t', {
 		{0x78000, 0x79193},	
 		-- then comes 100 bytes of layer handling code
 		-- then mdb's (see mdbWriteRanges {0x791f8, 0x7b769})
@@ -2717,7 +2762,7 @@ function SMMap:mapWriteMDBs()
 	-- writing back mdb_t
 	-- if you move a mdb_t
 	-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
-	local mdbWriteRanges = WriteRange('mdb', {
+	local mdbWriteRanges = WriteRange('mdb_t', {
 		{0x791f8, 0x7b769},	-- mdbs of regions 0-2
 		-- then comes bg_t's 
 		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
@@ -2889,21 +2934,38 @@ end
 	
 function SMMap:mapWriteEnemyGFXSets()
 	local rom = self.rom
-	--[[ update enemy set
+	-- [[ update enemy set
 	-- I'm sure this will fail.  there's lots of mystery padding here.
-	local enemySetWriteRanges = WriteRange('enemy set sets', {
+	local enemyGFXWriteRanges = WriteRange('enemyGFX_t', {
 		{0x1a0000, 0x1a12c5},
 		-- next comes a debug routine, listed as $9809-$981e
 		-- then next comes a routine at $9961 ...
 	})
-	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
-		local addr, endaddr = enemySetWriteRanges:get(#enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t')
+	for j,enemyGFXSet in ipairs(self.enemyGFXSets) do
+		-- special case for the first one -- it has no name so we don't need 8 bytes preceding
+		-- it also has no entries, so that makes things easy
+		if j == 0 then
+			assert(enemyGFXSet.addr == 0)
+			assert(#enemyGFXSet.enemyGFXs == 0)
+		end 
+		local saveName = j ~= 0
+		
+		local addr, endaddr = enemyGFXWriteRanges:get(2 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t' + (saveName and 8 or 0))
+		if saveName then
+			local name = enemyGFXSet.name
+			for i=1,#name do
+				rom[addr+i-1] = name:byte(i,i)
+			end
+			addr = addr + 8
+		end
+	
 		enemyGFXSet.addr = addr
 		for i,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
 			ffi.cast('enemyGFX_t*', rom + addr)[0] = enemyGFX
 			addr = addr + ffi.sizeof'enemyGFX_t'
 		end
-		-- TODO tail ... which I'm not saving yet, and I don't know how long it should be
+		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff	-- term
+		addr = addr + 2
 
 		assert(addr == endaddr)
 		local newofs = bit.band(0x7fff, enemyGFXSet.addr) + 0x8000
@@ -2914,7 +2976,7 @@ function SMMap:mapWriteEnemyGFXSets()
 			end
 		end
 	end
-	enemySetWriteRanges:print()
+	enemyGFXWriteRanges:print()
 	--]]
 end
 
