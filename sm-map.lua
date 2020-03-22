@@ -821,17 +821,22 @@ end
 function Room:isCopy(x,y)
 	-- don't use tileType because this uses the copy_*
 	local _, ch2 = self:tileData(x,y)
-	return ch2 == self.tileTypes.copy_left 
-		or ch2 == self.tileTypes.copy_up
+	local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
+	return ch2hi == self.tileTypes.copy_left 
+		or ch2hi == self.tileTypes.copy_up
 end
 
 -- returns true if this is targetted by a 'copy up / left' tile
 function Room:isCopied(x,y)
 	if x < self.width-1 then
-		if select(2, self:tileData(x+1,y)) == self.tileTypes.copy_left then return true end
+		local _, ch2L = self:tileData(x+1,y)
+		local ch2Lhi = bit.band(0xf, bit.rshift(ch2L, 4))
+		if ch2Lhi == self.tileTypes.copy_left then return true end
 	end
 	if y < self.height-1 then
-		if select(2, self:tileData(x,y+1)) == self.tileTypes.copy_up then return true end
+		local _, ch2U = self:tileData(x,y+1)
+		local ch2Uhi = bit.band(0xf, bit.rshift(ch2U, 4))
+		if ch2Uhi == self.tileTypes.copy_up then return true end
 	end
 	return false
 end
@@ -880,6 +885,14 @@ function Room:isBorder(x,y)
 	end
 	return false
 end
+
+function Room:isBorderAndNotCopy(x,y)
+	return self:isBorder(x,y) 
+		and not self:isCopy(x,y) 
+		and not self:isCopied(x,y)
+end
+
+
 
 -- this is the block data of the rooms
 function SMMap:mapAddRoom(addr, m)
@@ -1797,6 +1810,7 @@ local mapDrawExcludeMapBlocks = {
 	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
 }
 
+
 local function drawRoom(ctx, room, m)
 	local mapimg = ctx.mapimg
 	local mapBinImage = ctx.mapBinImage
@@ -1872,7 +1886,7 @@ local function drawRoom(ctx, room, m)
 						-- write out solid tiles only
 
 						-- TODO isSolid will overlap between a few rooms
-						local isBorder = room:isBorder(dx,dy)
+						local isBorder = room:isBorderAndNotCopy(dx,dy)
 						do --if isBorder or isSolid then
 							local isSolid = room:isSolid(dx,dy)
 							for pi=0,blockSizeInPixels-1 do
@@ -1934,14 +1948,13 @@ local function drawRoomDoors(ctx, room)
 		local srcm_xofs = roomSizeInPixels * (srcm_ofsx - 4)
 		local srcm_yofs = roomSizeInPixels * (srcm_ofsy + 1)
 		for exitIndex,blockpos in pairs(room.blocksForExit) do
-print('in mdb '..('%02x/%02x'):format(srcm.ptr.region, srcm.ptr.index)
-	..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
+--print('in mdb '..('%02x/%02x'):format(srcm.ptr.region, srcm.ptr.index)..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
 			-- TODO lifts will mess up the order of this, maybe?
 			local door = srcm.doors[exitIndex+1]
 			if not door then
-print('found no door')
+--print('found no door')
 			elseif door.ctype ~= 'door_t' then
-print("door isn't a ctype")
+--print("door isn't a ctype")
 			-- TODO handle lifts?
 			else
 				local dstm = assert(door.dest_mdb)

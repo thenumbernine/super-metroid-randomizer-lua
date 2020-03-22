@@ -542,7 +542,7 @@ if not config.randomizeEnemies then
 	print'!!!!!!!!!!! NOT RANDOMIZING ENEMIES !!!!!!!!!'
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 end
-if not config.randomizeItems then
+if not config.randomizeItems and not config.randomizeItemsScavengerHunt then
 	print()
 	print'!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 	print'!!!!!!!!!!! NOT RANDOMIZING ITEMS !!!!!!!!!!!'

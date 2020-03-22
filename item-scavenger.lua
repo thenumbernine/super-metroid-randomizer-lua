@@ -52,16 +52,10 @@ local function getRoomsForMDBs(mdbs)
 	for _,m in ipairs(mdbs) do
 		for i,rs in ipairs(m.roomStates) do
 			assert(rs.room)
-			rooms[rs.room] = true
+			rooms[rs.room.addr] = rs.room
 		end
 	end
-	return rooms:keys()
-end
-
-local function isBorderAndNotCopy(room,x,y)
-	return room:isBorder(x,y) 
-		and not room:isCopy(x,y) 
-		and room:isCopied(x,y)
+	return rooms:values()
 end
 
 local allRooms = getRoomsForMDBs(allMDBs)
@@ -69,33 +63,15 @@ local allRooms = getRoomsForMDBs(allMDBs)
 local allLocs = table()
 local locsPerRoom = table()
 for _,room in ipairs(allRooms) do
+	locsPerRoom[room.addr] = table()
 	for y=0,room.height-1 do
 		for x=0,room.width-1 do
-			if isBorderAndNotCopy(room,x,y) then
+			if room:isBorderAndNotCopy(x,y) then
 				allLocs:insert{x,y,room}
-				local roomLocs = locsPerRoom[room]
-				if not roomLocs then
-					roomLocs = table()
-					locsPerRoom[room] = roomLocs 
-				end
-				roomLocs:insert{x,y,room}
+				locsPerRoom[room.addr]:insert{x,y,room}
 			end
 		end
 	end
-end
-
--- TODO store all borders up front, put them in an array (assoc with room), and let the rando pick from all tiles evenly weighted
-local function findRandomPosInRoom(room)
-	local x,y
-	for tries=1,100 do
-		x = math.random(2, room.width - 3)	-- avoid edges
-		y = math.random(2, room.height - 3)
-		-- TODO don't pick copy or copied tiles 
-		if isBorderAndNotCopy(room,x,y) then return {x,y} end
-	end
-	local m = room.mdbs[1]
-	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-	print("ERROR couldn't find any locations in room "..roomid)
 end
 
 local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printing
@@ -114,14 +90,6 @@ local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printin
 			y = y,
 		})
 	)
-end
-
-
-local function placeInRoom(m, rs, room, cmd)
-	local pos = findRandomPosInRoom(room)
-	if not pos then return false end
-	placeInPLMSet(rs.plmset, pos, cmd, m)
-	return true
 end
 
 local function getAllMDBPLMs(m)
@@ -148,9 +116,20 @@ local firstMissileMDBs = allMDBs:filter(function(m)
 		or m.ptr.index == 0x18
 	)
 end)
+
 do
 	local rooms = getRoomsForMDBs(firstMissileMDBs)
-	local poss = table():append(rooms:mapi(function(room) return assert(locsPerRoom[room]) end):unpack())
+--	local poss = table():append(rooms:mapi(function(room) 
+--		return assert(locsPerRoom[room.addr], "failed to find locs for room "..('%06x'):format(room.addr))
+--	end):unpack())
+	local poss = table()
+	for _,room in ipairs(rooms) do
+		print('room '..('%06x'):format(room.addr)..' has locs:')
+		for _,loc in ipairs(locsPerRoom[room.addr]) do
+			print('', table.unpack(loc))
+			poss:insert(loc)
+		end
+	end	
 	local pos = pickRandom(poss)
 	local x,y,room = table.unpack(pos)
 	assert(room.mdbs, "found a room without any mdbs: "..(function()
