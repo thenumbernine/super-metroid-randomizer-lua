@@ -44,7 +44,16 @@ end
 				end
 				return '{'..t:concat', '..'}'
 			end,
-			__concat = function(a,b) return tostring(a) .. tostring(b) end,
+			__concat = function(a,b) 
+				return tostring(a) .. tostring(b) 
+			end,
+			__eq = function(a,b)
+				for _,field in ipairs(fields) do
+					local name, ctype = next(field)
+					if a[name] ~= b[name] then return false end
+				end
+				return true
+			end,
 		})
 
 		local sizeOfFields = table.map(fields, function(kv)

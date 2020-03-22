@@ -2691,7 +2691,15 @@ print("used a total of "..doorid.." special and non-special doors")
 					end
 				end
 				if not differ then
-					print('plms '..('$%06x'):format(pi.addr)..' and '..('$%06x'):format(pj.addr)..' are matching')
+					local piaddr = ('$%06x'):format(pi.addr)
+					local pjaddr = ('$%06x'):format(pj.addr)
+					print('plmsets '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
+					for _,rs in ipairs(pj.roomStates) do
+						rs.ptr.plm = bit.band(0xffff, pi.addr)
+						rs:setPLMSet(pi)
+					end
+					self.plmsets:remove(j)
+					break
 				end
 			end
 		end
@@ -2756,6 +2764,131 @@ print("used a total of "..doorid.." special and non-special doors")
 	plmWriteRanges:print()
 	--]]
 end
+
+function SMMap:mapWriteEnemySpawnSets()
+	local rom = self.rom
+	-- [[ get rid of duplicate enemy pops
+	-- this currently crashes the game
+	-- notice that re-writing the enemy pops is working fine
+	-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
+	for i=1,#self.enemySpawnSets-1 do
+		local pi = self.enemySpawnSets[i]
+		for j=#self.enemySpawnSets,i+1,-1 do
+			local pj = self.enemySpawnSets[j]
+			if #pi.enemySpawns == #pj.enemySpawns 
+			and pi.enemiesToKill == pj.enemiesToKill 
+			then
+				local differ
+				for k=1,#pi.enemySpawns do
+					if pi.enemySpawns[k] ~= pj.enemySpawns[k] then
+						differ = true
+						break
+					end
+				end
+				if not differ then
+					local piaddr = ('$%06x'):format(pi.addr)
+					local pjaddr = ('$%06x'):format(pj.addr)
+					print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
+					for _,rs in ipairs(pj.roomStates) do
+						rs.ptr.enemySpawn = bit.band(0xffff, pi.addr)
+						rs.enemySpawnSet = pi
+					end
+					self.enemySpawnSets:remove(j)
+					break
+				end
+			end
+		end
+	end
+	--]]
+
+	--[[ update enemy pop
+	--[=[
+	with writing back plms removing onn-grey non-eye doors
+	and writing back room data, removing all breakable blocks and crumble blocks
+	and writing back enemy pop ranges
+	I did a playthrough and found the following bugs:
+	* a few grey doors - esp kill quota rooms - would not be solid
+	* one grey door was phantoon ... and walking outside mid-battle would show garbage tiles in the next room.
+		note that the room was normal before and after the battle.
+	* scroll glitch in the crab broke tube room in maridia
+	--]=]
+	local enemySpawnWriteRanges = WriteRange('enemy pop sets', {
+		-- original pop goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
+		{0x108000, 0x10ffff},
+	})
+	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
+		local addr, endaddr = enemySpawnWriteRanges:get(3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t')
+		enemySpawnSet.addr = addr
+		for i,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do
+			ffi.cast('enemySpawn_t*', rom + addr)[0] = enemySpawn
+			addr = addr + ffi.sizeof'enemySpawn_t'
+		end
+		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff
+		addr = addr + 2
+		rom[addr] = enemySpawnSet.enemiesToKill
+		addr = addr + 1
+
+		assert(addr == endaddr)
+		local newofs = bit.band(0xffff, enemySpawnSet.addr)
+		for _,rs in ipairs(enemySpawnSet.roomStates) do
+			if newofs ~= rs.ptr.enemySpawn then
+				print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawn)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemySpawn = newofs
+			end
+		end
+	end
+	enemySpawnWriteRanges:print()
+	--]]
+end
+	
+function SMMap:mapWriteEnemyGFXSets()
+	local rom = self.rom
+	-- [[ update enemy set
+	-- I'm sure this will fail.  there's lots of mystery padding here.
+	local enemyGFXWriteRanges = WriteRange('enemyGFX_t', {
+		{0x1a0000, 0x1a12c5},
+		-- next comes a debug routine, listed as $9809-$981e
+		-- then next comes a routine at $9961 ...
+	})
+	for j,enemyGFXSet in ipairs(self.enemyGFXSets) do
+		-- special case for the first one -- it has no name so we don't need 8 bytes preceding
+		-- it also has no entries, so that makes things easy
+		if j == 0 then
+			assert(enemyGFXSet.addr == 0)
+			assert(#enemyGFXSet.enemyGFXs == 0)
+		end 
+		local saveName = j ~= 0
+		
+		local addr, endaddr = enemyGFXWriteRanges:get(2 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t' + (saveName and 8 or 0))
+		if saveName then
+			local name = enemyGFXSet.name
+			for i=1,#name do
+				rom[addr+i-1] = name:byte(i,i)
+			end
+			addr = addr + 8
+		end
+	
+		enemyGFXSet.addr = addr
+		for i,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
+			ffi.cast('enemyGFX_t*', rom + addr)[0] = enemyGFX
+			addr = addr + ffi.sizeof'enemyGFX_t'
+		end
+		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff	-- term
+		addr = addr + 2
+
+		assert(addr == endaddr)
+		local newofs = bit.band(0x7fff, enemyGFXSet.addr) + 0x8000
+		for _,rs in ipairs(enemyGFXSet.roomStates) do
+			if newofs ~= rs.ptr.enemyGFX then
+				print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.ptr.enemyGFX)..' to '..('%04x'):format(newofs))
+				rs.ptr.enemyGFX = newofs
+			end
+		end
+	end
+	enemyGFXWriteRanges:print()
+	--]]
+end
+
 
 function SMMap:mapWriteMDBs()
 	local rom = self.rom
@@ -2857,137 +2990,14 @@ function SMMap:mapWriteRooms()
 	--]]
 end
 
-function SMMap:mapWriteEnemySpawnSets()
-	local rom = self.rom
-	-- [[ get rid of duplicate enemy pops
-	-- this currently crashes the game
-	-- notice that re-writing the enemy pops is working fine
-	-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
-	for i=1,#self.enemySpawnSets-1 do
-		local pi = self.enemySpawnSets[i]
-		for j=#self.enemySpawnSets,i+1,-1 do
-			local pj = self.enemySpawnSets[j]
-			if #pi.enemySpawns == #pj.enemySpawns 
-			and pi.enemiesToKill == pj.enemiesToKill 
-			then
-				local differ
-				for k=1,#pi.enemySpawns do
-					if pi.enemySpawns[k] ~= pj.enemySpawns[k] then
-						differ = true
-						break
-					end
-				end
-				if not differ then
-					local piaddr = ('$%06x'):format(pi.addr)
-					local pjaddr = ('$%06x'):format(pj.addr)
-					print('enemySpawns '..piaddr..' and '..pjaddr..' are matching --- removing '..pjaddr)
-					for _,rs in ipairs(pj.roomStates) do
-						rs.ptr.enemySpawn = bit.band(0xffff, pi.addr)
-						rs.enemySpawnSet = pi
-					end
-					self.enemySpawnSets:remove(j)
-				end
-			end
-		end
-	end
-	--]]
-
-	--[[ update enemy pop
-	--[=[
-	with writing back plms removing onn-grey non-eye doors
-	and writing back room data, removing all breakable blocks and crumble blocks
-	and writing back enemy pop ranges
-	I did a playthrough and found the following bugs:
-	* a few grey doors - esp kill quota rooms - would not be solid
-	* one grey door was phantoon ... and walking outside mid-battle would show garbage tiles in the next room.
-		note that the room was normal before and after the battle.
-	* scroll glitch in the crab broke tube room in maridia
-	--]=]
-	local enemySpawnWriteRanges = WriteRange('enemy pop sets', {
-		-- original pop goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
-		{0x108000, 0x10ffff},
-	})
-	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
-		local addr, endaddr = enemySpawnWriteRanges:get(3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t')
-		enemySpawnSet.addr = addr
-		for i,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do
-			ffi.cast('enemySpawn_t*', rom + addr)[0] = enemySpawn
-			addr = addr + ffi.sizeof'enemySpawn_t'
-		end
-		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff
-		addr = addr + 2
-		rom[addr] = enemySpawnSet.enemiesToKill
-		addr = addr + 1
-
-		assert(addr == endaddr)
-		local newofs = bit.band(0xffff, enemySpawnSet.addr)
-		for _,rs in ipairs(enemySpawnSet.roomStates) do
-			if newofs ~= rs.ptr.enemySpawn then
-				print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawn)..' to '..('%04x'):format(newofs))
-				rs.ptr.enemySpawn = newofs
-			end
-		end
-	end
-	enemySpawnWriteRanges:print()
-	--]]
-end
-	
-function SMMap:mapWriteEnemyGFXSets()
-	local rom = self.rom
-	-- [[ update enemy set
-	-- I'm sure this will fail.  there's lots of mystery padding here.
-	local enemyGFXWriteRanges = WriteRange('enemyGFX_t', {
-		{0x1a0000, 0x1a12c5},
-		-- next comes a debug routine, listed as $9809-$981e
-		-- then next comes a routine at $9961 ...
-	})
-	for j,enemyGFXSet in ipairs(self.enemyGFXSets) do
-		-- special case for the first one -- it has no name so we don't need 8 bytes preceding
-		-- it also has no entries, so that makes things easy
-		if j == 0 then
-			assert(enemyGFXSet.addr == 0)
-			assert(#enemyGFXSet.enemyGFXs == 0)
-		end 
-		local saveName = j ~= 0
-		
-		local addr, endaddr = enemyGFXWriteRanges:get(2 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t' + (saveName and 8 or 0))
-		if saveName then
-			local name = enemyGFXSet.name
-			for i=1,#name do
-				rom[addr+i-1] = name:byte(i,i)
-			end
-			addr = addr + 8
-		end
-	
-		enemyGFXSet.addr = addr
-		for i,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
-			ffi.cast('enemyGFX_t*', rom + addr)[0] = enemyGFX
-			addr = addr + ffi.sizeof'enemyGFX_t'
-		end
-		ffi.cast('uint16_t*', rom + addr)[0] = 0xffff	-- term
-		addr = addr + 2
-
-		assert(addr == endaddr)
-		local newofs = bit.band(0x7fff, enemyGFXSet.addr) + 0x8000
-		for _,rs in ipairs(enemyGFXSet.roomStates) do
-			if newofs ~= rs.ptr.enemyGFX then
-				print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.ptr.enemyGFX)..' to '..('%04x'):format(newofs))
-				rs.ptr.enemyGFX = newofs
-			end
-		end
-	end
-	enemyGFXWriteRanges:print()
-	--]]
-end
-
 -- write back changes to the ROM
 -- right now my structures are mixed between ptrs and by-value copied objects
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
 	-- write these before mdb_ts so they can be updated
+	self:mapWritePLMs()	
 	self:mapWriteEnemyGFXSets()		-- not yet
 	--self:mapWriteEnemySpawnSets()	-- buggy
-	self:mapWritePLMs()	
 	
 	self:mapWriteMDBs()	-- not yet
 	
