@@ -8,7 +8,7 @@ for _,addr in ipairs(sm.weaponDamageForAddr:keys():sort()) do
 	local name = dmg.name
 	local ptr = dmg.ptr
 	local damage = ptr[0]
-	damage = expRand(table.unpack(config.randomizeWeapons.weaponDamageScaleRange)) * damage
+	damage = expRand(table.unpack(config.randomizeWeaponProps.weaponDamageScaleRange)) * damage
 	ptr[0] = damage
 	print(('$%06x'):format(addr)..' = '..('%04x'):format(ptr[0])..' '..name)
 end

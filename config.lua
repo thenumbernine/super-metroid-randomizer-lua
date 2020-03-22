@@ -11,7 +11,7 @@ return {
 	-- skips the intro cutscene
 	skipIntro = true,
 	
---	randomizeEnemies = true,
+	randomizeEnemies = true,
 
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
@@ -28,17 +28,17 @@ return {
 	-- Set this to remove all items and just spread them everywhere in the world randomly.
 	-- NOTICE This is exclusive with randomizeItems
 	-- I predict the items are accessible 91.9999repeating% of the time
---	randomizeItemsScavengerHunt = true,
+	randomizeItemsScavengerHunt = true,
 --	randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
---	randomizeDoors = true,
+	randomizeDoors = true,
 
---	randomizeWeapons = true, 
+	randomizeWeapons = true, 
 
 	-- properties for each of the randomizations above
 
-	randomizeWeapons = {
+	randomizeWeaponProps = {
 		weaponDamageScaleRange = {1/3, 2},	-- new weapon damage range is 33% to 200% of original
 	},
 
