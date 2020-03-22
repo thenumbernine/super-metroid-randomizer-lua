@@ -1750,6 +1750,35 @@ local function drawstr(mapimg, posx, posy, s)
 	end
 end
 
+-- to prevent overlap
+-- honestly, excluding the empty background tiles below fixes most of this
+-- but for the solid tile output, I still want to see those types, so that's why I added this code 
+-- what regions on the map to exclude
+local mapDrawExcludeMapBlocks = {
+	{1, 0x08, 0, 1, 4, 5},	-- brinstar pink speed fall room
+	{1, 0x09, 0, 0, 1, 1},	-- brinstar pink big room
+	{1, 0x09, 0, 1, 2, 2},	-- "
+	{1, 0x0e, 0, 0, 5, 2},	-- brinstar blue first room
+	{1, 0x13, 2, 0, 3, 1},	-- brinstar bottom flea room
+	{1, 0x2c, 0, 1, 1, 1},	-- brinstar kraid fly room
+	{2, 0x04, 0, 0, 3, 3},	-- norfair speed room to ice
+	{2, 0x04, 4, 3, 3, 1},	-- "
+	{2, 0x07, 1, 0, 1, 1},	-- norfair room before ice
+	{2, 0x07, 1, 2, 1, 1},	-- "
+	{2, 0x14, 5, 0, 3, 2},	-- norfair room before grappling
+	{2, 0x21, 0, 0, 2, 2},	-- norfair lava rise room run to wave
+	{2, 0x36, 5, 0, 3, 2},	-- norfair lower first room
+	{2, 0x3e, 0, 0, 2, 3},	-- norfair lower return from gold chozo loop
+	{2, 0x48, 0, 0, 1, 2},	-- norfair lower escape last room
+	{2, 0x4b, 0, 1, 1, 5},	-- norfair lower escape first room
+	{3, 0x00, 0, 0, 2, 1},	-- wrecked ship bowling chozo room
+	{3, 0x00, 0, 2, 1, 1},	-- "
+	{3, 0x04, 0, 0, 4, 5},	-- wrecked ship main shaft
+	{3, 0x04, 5, 0, 1, 6},	-- "
+	{4, 0x03, 1, 1, 3, 1},	-- maridia fly and yellow blob room at the bottom
+	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
+}
+
 local function drawRoom(ctx, room, m)
 	local mapimg = ctx.mapimg
 	local mapBinImage = ctx.mapBinImage
@@ -1763,68 +1792,82 @@ local function drawRoom(ctx, room, m)
 
 	for j=0,h-1 do
 		for i=0,w-1 do
-			for ti=0,blocksPerRoom-1 do
-				for tj=0,blocksPerRoom-1 do
-					local dx = ti + blocksPerRoom * i
-					local dy = tj + blocksPerRoom * j
-					local di = dx + blocksPerRoom * w * dy
-					-- blocks is 1-based
-					local d1 = blocks[0 + 3 * di] or 0
-					local d2 = blocks[1 + 3 * di] or 0
-					local d3 = blocks[2 + 3 * di] or 0
-			
-					-- empty background tiles:
-					-- ff0000
-					-- ff0083
-					-- ff00ff
-					-- ff8300
-					-- ff8383
-					-- ff83ff
-					if d1 == 0xff
-					--and d2 == 0x00
-					and (d2 == 0x00 or d2 == 0x83)
-					and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
-					then
-					else
-						for pi=0,blockSizeInPixels-1 do
-							for pj=0,blockSizeInPixels-1 do
-								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
-								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
-				--for y=(m.ptr.y + j)* roomSizeInPixels + yofs, (m.ptr.y + h) * roomSizeInPixels - 1 + yofs do
-				--	for x=m.ptr.x * roomSizeInPixels + xofs, (m.ptr.x + w) * roomSizeInPixels - 1 + xofs do
-								if x >= 0 and x < mapimg.width
-								and y >= 0 and y < mapimg.height 
-								then
-									if not firstcoord then
-										firstcoord = {x,y}
+			local ignore
+			for _,info in ipairs(mapDrawExcludeMapBlocks) do
+				local region, index, mx, my, mw, mh = table.unpack(info)
+				if region == m.ptr.region
+				and index == m.ptr.index
+				and i >= mx and i < mx + mw 
+				and j >= my and j < my + mh
+				then
+					ignore = true
+					break
+				end
+			end
+			if not ignore then
+				for ti=0,blocksPerRoom-1 do
+					for tj=0,blocksPerRoom-1 do
+						local dx = ti + blocksPerRoom * i
+						local dy = tj + blocksPerRoom * j
+						local di = dx + blocksPerRoom * w * dy
+						-- blocks is 1-based
+						local d1 = blocks[0 + 3 * di] or 0
+						local d2 = blocks[1 + 3 * di] or 0
+						local d3 = blocks[2 + 3 * di] or 0
+				
+						-- empty background tiles:
+						-- ff0000
+						-- ff0083
+						-- ff00ff
+						-- ff8300
+						-- ff8383
+						-- ff83ff
+						if d1 == 0xff
+						--and d2 == 0x00
+						and (d2 == 0x00 or d2 == 0x83)
+						and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
+						then
+						else
+							for pi=0,blockSizeInPixels-1 do
+								for pj=0,blockSizeInPixels-1 do
+									local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
+									local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
+					--for y=(m.ptr.y + j)* roomSizeInPixels + yofs, (m.ptr.y + h) * roomSizeInPixels - 1 + yofs do
+					--	for x=m.ptr.x * roomSizeInPixels + xofs, (m.ptr.x + w) * roomSizeInPixels - 1 + xofs do
+									if x >= 0 and x < mapimg.width
+									and y >= 0 and y < mapimg.height 
+									then
+										if not firstcoord then
+											firstcoord = {x,y}
+										end
+										
+										mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
+										mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
+										mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
 									end
-									
-									mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
-									mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
-									mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
 								end
 							end
 						end
-					end
 
-					
-					
-					-- write out solid tiles only
+						
+						
+						-- write out solid tiles only
 
-					-- TODO isSolid will overlap between a few rooms
-					local isBorder = room:isBorder(dx,dy)
-					do --if isBorder or isSolid then
-						local isSolid = room:isSolid(dx,dy)
-						for pi=0,blockSizeInPixels-1 do
-							for pj=0,blockSizeInPixels-1 do
-								local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
-								local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
-								if x >= 0 and x < mapimg.width
-								and y >= 0 and y < mapimg.height 
-								then
-									mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = isBorder and 0xff or 0x00
-									mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = isSolid and 0xff or 0x00
-									mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = 0xff
+						-- TODO isSolid will overlap between a few rooms
+						local isBorder = room:isBorder(dx,dy)
+						do --if isBorder or isSolid then
+							local isSolid = room:isSolid(dx,dy)
+							for pi=0,blockSizeInPixels-1 do
+								for pj=0,blockSizeInPixels-1 do
+									local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.ptr.y + j))
+									local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.ptr.x + i))
+									if x >= 0 and x < mapimg.width
+									and y >= 0 and y < mapimg.height 
+									then
+										mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = isBorder and 0xff or 0x00
+										mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = isSolid and 0xff or 0x00
+										mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = 0xff
+									end
 								end
 							end
 						end

@@ -421,25 +421,30 @@ for i=#sm.mdbs,1,-1 do
 	end
 end
 
---[=[
+-- [=[
 -- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
--- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
--- I might have to just excise regions from the item-scavenger instead
 for _,info in ipairs{
-	{0, 0x00, 0,0,16,32},
-	{0, 0x00, 0,48,16,16},
+	--[[
+	-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
+	-- I might have to just excise regions from the item-scavenger instead
+	{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
+	{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
+	{1, 0x24, 0,0,16,32+6},			-- brinstar right elevator to crateria.
+	{1, 0x34, 0,16,16,16},			-- brinstar elevator to norfair / entrance to kraid
+	{2, 0x03, 0,0,16,32},			-- brinstar elevator to norfair
+	{2, 0x26, 0,16-6,16,6},			-- norfair elevator to lower norfair
+	{2, 0x36, 64,0,16,32+6},		-- norfair elevator to lower norfair
+	{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
+	{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
+	--]]
+	
+	{0, 0x00, 0,0,16,32},			-- crateria first room empty regions
+	{0, 0x00, 0,48,16,16},			-- "
 	
 	{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room 
 
-	{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
-	--{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
 	{1, 0x18, 0,16-3,16,3},			-- brinstar first missile room
-	{1, 0x24, 0,0,16,32+6},			-- brinstar right elevator to crateria.
-	{1, 0x34, 0,16,16,16},			-- brinstar elevator to norfair / entrance to kraid
 
-	{2, 0x03, 0,0,16,32},			-- brinstar elevator to norfair
-	{2, 0x26, 0,16-6,16,6},			-- brinstar elevator to lower norfair
-	{2, 0x36, 64,0,16,32+6},
 	{2, 0x48, 2, 3*16-4, 1,1},		-- return from lower norfair spade room
 	{2, 0x48, 16-2, 3*16-4, 1,1},	-- "
 
@@ -452,7 +457,6 @@ for _,info in ipairs{
 	{4, 0x0e, 14,16+3,1,2},			-- "
 	{4, 0x0e, 1,16+11,1,2},			-- "
 	{4, 0x0e, 14,16+11,1,2},		-- "
-	{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
 	{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side 
 	{4, 0x1b, 0, 32-5, 16, 4},		-- maridia green pipe in the middle pillars underneath
 	{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side 
@@ -464,7 +468,6 @@ for _,info in ipairs{
 	{4, 0x25, 16-4, 48-5, 4, 4},	-- "
 	{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
 
-	{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
 } do
 	local region, index, x1,y1,w,h = table.unpack(info)
 	local m = select(2, sm.mdbs:find(nil, function(m) 
