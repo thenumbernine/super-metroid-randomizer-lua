@@ -1311,9 +1311,7 @@ function SMMap:mapInit()
 				--]]
 
 				for _,rs in ipairs(m.roomStates) do
-					-- doesn't this condition just mean if the value & 0x7ffff ~= 0
-					--if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
-					if bit.band(0x7fff, rs.ptr.scroll) ~= 0x0000 then
+					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
 						local addr = topc(self.scrollBank, rs.ptr.scroll)
 						local size = m.ptr.width * m.ptr.height
 						rs.scrollData = range(size):map(function(i)
@@ -2836,10 +2834,12 @@ print("used a total of "..doorid.." special and non-special doors")
 			end
 		end
 	end
-	for i,scrollmod in ipairs(allScrollMods) do
+	for i=#allScrollMods,1,-1 do
+		local scrollmod = allScrollMods[i]
 		local addr = bit.band(scrollmod.addr, 0xffff)
 		if remapScrollModAddr[addr] then
 			print('TODO remove scrollmod at '..('%04x'):format(addr)..' to save '..('0x%x'):format(#scrollmod.data)..' bytes')
+			allScrollMods:remove(i)
 		end
 	end
 	--]]
@@ -3076,7 +3076,7 @@ function SMMap:mapWriteMDBs()
 	local allScrollDatas = table()
 	for _,m in ipairs(self.mdbs) do
 		for _,rs in ipairs(m.roomStates) do
-			if bit.band(rs.ptr.scroll, 0x7fff) ~= 0 then
+			if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
 				assert(rs.scrollData)
 				allScrollDatas:insert{
 					addr=rs.ptr.scroll,
@@ -3102,7 +3102,7 @@ function SMMap:mapWriteMDBs()
 			if tablesAreEqual(si.data, sj.data) then
 				local siaddr = si.addr
 				local sjaddr = sj.addr
-				print('scrolldata #'..i..' addr '..('%04x'):format(siaddr)..' and #'..j..' addr '..('%04x'):format(sjaddr)..' data matches ... removing the latter')
+				--print('scrolldata #'..i..' addr '..('%04x'):format(siaddr)..' and #'..j..' addr '..('%04x'):format(sjaddr)..' data matches ... removing the latter')
 				allScrollDatas:remove(j)
 				remapScrollDataAddr[sjaddr] = siaddr
 			end
@@ -3110,14 +3110,16 @@ function SMMap:mapWriteMDBs()
 	end
 	for _,m in ipairs(self.mdbs) do
 		for _,rs in ipairs(m.roomStates) do
-			if bit.band(rs.ptr.scroll, 0x7fff) ~= 0 then
+			if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
 				rs.ptr.scroll = remapScrollDataAddr[rs.ptr.scroll] or rs.ptr.scroll
 			end
 		end
 	end
-	for i,scrollData in ipairs(allScrollDatas) do
+	for i=#allScrollDatas,1,-1 do
+		local scrollData = allScrollDatas[i]
 		if remapScrollDataAddr[scrollData.addr] then
-			print('TODO remove scrollData at '..('%04x'):format(scrollData.addr)..' to save '..('0x%x'):format(#scrollData.data)..' bytes')
+			print('TODO remove scrolldata at '..('%04x'):format(scrollData.addr)..' to save '..('0x%x'):format(#scrollData.data)..' bytes')
+			allScrollDatas:remove(i)
 		end
 	end
 	--]]
