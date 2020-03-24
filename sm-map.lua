@@ -483,6 +483,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 			local data = table()
 			while true do
 				local screen = rom[addr] addr=addr+1
+				-- including the 0x80 terminator
 				data:insert(screen)
 				if screen == 0x80 then break end
 				local scroll = rom[addr] addr=addr+1
@@ -894,6 +895,10 @@ function Room:getTileType(x,y)
 	local ch3lo = bit.band(0x0f, ch3)
 	local ett = bit.bor(ch3lo, ch2hi)
 	return bit.rshift(ch2hi, 4), ett
+end
+
+function Room:getExtTileType(x,y)
+	return select(2, self:getTileType(x,y))
 end
 
 -- set the 'ett' 
@@ -2806,13 +2811,6 @@ print("used a total of "..doorid.." special and non-special doors")
 			allScrollMods:insert(scrollmod)
 		end
 	end
-	local function tablesAreEqual(a,b)
-		if #a ~= #b then return false end
-		for i=1,#a do
-			if a[i] ~= b[i] then return false end
-		end
-		return true
-	end
 	local remapScrollModAddr = table()	--[fromAddr] = toAddr
 	for i=1,#allScrollMods-1 do
 		local si = allScrollMods[i]
@@ -3087,13 +3085,6 @@ function SMMap:mapWriteMDBs()
 			end
 		end
 	end
-	local function tablesAreEqual(a,b)
-		if #a ~= #b then return false end
-		for i=1,#a do
-			if a[i] ~= b[i] then return false end
-		end
-		return true
-	end
 	local remapScrollDataAddr = table()	--[fromAddr] = toAddr
 	for i=1,#allScrollDatas-1 do
 		local si = allScrollDatas[i]
@@ -3119,7 +3110,7 @@ function SMMap:mapWriteMDBs()
 		local scrollData = allScrollDatas[i]
 		if remapScrollDataAddr[scrollData.addr] then
 			print('TODO remove scrolldata at '..('%04x'):format(scrollData.addr)..' to save '..('0x%x'):format(#scrollData.data)..' bytes')
-			allScrollDatas:remove(i)
+			--allScrollDatas:remove(i)
 		end
 	end
 	--]]

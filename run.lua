@@ -117,6 +117,28 @@ function shuffle(x)
 	return x
 end
 
+
+function tablesAreEqual(a,b)
+	if #a ~= #b then return false end
+	for i=1,#a do
+		if a[i] ~= b[i] then return false end
+	end
+	return true
+end
+
+function byteArraysAreEqual(a,b,len)
+	if len == nil then
+		len = ffi.sizeof(a)
+		if len ~= ffi.sizeof(b) then return false end
+	end
+	a = ffi.cast('uint8_t*', a)
+	b = ffi.cast('uint8_t*', b)
+	for i=0,len-1 do
+		if a[i] ~= b[i] then return false end
+	end
+	return true
+end
+
 local function copy(dst, src, len)
 	if len == nil then
 		if type(src) == 'cdata' then

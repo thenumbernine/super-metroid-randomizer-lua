@@ -9,9 +9,30 @@ local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
 local function burrowIntoWall(pos, breakType)
 	if not config.randomizeItemsScavengerHuntProps.burrowItems then return pos end
 	
-	local function posstr(x,y) return '['..x..', '..y..']' end	
-	
 	local x,y,room = table.unpack(pos)
+	
+	local function posstr(x,y) return '['..x..', '..y..']' end	
+
+	-- keep track of the screen pos's that you set scroll data to
+	-- then for the PLM, if it matches one of the ones we set
+	-- then reset it (so we don't scroll into it)
+	local touchedSIs = table()
+	
+	local function setScrollIfNoneToVert(x,y)
+		local sx = math.floor(x/16)
+		local sy = math.floor(y/16)
+		local si = sx + room.width/16 * sy
+		for _,rs in ipairs(room.roomStates) do
+			if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+				local sa = topc(sm.scrollBank, rs.ptr.scroll)
+				if rom[sa + si] == 0 then
+					touchedSIs[si] = true
+					rom[sa + si] = 2
+				end
+			end
+		end
+	end
+
 	-- TODO pick your break type.  TODO base it on what items you have so far.
 	breakType = breakType or pickRandom{
 		room.extTileTypes.beam_1x1,
@@ -19,9 +40,11 @@ local function burrowIntoWall(pos, breakType)
 		room.extTileTypes.powerbomb_1x1,
 		room.extTileTypes.supermissile_1x1,
 	}	
+	local origBreakType = breakType
 	room:splitCopies(x,y)
 	room:setExtTileType(x,y,breakType)
-	
+	setScrollIfNoneToVert(x,y)
+
 	--local len = math.floor(math.sqrt(math.random(100*100)))
 	local len = math.random(config.randomizeItemsScavengerHuntProps.burrowLength)
 --print('boring break type '..room.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
@@ -69,7 +92,11 @@ local function burrowIntoWall(pos, breakType)
 					-- I'll try doing that first
 					
 					x,y = nx,ny
-					room:setExtTileType(x,y,breakType)
+					-- don't clear the entrance
+					if room:getExtTileType(x,y) ~= origBreakType then
+						room:setExtTileType(x,y,breakType)
+					end
+					setScrollIfNoneToVert(x,y)
 					all:insert{x,y}
 					options:insert{x,y}
 					found=true
@@ -85,7 +112,7 @@ local function burrowIntoWall(pos, breakType)
 
 	local newpos = all:last()
 	newpos[3] = room
-	return newpos
+	return newpos, touchedSIs
 end
 
 -- [[ remove all previous items from the game
@@ -250,7 +277,7 @@ for rep=1,1 do
 
 		local enterpos = pickRandom(allLocs)
 		local room = enterpos[3]
-		local itempos = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
+		local itempos, touchedSIs = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
 		local m = pickRandom(room.mdbs:filter(function(m)
 			return allMDBSet[m]
 		end))
@@ -258,27 +285,70 @@ for rep=1,1 do
 			placeInPLMSet{mdb=m, plmset=plmset, pos=itempos, cmd=cmd}
 			-- lets try this scrollmod stuff out
 			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) then
-				--[[
-				placeInPLMSet{
-					mdb=m, 
-					plmset=plmset, 
-					pos=enterpos, 
-					cmd=0xb703, 	-- 'Normal Scroll PLM (DONE)'
+				-- [[
+				local scrollScreenIndex = math.floor(enterpos[1]/16) + room.width/16 * math.floor(enterpos[2]/16)
+				-- if we did write this from 0 to 2, then now set it back to 0
+				if touchedSIs and touchedSIs[scrollScreenIndex] then
+					for _,rs in ipairs(room.roomStates) do
+						if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+							local sa = topc(sm.scrollBank, rs.ptr.scroll)
+							rom[sa + scrollScreenIndex] = 0
+						end
+					end
+				end
+				local scrollModData = table{scrollScreenIndex, 1, 0x80}
+				local scrollModAddr
+				--[=[ only search genuine scrollmod data
+				for _,plmset in ipairs(sm.plmsets) do
+					for _,scrollmod in ipairs(plmset.scrollmods) do
+						if tablesAreEqual(scrollmod.data, scrollModData) then
+							scrollModAddr = scrollmod.addr
+							break
+						end
+					end
+					if scrollModAddr then break end 
+				end
+				--]=]
+				-- [=[ search everything in the scrollmod data bank
+				-- TODO this might fail if the data we use is a ptr that gets update
+				-- it'll certainly fail when I get mdb writing working
+				for i=0x78000,0x7ffff do
+					if byteArraysAreEqual(tableToByteArray(scrollModData), rom+i, #scrollModData) then
+						scrollModAddr = bit.band(i, 0xffff)
+						break
+					end
+				end
+				--]=]
+				-- TODO you don't need to only use scrollmod data ...
+				--  you can use anything in this bank
+				if not scrollModAddr then
+					print("couldn't find scrollmod for data "..scrollModData:mapi(function(c) return ('%02x'):format(c) end):concat' ')
+					-- TODO add a new one over one of the many duplicate unused scrollmods (about 35 in total)
+				else
+					print("found scrollmod with addr "..('%04x'):format(scrollModAddr))
 				
-					-- TODO has to point to a new set of scrollmod data
-					-- how should I save this for later?
-					-- make up a fake addr, and expect mapWrite to move it anyways
-					plmarg=fakeaddr,
-				
-				)
-				-- I don't save scrollmods yet ...
-				-- TODO to get this working i need to save scrollmods, and therefore I need to save mdbs
-				plmset.scrollmods:insert{
-					addr = fakeaddr,
-					data = table{
+					placeInPLMSet{
+						mdb=m, 
+						plmset=plmset, 
+						pos=enterpos, 
+						cmd=sm.plmCmdValueForName.scrollmod, 	-- 'Normal Scroll PLM (DONE)'
 					
-					},
-				} 
+						-- TODO has to point to a new set of scrollmod data
+						-- how should I save this for later?
+						-- make up a fake addr, and expect mapWrite to move it anyways
+						plmarg=bit.band(0xffff, scrollModAddr),
+					}
+					--[=[
+					-- I don't save scrollmods yet ...
+					-- TODO to get this working i need to save scrollmods, and therefore I need to save mdbs
+					plmset.scrollmods:insert{
+						addr = fakeaddr,
+						data = table{
+						
+						},
+					} 
+					--]=]
+				end
 				--]]
 			end
 			-- ah but now you also have to add to the plm scrollmod list of the mdb ...
