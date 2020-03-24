@@ -6,12 +6,14 @@ local rom = sm.rom
 local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
 
 -- TODO make sure the player has bombs or springball first
-local function boreIntoWall(pos)
+local function burrowIntoWall(pos, breakType)
+	if not config.randomizeItemsScavengerHuntProps.burrowItems then return pos end
+	
 	local function posstr(x,y) return '['..x..', '..y..']' end	
 	
 	local x,y,room = table.unpack(pos)
 	-- TODO pick your break type.  TODO base it on what items you have so far.
-	local breakType = pickRandom{
+	breakType = breakType or pickRandom{
 		room.extTileTypes.beam_1x1,
 		room.extTileTypes.bombable_1x1,
 		room.extTileTypes.powerbomb_1x1,
@@ -21,14 +23,14 @@ local function boreIntoWall(pos)
 	room:setExtTileType(x,y,breakType)
 	
 	--local len = math.floor(math.sqrt(math.random(100*100)))
-	local len = math.random(100)
+	local len = math.random(config.randomizeItemsScavengerHuntProps.burrowLength)
 --print('boring break type '..room.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
 	
 	-- after the first one, set them to something easier ... empty maybe?
 	-- or TODO make sure the player has room to stand up
 	breakType = room.tileTypes.empty
 
-	local method = pickRandom{'worm', 'spider'}
+	local burrowMethod = pickRandom{'worm', 'spider'}
 
 	local all = table{{x,y}}
 	local options = table{{x,y}}
@@ -36,10 +38,10 @@ local function boreIntoWall(pos)
 		if #options == 0 then break end
 --print('searching '..posstr(x,y))		
 		local x,y
-		if method == 'worm' then
+		if burrowMethod == 'worm' then
 			-- does one long path:
 			x,y = table.unpack(options:remove(math.random(#options)))
-		elseif method == 'spider' then
+		elseif burrowMethod == 'spider' then
 			-- does fractures of paths
 			x,y = table.unpack(pickRandom(options))
 		end
@@ -60,6 +62,12 @@ local function boreIntoWall(pos)
 				end
 				assert(solidSides < 4)	-- shouldn't have 4 if we just came from a 1
 				if solidSides == 3 then
+					-- ok right here, we are placing a new block
+					-- if it is the 2nd block, i.e. if x,y == the starting x,y
+					-- then we want to insert here a PLM b703
+					-- actually ... why can't we do it on the first block anyways?  will that ruin the shootable block type?
+					-- I'll try doing that first
+					
 					x,y = nx,ny
 					room:setExtTileType(x,y,breakType)
 					all:insert{x,y}
@@ -87,8 +95,12 @@ for _,plmset in ipairs(sm.plmsets) do
 		local name = sm.plmCmdNameForValue[plmset.plms[i].cmd]
 		if name 
 		and name:match'^item_' 
-		and name ~= 'item_morph'	-- don't remove morph ball... or else
-		then
+		and not name:match'^item_morph'	-- don't remove morph ball... or else
+		and (
+			-- if we are burrowing items then don't burrow bombs
+			not config.randomizeItemsScavengerHuntProps.burrowItems  
+			or not name:match'^item_bomb'	-- hmm, now that we have this burrowing items ...  
+		) then
 			plmset.plms:remove(i)
 	
 			local base,suffix = name:match'(.*)_chozo$'
@@ -142,6 +154,7 @@ for _,room in ipairs(allRooms) do
 	for y=0,room.height-1 do
 		for x=0,room.width-1 do
 			if room:isBorderAndNotCopy(x,y) then
+			-- TODO CHECK PLMS.  THOSE FACES IN BLUE BRINSTAR WILL SPAWN OVER ITEMS.
 				allLocs:insert{x,y,room}
 				locsPerRoom[room.addr]:insert{x,y,room}
 			end
@@ -149,20 +162,23 @@ for _,room in ipairs(allRooms) do
 	end
 end
 
-local function placeInPLMSet(plmset, pos, cmd, m)	-- m is only for debug printing
+local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for debug printing
+	local m = args.mdb
+	local plmset = args.plmset
+	local pos = args.pos
+	local cmd = args.cmd
+	local plmarg = args.args or 0
 	local x,y = table.unpack(pos)	
-	local name = sm.plmCmdNameForValue[cmd]
-	local roomid = ('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-		
 	print('placing in room '
-		..roomid
+		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 		..' at '..x..', '..y
-		..' item '..name)
+		..' plm '..sm.plmCmdNameForValue[cmd])
 	plmset.plms:insert(
 		ffi.new('plm_t', {
 			cmd = cmd,
 			x = x,
 			y = y,
+			args = plmarg,
 		})
 	)
 end
@@ -208,12 +224,12 @@ do
 	local pos = pickRandom(poss)
 	local room = pos[3]
 	assert(room.mdbs, "found a room without any mdbs")
-	pos = boreIntoWall(pos)	-- now bore a hole in the room and place the item at the end of it
+--	pos = burrowIntoWall(pos, room.extTileTypes.beam_1x1)
 	local m = pickRandom(room.mdbs:filter(function(m) 
 		return firstMissileMDBs:find(m)
 	end))
 	for _,plmset in ipairs(getAllMDBPLMs(m)) do
-		placeInPLMSet(plmset, pos, sm.plmCmdValueForName.item_missile, m)
+		placeInPLMSet{mdb=m, plmset=plmset, pos=pos, cmd=sm.plmCmdValueForName.item_missile}
 	end
 	-- TODO and remove the location from the list of being picked again?
 end
@@ -227,19 +243,45 @@ for rep=1,1 do
 		-- reveal all items for now
 		local name = sm.plmCmdNameForValue[cmd]
 		name = name:gsub('_chozo', ''):gsub('_hidden', '')	
-		if config.randomizeItemsScavengerHuntHidden then
+		if config.randomizeItemsScavengerHuntProps.hideItems then
 			name = name .. '_chozo'
 		end
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
 
-		local pos = pickRandom(allLocs)
-		local room = pos[3]
-		pos = boreIntoWall(pos)	-- now bore a hole in the room and place the item at the end of it
+		local enterpos = pickRandom(allLocs)
+		local room = enterpos[3]
+		local itempos = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
 		local m = pickRandom(room.mdbs:filter(function(m)
 			return allMDBSet[m]
 		end))
 		for _,plmset in ipairs(getAllMDBPLMs(m)) do
-			placeInPLMSet(plmset, pos, cmd, m)
+			placeInPLMSet{mdb=m, plmset=plmset, pos=itempos, cmd=cmd}
+			-- lets try this scrollmod stuff out
+			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) then
+				--[[
+				placeInPLMSet{
+					mdb=m, 
+					plmset=plmset, 
+					pos=enterpos, 
+					cmd=0xb703, 	-- 'Normal Scroll PLM (DONE)'
+				
+					-- TODO has to point to a new set of scrollmod data
+					-- how should I save this for later?
+					-- make up a fake addr, and expect mapWrite to move it anyways
+					plmarg=fakeaddr,
+				
+				)
+				-- I don't save scrollmods yet ...
+				-- TODO to get this working i need to save scrollmods, and therefore I need to save mdbs
+				plmset.scrollmods:insert{
+					addr = fakeaddr,
+					data = table{
+					
+					},
+				} 
+				--]]
+			end
+			-- ah but now you also have to add to the plm scrollmod list of the mdb ...
 		end
 	end
 end

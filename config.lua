@@ -11,6 +11,7 @@ return {
 	-- skips the intro cutscene
 	skipIntro = true,
 	
+	-- this just randomizes enemy stats, not their placement
 	randomizeEnemies = true,
 
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
@@ -29,14 +30,25 @@ return {
 	-- NOTICE This is exclusive with randomizeItems
 	-- I predict the items are accessible 91.9999repeating% of the time
 	randomizeItemsScavengerHunt = true,
---	randomizeItemsScavengerHuntHidden = true,	-- whether to hide items or not.  caution, you might want to start with x-ray scope
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
-	randomizeDoors = true,
+--	randomizeDoors = true,
 
-	randomizeWeapons = true, 
+	-- randomize weapon damages
+--	randomizeWeapons = true, 
 
-	-- properties for each of the randomizations above
+
+	---------------------------------------------------------
+	---- properties for each of the randomizations above ----
+	---------------------------------------------------------
+
+
+	randomizeItemsScavengerHuntProps = {
+		hideItems = false,		-- whether to hide items or not.  caution, you might want to start with x-ray scope
+
+		burrowItems = true,
+		burrowLength = 100,		-- how far to try to burrow items into the wall
+	},
 
 	randomizeWeaponProps = {
 		weaponDamageScaleRange = {1/3, 2},	-- new weapon damage range is 33% to 200% of original
@@ -93,7 +105,8 @@ return {
 	randomizeDoorProps = {
 		-- set this to override the # colored doors placed throughout the world
 		-- TODO one idea for overlapping door ids: make sure they have matching colors
-		numColoredDoors = 128,
+		--numColoredDoors = 128,
+		numColoredDoors = 32,
 	},
 
 	-- used by item randomization

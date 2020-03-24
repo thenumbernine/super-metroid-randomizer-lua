@@ -44,7 +44,7 @@ local roomselect2_t = struct'roomselect2_t'{
 
 local roomstate_t = struct'roomstate_t'{
 	{roomAddr = 'uint16_t'},
-	{roomBank = 'uint8_t'},
+	{roomBank = 'uint8_t'},		-- usu c2-c9
 	{gfxSet = 'uint8_t'},
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
@@ -1168,17 +1168,24 @@ function SMMap:mapAddLayerHandling(addr)
 	return layerHandling
 end
 
-SMMap.scrollBank = 0x8f
+SMMap.fx1Bank = 0x83
+SMMap.doorBank = 0x83
+
+-- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
 SMMap.mdbBank = 0x8e
 SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
+SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
+SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
+-- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
+SMMap.bgBank = 0x8f			
+SMMap.doorCodeBank = 0x8f
+-- then comes a group o fplms, and then comes a group of layer handling
+SMMap.layerHandlingBank = 0x8f
+-- TODO if there was a 'plm bank' it would go here
+-- and then we go back to some more mdbs
+
 SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
-SMMap.fx1Bank = 0x83
-SMMap.bgBank = 0x8f
-SMMap.layerHandlingBank = 0x8f
-SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
-SMMap.doorBank = 0x83
-SMMap.doorCodeBank = 0x8f
 
 function SMMap:mapInit()
 	local rom = self.rom
@@ -1304,7 +1311,9 @@ function SMMap:mapInit()
 				--]]
 
 				for _,rs in ipairs(m.roomStates) do
-					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+					-- doesn't this condition just mean if the value & 0x7ffff ~= 0
+					--if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+					if bit.band(0x7fff, rs.ptr.scroll) ~= 0x0000 then
 						local addr = topc(self.scrollBank, rs.ptr.scroll)
 						local size = m.ptr.width * m.ptr.height
 						rs.scrollData = range(size):map(function(i)
@@ -2168,6 +2177,13 @@ function SMMap:mapPrintRooms()
 			print(' '..tolua(door))
 		end
 		print('blocksForExit'..tolua(room.blocksForExit))	-- exit information
+		print' roomstate scrolldata:'
+		for _,rs in ipairs(room.roomStates) do
+			if rs.scrollData then
+				print(('  $%06x'):format(ffi.cast('uint8_t*',rs.ptr)-sm.rom))
+				printblock(tableToByteArray(rs.scrollData), w/16)
+			end
+		end
 	end
 end
 
@@ -2766,7 +2782,8 @@ print("used a total of "..doorid.." special and non-special doors")
 			end
 		end
 	end
-	-- [=[ remove empty plmsets
+	--]]
+	-- [[ remove empty plmsets
 	for i=#self.plmsets,1,-1 do
 		local plmset = self.plmsets[i]
 		if #plmset.plms == 0 then
@@ -2774,13 +2791,55 @@ print("used a total of "..doorid.." special and non-special doors")
 			self.plmsets:remove(i)
 		end
 	end
-	--]=]
+	--]]
 	-- [[ remove plmsets not referenced by any roomstates
 	for i=#self.plmsets,1,-1 do
 		local plmset = self.plmsets[i]
 		if #plmset.roomStates == 0 then
 			print('!!! removing plmset that is never referenced !!! '..('%06x'):format(plmset.addr))
 			self.plmsets:remove(i)
+		end
+	end
+	--]]
+	-- [[ if two plms point to matching scrollmods then point them to the same scrollmod
+	local allScrollMods = table()
+	for _,plmset in ipairs(self.plmsets) do
+		for _,scrollmod in ipairs(plmset.scrollmods) do
+			allScrollMods:insert(scrollmod)
+		end
+	end
+	local function tablesAreEqual(a,b)
+		if #a ~= #b then return false end
+		for i=1,#a do
+			if a[i] ~= b[i] then return false end
+		end
+		return true
+	end
+	local remapScrollModAddr = table()	--[fromAddr] = toAddr
+	for i=1,#allScrollMods-1 do
+		local si = allScrollMods[i]
+		for j=#allScrollMods,i+1,-1 do
+			local sj = allScrollMods[j]
+			if tablesAreEqual(si.data, sj.data) then
+				local siaddr = bit.band(0xffff, si.addr)
+				local sjaddr = bit.band(0xffff, sj.addr)
+				print('scrollmod #'..i..' addr '..('%04x'):format(siaddr)..' and #'..j..' addr '..('%04x'):format(sjaddr)..' data matches ... removing the latter')
+				allScrollMods:remove(j)
+				remapScrollModAddr[sjaddr] = siaddr
+			end
+		end
+	end
+	for _,plmset in ipairs(self.plmsets) do
+		for _,plm in ipairs(plmset.plms) do
+			if plm.cmd == self.plmCmdValueForName.scrollmod then
+				plm.args = remapScrollModAddr[plm.args] or plm.args
+			end
+		end
+	end
+	for i,scrollmod in ipairs(allScrollMods) do
+		local addr = bit.band(scrollmod.addr, 0xffff)
+		if remapScrollModAddr[addr] then
+			print('TODO remove scrollmod at '..('%04x'):format(addr)..' to save '..('0x%x'):format(#scrollmod.data)..' bytes')
 		end
 	end
 	--]]
@@ -2838,10 +2897,14 @@ print("used a total of "..doorid.." special and non-special doors")
 		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
 		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
 		{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
+		
+		-- TODO don't use this until you're sure of what it is.
 		-- then comes a lot of unknown data 
 		-- this is listed as 'free data' in the metroid rom map
 		-- however $7ff00 is where the wake_zebes.ips door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
-		--{0x7e99b, 0x7ffff},	
+		{0x7e99b, 0x7ffff},	
+	
+		-- TODO write the map rooms first.  that is compressing at 50% of the original.  there is room to spare there.
 	})
 
 	-- TODO any code that points to a PLM needs to be updated as well
@@ -3006,6 +3069,61 @@ end
 
 function SMMap:mapWriteMDBs()
 	local rom = self.rom
+	
+	
+	-- [[ if two roomstates point to matching scrolldata then point them to the same scrolldata
+	-- notice this is nearly identical to the plms + scrollmod testing
+	local allScrollDatas = table()
+	for _,m in ipairs(self.mdbs) do
+		for _,rs in ipairs(m.roomStates) do
+			if bit.band(rs.ptr.scroll, 0x7fff) ~= 0 then
+				assert(rs.scrollData)
+				allScrollDatas:insert{
+					addr=rs.ptr.scroll,
+					data=rs.scrollData,
+				}
+			else
+				assert(not rs.scrollData)
+			end
+		end
+	end
+	local function tablesAreEqual(a,b)
+		if #a ~= #b then return false end
+		for i=1,#a do
+			if a[i] ~= b[i] then return false end
+		end
+		return true
+	end
+	local remapScrollDataAddr = table()	--[fromAddr] = toAddr
+	for i=1,#allScrollDatas-1 do
+		local si = allScrollDatas[i]
+		for j=#allScrollDatas,i+1,-1 do
+			local sj = allScrollDatas[j]
+			if tablesAreEqual(si.data, sj.data) then
+				local siaddr = si.addr
+				local sjaddr = sj.addr
+				print('scrolldata #'..i..' addr '..('%04x'):format(siaddr)..' and #'..j..' addr '..('%04x'):format(sjaddr)..' data matches ... removing the latter')
+				allScrollDatas:remove(j)
+				remapScrollDataAddr[sjaddr] = siaddr
+			end
+		end
+	end
+	for _,m in ipairs(self.mdbs) do
+		for _,rs in ipairs(m.roomStates) do
+			if bit.band(rs.ptr.scroll, 0x7fff) ~= 0 then
+				rs.ptr.scroll = remapScrollDataAddr[rs.ptr.scroll] or rs.ptr.scroll
+			end
+		end
+	end
+	for i,scrollData in ipairs(allScrollDatas) do
+		if remapScrollDataAddr[scrollData.addr] then
+			print('TODO remove scrollData at '..('%04x'):format(scrollData.addr)..' to save '..('0x%x'):format(#scrollData.data)..' bytes')
+		end
+	end
+	--]]
+	
+	
+	
 	-- writing back mdb_t
 	-- if you move a mdb_t
 	-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
@@ -3020,6 +3138,9 @@ function SMMap:mapWriteMDBs()
 		{0x7e82c, 0x7e85a},	-- single mdb of region 7
 		-- then comes door code
 	})
+
+	-- compress roomstates ...
+	-- for all plm scrollmods, if they have matching data then combine their addresses
 
 	for _,m in ipairs(self.mdbs) do
 		-- write the mdb_t
@@ -3108,14 +3229,16 @@ end
 -- right now my structures are mixed between ptrs and by-value copied objects
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
-	-- write these before mdb_ts so they can be updated
-	self:mapWritePLMs()	
+	-- [[ write these before writing roomstates
+	-- write rooms first so the rest can use the free space?
+	--  too bad, they use a different bank from the others
+	self:mapWriteRooms()
+	self:mapWritePLMs()
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
-	
+	--]]
+
 	self:mapWriteMDBs()	-- not yet
-	
-	self:mapWriteRooms()
 end
 
 return SMMap
