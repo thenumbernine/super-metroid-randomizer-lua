@@ -730,56 +730,57 @@ Room.tileTypes = {
 }
 -- this is ch3lo:ch2hi
 Room.extTileTypes = {
-	spike_solid_1x1			= 0x0200,
-	spike_notsolid_1x1		= 0x0202,
-	push_quicksand1			= 0x0300,
-	push_quicksand2			= 0x0301,
-	push_quicksand3			= 0x0302,
-	push_quicksand4			= 0x0303,
-	push_quicksand1_2		= 0x0305,
-	push_conveyor_right		= 0x0308,
-	push_conveyor_left		= 0x0309,
-	spike_solid2_1x1		= 0x0a00,
-	spike_notsolid2_1x1		= 0x0a03,
-	invisble_solid			= 0x0a0e,
-	spike_notsolid3_1x1		= 0x0a0f,
-	crumble_1x1_regen		= 0x0b00,
-	crumble_2x1_regen		= 0x0b01,
-	crumble_1x2_regen		= 0x0b02,
-	crumble_2x2_regen		= 0x0b03,
-	crumble_1x1				= 0x0b04,
-	crumble_2x1				= 0x0b05,
-	crumble_1x2				= 0x0b06,
-	crumble_2x2				= 0x0b07,
-	speed_regen				= 0x0b0e,
-	speed					= 0x0b0f,
-	beam_1x1_regen			= 0x0c00,
-	beam_2x1_regen			= 0x0c01,
-	beam_1x2_regen			= 0x0c02,
-	beam_2x2_regen			= 0x0c03,
-	beam_1x1				= 0x0c04,
-	beam_2x1				= 0x0c05,
-	beam_1x2				= 0x0c06,
-	beam_2x2				= 0x0c07,
-	powerbomb_1x1			= 0x0c09,
-	supermissile_1x1_regen	= 0x0c0a,
-	supermissile_1x1		= 0x0c0b,
-	grappling				= 0x0e00,
-	grappling_break_regen 	= 0x0e01,
-	grappling_break			= 0x0e02,
-	bombable_1x1_regen		= 0x0f00,
-	bombable_2x1_regen		= 0x0f01,
-	bombable_1x2_regen		= 0x0f02,
-	bombable_2x2_regen		= 0x0f03,
-	bombable_1x1			= 0x0f04,
-	bombable_2x1			= 0x0f05,
-	bombable_1x2			= 0x0f06,
-	bombable_2x2			= 0x0f07,
+	spike_solid_1x1			= 0x20,
+	spike_notsolid_1x1		= 0x22,
+	push_quicksand1			= 0x30,
+	push_quicksand2			= 0x31,
+	push_quicksand3			= 0x32,
+	push_quicksand4			= 0x33,
+	push_quicksand1_2		= 0x35,
+	push_conveyor_right		= 0x38,
+	push_conveyor_left		= 0x39,
+	spike_solid2_1x1		= 0xa0,
+	spike_notsolid2_1x1		= 0xa3,
+	invisble_solid			= 0xae,
+	spike_notsolid3_1x1		= 0xaf,
+	crumble_1x1_regen		= 0xb0,
+	crumble_2x1_regen		= 0xb1,
+	crumble_1x2_regen		= 0xb2,
+	crumble_2x2_regen		= 0xb3,
+	crumble_1x1				= 0xb4,
+	crumble_2x1				= 0xb5,
+	crumble_1x2				= 0xb6,
+	crumble_2x2				= 0xb7,
+	speed_regen				= 0xbe,
+	speed					= 0xbf,
+	beam_1x1_regen			= 0xc0,
+	beam_2x1_regen			= 0xc1,
+	beam_1x2_regen			= 0xc2,
+	beam_2x2_regen			= 0xc3,
+	beam_1x1				= 0xc4,
+	beam_2x1				= 0xc5,
+	beam_1x2				= 0xc6,
+	beam_2x2				= 0xc7,
+	powerbomb_1x1			= 0xc9,
+	supermissile_1x1_regen	= 0xca,
+	supermissile_1x1		= 0xcb,
+	grappling				= 0xe0,
+	grappling_break_regen 	= 0xe1,
+	grappling_break			= 0xe2,
+	bombable_1x1_regen		= 0xf0,
+	bombable_2x1_regen		= 0xf1,
+	bombable_1x2_regen		= 0xf2,
+	bombable_2x2_regen		= 0xf3,
+	bombable_1x1			= 0xf4,
+	bombable_2x1			= 0xf5,
+	bombable_1x2			= 0xf6,
+	bombable_2x2			= 0xf7,
 }
+Room.extTileTypeNameForValue = setmetatable(table.map(Room.extTileTypes, function(v,k) return k,v end), nil)
 
 Room.oobType = Room.tileTypes.solid -- consider the outside to be solid
 
-function Room:tileData(x,y)
+function Room:getTileData(x,y)
 	assert(x >= 0 and x < self.width)
 	assert(y >= 0 and y < self.height)
 	local bi = 3 * (x + self.width * y)
@@ -789,29 +790,36 @@ function Room:tileData(x,y)
 	return ch1, ch2, ch3
 end
 
---[[
-returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
---]]
-function Room:tileType(x,y)
+function Room:setTileData(x,y,ch1,ch2,ch3)
+	assert(x >= 0 and x < self.width)
+	assert(y >= 0 and y < self.height)
+	local bi = 3 * (x + self.width * y)
+	self.blocks[0 + bi] = ch1
+	self.blocks[1 + bi] = ch2
+	self.blocks[2 + bi] = ch3
+end
+
+
+-- for position x,y, returns the real x,y that the tile type is determined by
+function Room:getCopySource(x,y)
 	while true do
 		if x < 0 or x >= self.width
 		or y < 0 or y >= self.height
 		then 
-			return self.oobType
+			return x,y
 		end
 	
-		local ch1, ch2, ch3 = self:tileData(x,y)
+		local ch1, ch2, ch3 = self:getTileData(x,y)
 		local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
+		-- TODO the next channel states how far to copy
+		-- so we really have to scan the whole map (up front)
+		-- and then make a list keyed by the copy-source position, listing all blocks which do copy that copy-source position
 		if ch2hi == self.tileTypes.copy_up then
 			y = y - 1
 		elseif ch2hi == self.tileTypes.copy_left then
 			x = x - 1
 		else
-			return ch2hi,
-				bit.bor(
-					bit.band(ch3, 0xf),
-					bit.lshift(ch2hi, 4)
-				)
+			return x,y
 		end
 	end
 	error'here'
@@ -819,8 +827,8 @@ end
 
 -- returns true if this is a 'is copy up / left' tile
 function Room:isCopy(x,y)
-	-- don't use tileType because this uses the copy_*
-	local _, ch2 = self:tileData(x,y)
+	-- don't use getTileType because this uses the copy_*
+	local _, ch2 = self:getTileData(x,y)
 	local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
 	return ch2hi == self.tileTypes.copy_left 
 		or ch2hi == self.tileTypes.copy_up
@@ -828,25 +836,96 @@ end
 
 -- returns true if this is targetted by a 'copy up / left' tile
 function Room:isCopied(x,y)
+	local copiedRight = false
+	local copiedUp = false
 	if x < self.width-1 then
-		local _, ch2L = self:tileData(x+1,y)
-		local ch2Lhi = bit.band(0xf, bit.rshift(ch2L, 4))
-		if ch2Lhi == self.tileTypes.copy_left then return true end
+		local _, ch2R = self:getTileData(x+1,y)
+		local ch2Rhi = bit.band(0xf, bit.rshift(ch2R, 4))
+		copiedRight = ch2Rhi == self.tileTypes.copy_left
 	end
 	if y < self.height-1 then
-		local _, ch2U = self:tileData(x,y+1)
+		local _, ch2U = self:getTileData(x,y+1)
 		local ch2Uhi = bit.band(0xf, bit.rshift(ch2U, 4))
-		if ch2Uhi == self.tileTypes.copy_up then return true end
+		copiedUp = ch2Uhi == self.tileTypes.copy_up
 	end
-	return false
+	return copiedRight and copiedUp, copiedRight, copiedUp
 end
 
+-- run this from a copied tile
+-- returns a quick span right then a quick span down of all copies 
+function Room:getAllCopyLocs(x,y)
+	local locs = table{x,y}
+	local checked = table{x,y}
+	while #checked > 0 do
+		local ch = checked:remove()
+		local _, ch2R = self:getTileData(x+1,y)
+error'finish me - but you might have to redo all copies'
+	end
+end
+
+-- if a block is a copy or is copied then replace it and all copies with its copy source
+function Room:splitCopies(x,y)
+print'finish me plz'
+do return end
+	if self:isCopy(x,y) or self:isCopied(x,y) then
+		local sx,sy = self:getCopySource(x,y)
+		local _, ett = self:getTileType(sx,sy)
+		for _,pos in ipairs(self:getAllCopyLocs(sx,sy)) do
+			self:setTileType(pos[1], pos[2], ett)
+		end
+	end
+end
+
+
+
+--[[
+returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
+--]]
+function Room:getTileType(x,y)
+	x,y = self:getCopySource(x,y)
+	if x < 0 or x >= self.width
+	or y < 0 or y >= self.height
+	then 
+		return self.oobType
+	end
+	assert(not self:isCopy(x,y))
+	local ch1, ch2, ch3 = self:getTileData(x,y)
+	local ch2hi = bit.band(0xf0, ch2)
+	local ch3lo = bit.band(0x0f, ch3)
+	local ett = bit.bor(ch3lo, ch2hi)
+	return bit.rshift(ch2hi, 4), ett
+end
+
+-- set the 'ett' 
+function Room:setExtTileType(x,y,ett)
+	assert(x >= 0 and x < self.width)
+	assert(y >= 0 and y < self.height)
+	local bi = 3 * (x + self.width * y)
+	local b = self.blocks[1 + bi]
+	local c = self.blocks[2 + bi]
+
+	-- TODO if it is a copy tile then break whatever it is copying from
+	local ch3lo = bit.band(0x0f, ett)
+	local ch2hi = bit.band(0xf0, ett)
+--print('setting '..x..', '..y..' ett '..('%x (%x, %x)'):format(ett, bit.rshift(ch2hi, 4), ch3lo))
+	local a,b,c = self:getTileData(x,y)
+--print(' data was '..('%02x %02x %02x'):format(a,b,c))	
+	b = bit.bor(bit.band(b, 0x0f), ch2hi)
+	c = bit.bor(bit.band(c, 0xf0), ch3lo)
+--print(' data now '..('%02x %02x %02x'):format(a,b,c))	
+
+	self.blocks[1 + bi] = b
+	self.blocks[2 + bi] = c
+end
+
+-- notice this asks 'is is the 'solid' type?'
+-- it does not ask 'is it a solid collidable block?'
 function Room:isSolid(x,y) 
-	return self:tileType(x,y) == self.tileTypes.solid
+	return self:getTileType(x,y) == self.tileTypes.solid
 end
 
 function Room:isAccessible(x,y) 
-	local tt, ett = self:tileType(x,y)
+	local tt, ett = self:getTileType(x,y)
 	return tt == self.tileTypes.empty 
 		or tt == self.tileTypes.crumble_or_speed
 		or tt == self.tileTypes.breakable

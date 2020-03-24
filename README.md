@@ -20,7 +20,9 @@ randomizes the following:
 - item shuffle previous locations
 - weapon damages
 - doors (NOTICE the item accessibility search doesn't take this into account yet)
-- item placement / scavenger hunt mode.  If randomizing doors had no guarantees, this has even less.
+- item scavenger hunt mode.  Put items at any accessible in the map (99% of the time).  If randomizing doors had no guarantees, this has even less.
+	- optionally hide the items
+	- optionally burrow them into the wall so you just see the break block + start of the passage to get to them.
 
 The item placement algorithm does a depth-first search to make sure that there is at least one possible run that will result in the game being won.
 

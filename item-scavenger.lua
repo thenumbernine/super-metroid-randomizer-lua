@@ -3,6 +3,83 @@ local config = require 'config'
 
 local rom = sm.rom
 
+local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
+
+-- TODO make sure the player has bombs or springball first
+local function boreIntoWall(pos)
+	local function posstr(x,y) return '['..x..', '..y..']' end	
+	
+	local x,y,room = table.unpack(pos)
+	-- TODO pick your break type.  TODO base it on what items you have so far.
+	local breakType = pickRandom{
+		room.extTileTypes.beam_1x1,
+		room.extTileTypes.bombable_1x1,
+		room.extTileTypes.powerbomb_1x1,
+		room.extTileTypes.supermissile_1x1,
+	}	
+	room:splitCopies(x,y)
+	room:setExtTileType(x,y,breakType)
+	
+	--local len = math.floor(math.sqrt(math.random(100*100)))
+	local len = math.random(100)
+--print('boring break type '..room.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
+	
+	-- after the first one, set them to something easier ... empty maybe?
+	-- or TODO make sure the player has room to stand up
+	breakType = room.tileTypes.empty
+
+	local method = pickRandom{'worm', 'spider'}
+
+	local all = table{{x,y}}
+	local options = table{{x,y}}
+	for i=1,len do
+		if #options == 0 then break end
+--print('searching '..posstr(x,y))		
+		local x,y
+		if method == 'worm' then
+			-- does one long path:
+			x,y = table.unpack(options:remove(math.random(#options)))
+		elseif method == 'spider' then
+			-- does fractures of paths
+			x,y = table.unpack(pickRandom(options))
+		end
+		local found
+		for _,dir in ipairs(dirs:shuffle()) do
+			local nx, ny = x + dir[1], y + dir[2]
+--print('examining '..posstr(nx,ny))		
+			-- don't include the border
+			if nx >= 1 and nx < room.width-1 
+			and ny >= 1 and ny < room.height-1
+			then
+				-- if the new place is blocked on 3 out of 4 sides then it is good
+				local solidSides = 0
+				for _,odir in ipairs(dirs) do
+					if room:isSolid(nx+odir[1], ny+odir[2]) then 
+						solidSides = solidSides + 1 
+					end
+				end
+				assert(solidSides < 4)	-- shouldn't have 4 if we just came from a 1
+				if solidSides == 3 then
+					x,y = nx,ny
+					room:setExtTileType(x,y,breakType)
+					all:insert{x,y}
+					options:insert{x,y}
+					found=true
+--print('boring in wall '..posstr(x,y))
+					break
+				end
+			end
+		end
+		if not found then
+--print('...exhausted all dirs')		
+		end
+	end
+
+	local newpos = all:last()
+	newpos[3] = room
+	return newpos
+end
+
 -- [[ remove all previous items from the game
 local removedItemCmds = table()
 for _,plmset in ipairs(sm.plmsets) do
@@ -22,8 +99,6 @@ for _,plmset in ipairs(sm.plmsets) do
 	
 			-- collect all base names
 			removedItemCmds:insert(sm.plmCmdValueForName[name])
-		
-			-- TODO -- if the name was _chozo or _hidden then replace the block with a shootable block
 		end
 	end
 end
@@ -124,21 +199,16 @@ do
 --	end):unpack())
 	local poss = table()
 	for _,room in ipairs(rooms) do
-		print('room '..('%06x'):format(room.addr)..' has locs:')
+--print('room '..('%06x'):format(room.addr)..' has locs:')
 		for _,loc in ipairs(locsPerRoom[room.addr]) do
-			print('', table.unpack(loc))
+--print('', table.unpack(loc))
 			poss:insert(loc)
 		end
 	end	
 	local pos = pickRandom(poss)
-	local x,y,room = table.unpack(pos)
-	assert(room.mdbs, "found a room without any mdbs: "..(function()
-		local s = ''
-		for k,v in pairs(room) do
-			s = s .. tostring(k) .. ' = ' .. tostring(v) .. '\n'
-		end
-		return s
-	end)())
+	local room = pos[3]
+	assert(room.mdbs, "found a room without any mdbs")
+	pos = boreIntoWall(pos)	-- now bore a hole in the room and place the item at the end of it
 	local m = pickRandom(room.mdbs:filter(function(m) 
 		return firstMissileMDBs:find(m)
 	end))
@@ -158,34 +228,19 @@ for rep=1,1 do
 		local name = sm.plmCmdNameForValue[cmd]
 		name = name:gsub('_chozo', ''):gsub('_hidden', '')	
 		if config.randomizeItemsScavengerHuntHidden then
-			name = name .. '_hidden'
+			name = name .. '_chozo'
 		end
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
 
 		local pos = pickRandom(allLocs)
-		local x,y,room = table.unpack(pos)
+		local room = pos[3]
+		pos = boreIntoWall(pos)	-- now bore a hole in the room and place the item at the end of it
 		local m = pickRandom(room.mdbs:filter(function(m)
 			return allMDBSet[m]
 		end))
-
 		for _,plmset in ipairs(getAllMDBPLMs(m)) do
 			placeInPLMSet(plmset, pos, cmd, m)
 		end
 	end
 end
 --]]
-
---[[ make sure morph ball is in the start room 
-local _,startRoom = assert(allMDBs:find(nil, function(m) return m.ptr.region == 0 and m.ptr.index == 0 end))
--- they al have the same plm set btw.... you only need to do this once
-for _,rs in ipairs(startRoom.roomStates) do
-	rs.plmset.plms:insert(
-		ffi.new('plm_t', {
-			cmd = sm.plmCmdValueForName.item_morph,
-			x = 42,
-			y = 74, 
-		})
-	)
-end
---]]
-

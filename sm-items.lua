@@ -1737,9 +1737,9 @@ SMItems.itemTypeBaseForType = {}
 for _,k in ipairs(SMItems.itemTypes:keys()) do
 	local v = SMItems.itemTypes[k]
 	SMItems.itemTypeBaseForType[v] = v
-	SMItems.itemTypes[k..'_chozo'] = v + 0x54
+	SMItems.itemTypes[k..'_chozo'] = v + 0x54	-- _chozo really means shoot to open, then it resolidifies 
 	SMItems.itemTypeBaseForType[v + 0x54] = v
-	SMItems.itemTypes[k..'_hidden'] = v + 2*0x54
+	SMItems.itemTypes[k..'_hidden'] = v + 2*0x54	-- _hidden really means shoot to open and it stays open
 	SMItems.itemTypeBaseForType[v + 2*0x54] = v
 end
 
