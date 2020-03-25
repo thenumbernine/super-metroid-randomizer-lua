@@ -42,7 +42,7 @@ for _,m in ipairs(sm.mdbs) do
 			-- if there already exists a plm...
 			local saveThisDoor
 			if plm then
-				local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
+				local plmname = assert(plm:getName(), "expected door plm to have a valid name "..plm)
 				assert(plmname:match'^door_')
 				-- don't touch special doors
 				if plmname:match'^door_grey_' 

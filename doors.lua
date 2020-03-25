@@ -30,7 +30,7 @@ for _,room in ipairs(sm.rooms) do
 			for i=#rs.plmset.plms,1,-1 do
 				local plm = rs.plmset.plms[i]
 				if plm.x == door.x and plm.y == door.y then
-					local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
+					local plmname = assert(plm:getName(), "expected door plm to have a valid name "..plm)
 					assert(plmname:match'^door_')
 					if plmname:match'^door_grey_' 
 					or plmname:match'^door_eye_' 

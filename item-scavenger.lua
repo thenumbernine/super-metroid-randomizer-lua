@@ -117,7 +117,7 @@ end
 local removedItemCmds = table()
 for _,plmset in ipairs(sm.plmsets) do
 	for i=#plmset.plms,1,-1 do
-		local name = sm.plmCmdNameForValue[plmset.plms[i].cmd]
+		local name = plmset.plms[i]:getName()
 		if name 
 		and name:match'^item_' 
 		and not name:match'^item_morph'	-- don't remove morph ball... or else
@@ -193,16 +193,16 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 	local cmd = args.cmd
 	local plmarg = args.args or 0
 	local x,y = table.unpack(pos)	
-	print('placing in room '
-		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
-		..' at '..x..', '..y
-		..' plm '..sm.plmCmdNameForValue[cmd])
-	plmset.plms:insert(sm.PLM{
+	local plm = sm.PLM{
 		cmd = cmd,
 		x = x,
 		y = y,
 		args = plmarg,
-	})
+	}
+	print('placing in room '
+		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+		..' plm '..plm)
+	plmset.plms:insert(plm)
 end
 
 local function getAllMDBPLMs(m)

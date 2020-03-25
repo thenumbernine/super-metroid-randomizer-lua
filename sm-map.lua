@@ -438,10 +438,15 @@ expected fields (from plm_t, so just use plm_t:toLua()):
 --]]
 local PLM = class()
 SMMap.PLM = PLM
+
 function PLM:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
+end
+
+function PLM:getName()
+	return sm.plmCmdNameForValue[self.cmd]
 end
 
 function PLM:toC()
@@ -1566,7 +1571,7 @@ if done then break end
 	self.doorPLMForID = table()
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
-			local name = self.plmCmdNameForValue[plm.cmd]
+			local name = plm:getName()
 			if name and name:match'^door_' then
 				local id = bit.band(plm.args, 0xff)
 				assert(not self.doorPLMForID[id])
@@ -2283,7 +2288,7 @@ function SMMap:mapWriteGraphDot()
 					-- TODO make roomState a subcluster of the room ...
 					if rs.plmset then
 						for plmIndex,plm in ipairs(rs.plmset.plms) do
-							local plmname = sm.plmCmdNameForValue[plm.cmd]
+							local plmname = plm:getName()
 							if plmname and plmname:match'^item_' then
 								local itemNodeName = mdbName..nl..rsName..nl..plmIndex
 								f:write('\t\t"', itemNodeName, '" [pos="1,',tostring(-itemIndex),'" shape=box label="', plmname, '"];\n')
@@ -2337,11 +2342,11 @@ function SMMap:mapWriteGraphDot()
 							
 							if rs.plmset then
 								for _,plm in ipairs(rs.plmset.plms) do
---local plmname = sm.plmCmdNameForValue[plm.cmd]
+--local plmname = plm:getName()
 --print('   plm_t: '..plmname..' '..plm)
 									-- find a matching door plm
 									if plm.x == roomDoor.x and plm.y == roomDoor.y then
-										local plmname = assert(sm.plmCmdNameForValue[plm.cmd], "expected door plm to have a valid name "..plm)
+										local plmname = assert(plm:getName(), "expected door plm to have a valid name "..plm)
 										color = plmname:match'^door_([^_]*)'
 										doorarg = plm.args
 									end
@@ -2458,7 +2463,7 @@ function SMMap:mapPrint()
 		)
 		for _,plm in ipairs(plmset.plms) do
 			io.write('  '..plm)
-			local plmName = self.plmCmdNameForValue[plm.cmd]
+			local plmName = plm:getName()
 			if plmName then io.write(' ',plmName) end
 			print()
 		end
@@ -2586,7 +2591,7 @@ function SMMap:mapPrint()
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
 					io.write('   plm_t: ')
-					local plmName = self.plmCmdNameForValue[plm.cmd]
+					local plmName = plm:getName()
 					if plmName then io.write(plmName..': ') end
 					print(plm)
 				end
@@ -2634,7 +2639,7 @@ function SMMap:mapPrint()
 		end
 		for _,plm in ipairs(plmset.plms) do
 			io.write('  plm_t: ')
-			local plmName = self.plmCmdNameForValue[plm.cmd]
+			local plmName = plm:getName()
 			if plmName then io.write(plmName..': ') end
 			print(plm)
 		end
@@ -2758,7 +2763,7 @@ function SMMap:mapWritePLMs()
 		local eyeparts
 		local eyedoor
 		for _,plm in ipairs(plmset.plms) do
-			local name = self.plmCmdNameForValue[plm.cmd]
+			local name = plm:getName()
 			if name 
 			and name:match'^door_' 
 			then
@@ -2804,7 +2809,7 @@ print("used a total of "..doorid.." special and non-special doors")
 	local itemid = 0
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
-			local name = self.plmCmdNameForValue[plm.cmd]
+			local name = plm:getName()
 			if name and name:match'^item_' then
 				plm.args = itemid
 				itemid = itemid + 1 
