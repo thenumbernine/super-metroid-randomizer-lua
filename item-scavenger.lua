@@ -277,15 +277,15 @@ for rep=1,1 do
 		local enterpos = pickRandom(allLocs)
 		local room = enterpos[3]
 		local itempos, touchedSIs, plmpos = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
-		local scrollModData 
+		local scrollmodData 
 		if #touchedSIs > 0 then
-			scrollModData = table()
+			scrollmodData = table()
 			for _,si in ipairs(touchedSIs) do
-				scrollModData:insert(si)
-				scrollModData:insert(2)
+				scrollmodData:insert(si)
+				scrollmodData:insert(2)
 			end
-			scrollModData:insert(0x80)
-			scrollModData = tableToByteArray(scrollModData)
+			scrollmodData:insert(0x80)
+			scrollmodData = tableToByteArray(scrollmodData)
 		end
 		local m = pickRandom(room.mdbs:filter(function(m)
 			return allMDBSet[m]
@@ -295,29 +295,31 @@ for rep=1,1 do
 			-- if the item was burrowed at all into the wall 
 			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) 
 			-- and if there are any screens we want to change the scrollmod of
-			and scrollModData 
+			and scrollmodData 
 			then
-				assert(plmpos)	
+				assert(plmpos)
 				-- [[
-				local scrollModAddr
-				print('searching for scrollmod data '..byteArrayToHexStr(scrollModData, nil, ' '))
+				local scrollmodAddr
+				print('searching for scrollmod data '..byteArrayToHexStr(scrollmodData, nil, ' '))
 				--[=[ only search genuine scrollmod data
 				for _,plmset in ipairs(sm.plmsets) do
-					for _,scrollmod in ipairs(plmset.scrollmods) do
-						if byteArraysAreEqual(tableToByteArray(scrollmod.data), scrollModData) then
-							scrollModAddr = scrollmod.addr
-							break
+					for _,plm in ipairs(plmset.plms) do
+						if plm.scrollmod then
+							if byteArraysAreEqual(tableToByteArray(plm.scrollmod), scrollmodData) then
+								scrollmodAddr = plm.scrollmodAddr
+								break
+							end
 						end
 					end
-					if scrollModAddr then break end 
+					if scrollmodAddr then break end 
 				end
 				--]=]
 				-- [=[ search everything in the scrollmod data bank
 				-- TODO this might fail if the data we use is a ptr that gets update
 				-- it'll certainly fail when I get mdb writing working
 				for i=0x78000,0x7ffff do
-					if byteArraysAreEqual(scrollModData, rom+i, ffi.sizeof(scrollModData)) then
-						scrollModAddr = bit.band(i, 0xffff)
+					if byteArraysAreEqual(scrollmodData, rom+i, ffi.sizeof(scrollmodData)) then
+						scrollmodAddr = bit.band(i, 0xffff)
 						break
 					end
 				end
@@ -327,12 +329,12 @@ for rep=1,1 do
 				--]=]
 				-- TODO you don't need to only use scrollmod data ...
 				--  you can use anything in this bank
-				if not scrollModAddr then
+				if not scrollmodAddr then
 					print("couldn't find scrollmod for data "..
-						range(ffi.sizeof(scrollModData)):mapi(function(i) return ('%02x'):format(scrollModData[i]) end):concat' ')
+						range(ffi.sizeof(scrollmodData)):mapi(function(i) return ('%02x'):format(scrollmodData[i]) end):concat' ')
 					-- TODO add a new one over one of the many duplicate unused scrollmods (about 35 in total)
 				else
-					print("found scrollmod with addr "..('%04x'):format(scrollModAddr))
+					print("found scrollmod with addr "..('%04x'):format(scrollmodAddr))
 			
 					placeInPLMSet{
 						mdb=m, 
@@ -343,18 +345,8 @@ for rep=1,1 do
 						-- TODO has to point to a new set of scrollmod data
 						-- how should I save this for later?
 						-- make up a fake addr, and expect mapWrite to move it anyways
-						args=bit.band(0xffff, scrollModAddr),
+						args=bit.band(0xffff, scrollmodAddr),
 					}
-					--[=[
-					-- I don't save scrollmods yet ...
-					-- TODO to get this working i need to save scrollmods, and therefore I need to save mdbs
-					plmset.scrollmods:insert{
-						addr = fakeaddr,
-						data = table{
-						
-						},
-					} 
-					--]=]
 				end
 				--]]
 			end

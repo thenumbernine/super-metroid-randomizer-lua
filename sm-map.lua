@@ -454,7 +454,11 @@ function PLM:toC()
 end
 
 function PLM.__eq(a,b)
-	return a:toC() == b:toC()
+	--return a:toC() == b:toC()
+	return a.cmd == b.cmd
+		and a.x == b.x
+		and a.y == b.y
+		and a.args == b.args
 end
 
 function PLM.__concat(a,b) 
@@ -463,8 +467,10 @@ end
 
 function PLM:__tostring()
 	-- TODO don't forget about scrollmod
-	return tostring(self:toC())
-	--return tolua(self)
+	-- sorted in order of data addresses
+	--return tostring(self:toC())
+	-- sorted in alphabetic order (and includes optional fields like 'scrollmod')
+	return tolua(self) -- ... but it's not hex ...
 end
 
 
@@ -473,7 +479,6 @@ local PLMSet = class()
 function PLMSet:init(args)
 	self.addr = args.addr	--optional
 	self.plms = table(args.plms)
-	self.scrollmods = table()
 	self.roomStates = table()
 end
 
@@ -534,10 +539,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 			end
 			assert(addr - startaddr == #data)
 			plm.scrollmod = data
-			plmset.scrollmods:insert{
-				addr = startaddr,
-				data = data,
-			}
+			plm.scrollmodAddr = startaddr
 		end
 	end
 
@@ -1699,9 +1701,9 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 		end
 		plmsets:sort(function(a,b) return a.addr < b.addr end)
 		for _,plmset in ipairs(plmsets) do
-			if plmset and #plmset.scrollmods > 0 then
-				for _,scrollmod in ipairs(plmset.scrollmods) do
-	--				assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
+			for _,plm in ipairs(plmset.plms) do
+				if plm.scrollmod then
+					--assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
 					d = d + scrollmod.len
 				end
 			end
@@ -2594,9 +2596,7 @@ function SMMap:mapPrint()
 					local plmName = plm:getName()
 					if plmName then io.write(plmName..': ') end
 					print(plm)
-				end
-				for _,scrollmod in ipairs(rs.plmset.scrollmods) do
-					print('   plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+					--print('    plm scrollmod: '..('$%06x'):format(plm.scrollmodAddr)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 				end
 			end
 			--]]
@@ -2642,9 +2642,9 @@ function SMMap:mapPrint()
 			local plmName = plm:getName()
 			if plmName then io.write(plmName..': ') end
 			print(plm)
-		end
-		for _,scrollmod in ipairs(plmset.scrollmods) do
-			print('  plm scrollmod: '..('$%06x'):format(scrollmod.addr)..': '..scrollmod.data:map(function(x) return ('%02x'):format(x) end):concat' ')
+			if plm.scrollmod then
+				print('  plm scrollmod: '..('$%06x'):format(plm.scrollmodAddr)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+			end
 		end
 	end
 	--]]
@@ -2731,8 +2731,10 @@ function SMMap:mapBuildMemoryMap(mem)
 		local len = 2 + #plmset.plms * ffi.sizeof'plm_t'
 		mem:add(plmset.addr, len, 'plm_t', m)
 		--]]
-		for _,scrollmod in ipairs(plmset.scrollmods) do	
-			mem:add(scrollmod.addr, #scrollmod.data, 'plm scrollmod', m)
+		for _,plm in ipairs(plmset.plms) do
+			if plm.scrollmod then
+				mem:add(plm.scrollmodAddr, #plm.scrollmod, 'plm scrollmod', m)
+			end
 		end
 	end
 	for _,room in ipairs(self.rooms) do
@@ -2852,8 +2854,13 @@ print("used a total of "..doorid.." special and non-special doors")
 	-- [[ if two plms point to matching scrollmods then point them to the same scrollmod
 	local allScrollMods = table()
 	for _,plmset in ipairs(self.plmsets) do
-		for _,scrollmod in ipairs(plmset.scrollmods) do
-			allScrollMods:insert(scrollmod)
+		for _,plm in ipairs(plmset.plms) do
+			if plm.scrollmod then
+				allScrollMods:insert{
+					data = plm.scrollmod,
+					addr = plm.scrollmodAddr,
+				}
+			end
 		end
 	end
 	local remapScrollModAddr = table()	--[fromAddr] = toAddr

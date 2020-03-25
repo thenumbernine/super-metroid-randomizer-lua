@@ -226,7 +226,7 @@ startRoom.roomStates[4]:setPLMSet(newPLMSet)
 -- as soon as you walk into the old mother brain room, this causes the screen to permanently glitch where it draws things
 -- remove all scrollmod plms
 for _,plmset in ipairs(sm.plmsets) do
-	for i=#plmset.plms,1,-1 do
+	for _,plm in ipairs(plms) do
 		if plmset.plms[i].cmd == sm.plmCmdValueForName.scrollmod then
 			plmset.plms:remove(i)
 		end
