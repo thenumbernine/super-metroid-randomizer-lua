@@ -32,7 +32,19 @@ end
 ]], {name=name, fields=fields})
 		ffi.cdef(code)
 
-		local mt = ffi.metatype(name, {
+		local metatable = {
+			toLua = function(self)
+				local result = {}
+				for _,field in ipairs(fields) do
+					local name, ctype = next(field)
+					local value = self[name]
+					if ctype.toLua then
+						value = value:toLua()
+					end
+					result[name] = value
+				end
+				return result
+			end,
 			__tostring = function(ptr)
 				local t = table()
 				for _,field in ipairs(fields) do
@@ -54,7 +66,9 @@ end
 				end
 				return true
 			end,
-		})
+		}
+		metatable.__index = metatable
+		local metatype = ffi.metatype(name, metatable)
 
 		local sizeOfFields = table.map(fields, function(kv)
 			local name,ctype = next(kv)
@@ -62,7 +76,7 @@ end
 		end):sum()
 		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
 
-		return mt
+		return metatype
 	end
 end
 

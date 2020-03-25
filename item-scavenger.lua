@@ -197,14 +197,12 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
 		..' at '..x..', '..y
 		..' plm '..sm.plmCmdNameForValue[cmd])
-	plmset.plms:insert(
-		ffi.new('plm_t', {
-			cmd = cmd,
-			x = x,
-			y = y,
-			args = plmarg,
-		})
-	)
+	plmset.plms:insert(sm.PLM{
+		cmd = cmd,
+		x = x,
+		y = y,
+		args = plmarg,
+	})
 end
 
 local function getAllMDBPLMs(m)

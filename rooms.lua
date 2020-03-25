@@ -65,7 +65,7 @@ newDoorCount = newDoorCount + 1
 				if color <= 3 then	-- skip blue doors completely
 					color = ({'red', 'green', 'orange'})[color]
 					local dir = ({'right', 'left', 'down', 'up'})[door.dir+1]
-					local plm = ffi.new'plm_t'
+					local plm = sm.PLM()
 					local plmname = 'door_'..color..'_'..dir
 					plm.cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname)
 					plm.x = door.x
@@ -206,11 +206,11 @@ local newPLMSet = sm:newPLMSet{
 		and not name:match'_chozo$'
 		then
 			local width = 7
-			return ffi.new('plm_t', {
+			return sm.PLM{
 				cmd = cmd,
 				x = 42 + #t % width,
 				y = 74 + math.floor(#t / width),
-			}), #t+1
+			}, #t+1
 		end
 	end),
 }

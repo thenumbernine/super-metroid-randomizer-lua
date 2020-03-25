@@ -427,6 +427,42 @@ function RoomState:setEnemyGFXSet(enemyGFXSet)
 end
 
 
+--[[
+alright, I'm just going to make plms as pure lua objects
+so I can add optional extra data loke scrollmod directly to the plm
+expected fields (from plm_t, so just use plm_t:toLua()):
+	cmd
+	x
+	y
+	args
+--]]
+local PLM = class()
+SMMap.PLM = PLM
+function PLM:init(args)
+	for k,v in pairs(args) do
+		self[k] = v
+	end
+end
+
+function PLM:toC()
+	return ffi.new('plm_t', self)
+end
+
+function PLM.__eq(a,b)
+	return a:toC() == b:toC()
+end
+
+function PLM.__concat(a,b) 
+	return tostring(a) .. tostring(b) 
+end
+
+function PLM:__tostring()
+	-- TODO don't forget about scrollmod
+	return tostring(self:toC())
+	--return tolua(self)
+end
+
+
 local PLMSet = class()
 
 function PLMSet:init(args)
@@ -462,8 +498,10 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 		end
 
 		--inserting the struct by-value
-		-- why did I have to make a copy?
-		plms:insert(ffi.new('plm_t', ptr[0]))
+		-- luajit requires this, ptr[0] isn't good enough 
+		--local plm = ffi.new('plm_t', ptr[0])
+		local plm = PLM(ptr[0]:toLua())
+		plms:insert(plm)
 		addr = addr + ffi.sizeof'plm_t'
 	end
 	
@@ -490,6 +528,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 				data:insert(scroll)
 			end
 			assert(addr - startaddr == #data)
+			plm.scrollmod = data
 			plmset.scrollmods:insert{
 				addr = startaddr,
 				data = data,
@@ -2919,7 +2958,7 @@ print("used a total of "..doorid.." special and non-special doors")
 
 		-- write
 		for _,plm in ipairs(plmset.plms) do
-			ffi.cast('plm_t*', rom + addr)[0] = plm
+			ffi.cast('plm_t*', rom + addr)[0] = plm:toC()
 			addr = addr + ffi.sizeof'plm_t'
 		end
 		-- write term
