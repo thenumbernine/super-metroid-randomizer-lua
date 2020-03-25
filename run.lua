@@ -154,7 +154,7 @@ function tableToByteArray(src)
 	local dest = ffi.new('uint8_t[?]', #src)
 	for i,v in ipairs(src) do
 		assert(type(v) == 'number' and v >= 0 and v <= 255)
-		dest[i-1] = v 
+		dest[i-1] = v
 	end
 	return dest
 end
@@ -185,12 +185,14 @@ function hexStrToByteArray(src)
 	return dest
 end
 
-function byteArrayToHexStr(src, len)
+function byteArrayToHexStr(src, len, sep)
 	len = len or ffi.sizeof(src)
 	src = ffi.cast('uint8_t*', src)
 	local s = ''
+	local tsep = ''
 	for i=1,len do
-		s = s .. ('%02x'):format(src[i-1])
+		s = s .. tsep..('%02x'):format(src[i-1])
+		tsep = sep
 	end
 	return s
 end

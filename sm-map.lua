@@ -881,6 +881,7 @@ end
 
 --[[
 returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
+considers copies
 --]]
 function Room:getTileType(x,y)
 	x,y = self:getCopySource(x,y)
@@ -2903,6 +2904,8 @@ print("used a total of "..doorid.." special and non-special doors")
 		{0x7e99b, 0x7ffff},	
 	
 		-- TODO write the map rooms first.  that is compressing at 50% of the original.  there is room to spare there.
+	
+		-- TODO write plm scrollmods here
 	})
 
 	-- TODO any code that points to a PLM needs to be updated as well
