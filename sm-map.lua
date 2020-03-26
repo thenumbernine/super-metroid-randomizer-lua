@@ -17,6 +17,7 @@ SMMap.fx1Bank = 0x83
 SMMap.doorBank = 0x83
 
 -- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
+	-- should this be 0x8f? check my topc() function vs http://patrickjohnston.org/bank/8F
 SMMap.mdbBank = 0x8e
 SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
 SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
@@ -89,9 +90,9 @@ local roomstate_t = struct'roomstate_t'{
 	{scroll = 'uint16_t'},
 	
 	--[[
-	this is only used by the gold torizo room, and points to the extra data after mdb_t
+	this is only used by the grey torizo room, and points to the extra data after mdb_t
 	--]]
-	{unknown = 'uint16_t'},				
+	{roomvarAddr = 'uint16_t'},				
 	{fx2 = 'uint16_t'},					-- TODO - aka 'main asm ptr'
 	{plm = 'uint16_t'},
 	{bgdata = 'uint16_t'},
@@ -1288,7 +1289,10 @@ function SMMap:mapInit()
 	plm scrollmod
 
 	TODO don't check *every* byte from 0x8000 to 0xffff
+	instead start with one mdb_t - wherever you start: $079202 
+	- from mdb's, read all roomstates, and read all their rooms, and read all their door mdbs
 	--]]
+	
 	for x=0x8000,0xffff do
 		local data = rom + topc(self.mdbBank, x)
 		local function read(ctype)
@@ -1317,7 +1321,7 @@ function SMMap:mapInit()
 			self.mdbs:insert(m)
 			data = data + ffi.sizeof'mdb_t'
 
-			-- events
+			-- roomstates
 			while true do
 				local testcode = ffi.cast('uint16_t*',data)[0]
 				
@@ -1329,14 +1333,7 @@ function SMMap:mapInit()
 				then
 					ctype = 'roomselect_t'
 				elseif testcode == 0xe5eb then
-					-- this is never reached
-					error'here' 
-					-- I'm not using this just yet
-					-- struct {
-					-- 	uint16_t testcode;
-					-- 	uint16_t testvaluedoor;
-					--	uint16_t roomstate;
-					-- }
+					ctype = 'roomselect_t'	-- this is for doors.  but it's not used. so whatever.
 				else
 					ctype = 'roomselect2_t'
 				end
@@ -1509,25 +1506,25 @@ if done then break end
 					rs.room.roomStates:insert(rs)
 				end
 
+				-- door addrs
 				local startaddr = topc(self.doorAddrBank, m.ptr.doors)
-				data = rom + startaddr 
-				--data = rom + self.plmOffset + m.ptr.doors
-				local doorAddr = read'uint16_t'
+				local addr = startaddr
+				local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+				addr = addr + 2
 				while doorAddr > 0x8000 do
 					m.doors:insert{
 						addr = doorAddr,
 					}
-					doorAddr = read'uint16_t'
+					doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+					addr = addr + 2
 				end
 				-- exclude terminator
-				data = data - 2
-				local len = data-rom - startaddr
-			
-	--doorsSoFar = doorsSoFar or table()
+				addr = addr - 2
+				local len = addr - startaddr
+				
+				-- doors
 				for _,door in ipairs(m.doors) do
 					local addr = topc(self.doorBank, door.addr)
-	--doorsSoFar[addr] = doorsSoFar[addr] or table()
-	--doorsSoFar[addr]:insert(m)
 					data = rom + addr 
 					local dest_mdb = ffi.cast('uint16_t*', data)[0]
 					-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
@@ -1542,31 +1539,28 @@ if done then break end
 					end
 				end
 			
-				-- ok now we've got all the roomstates, rooms, plms, and door_t's ...
-				-- now to link the doors in the rooms to their plm and door_t 
-				--[[ turns out it is very slow, esp when building the map from roomstate to exit
-				for _,rs in ipairs(m.roomStates) do
-					for _,door in ipairs(rs.room.doors) do
-						local exit = m.doors[door.index+1]
-						if not exit then
-							print("failed to find exit index "..door.index.." in "
-								..('%02x/%02x'):format(m.ptr.region, m.ptr.index))
-						else
-							door.exit = door.exit or {}
-							door.exit[rs] = exit 
-						end
-
-						local plmindex, plm = rs.plmset.plms:find(nil, function(plm)
-							return plm.x == door.x and plm.y == door.y
-						end)
-						-- may or may not be there
-						if plm then
-							door.plms = door.plms or {}
-							door.plms[rs] = plm
-						end
-					end
+	
+				-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
+				-- pointed to by mdb[00/15].roomstate_t[#1].roomvarAddr
+				-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
+				-- this is the rescue animals roomstate
+				-- so this data has to do with the destructable wall on the right side
+				--if mdbaddr == 0x79804 then
+				if rs.ptr.roomvarAddr ~= 0 then
+					local d = rom + self.plmOffset + rs.ptr.roomvarAddr
+					local roomvar = table()
+					repeat
+						roomvar:insert(d[0])	-- x
+						roomvar:insert(d[1])	-- y
+						if ffi.cast('uint16_t*', d)[0] == 0 then break end
+						roomvar:insert(d[2])	-- mod 1 == 0x52
+						roomvar:insert(d[3])	-- mod 2 == 0x00
+						-- TODO insert roomvar_t and uint16_t term (or omit term)
+						d = d + 4
+					until false
+					-- TODO should be roomstate
+					rs.roomvar = roomvar
 				end
-				---]]
 			end
 		end
 	end
@@ -1601,45 +1595,6 @@ if done then break end
 		end
 	end
 	--]]
-
-
-	-- ok, now to try and change a mdb_t
-
-
-	--[[ seeing if any two rooms have door addrs that point to the same door ...
-	-- looks like the only ones that do are the lift_t zero structure:
-	-- $0188fc, used by 00/08 00/0f 00/14 00/19 01/00 01/0e 01/24 00/33 01/34 02/03 02/26 02/36
-	-- $01a18a, used by 04/13 05/00
-	print()
-	for _,addr in ipairs(doorsSoFar:keys():sort()) do
-		local ms = doorsSoFar[addr]
-		if #ms > 1 then
-			io.write('found overlapping doors at '..('$%06x'):format(addr)..', used by')
-			for _,m in ipairs(ms) do
-				io.write(' '..('%02x/%02x'):format(m.ptr.region, m.ptr.index))
-			end
-			print()
-		end
-	end
-	--]]
-	--[[ now lets look through all doors and see if there's any duplicates that *could have* been overlapping
-	-- nope, all doors are unique.  any sort of duplication is handled by the overlapping door addresses above
-	local alldoors = table():append(self.mdbs:map(function(m) return m.doors end):unpack())
-	print()
-	print('#alldoors '..#alldoors)
-	for i=1,#alldoors-1 do
-		local da = alldoors[i]
-		for j=i+1,#alldoors do
-			local db = alldoors[j]
-			if da.addr ~= db.addr and da.ptr[0] == db.ptr[0] then
-				print('doors '..('$%06x'):format(ffi.cast('uint8_t*',da.ptr)-rom)
-					..' and '..('$%06x'):format(ffi.cast('uint8_t*',db.ptr)-rom)
-					..' are identical (and could be consolidated)')
-			end
-		end
-	end
-	--]]
-
 
 
 	-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
@@ -1695,53 +1650,6 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 			assert(d == rom + addr)
 			d = d + m.ptr.width * m.ptr.height
 		end
-
-		-- mdb_t $079804 - gold torizo room - has 14 bytes here -- pointed to by roomstate_t.unknown: 0f 0a 52 00 0f 0b 52 00 0f 0c 52 00 00 00
-		-- mdb_t $07a66a - statues before tourian - has 8 bytes after it 
-		-- mdb_t $07a923 - slope down to crocomire - has 5 bytes here 
-		-- mdb_t $07a98d - crocomire's room - has 6 bytes here 
-		-- mdb_t $07ad1b - speed booster room - has 26 bytes here
-		-- mdb_t $07b1e5 - lava-lowering chozo statue - has 11 bytes here
-		d = d + (({
-			[0x79804] = 14,
-			[0x7a66a] = 8,
-			[0x7a923] = 5,
-			[0x7a98d] = 6,
-			[0x7ad1b] = 26,
-			[0x7b1e5] = 11,
-		})[mdbaddr] or 0)
-
-	--[=[ continuity of plm scrollmods?
-	print('d starts at '..('%06x'):format( d-rom ))
-		-- plm scrollmod sometimes go here
-		local plmsets = table()
-		for _,rs in ipairs(m.roomStates) do
-			plmsets:insertUnique(rs.plmset)
-		end
-		plmsets:sort(function(a,b) return a.addr < b.addr end)
-		for _,plmset in ipairs(plmsets) do
-			for _,plm in ipairs(plmset.plms) do
-				if plm.scrollmod then
-					--assert(d == ffi.cast('uint8_t*', rom+scrollmod.addr))
-					d = d + scrollmod.len
-				end
-			end
-		end
-	--]=]
-
-		-- mdb_t $07c98e - wrecked ship chozo & reserve - has 12 bytes here
-		-- mdb_t $07ca42 - hallway at top of wrecked ship - has 8 bytes here
-		-- mdb_t $07cc6f - hallway before phantoon - has 3 bytes here
-
-		-- see if the next mdb_t is immediately after
-		--[=[
-		if j+1 <= #self.mdbs then
-			local m2 = ffi.cast('uint8_t*', self.mdbs[j+1].ptr)
-			if d ~= m2 then
-				print('non-contiguous mdb_t before '..('$%06x'):format(m2-rom))	
-			end
-		end
-		--]=]
 	end
 
 
@@ -3326,9 +3234,11 @@ function SMMap:mapWriteMDBs()
 		-- write the roomselects
 		-- write the roomstates
 		-- write the dooraddrs
+		-- write roomvar (only for grey torizo room)
 		-- write the scrolldata ... (who points to this?)
-		-- write the plm scrollmod stuff ... (who points to this?)
 	end
+	-- as you write mdbs, you will have to update all door_t's that point to the mdbs
+	-- same with the mdb addresses that point to room selects, room states, door addrs, etc
 end
 
 function SMMap:mapWriteRooms()
