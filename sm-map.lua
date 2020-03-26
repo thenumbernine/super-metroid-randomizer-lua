@@ -435,6 +435,8 @@ expected fields (from plm_t, so just use plm_t:toLua()):
 	x
 	y
 	args
+	ptr
+	scrollmod (optional)
 --]]
 local PLM = class()
 SMMap.PLM = PLM
@@ -443,6 +445,10 @@ function PLM:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
+	assert(self.cmd)
+	assert(self.x)
+	assert(self.y)
+	assert(self.args)
 end
 
 function PLM:getName()
@@ -450,7 +456,13 @@ function PLM:getName()
 end
 
 function PLM:toC()
-	return ffi.new('plm_t', self)
+	--return ffi.new('plm_t', self)
+	return ffi.new('plm_t', {
+		cmd = self.cmd,
+		x = self.x,
+		y = self.y,
+		args = self.args,
+	})
 end
 
 function PLM.__eq(a,b)
@@ -511,6 +523,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 		-- luajit requires this, ptr[0] isn't good enough 
 		--local plm = ffi.new('plm_t', ptr[0])
 		local plm = PLM(ptr[0]:toLua())
+		plm.ptr = ptr
 		plms:insert(plm)
 		addr = addr + ffi.sizeof'plm_t'
 	end
@@ -526,7 +539,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
 		if plm.cmd == self.plmCmdValueForName.scrollmod then
-			local startaddr = 0x70000 + plm.args
+			local startaddr = self.plmOffset + plm.args
 			local addr = startaddr
 			local data = table()
 			while true do
@@ -539,7 +552,6 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 			end
 			assert(addr - startaddr == #data)
 			plm.scrollmod = data
-			plm.scrollmodAddr = startaddr
 		end
 	end
 
@@ -1239,6 +1251,9 @@ SMMap.layerHandlingBank = 0x8f
 SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
 
+-- TODO use a bank? isn't it the same as the mdbBank?  0x8f.
+SMMap.plmOffset = 0x70000
+
 function SMMap:mapInit()
 	local rom = self.rom
 
@@ -1492,7 +1507,7 @@ if done then break end
 
 				local startaddr = topc(self.doorAddrBank, m.ptr.doors)
 				data = rom + startaddr 
-				--data = rom + 0x70000 + m.ptr.doors
+				--data = rom + self.plmOffset + m.ptr.doors
 				local doorAddr = read'uint16_t'
 				while doorAddr > 0x8000 do
 					m.doors:insert{
@@ -2596,7 +2611,7 @@ function SMMap:mapPrint()
 					local plmName = plm:getName()
 					if plmName then io.write(plmName..': ') end
 					print(plm)
-					--print('    plm scrollmod: '..('$%06x'):format(plm.scrollmodAddr)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+					--print('    plm scrollmod: '..('$%06x'):format(plm.ptr.args + self.plmOffset)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 				end
 			end
 			--]]
@@ -2643,7 +2658,7 @@ function SMMap:mapPrint()
 			if plmName then io.write(plmName..': ') end
 			print(plm)
 			if plm.scrollmod then
-				print('  plm scrollmod: '..('$%06x'):format(plm.scrollmodAddr)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+				print('  plm scrollmod: '..('$%06x'):format(self.plmOffset + plm.ptr.args)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 			end
 		end
 	end
@@ -2733,7 +2748,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		--]]
 		for _,plm in ipairs(plmset.plms) do
 			if plm.scrollmod then
-				mem:add(plm.scrollmodAddr, #plm.scrollmod, 'plm scrollmod', m)
+				mem:add(self.plmOffset + plm.args, #plm.scrollmod, 'plm scrollmod', m)
 			end
 		end
 	end
@@ -2851,50 +2866,39 @@ print("used a total of "..doorid.." special and non-special doors")
 		end
 	end
 	--]]
-	-- [[ if two plms point to matching scrollmods then point them to the same scrollmod
-	local allScrollMods = table()
+	-- [[ if two plms point to matching scrollmods then point them to the same scrollmod object
+	-- then collect all unique scrollmod objects
+	-- then pack them into the scrollmod regions wherever they can fit
+	-- TODO here
+	local allScrollModPLMs = table()
 	for _,plmset in ipairs(self.plmsets) do
 		for _,plm in ipairs(plmset.plms) do
+			assert((plm.cmd == sm.plmCmdValueForName.scrollmod) == (not not plm.scrollmod))
 			if plm.scrollmod then
-				allScrollMods:insert{
-					data = plm.scrollmod,
-					addr = plm.scrollmodAddr,
-				}
+				allScrollModPLMs:insert(plm)
 			end
 		end
 	end
-	local remapScrollModAddr = table()	--[fromAddr] = toAddr
-	for i=1,#allScrollMods-1 do
-		local si = allScrollMods[i]
-		for j=#allScrollMods,i+1,-1 do
-			local sj = allScrollMods[j]
-			if tablesAreEqual(si.data, sj.data) then
-				local siaddr = bit.band(0xffff, si.addr)
-				local sjaddr = bit.band(0xffff, sj.addr)
-				print('scrollmod #'..i..' addr '..('%04x'):format(siaddr)..' and #'..j..' addr '..('%04x'):format(sjaddr)..' data matches ... removing the latter')
-				allScrollMods:remove(j)
-				remapScrollModAddr[sjaddr] = siaddr
+	for i=#allScrollModPLMs-1,1,-1 do
+		local pi = allScrollModPLMs[i]
+		for j=#allScrollModPLMs,i+1,-1 do
+			local pj = allScrollModPLMs[j]
+			if tablesAreEqual(pi.scrollmod, pj.scrollmod) then
+				pj.scrollmod = pi.scrollmod
 			end
 		end
 	end
-	for _,plmset in ipairs(self.plmsets) do
-		for _,plm in ipairs(plmset.plms) do
-			if plm.cmd == self.plmCmdValueForName.scrollmod then
-				plm.args = remapScrollModAddr[plm.args] or plm.args
-			end
-		end
-	end
-	for i=#allScrollMods,1,-1 do
-		local scrollmod = allScrollMods[i]
-		local addr = bit.band(scrollmod.addr, 0xffff)
-		if remapScrollModAddr[addr] then
-			print('TODO remove scrollmod at '..('%04x'):format(addr)..' to save '..('0x%x'):format(#scrollmod.data)..' bytes')
-			allScrollMods:remove(i)
+	local allScrollMods = {}
+	for _,plm in ipairs(allScrollModPLMs) do
+		local s = plm.scrollmod
+		if s then
+			allScrollMods[s] = allScrollMods[s] or table()
+			allScrollMods[s]:insert(plm)
 		end
 	end
 	--]]
 	-- get rid of any duplicate plmsets ... there are none by default
-	for i=1,#self.plmsets-1 do
+	for i=#self.plmsets-1,1,-1 do
 		local pi = self.plmsets[i]
 		for j=i+1,#self.plmsets do
 			local pj = self.plmsets[j]
@@ -2948,15 +2952,90 @@ print("used a total of "..doorid.." special and non-special doors")
 		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
 		{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
 		
-		-- TODO don't use this until you're sure of what it is.
-		-- then comes a lot of unknown data 
-		-- this is listed as 'free data' in the metroid rom map
-		-- however $7ff00 is where the wake_zebes.ips door code of room 01/0e points to... which is the door_t on the right side of the blue brinstar morph ball room
+		-- free space: 
 		{0x7e99b, 0x7ffff},	
 	
-		-- TODO write the map rooms first.  that is compressing at 50% of the original.  there is room to spare there.
-	
-		-- TODO write plm scrollmods here
+		--[[
+		-- TODO write plm scrollmods to these locations
+		-- scrollmods are per-plm, and plms are grouped on one place, but scrollmods seem to be grouped in another spot ...
+		-- these are all the scrollmod ranges that are scattered between the mdb_t, roomstate_t, roomselect_t, dooraddrs, scrolldata
+		-- TODO get rid of this once we automatically place the mdb_t's
+		-- but so far scrollmods fit withiin the free space above
+		{0x0792b0, 0x0792b2},
+		{0x079389, 0x0793a9},
+		{0x0794c2, 0x0794cb},
+		{0x0794fa, 0x0794fc},
+		{0x079658, 0x07965a},
+		{0x07968c, 0x07968e},
+		{0x079744, 0x07975b},
+		{0x0797ab, 0x0797b4},
+		{0x079801, 0x079803},
+		{0x079966, 0x079968},
+		{0x0799f3, 0x0799f8},
+		{0x079b46, 0x079b5a},
+		{0x079b98, 0x079b9c},
+		{0x079bf9, 0x079c06},
+		{0x079c32, 0x079c34},
+		{0x079d11, 0x079d18},
+		{0x079d84, 0x079d9b},
+		{0x079e40, 0x079e51},
+		{0x079f05, 0x079f10},
+		{0x079f5f, 0x079f63},
+		{0x079fb7, 0x079fb9},
+		{0x07a04a, 0x07a050},
+		{0x07a104, 0x07a106},
+		{0x07a28e, 0x07a292},
+		{0x07a36f, 0x07a37b},
+		{0x07a3a9, 0x07a3ad},
+		{0x07a3da, 0x07a3dc},
+		{0x07a439, 0x07a446},
+		{0x07a4a2, 0x07a4b0},
+		{0x07a50f, 0x07a520},
+		{0x07a59c, 0x07a59e},
+		{0x07a6d6, 0x07a6e1},
+		{0x07a860, 0x07a864},
+		{0x07a8ec, 0x07a8f7},
+		{0x07a980, 0x07a98c},
+		{0x07aa70, 0x07aa81},
+		{0x07acb0, 0x07acb2},
+		{0x07ada7, 0x07adac},
+		{0x07ae66, 0x07ae73},
+		{0x07aea9, 0x07aeb3},
+		{0x07af0f, 0x07af13},
+		{0x07af6f, 0x07af71},
+		{0x07b0a7, 0x07b0b3},
+		{0x07b224, 0x07b235},
+		{0x07b27d, 0x07b282},
+		{0x07b2d1, 0x07b2d9},
+		{0x07b3d9, 0x07b3e0},
+		{0x07b445, 0x07b456},
+		{0x07b4e0, 0x07b4e4},
+		{0x07b547, 0x07b559},
+		{0x07b5c3, 0x07b5d4},
+		{0x07b612, 0x07b62a},
+		{0x07b68d, 0x07b697},
+		{0x07b72d, 0x07b740},
+		{0x07c9ec, 0x07c9fb},
+		{0x07cb7a, 0x07cb8a},
+		{0x07cc24, 0x07cc26},
+		{0x07ccc0, 0x07ccc7},
+		{0x07ce3d, 0x07ce3f},
+		{0x07cf4c, 0x07cf53},
+		{0x07cfb5, 0x07cfc8},
+		{0x07d012, 0x07d016},
+		{0x07d052, 0x07d054},
+		{0x07d135, 0x07d13a},
+		{0x07d16a, 0x07d16c},
+		{0x07d1a0, 0x07d1a2},
+		{0x07d1d8, 0x07d1dc},
+		{0x07d216, 0x07d21b},
+		{0x07d24d, 0x07d251},
+		{0x07d4bd, 0x07d4c1},
+		{0x07d67d, 0x07d699},
+		{0x07d6c8, 0x07d6cf},
+		{0x07d7df, 0x07d7e3},
+		{0x07d951, 0x07d95d},
+		--]]
 	})
 
 	-- TODO any code that points to a PLM needs to be updated as well
@@ -2966,11 +3045,13 @@ print("used a total of "..doorid.." special and non-special doors")
 	for _,plmset in ipairs(self.plmsets) do
 		local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
 		local addr, endaddr = plmWriteRanges:get(bytesToWrite)
-		plmset.addr = addr 
+		plmset.addr = addr
 
 		-- write
 		for _,plm in ipairs(plmset.plms) do
-			ffi.cast('plm_t*', rom + addr)[0] = plm:toC()
+			local ptr = ffi.cast('plm_t*', rom + addr)
+			plm.ptr = ptr -- now that plms are lua tables we can do this
+			ptr[0] = plm:toC()
 			addr = addr + ffi.sizeof'plm_t'
 		end
 		-- write term
@@ -2986,8 +3067,29 @@ print("used a total of "..doorid.." special and non-special doors")
 			end
 		end
 	end
-	plmWriteRanges:print()
 	--]]
+	-- [[ write scrollmods last, so it can fill in the holes that the plmsets can't
+	-- and then update the scrollmod ptrs of the plms after
+	print()
+	-- now for all scrollmods
+	for scrollmod,plms in pairs(allScrollMods) do
+		-- pick a memory region
+		-- write the scrollmod
+		-- update the address of all plms
+		local addr, endaddr = plmWriteRanges:get(#scrollmod)
+		-- write
+		copyByteArray(rom+addr, tableToByteArray(scrollmod))
+		-- update plm ptrs
+		for _,plm in ipairs(plms) do
+			assert(plm.scrollmod)
+			assert(plm.cmd == sm.plmCmdValueForName.scrollmod)
+			plm.args = bit.band(0xffff, addr)
+			plm.ptr.args = plm.args
+		end
+	end
+	--]]
+	
+	plmWriteRanges:print()
 end
 
 function SMMap:mapWriteEnemySpawnSets()
@@ -3000,7 +3102,7 @@ function SMMap:mapWriteEnemySpawnSets()
 	-- this currently crashes the game
 	-- notice that re-writing the enemy spawns is working fine
 	-- but removing the duplicates crashes as soon as the first room with monsters is encountered 
-	for i=1,#self.enemySpawnSets-1 do
+	for i=#self.enemySpawnSets-1,1,-1 do
 		local pi = self.enemySpawnSets[i]
 		for j=#self.enemySpawnSets,i+1,-1 do
 			local pj = self.enemySpawnSets[j]
@@ -3140,7 +3242,7 @@ function SMMap:mapWriteMDBs()
 		end
 	end
 	local remapScrollDataAddr = table()	--[fromAddr] = toAddr
-	for i=1,#allScrollDatas-1 do
+	for i=#allScrollDatas-1,1,-1 do
 		local si = allScrollDatas[i]
 		for j=#allScrollDatas,i+1,-1 do
 			local sj = allScrollDatas[j]

@@ -139,7 +139,7 @@ function byteArraysAreEqual(a,b,len)
 	return true
 end
 
-local function copy(dst, src, len)
+function copyByteArray(dst, src, len)
 	if len == nil then
 		if type(src) == 'cdata' then
 			len = ffi.sizeof(src)
@@ -243,9 +243,9 @@ end
 
 if config.skipIntro then 
 	--applyPatch'introskip_doorflags.ips' 
-	copy(rom + 0x016eda, hexStrToByteArray'1f')
-	copy(rom + 0x010067, hexStrToByteArray'2200ff80')
-	copy(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
+	copyByteArray(rom + 0x016eda, hexStrToByteArray'1f')
+	copyByteArray(rom + 0x010067, hexStrToByteArray'2200ff80')
+	copyByteArray(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
 end
 
 
@@ -279,7 +279,7 @@ if config.wakeZebesEarly then
 		0x8f, 0x20, 0xd8, 0x7e, -- STA $7e:d820
 		0x60,					-- RTS
 	}
-	copy(rom + 0x070000 + wakeZebesEarlyDoorCode, data)
+	copyByteArray(rom + 0x070000 + wakeZebesEarlyDoorCode, data)
 end
 --]=]
 

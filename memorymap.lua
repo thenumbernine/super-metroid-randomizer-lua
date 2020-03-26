@@ -11,7 +11,13 @@ function MemoryMap:add(addr, len, name, m, ...)
 	if not self.ranges:find(nil, function(range)
 		return range.addr == addr and range.len == len and range.name == name
 	end) then
-		self.ranges:insert{addr=addr, len=len, name=name, m=m, ...}
+		self.ranges:insert{
+			addr = assert(addr), 
+			len=len, 
+			name=name, 
+			m=m, 
+			...
+		}
 	end
 end
 

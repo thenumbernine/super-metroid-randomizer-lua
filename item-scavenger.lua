@@ -198,6 +198,7 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 		x = x,
 		y = y,
 		args = plmarg,
+		scrollmod = args.scrollmod
 	}
 	print('placing in room '
 		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
@@ -285,7 +286,6 @@ for rep=1,1 do
 				scrollmodData:insert(2)
 			end
 			scrollmodData:insert(0x80)
-			scrollmodData = tableToByteArray(scrollmodData)
 		end
 		local m = pickRandom(room.mdbs:filter(function(m)
 			return allMDBSet[m]
@@ -298,57 +298,15 @@ for rep=1,1 do
 			and scrollmodData 
 			then
 				assert(plmpos)
-				-- [[
-				local scrollmodAddr
-				print('searching for scrollmod data '..byteArrayToHexStr(scrollmodData, nil, ' '))
-				--[=[ only search genuine scrollmod data
-				for _,plmset in ipairs(sm.plmsets) do
-					for _,plm in ipairs(plmset.plms) do
-						if plm.scrollmod then
-							if byteArraysAreEqual(tableToByteArray(plm.scrollmod), scrollmodData) then
-								scrollmodAddr = plm.scrollmodAddr
-								break
-							end
-						end
-					end
-					if scrollmodAddr then break end 
-				end
-				--]=]
-				-- [=[ search everything in the scrollmod data bank
-				-- TODO this might fail if the data we use is a ptr that gets update
-				-- it'll certainly fail when I get mdb writing working
-				for i=0x78000,0x7ffff do
-					if byteArraysAreEqual(scrollmodData, rom+i, ffi.sizeof(scrollmodData)) then
-						scrollmodAddr = bit.band(i, 0xffff)
-						break
-					end
-				end
-				-- TODO TODO instead of searching here, associate the scrollmod with this plm somehow
-				-- and let the mapWrite function determine the address
-				-- (that might mean turning the plms into lua objects...)
-				--]=]
-				-- TODO you don't need to only use scrollmod data ...
-				--  you can use anything in this bank
-				if not scrollmodAddr then
-					print("couldn't find scrollmod for data "..
-						range(ffi.sizeof(scrollmodData)):mapi(function(i) return ('%02x'):format(scrollmodData[i]) end):concat' ')
-					-- TODO add a new one over one of the many duplicate unused scrollmods (about 35 in total)
-				else
-					print("found scrollmod with addr "..('%04x'):format(scrollmodAddr))
-			
-					placeInPLMSet{
-						mdb=m, 
-						plmset=plmset, 
-						pos=plmpos, 
-						cmd=sm.plmCmdValueForName.scrollmod, 	-- 'Normal Scroll PLM (DONE)'
-					
-						-- TODO has to point to a new set of scrollmod data
-						-- how should I save this for later?
-						-- make up a fake addr, and expect mapWrite to move it anyways
-						args=bit.band(0xffff, scrollmodAddr),
-					}
-				end
-				--]]
+				
+				-- just add the scroll plm anyways.  we'll squeeze in the new scrollmod data somewhere
+				placeInPLMSet{
+					mdb = m, 
+					plmset = plmset, 
+					pos = plmpos, 
+					cmd = sm.plmCmdValueForName.scrollmod, 	-- 'Normal Scroll PLM (DONE)'
+					scrollmod = scrollmodData,
+				}
 			end
 			-- ah but now you also have to add to the plm scrollmod list of the mdb ...
 		end

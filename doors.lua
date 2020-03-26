@@ -97,12 +97,13 @@ for i=0,numDoorsToMake-1 do
 	do --if color <= 3 then	-- skip blue doors completely
 		color = ({'red', 'green', 'orange'})[color]
 		local dir = ({'right', 'left', 'down', 'up'})[door.dir+1]
-		local plm = sm.PLM()
 		local plmname = 'door_'..color..'_'..dir
-		plm.cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname)
-		plm.x = door.x
-		plm.y = door.y
-		plm.args = 0
+		local plm = sm.PLM{
+			cmd = assert(sm.plmCmdValueForName[plmname], "failed to find plm cmd named "..plmname),
+			x = door.x,
+			y = door.y,
+			args = 0,
+		}
 		rs.plmset.plms:insert(plm)
 		newNumDoors = newNumDoors + 1
 		
