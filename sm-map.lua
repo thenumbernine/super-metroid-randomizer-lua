@@ -13,6 +13,31 @@ local WriteRange = require 'writerange'
 local SMMap = {}
 
 
+SMMap.fx1Bank = 0x83
+SMMap.doorBank = 0x83
+
+-- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
+SMMap.mdbBank = 0x8e
+SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
+SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
+SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
+-- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
+SMMap.bgBank = 0x8f			
+SMMap.doorCodeBank = 0x8f
+-- then comes a group o fplms, and then comes a group of layer handling
+SMMap.layerHandlingBank = 0x8f
+-- TODO if there was a 'plm bank' it would go here
+-- and then we go back to some more mdbs
+
+SMMap.enemySpawnBank = 0xa1
+SMMap.enemyGFXBank = 0xb4
+
+-- TODO use a bank? isn't it the same as the mdbBank?  0x8f.
+SMMap.plmOffset = 0x70000
+
+
+
+
 -- defined in section 6 of metroidconstruction.com/SMMM
 -- mdb = 'map database' I'm guessing?
 -- I am really tempted to defy convention and just call this 'room_t'
@@ -1232,27 +1257,6 @@ function SMMap:mapAddLayerHandling(addr)
 	return layerHandling
 end
 
-SMMap.fx1Bank = 0x83
-SMMap.doorBank = 0x83
-
--- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
-SMMap.mdbBank = 0x8e
-SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
-SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
-SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
--- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
-SMMap.bgBank = 0x8f			
-SMMap.doorCodeBank = 0x8f
--- then comes a group o fplms, and then comes a group of layer handling
-SMMap.layerHandlingBank = 0x8f
--- TODO if there was a 'plm bank' it would go here
--- and then we go back to some more mdbs
-
-SMMap.enemySpawnBank = 0xa1
-SMMap.enemyGFXBank = 0xb4
-
--- TODO use a bank? isn't it the same as the mdbBank?  0x8f.
-SMMap.plmOffset = 0x70000
 
 function SMMap:mapInit()
 	local rom = self.rom
@@ -2888,7 +2892,7 @@ print("used a total of "..doorid.." special and non-special doors")
 			end
 		end
 	end
-	local allScrollMods = {}
+	local allScrollMods = table()
 	for _,plm in ipairs(allScrollModPLMs) do
 		local s = plm.scrollmod
 		if s then
@@ -3072,14 +3076,40 @@ print("used a total of "..doorid.." special and non-special doors")
 	-- and then update the scrollmod ptrs of the plms after
 	print()
 	-- now for all scrollmods
-	for scrollmod,plms in pairs(allScrollMods) do
-		-- pick a memory region
-		-- write the scrollmod
-		-- update the address of all plms
-		local addr, endaddr = plmWriteRanges:get(#scrollmod)
-		-- write
-		copyByteArray(rom+addr, tableToByteArray(scrollmod))
+	-- write the largest ones first then the smallest, and search for subsets in the small regions
+	-- if I was clever I would think of a way to have later ones search contiguously across all previous ones instead of just search each previous one at a time
+	local sortedScrollMods = allScrollMods:keys():sort(function(a,b)
+		return #a > #b
+	end)
+	local addrForScrollMod = {}
+	for i=1,#sortedScrollMods do
+		local scrollmod = sortedScrollMods[i]
+		local n = #scrollmod
+		local addr, endaddr
+		-- see if we can use a previous scrollmod
+		for j=1,i-1 do
+			local prevScrollMod = sortedScrollMods[j]
+			for k=1,#prevScrollMod - n + 1 do
+				if tableSubsetsEqual(prevScrollMod, scrollmod, k, 1, n) then
+					addr = addrForScrollMod[prevScrollMod] + k - 1
+					endaddr = addr
+					break
+				end
+			end
+			if addr then break end
+		end
+		if not addr then
+			-- pick a memory region
+			-- write the scrollmod
+			-- update the address of all plms
+			addr, endaddr = plmWriteRanges:get(n)
+			-- write
+			copyByteArray(rom+addr, tableToByteArray(scrollmod))
+		end
+		-- remember
+		addrForScrollMod[scrollmod] = addr
 		-- update plm ptrs
+		local plms = assert(allScrollMods[scrollmod])
 		for _,plm in ipairs(plms) do
 			assert(plm.scrollmod)
 			assert(plm.cmd == sm.plmCmdValueForName.scrollmod)

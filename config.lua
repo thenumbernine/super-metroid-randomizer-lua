@@ -12,7 +12,7 @@ return {
 	skipIntro = true,
 	
 	-- this just randomizes enemy stats, not their placement
-	randomizeEnemies = true,
+--	randomizeEnemies = true,
 
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
@@ -32,10 +32,10 @@ return {
 	randomizeItemsScavengerHunt = true,
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
-	randomizeDoors = true,
+--	randomizeDoors = true,
 
 	-- randomize weapon damages
-	randomizeWeapons = true, 
+--	randomizeWeapons = true, 
 
 
 	---------------------------------------------------------

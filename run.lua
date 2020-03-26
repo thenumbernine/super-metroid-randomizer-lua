@@ -117,6 +117,12 @@ function shuffle(x)
 	return x
 end
 
+function tableSubsetsEqual(a,b,i,j,n)
+	for k=0,n-1 do
+		if a[i+k] ~= b[j+k] then return false end
+	end
+	return true
+end
 
 function tablesAreEqual(a,b)
 	if #a ~= #b then return false end
