@@ -19,7 +19,7 @@ SMMap.doorBank = 0x83
 -- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
 	-- should this be 0x8f? check my topc() function vs http://patrickjohnston.org/bank/8F
 SMMap.mdbBank = 0x8e
-SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomstate
+SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomStateAddr
 SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
 SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
 -- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
@@ -62,14 +62,14 @@ local roomselect1_t = struct'roomselect1_t'{
 
 local roomselect2_t = struct'roomselect2_t'{
 	{testcode = 'uint16_t'},
-	{roomstate = 'uint16_t'},
+	{roomStateAddr = 'uint16_t'},
 }
 
 -- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
 local roomselect3_t = struct'roomselect3_t'{
 	{testcode = 'uint16_t'},	-- ptr to test code in bank $8f
 	{testvalue = 'uint8_t'},
-	{roomstate = 'uint16_t'},	-- ptr to alternative roomstate in bank $8f
+	{roomStateAddr = 'uint16_t'},	-- ptr to roomstate in bank $8f
 }
 
 
@@ -569,28 +569,30 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 	while true do
 		local testcode = ffi.cast('uint16_t*',data)[0]
 		
-		local ctype
+		local selectType
 		if testcode == 0xe5e6 then 
-			ctype = 'roomselect1_t'
+			selectType = 'roomselect1_t'
 		elseif testcode == 0xe612
 		or testcode == 0xe629
 		then
-			ctype = 'roomselect3_t'
+			selectType = 'roomselect3_t'
 		elseif testcode == 0xe5eb then
-			ctype = 'roomselect3_t'	-- this is for doors.  but it's not used. so whatever.
+			selectType = 'roomselect3_t'	-- this is for doors.  but it's not used. so whatever.
 		else
-			ctype = 'roomselect2_t'
+			selectType = 'roomselect2_t'
 		end
+		local selptr = ffi.cast(selectType..'*', data)
 		local rs = RoomState{
 			m = m,
-			select = ffi.cast(ctype..'*', data),
-			select_ctype = ctype,	-- using for debug print only
+			select_ptr = selptr,
+			select = ffi.new(selectType, selptr[0]),
+			select_ctype = selectType,	-- using for debug print only
 		}
 		m.roomStates:insert(rs)
 		
-		data = data + ffi.sizeof(ctype)
+		data = data + ffi.sizeof(selectType)
 
-		if ctype == 'roomselect1_t' then break end	-- term
+		if selectType == 'roomselect1_t' then break end	-- term
 	end
 
 	-- after the last roomselect is the first roomstate_t
@@ -598,13 +600,14 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 	-- uint16_t select means a terminator
 	assert(rs.select_ctype == 'roomselect1_t')
 	rs.ptr = ffi.cast('roomstate_t*', data)
+	rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 	data = data + ffi.sizeof'roomstate_t'
 
 	-- then the rest of the roomstates come
 	for _,rs in ipairs(m.roomStates) do
 		if rs.select_ctype ~= 'roomselect1_t' then
 			assert(not rs.ptr)
-			local addr = topc(self.roomStateBank, rs.select[0].roomstate)
+			local addr = topc(self.roomStateBank, rs.select.roomStateAddr)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
 			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 		end
@@ -769,13 +772,13 @@ if done then break end
 	-- doors
 	for _,door in ipairs(m.doors) do
 		local addr = topc(self.doorBank, door.addr)
-		data = rom + addr 
+		local data = rom + addr 
 		local dest_mdb = ffi.cast('uint16_t*', data)[0]
 		-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
-		local ctype = dest_mdb == 0 and 'lift_t' or 'door_t'
-		door.ctype = ctype
-		door.ptr = ffi.cast(ctype..'*', data)
-		if ctype == 'door_t' 
+		local doorType = dest_mdb == 0 and 'lift_t' or 'door_t'
+		door.ctype = doorType
+		door.ptr = ffi.cast(doorType..'*', data)
+		if doorType == 'door_t' 
 		and door.ptr.code > 0x8000 
 		then
 			door.doorCodeAddr = topc(self.doorCodeBank, door.ptr.code)
@@ -816,6 +819,40 @@ if done then break end
 
 	return m
 end
+
+function SMMap:mapRemoveMDB(m)
+	-- TODO remove all unused roomStates as well? or just let mapWriteMDBs take care of it?
+	for j=#self.rooms,1,-1 do
+		local room = self.rooms[j]
+		room.mdbs:removeObject(m)
+		if #room.mdbs == 0 then
+			self.rooms:remove(j)
+		end
+	end
+	for j=#self.bgs,1,-1 do
+		local bg = self.bgs[j]
+		bg.mdbs:removeObject(m)
+		if #bg.mdbs == 0 then
+			self.bgs:remove(j)
+		end
+	end
+	for j=#self.fx1s,1,-1 do
+		local fx1 = self.fx1s[j]
+		fx1.mdbs:removeObject(m)
+		if #fx1.mdbs == 0 then
+			self.fx1s:remove(j)
+		end
+	end
+	self.mdbs:remove(i)
+end
+
+function SMMap:mapFindMDB(region, room)
+	for _,m in ipairs(sm.mdbs) do
+		if m.ptr.region == region and m.ptr.index == room then return m end
+	end
+	return false, "couldn't find "..('%02x/%02x'):format(region, room)
+end
+
 
 
 function SMMap:newPLMSet(args)
@@ -986,6 +1023,7 @@ function Room:init(args)
 		self[k] = v
 	end
 	self.mdbs = table()
+	self.roomStates = table()
 end
 
 function Room:getData()
@@ -1509,8 +1547,6 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 
 	local room = Room{
 		addr = addr,
-		mdbs = table(),
-		roomStates = table(),
 		-- this is just 16 * mdb's (width, height)
 		width = w,
 		height = h,
@@ -1642,7 +1678,7 @@ function SMMap:mapInit()
 		--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
 		-- if there's only 1 roomState then it is a term, and
 		for i=1,#m.roomStates do
-			assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
+			assert(d == ffi.cast('uint8_t*', m.roomStates[i].select_ptr))
 			d = d + ffi.sizeof(m.roomStates[i].select_ctype)
 		end
 		-- next should always match the last room
@@ -1916,7 +1952,8 @@ local function drawRoom(ctx, room, m)
 	local blocks = room.blocks
 	local w = room.width / blocksPerRoom
 	local h = room.height / blocksPerRoom
-	local ofsx, ofsy = ofsPerRegion[m.ptr.region+1](m.ptr)
+	local ofscalc = assert(ofsPerRegion[m.ptr.region+1], "couldn't get offset calc func for mdb:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofsx, ofsy = ofscalc(m.ptr)
 	local xofs = roomSizeInPixels * (ofsx - 4)
 	local yofs = roomSizeInPixels * (ofsy + 1)
 	local firstcoord
@@ -2545,7 +2582,7 @@ function SMMap:mapPrint()
 		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
-			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..tostring(rs.select[0]))
+			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select_ptr) - rom)..' '..tostring(rs.select))
 			-- [[
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
@@ -2634,8 +2671,8 @@ function SMMap:mapBuildMemoryMap(mem)
 		local addr = topc(self.mdbBank, m.addr)	
 		mem:add(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
 		for _,rs in ipairs(m.roomStates) do
-			assert(rs.select)
-			mem:add(ffi.cast('uint8_t*', rs.select) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
+			assert(rs.select_ptr)
+			mem:add(ffi.cast('uint8_t*', rs.select_ptr) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized mdb width x height
@@ -3087,9 +3124,9 @@ function SMMap:mapWriteEnemySpawnSets()
 				if not differ then
 					local piaddr = ('$%06x'):format(pi.addr)
 					local pjaddr = ('$%06x'):format(pj.addr)
-					print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
+					--print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						print('updating roomState '..('%06x'):format(ffi.cast('unsigned char*',rs.ptr)-rom))
+						--print('updating roomState '..('%06x'):format(ffi.cast('unsigned char*',rs.ptr)-rom))
 						rs.ptr.enemySpawn = bit.band(0xffff, pi.addr)
 						rs:setEnemySpawnSet(pi)
 					end
@@ -3250,29 +3287,185 @@ function SMMap:mapWriteMDBs()
 		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
 		-- then comes plm_t's
 		{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
+-- TODO make sure 06/00 is at $07c96e		
 		-- then comes db_t's 
 		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
 		{0x7e82c, 0x7e85a},	-- single mdb of region 7
 		-- then comes door code
 	})
+	
+	for _,m in ipairs(self.mdbs) do
+		assert(m.ptr.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+	end
+	for _,room in ipairs(self.rooms) do
+		for _,m in ipairs(room.mdbs) do
+			assert(m.ptr.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+		end
+	end
 
 	-- compress roomstates ...
 	-- for all plm scrollmods, if they have matching data then combine their addresses
 
+	-- sort mdbs by region and by index
+	self.mdbs:sort(function(a,b)
+		-- [[
+		if a.obj.region < b.obj.region then return true end
+		if a.obj.region > b.obj.region then return false end
+		return a.obj.index < b.obj.index
+		--]]
+		--[[
+		return a.addr < b.addr
+		--]]
+	end)
+	-- grab and write new regions
 	for _,m in ipairs(self.mdbs) do
+		print('mdb size '..('0x%x'):format(ffi.sizeof'mdb_t'))	
+		local totalSize = ffi.sizeof'mdb_t'
+		for _,rs in ipairs(m.roomStates) do
+			print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
+			totalSize = totalSize + ffi.sizeof(rs.select_ctype)
+			print('roomstate_t size '..('0x%x'):format(ffi.sizeof'roomstate_t'))	
+			totalSize = totalSize + ffi.sizeof'roomstate_t'
+		end
+		print('dooraddr size '..('0x%x'):format(2 * #m.doors))	
+		totalSize = totalSize + 2 * #m.doors
+		for _,rs in ipairs(m.roomStates) do
+			if rs.roomvar then
+				print('roomvar size '..('0x%x'):format(#rs.roomvar))	
+				totalSize = totalSize + #rs.roomvar
+			end
+		end
+		for i,rs in ipairs(m.roomStates) do
+			if rs.scrollData then
+				local matches
+				for j=1,i-1 do
+					local rs2 = m.roomStates[j]
+					if tablesAreEqual(rs.scrollData, rs2.scrollData) then
+						matches = true
+						break
+					end
+				end
+				if not matches then
+					print('scroll size '..('0x%x'):format(m.obj.width * m.obj.height))	
+					totalSize = totalSize + m.obj.width * m.obj.height
+				end
+			end
+		end
+		
 		-- write m.obj
-		--		update doors[1..n].ptr.dest_mdb
+		local addr, endaddr = mdbWriteRanges:get(totalSize)
+		local ptr = rom + addr
+		mptr = ffi.cast('mdb_t*', ptr)
+		mptr[0] = m.obj
+		local oldptr = m.ptr
+		m.ptr = mptr
+		m.addr = bit.band(addr, 0xffff)	-- TODO get rid of this field and only use m.ptr
+		print('moving mdb '..('%02x/%02x'):format(m.obj.region, m.obj.index)..' from '..('%06x'):format(ffi.cast('uint8_t*',oldptr)-rom)..' to '..('%06x'):format(addr))
+print(('$%06x'):format(ptr-rom)..' mdb_t')
+		ptr = ptr + ffi.sizeof'mdb_t'
+
 		-- write m.roomStates[1..n].select
-		-- write roomselect terminator: e6 e5 (or is it always there?)
-		-- write m.roomStates[n..1].obj (reverse order)
-		--		update roomstates as you do this.
+		for _,rs in ipairs(m.roomStates) do
+			local selptr = ffi.cast(rs.select_ctype..'*', ptr)
+			selptr[0] = rs.select
+			rs.select_ptr = selptr
+print(('$%06x'):format(ptr-rom)..' '..rs.select_ctype)
+			ptr = ptr + ffi.sizeof(rs.select_ctype)
+		end
+		-- write m.roomStates[n..1].obj (reverse order ... last roomselect matches first roomstate, and that's why last roomselect has no pointer.  the others do have roomstate addrs, but maybe keep the roomstates reverse-sequential just in case) 
+		--		update roomstate2_t's and roomstate3_t's as you do this
+		for i=#m.roomStates,1,-1 do
+			local rs = m.roomStates[i]
+			local roomStateAddr = bit.band(0xffff, ptr - rom)
+			local rsptr = ffi.cast('roomstate_t*', ptr)
+			rsptr[0] = rs.obj
+			rs.ptr = rsptr
+print(('$%06x'):format(ptr-rom)..' roomstate_t')
+			if rs.select_ctype ~= 'roomselect1_t' then
+				rs.select_ptr.roomStateAddr = roomStateAddr		-- update previous write in rom
+				rs.select.roomStateAddr = roomStateAddr		-- update POD
+			else
+				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+			end
+			ptr = ptr + ffi.sizeof'roomstate_t'
+		end
+		
 		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between mdbs.
+		--		update m.ptr.doors
+print(('$%06x'):format(ptr-rom)..' dooraddrs')
+		m.ptr.doors = bit.band(0xffff, ptr-rom)
+		m.obj.doors = m.ptr.doors
+		for _,door in ipairs(m.doors) do
+			ffi.cast('uint16_t*', ptr)[0] = door.addr
+			-- right now door.ptr points to the door_t object elsewhere, not to the ptr of the ptr to the door_t
+			ptr = ptr + ffi.sizeof'uint16_t'
+		end
+		
 		-- write m.roomStates[1..n].roomvar (only for grey torizo room)
-		--		update roomStates[1..n].ptr.roomvarAddr
+		--		update m.roomStates[1..n].ptr.roomvarAddr
+		for _,rs in ipairs(m.roomStates) do
+			if rs.roomvar then
+print(('$%06x'):format(ptr-rom)..' roomvar')
+				rs.ptr.roomvarAddr = bit.band(0xffff, ptr-rom)
+				rs.obj.roomvarAddr = rs.ptr.roomvarAddr
+				for _,c in ipairs(rs.roomvar) do
+					ptr[0] = c
+					ptr = ptr + 1
+				end
+			end
+		end
+		
 		-- write m.roomStates[1..n].scrollData
+		--		update m.roomStates[1..n].ptr.scroll
+		for i,rs in ipairs(m.roomStates) do
+			if rs.scrollData then
+				assert(rs.obj.scroll > 1 and rs.obj.scroll ~= 0x8000)
+				assert(#rs.scrollData == m.obj.width * m.obj.height)
+				local matches
+				for j=1,i-1 do
+					local rs2 = m.roomStates[j]
+					if rs2.scrollData then
+						if tablesAreEqual(rs.scrollData, rs2.scrollData) then
+							matches = rs2.ptr.scroll
+							break
+						end
+					end	
+				end
+				if matches then
+					rs.ptr.scroll = matches
+				else
+print(('$%06x'):format(ptr-rom)..' scrolldata')
+					rs.ptr.scroll = bit.band(0xffff, ptr-rom)
+					rs.obj.scroll = rs.ptr.scroll
+					for i=1,m.obj.width * m.obj.height do
+						ptr[0] = rs.scrollData[i]
+						ptr = ptr + 1
+					end
+				end
+			end
+		end
+
+		assert(endaddr == ptr - rom)
 	end
-	-- as you write mdbs, you will have to update all door_t's that point to the mdbs
-	-- same with the mdb addresses that point to room selects, room states, door addrs, etc
+
+	--		update m.doors[1..n].ptr.dest_mdb
+	for _,m in ipairs(self.mdbs) do
+		for _,door in ipairs(m.doors) do
+			if door.ctype == 'door_t' then
+				door.ptr.dest_mdb = bit.band(0xffff, ffi.cast('uint8_t*',m.ptr) - rom)
+			end
+		end
+	end
+
+	for _,m in ipairs(self.mdbs) do
+		assert(m.ptr.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+	end
+	-- if you remove mdbs but forget to remove them from rooms then you could end up here ... 
+	for _,room in ipairs(self.rooms) do
+		for _,m in ipairs(room.mdbs) do
+			assert(m.ptr.region == m.obj.region, "regions dont match for mdb:\nptr "..m.ptr[0].."\nobj "..m.obj)
+		end
+	end
 end
 
 function SMMap:mapWriteRooms()
@@ -3361,7 +3554,7 @@ function SMMap:mapWrite()
 	self:mapWriteEnemySpawnSets()
 	--]]
 
-	self:mapWriteMDBs()	-- not yet
+--	self:mapWriteMDBs()	-- buggy
 end
 
 return SMMap

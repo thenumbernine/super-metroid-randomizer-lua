@@ -441,16 +441,11 @@ end
 
 -- also while I'm here, lets remove the unfinished/unused rooms
 -- notice, when using recursive mdb building, this skips them anyways
-for i=#sm.mdbs,1,-1 do
-	local m = sm.mdbs[i]
-	if (m.ptr.region == 2 and m.ptr.index == 0x3d) 
-	or (m.ptr.region == 4 and m.ptr.index == 0x1f)
-	or m.ptr.region == 7
-	then
-		sm.mdbs:remove(i)
-		-- TODO remove all unused roomStates as well? or just let mapWriteMDBs take care of it?
-	end
-end
+-- [[
+sm:mapRemoveMDB(sm:mapFindMDB(2, 0x3d))
+sm:mapRemoveMDB(sm:mapFindMDB(4, 0x1f))
+sm:mapRemoveMDB(sm:mapFindMDB(7, 0x00))
+--]]
 
 -- [=[
 -- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid

@@ -215,13 +215,6 @@ local function getAllMDBPLMs(m)
 	return plmsets
 end
 
-local function findMDB(region, room)
-	for _,m in ipairs(sm.mdbs) do
-		if m.ptr.region == region and m.ptr.index == room then return m end
-	end
-	return false, "couldn't find "..('%02x/%02x'):format(region, room)
-end
-
 --[[
 MAKE SURE TO PUT AT LEAST ONE MISSILE IN THE START (to wake up zebes)
 rooms to put a missile tank in:
@@ -231,8 +224,8 @@ rooms to put a missile tank in:
 01/10 = next room ... but there is a risk of it going in the top
 --]]
 local firstMissileMDBs = table{
-	findMDB(1, 0x0f),
-	findMDB(1, 0x18),
+	sm:mapFindMDB(1, 0x0f),
+	sm:mapFindMDB(1, 0x18),
 }
 
 do
@@ -317,7 +310,7 @@ end
 -- [[ debugging: put bombs by morph
 
 do
-	local m = findMDB(1, 0x0e)
+	local m = sm:mapFindMDB(1, 0x0e)
 	for _,plmset in ipairs(getAllMDBPLMs(m)) do
 		placeInPLMSet{mdb=m, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
 		placeInPLMSet{mdb=m, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
