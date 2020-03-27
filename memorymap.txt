@@ -34,7 +34,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/14: $0181ae..$0181bd (fx1_t)
 00/15: $0181be..$0181bf (fx1_t)
 00/16: $0181c0..$0181c1 (fx1_t)
-00/17: $0181c2..$0181c3 (fx1_t)
+00/18: $0181c2..$0181c3 (fx1_t)
 00/1d: $0181c4..$0181d3 (fx1_t)
 00/1e: $0181d4..$0181e3 (fx1_t)
 00/1f: $0181e4..$0181f3 (fx1_t)
@@ -153,8 +153,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/39: $0187ba..$0187bb (fx1_t)
 02/3a: $0187bc..$0187cb (fx1_t)
 02/3b: $0187cc..$0187db (fx1_t)
-02/3c: $0187dc..$0187eb (fx1_t)
-02/3d: $0187ec..$0187fb (fx1_t)
+02/3c: $0187dc..$0187eb (fx1_t) ... 16 bytes of padding ...
 02/3e: $0187fc..$01880b (fx1_t)
 02/3f: $01880c..$01881b (fx1_t)
 02/40: $01881c..$01882b (fx1_t)
@@ -170,7 +169,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/4a: $0188cc..$0188db (fx1_t)
 02/4b: $0188dc..$0188eb (fx1_t)
 02/4c: $0188ec..$0188fb (fx1_t)
-00/08: $0188fc..$0188fd (lift_t) ... 24 bytes of padding ...
+00/19: $0188fc..$0188fd (lift_t) ... 24 bytes of padding ...
 00/00: $018916..$018945 (door_t x4)
 00/01: $018946..$01895d (door_t x2)
 00/02: $01895e..$0189b1 (door_t x7)
@@ -321,8 +320,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/39: $0198a6..$0198b1 (door_t)
 02/3a: $0198b2..$0198c9 (door_t x2)
 02/3b: $0198ca..$0198e1 (door_t x2)
-02/3c: $0198e2..$01991d (door_t x5)
-02/3d: $01991e..$019929 (door_t)
+02/3c: $0198e2..$01991d (door_t x5) ... 12 bytes of padding ...
 02/3e: $01992a..$019941 (door_t x2)
 02/3f: $019942..$019959 (door_t x2)
 02/40: $01995a..$019971 (door_t x2)
@@ -352,7 +350,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 03/0b: $019b64..$019b73 (fx1_t)
 03/0c: $019b74..$019b83 (fx1_t)
 03/0d: $019b84..$019b93 (fx1_t)
-03/0e: $019b94..$019ba3 (fx1_t)
+03/0f: $019b94..$019ba3 (fx1_t)
 03/00: $019ba4..$019bb3 (fx1_t)
 03/01: $019bb4..$019bc3 (fx1_t)
 03/02: $019bc4..$019bd3 (fx1_t)
@@ -452,7 +450,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/04: $01a184..$01a185 (fx1_t)
 06/05: $01a186..$01a187 (fx1_t)
 05/0a: $01a188..$01a189 (fx1_t)
-04/13: $01a18a..$01a18b (lift_t)
+05/00: $01a18a..$01a18b (lift_t)
 03/00: $01a18c..$01a1af (door_t x3)
 03/01: $01a1b0..$01a1c7 (door_t x2)
 03/02: $01a1c8..$01a1eb (door_t x3)
@@ -549,11 +547,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/02: $01ab70..$01ab87 (door_t x2)
 06/03: $01ab88..$01ab9f (door_t x2)
 06/04: $01aba0..$01abb7 (door_t x2)
-06/05: $01abb8..$01abc3 (door_t)
-07/00: $01abc4..$01abcf (door_t) ... -1 bytes of padding ...
-07/00: $01abcf..$01abda (door_t) ... -1 bytes of padding ...
-07/00: $01abda..$01abe5 (door_t) ... -1 bytes of padding ...
-07/00: $01abe5..$01abf0 (door_t) ... 122833 bytes of padding ...
+06/05: $01abb8..$01abc3 (door_t) ... 122878 bytes of padding ...
 --------------
      : $038bc2..$038c31 (enemyShot_t x8) ... 542 bytes of padding ...
      : $038e50..$038e6b (enemyShot_t x2) ... 291 bytes of padding ...
@@ -741,8 +735,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/39: $078e90..$078e97 (plm_t)
 02/3a: $078e98..$078ea5 (plm_t)
 02/3b: $078ea6..$078eb9 (plm_t)
-02/3c: $078eba..$078ed3 (plm_t)
-02/3d: $078ed4..$078ed5 (plm_t)
+02/3c: $078eba..$078ed3 (plm_t) ... 2 bytes of padding ...
 02/3e: $078ed6..$078f37 (plm_t)
 02/3f: $078f38..$078f39 (plm_t)
 02/40: $078f3a..$078f3b (plm_t)
@@ -766,15 +759,15 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/00: $0791bd..$0791cd (layer handling code) ... -5 bytes of padding ...
 00/00: $0791c9..$0791cd (layer handling code)
 00/05: $0791ce..$0791d2 (layer handling code)
-00/01: $0791d3..$0791d3 (layer handling code)
-00/12: $0791d4..$0791d4 (layer handling code)
+00/02: $0791d3..$0791d3 (layer handling code)
+00/18: $0791d4..$0791d4 (layer handling code)
 01/00: $0791d5..$0791d5 (layer handling code)
-01/20: $0791d6..$0791d6 (layer handling code)
+00/30: $0791d6..$0791d6 (layer handling code)
 00/33: $0791d7..$0791f3 (layer handling code)
 01/34: $0791f4..$0791f4 (layer handling code)
-02/00: $0791f5..$0791f5 (layer handling code)
-02/0a: $0791f6..$0791f6 (layer handling code)
-02/35: $0791f7..$0791f7 (layer handling code)
+02/03: $0791f5..$0791f5 (layer handling code)
+02/0c: $0791f6..$0791f6 (layer handling code)
+02/48: $0791f7..$0791f7 (layer handling code)
 00/00: $0791f8..$079202 (mdb_t)
 00/00: $079203..$079212 (roomselect x4)
 00/00: $079213..$07927a (roomstate_t x4)
@@ -1494,11 +1487,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/3c: $07b3b2..$07b3cb (roomstate_t)
 02/3c: $07b3cc..$07b3d5 (dooraddrs)
 02/3c: $07b3d6..$07b3d8 (scrolldata)
-02/3c: $07b3d9..$07b3e0 (plm scrollmod x2)
-02/3d: $07b3e1..$07b3eb (mdb_t)
-02/3d: $07b3ec..$07b3ed (roomselect)
-02/3d: $07b3ee..$07b407 (roomstate_t)
-02/3d: $07b408..$07b409 (dooraddrs)
+02/3c: $07b3d9..$07b3e0 (plm scrollmod x2) ... 41 bytes of padding ...
 02/3e: $07b40a..$07b414 (mdb_t)
 02/3e: $07b415..$07b416 (roomselect)
 02/3e: $07b417..$07b430 (roomstate_t)
@@ -1582,16 +1571,16 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/0a: $07b84d..$07b867 (bg_t) ... -16 bytes of padding ...
 02/0a: $07b858..$07b872 (bg_t) ... 11 bytes of padding ...
 00/0a: $07b87e..$07b898 (bg_t)
-00/01: $07b899..$07b8b3 (bg_t)
+00/06: $07b899..$07b8b3 (bg_t)
 00/02: $07b8b4..$07b8ce (bg_t)
 00/18: $07b8cf..$07b8e9 (bg_t)
 00/16: $07b8ea..$07b904 (bg_t)
-00/12: $07b905..$07b91f (bg_t)
+00/13: $07b905..$07b91f (bg_t)
 00/17: $07b920..$07b93a (bg_t)
-00/08: $07b93b..$07b955 (bg_t)
+00/0f: $07b93b..$07b955 (bg_t)
 00/1c: $07b956..$07b970 (bg_t)
 00/05: $07b971..$07b980 (door code)
-00/04: $07b981..$07b98b (door code)
+00/12: $07b981..$07b98b (door code)
 00/18: $07b98c..$07b996 (door code)
 00/01: $07b997..$07b9a1 (door code)
 00/16: $07b9a2..$07b9b2 (door code)
@@ -1603,7 +1592,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/0f: $07ba21..$07ba2b (door code)
 00/10: $07ba2c..$07ba36 (door code)
 01/00: $07ba37..$07ba51 (bg_t)
-01/0a: $07ba52..$07ba6c (bg_t)
+01/12: $07ba52..$07ba6c (bg_t)
 01/04: $07ba6d..$07ba87 (bg_t)
 01/02: $07ba88..$07baa2 (bg_t)
 01/03: $07baa3..$07babd (bg_t)
@@ -1642,18 +1631,17 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 01/23: $07be1a..$07be24 (door code)
 01/18: $07be25..$07be35 (door code)
 01/00: $07be36..$07be3e (door code)
-02/00: $07be3f..$07be59 (bg_t)
-02/04: $07be5a..$07be74 (bg_t) ... 27 bytes of padding ...
-02/3d: $07be90..$07beaa (bg_t)
+02/05: $07be3f..$07be59 (bg_t)
+02/04: $07be5a..$07be74 (bg_t) ... 54 bytes of padding ...
 02/3c: $07beab..$07bec5 (bg_t)
-02/10: $07bec6..$07bee0 (bg_t)
+02/29: $07bec6..$07bee0 (bg_t)
 02/03: $07bee1..$07befb (bg_t)
 02/41: $07befc..$07bf16 (bg_t)
 02/36: $07bf17..$07bf31 (bg_t)
-02/35: $07bf32..$07bf4c (bg_t)
-02/3b: $07bf4d..$07bf67 (bg_t)
-02/18: $07bf68..$07bf82 (bg_t)
-02/19: $07bf83..$07bf9d (bg_t)
+02/44: $07bf32..$07bf4c (bg_t)
+02/47: $07bf4d..$07bf67 (bg_t)
+02/24: $07bf68..$07bf82 (bg_t)
+02/1a: $07bf83..$07bf9d (bg_t)
 02/37: $07bf9e..$07bfba (door code)
 02/44: $07bfbb..$07bfd9 (door code)
 02/0e: $07bfda..$07bfe8 (door code)
@@ -1689,8 +1677,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 03/0b: $07c2bb..$07c2bc (plm_t)
 03/0c: $07c2bd..$07c2be (plm_t)
 03/0d: $07c2bf..$07c2c6 (plm_t)
-03/0e: $07c2c7..$07c2c8 (plm_t)
-03/0f: $07c2c9..$07c2d0 (plm_t)
+03/0f: $07c2c7..$07c2d0 (plm_t x2)
 03/00: $07c2d1..$07c2fc (plm_t)
 03/01: $07c2fd..$07c2fe (plm_t)
 03/02: $07c2ff..$07c318 (plm_t)
@@ -1785,15 +1772,15 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/03: $07c8c1..$07c8c2 (plm_t)
 06/04: $07c8c3..$07c8c4 (plm_t)
 06/05: $07c8c5..$07c8c6 (plm_t)
-03/00: $07c8c7..$07c8c7 (layer handling code)
+03/01: $07c8c7..$07c8c7 (layer handling code)
 03/08: $07c8c8..$07c8cf (layer handling code)
-03/09: $07c8d0..$07c8d0 (layer handling code)
-04/00: $07c8d1..$07c8d1 (layer handling code)
-04/18: $07c8d2..$07c8d2 (layer handling code)
+03/0b: $07c8d0..$07c8d0 (layer handling code)
+04/13: $07c8d1..$07c8d1 (layer handling code)
+04/19: $07c8d2..$07c8d2 (layer handling code)
 04/30: $07c8d3..$07c8dc (layer handling code x2)
 04/37: $07c8dd..$07c8f5 (layer handling code) ... 20 bytes of padding ...
 05/00: $07c90a..$07c91d (layer handling code)
-05/01: $07c91e..$07c91e (layer handling code)
+05/0a: $07c91e..$07c91e (layer handling code)
 05/0e: $07c91f..$07c932 (layer handling code)
 05/0f: $07c933..$07c945 (layer handling code)
 05/10: $07c946..$07c952 (layer handling code)
@@ -2286,7 +2273,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/05: $07e0fb..$07e0fc (dooraddrs)
 03/0a: $07e0fd..$07e117 (bg_t) ... -16 bytes of padding ...
 04/37: $07e108..$07e122 (bg_t) ... -16 bytes of padding ...
-03/0a: $07e113..$07e12d (bg_t) ... -23 bytes of padding ...
+04/37: $07e113..$07e12d (bg_t) ... -23 bytes of padding ...
 03/01: $07e117..$07e131 (bg_t) ... 27 bytes of padding ...
 03/05: $07e14d..$07e167 (bg_t)
 03/02: $07e168..$07e182 (bg_t)
@@ -2317,25 +2304,20 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 04/24: $07e3b9..$07e3c7 (door code)
 04/30: $07e3c8..$07e3d8 (door code)
 04/37: $07e3d9..$07e3e7 (door code)
-05/00: $07e3e8..$07e402 (bg_t)
-05/01: $07e403..$07e41d (bg_t)
-05/05: $07e41e..$07e438 (bg_t)
+05/04: $07e3e8..$07e402 (bg_t)
+05/03: $07e403..$07e41d (bg_t)
+05/0b: $07e41e..$07e438 (bg_t)
 05/0e: $07e439..$07e453 (bg_t)
-05/0c: $07e454..$07e46e (bg_t)
-05/10: $07e46f..$07e489 (bg_t)
+05/0f: $07e454..$07e46e (bg_t)
+05/11: $07e46f..$07e489 (bg_t)
 05/0a: $07e48a..$07e4a4 (bg_t)
 06/01: $07e4a5..$07e4bf (bg_t)
 05/00: $07e4c0..$07e4ce (door code)
 05/11: $07e4cf..$07e4df (door code)
 06/01: $07e4e0..$07e512 (door code)
-06/00: $07e513..$07e51e (door code) ... 781 bytes of padding ...
-07/00: $07e82c..$07e836 (mdb_t)
-07/00: $07e837..$07e838 (roomselect)
-07/00: $07e839..$07e852 (roomstate_t)
-07/00: $07e853..$07e85a (dooraddrs) ... 36 bytes of padding ...
-07/00: $07e87f..$07e880 (plm_t) ... 6015 bytes of padding ...
+06/00: $07e513..$07e51e (door code) ... 6881 bytes of padding ...
 --------------
-00/04: $080000..$080007 (bg_t) ... 99369 bytes of padding ...
+00/19: $080000..$080007 (bg_t) ... 99369 bytes of padding ...
 --------------
      : $098431..$098432 (weapon damage) ... 20 bytes of padding ...
      : $098447..$098448 (weapon damage) ... 20 bytes of padding ...
@@ -2374,7 +2356,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $104ebf..$10713e (enemy_t x138) ... 20 bytes of padding ...
      : $107153..$1077d2 (enemy_t x26) ... 2093 bytes of padding ...
 --------------
-04/37: $108000..$108002 (enemySpawn_t) ... -1 bytes of padding ...
+05/0a: $108000..$108002 (enemySpawn_t) ... -1 bytes of padding ...
 00/09: $108002..$1080d4 (enemySpawn_t)
 00/03: $1080d5..$108107 (enemySpawn_t)
 00/18: $108108..$10819a (enemySpawn_t)
@@ -2507,8 +2489,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/09: $10a9da..$10aa8c (enemySpawn_t)
 02/40: $10aa8d..$10ab7f (enemySpawn_t)
 02/4b: $10ab80..$10ac52 (enemySpawn_t)
-02/23: $10ac53..$10ad05 (enemySpawn_t)
-02/3d: $10ad06..$10ad08 (enemySpawn_t)
+02/23: $10ac53..$10ad05 (enemySpawn_t) ... 3 bytes of padding ...
 02/25: $10ad09..$10ad6b (enemySpawn_t)
 02/3f: $10ad6c..$10ad8e (enemySpawn_t)
 02/0c: $10ad8f..$10ae51 (enemySpawn_t)
@@ -2674,10 +2655,9 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/02: $10eb02..$10eb74 (enemySpawn_t)
 06/03: $10eb75..$10eb97 (enemySpawn_t)
 06/04: $10eb98..$10ebba (enemySpawn_t)
-06/05: $10ebbb..$10ebcd (enemySpawn_t)
-07/00: $10ebce..$10ebd0 (enemySpawn_t) ... 594983 bytes of padding ...
+06/05: $10ebbb..$10ebcd (enemySpawn_t) ... 594986 bytes of padding ...
 --------------
-04/37: $19fff8..$1a0001 (enemyGFX_t) ... -1 bytes of padding ...
+05/0a: $19fff8..$1a0001 (enemyGFX_t) ... -1 bytes of padding ...
 --------------
 00/09: $1a0001..$1a0016 (enemyGFX_t)
 00/03: $1a0017..$1a0028 (enemyGFX_t)
@@ -2811,8 +2791,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/09: $1a083d..$1a0856 (enemyGFX_t)
 02/40: $1a0857..$1a0868 (enemyGFX_t)
 02/4b: $1a0869..$1a087e (enemyGFX_t)
-02/23: $1a087f..$1a0890 (enemyGFX_t)
-02/3d: $1a0891..$1a089a (enemyGFX_t)
+02/23: $1a087f..$1a0890 (enemyGFX_t) ... 10 bytes of padding ...
 02/25: $1a089b..$1a08a8 (enemyGFX_t)
 02/3f: $1a08a9..$1a08b6 (enemyGFX_t)
 02/0c: $1a08b7..$1a08c8 (enemyGFX_t)
@@ -2978,8 +2957,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/02: $1a1284..$1a1291 (enemyGFX_t)
 06/03: $1a1292..$1a129f (enemyGFX_t)
 06/04: $1a12a0..$1a12ad (enemyGFX_t)
-06/05: $1a12ae..$1a12bb (enemyGFX_t) ... -1 bytes of padding ...
-07/00: $1a12bb..$1a12c4 (enemyGFX_t) ... 19154 bytes of padding ...
+06/05: $1a12ae..$1a12bb (enemyGFX_t) ... 19163 bytes of padding ...
      : $1a5d97..$1a5e92 (debug name x18) ... 14 bytes of padding ...
      : $1a5ea1..$1a62f2 (debug name x79) ... 2345 bytes of padding ...
      : $1a6c1c..$1a703b (weakness_t x48) ... 44 bytes of padding ...
@@ -3136,8 +3114,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/38: $246900..$246bfc (room)
 02/3a: $246bfd..$246dcd (room)
 02/3b: $246dce..$24701e (room)
-02/3c: $24701f..$24740a (room)
-02/3d: $24740b..$24758a (room)
+02/3c: $24701f..$24740a (room) ... 384 bytes of padding ...
 02/3e: $24758b..$247cc4 (room)
 02/3f: $247cc5..$248221 (room)
 --------------
@@ -3230,16 +3207,15 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 05/11: $26f534..$2703c2 (room)
 --------------
 01/05: $2703c3..$2706bc (room)
-00/1b: $2706bd..$2709b5 (room)
-01/15: $2709b6..$270cb2 (room)
+04/16: $2706bd..$2709b5 (room)
+01/31: $2709b6..$270cb2 (room)
 01/07: $270cb3..$270fa5 (room)
 02/2b: $270fa6..$2712ca (room)
-00/04: $2712cb..$2715c1 (room)
-01/36: $2715c2..$2718db (room)
+01/1f: $2712cb..$2715c1 (room)
+05/12: $2715c2..$2718db (room)
 02/39: $2718dc..$271be8 (room)
 00/33: $271be9..$271ef5 (room)
 02/32: $271ef6..$272200 (room)
 01/32: $272201..$272502 (room) ... 800 bytes of padding ...
 05/09: $272823..$272b30 (room)
-04/2d: $272b31..$272e3d (room)
-07/00: $272e3e..$27322d (room) (room)
+04/2d: $272b31..$272e3d (room) (room)

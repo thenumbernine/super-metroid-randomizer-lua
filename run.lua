@@ -440,6 +440,7 @@ do
 end
 
 -- also while I'm here, lets remove the unfinished/unused rooms
+-- notice, when using recursive mdb building, this skips them anyways
 for i=#sm.mdbs,1,-1 do
 	local m = sm.mdbs[i]
 	if (m.ptr.region == 2 and m.ptr.index == 0x3d) 
