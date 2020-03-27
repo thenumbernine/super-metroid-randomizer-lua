@@ -56,21 +56,22 @@ local mdb_t = struct'mdb_t'{	-- aka mdb, aka mdb_header
 	{doors = 'uint16_t'},		-- 9 offset at bank  ... 9f?
 }
 
-local roomselect0_t = struct'roomselect0_t'{
+local roomselect1_t = struct'roomselect1_t'{
 	{testcode = 'uint16_t'},
-}
-
--- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
-local roomselect_t = struct'roomselect_t'{
-	{testcode = 'uint16_t'},	-- ptr to test code in bank $8f
-	{testvalue = 'uint8_t'},
-	{roomstate = 'uint16_t'},	-- ptr to alternative roomstate in bank $8f
 }
 
 local roomselect2_t = struct'roomselect2_t'{
 	{testcode = 'uint16_t'},
 	{roomstate = 'uint16_t'},
 }
+
+-- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
+local roomselect3_t = struct'roomselect3_t'{
+	{testcode = 'uint16_t'},	-- ptr to test code in bank $8f
+	{testvalue = 'uint8_t'},
+	{roomstate = 'uint16_t'},	-- ptr to alternative roomstate in bank $8f
+}
+
 
 local roomstate_t = struct'roomstate_t'{
 	{roomAddr = 'uint16_t'},
@@ -570,13 +571,13 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		
 		local ctype
 		if testcode == 0xe5e6 then 
-			ctype = 'roomselect0_t'
+			ctype = 'roomselect1_t'
 		elseif testcode == 0xe612
 		or testcode == 0xe629
 		then
-			ctype = 'roomselect_t'
+			ctype = 'roomselect3_t'
 		elseif testcode == 0xe5eb then
-			ctype = 'roomselect_t'	-- this is for doors.  but it's not used. so whatever.
+			ctype = 'roomselect3_t'	-- this is for doors.  but it's not used. so whatever.
 		else
 			ctype = 'roomselect2_t'
 		end
@@ -589,22 +590,23 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		
 		data = data + ffi.sizeof(ctype)
 
-		if ctype == 'roomselect0_t' then break end	-- term
+		if ctype == 'roomselect1_t' then break end	-- term
 	end
 
 	-- after the last roomselect is the first roomstate_t
 	local rs = m.roomStates:last()
 	-- uint16_t select means a terminator
-	assert(rs.select_ctype == 'roomselect0_t')
+	assert(rs.select_ctype == 'roomselect1_t')
 	rs.ptr = ffi.cast('roomstate_t*', data)
 	data = data + ffi.sizeof'roomstate_t'
 
 	-- then the rest of the roomstates come
 	for _,rs in ipairs(m.roomStates) do
-		if rs.select_ctype ~= 'roomselect0_t' then
+		if rs.select_ctype ~= 'roomselect1_t' then
 			assert(not rs.ptr)
 			local addr = topc(self.roomStateBank, rs.select[0].roomstate)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
+			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 		end
 
 		assert(rs.ptr)
@@ -1636,13 +1638,13 @@ function SMMap:mapInit()
 		local d = ffi.cast('uint8_t*',m.ptr)
 		local mdbaddr = d - rom
 		d = d + ffi.sizeof'mdb_t'
+		-- last roomselect should always be 2 byte term
+		--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
 		-- if there's only 1 roomState then it is a term, and
-		for i=1,#m.roomStates-1 do
+		for i=1,#m.roomStates do
 			assert(d == ffi.cast('uint8_t*', m.roomStates[i].select))
 			d = d + ffi.sizeof(m.roomStates[i].select_ctype)
 		end
-		-- last roomselect should always be 2 byte term
-		d = d + 2
 		-- next should always match the last room
 		for i=#m.roomStates,1,-1 do
 			assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
@@ -3258,12 +3260,16 @@ function SMMap:mapWriteMDBs()
 	-- for all plm scrollmods, if they have matching data then combine their addresses
 
 	for _,m in ipairs(self.mdbs) do
-		-- write m.obj (C pos)
+		-- write m.obj
+		--		update doors[1..n].ptr.dest_mdb
 		-- write m.roomStates[1..n].select
-		-- write the roomstates
-		-- write the dooraddrs
-		-- write roomvar (only for grey torizo room)
-		-- write the scrolldata ... (who points to this?)
+		-- write roomselect terminator: e6 e5 (or is it always there?)
+		-- write m.roomStates[n..1].obj (reverse order)
+		--		update roomstates as you do this.
+		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between mdbs.
+		-- write m.roomStates[1..n].roomvar (only for grey torizo room)
+		--		update roomStates[1..n].ptr.roomvarAddr
+		-- write m.roomStates[1..n].scrollData
 	end
 	-- as you write mdbs, you will have to update all door_t's that point to the mdbs
 	-- same with the mdb addresses that point to room selects, room states, door addrs, etc
