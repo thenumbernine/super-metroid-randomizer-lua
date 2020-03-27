@@ -412,8 +412,21 @@ end)) do
 	SMMap.plmCmdValueForName[k..'_hidden'] = v + 2*0x54
 end
 
-
 SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v end)
+
+
+local function readCode(rom, addr, maxlen)
+	local code = table()
+	for i=0,maxlen-1 do
+		local r = rom[addr] addr=addr+1
+		code:insert(r)
+		if r == 0x60 then break end
+		if i == maxlen-1 then error("code read overflow") end
+	end
+	return code
+end
+
+
 
 local RoomState = class()
 function RoomState:init(args)
@@ -519,6 +532,274 @@ function PLMSet:init(args)
 	self.plms = table(args.plms)
 	self.roomStates = table()
 end
+
+
+
+
+function SMMap:mapAddMDB(pageofs)
+	local _,m = self.mdbs:find(nil, function(m) return m.addr == pageofs end)
+	if m then return m end
+
+	local absaddr = topc(self.mdbBank, pageofs)
+
+	local rom = self.rom
+	local data = rom + absaddr
+	
+	local m = {
+		roomStates = table(),
+		doors = table(),
+	-- TODO bank-offset addr vs pc addr for all my structures ...
+		addr = pageofs,
+		ptr = ffi.cast('mdb_t*', data),
+	}	
+	self.mdbs:insert(m)
+	
+	data = data + ffi.sizeof'mdb_t'
+
+	-- roomstates
+	while true do
+		local testcode = ffi.cast('uint16_t*',data)[0]
+		
+		local ctype
+		if testcode == 0xe5e6 then 
+			ctype = 'uint16_t'
+		elseif testcode == 0xe612
+		or testcode == 0xe629
+		then
+			ctype = 'roomselect_t'
+		elseif testcode == 0xe5eb then
+			ctype = 'roomselect_t'	-- this is for doors.  but it's not used. so whatever.
+		else
+			ctype = 'roomselect2_t'
+		end
+		local rs = RoomState{
+			m = m,
+			select = ffi.cast(ctype..'*', data),
+			select_ctype = ctype,	-- using for debug print only
+		}
+		m.roomStates:insert(rs)
+		
+		data = data + ffi.sizeof(ctype)
+
+		if ctype == 'uint16_t' then break end	-- term
+	end
+
+	do
+		-- after the last roomselect is the first roomstate_t
+		local rs = m.roomStates:last()
+		-- uint16_t select means a terminator
+		assert(rs.select_ctype == 'uint16_t')
+		rs.ptr = ffi.cast('roomstate_t*', data)
+		data = data + ffi.sizeof'roomstate_t'
+
+		-- then the rest of the roomstates come
+		for _,rs in ipairs(m.roomStates) do
+			if rs.select_ctype ~= 'uint16_t' then
+				assert(not rs.ptr)
+				local addr = topc(self.roomStateBank, rs.select[0].roomstate)
+				rs.ptr = ffi.cast('roomstate_t*', rom + addr)
+			end
+
+			assert(rs.ptr)
+		end
+
+		-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
+		-- they sure aren't sequential
+		-- they might be reverse-sequential
+		-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
+		--[[
+		for i=1,#m.roomStates-1 do
+			assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
+		end
+		--]]
+
+		for _,rs in ipairs(m.roomStates) do
+			if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
+				local addr = topc(self.scrollBank, rs.ptr.scroll)
+				local size = m.ptr.width * m.ptr.height
+				rs.scrollData = range(size):map(function(i)
+					return rom[addr+i-1]
+				end)
+			end
+		end
+
+		-- add plms in reverse order, because the roomstates are in reverse order of roomselects,
+		-- and the plms are stored in-order with roomselects
+		-- so now, when writing them out, they will be in the same order in memory as they were when being read in
+		for i=#m.roomStates,1,-1 do
+			local rs = m.roomStates[i]
+			if rs.ptr.plm ~= 0 then
+				local addr = topc(self.plmBank, rs.ptr.plm)
+				local plmset = self:mapAddPLMSetFromAddr(addr, m)
+				rs:setPLMSet(plmset)
+			end
+		end
+
+		-- enemySpawnSet
+		-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
+		for _,rs in ipairs(m.roomStates) do
+			local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.ptr.enemySpawn))
+			rs:setEnemySpawnSet(enemySpawnSet)
+		end
+		
+		for _,rs in ipairs(m.roomStates) do
+			local enemyGFXSet = self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.ptr.enemyGFX))
+			rs:setEnemyGFXSet(enemyGFXSet)
+		end
+
+		-- some rooms use the same fx1 ptr
+		-- and from there they are read in contiguous blocks until a term is encountered
+		-- so I should make these fx1sets (like plmsets)
+		-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
+		-- then make one set and just put the subset's at the end
+		-- (unless the order matters...)
+		for _,rs in ipairs(m.roomStates) do
+			local startaddr = topc(self.fx1Bank, rs.ptr.fx1)
+			local addr = startaddr
+			local retry
+			while true do
+				local cmd = ffi.cast('uint16_t*', rom+addr)[0]
+				
+				-- null sets are represented as an immediate ffff
+				-- whereas sets of more than 1 value use 0000 as a term ...
+				-- They can also be used to terminate a set of fx1_t
+				if cmd == 0xffff then
+					-- include terminator bytes in block length:
+					rs.fx1term = true
+					addr = addr + 2
+					break
+				end
+				
+				--if cmd == 0
+				-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
+				--or m.doors:find(nil, function(door) return door.addr == cmd end)
+				--then
+				if true then
+					local fx1 = self:mapAddFX1(addr)
+-- this misses 5 fx1_t's
+local done = fx1.ptr.doorSelect == 0 
+					fx1.mdbs:insert(m)
+					rs.fx1s:insert(fx1)
+					
+					addr = addr + ffi.sizeof'fx1_t'
+
+-- term of 0 past the first entry
+if done then break end
+				end
+			end
+		end
+		
+		for _,rs in ipairs(m.roomStates) do
+			if rs.ptr.bgdata > 0x8000 then
+				local addr = topc(self.bgBank, rs.ptr.bgdata)
+				while true do
+					local ptr = ffi.cast('bg_t*', rom+addr)
+					
+-- this is a bad test of validity
+-- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
+-- in fact, I never read more than 1 bg, and sometimes I read 0
+--[[
+					if ptr.header ~= 0x04 then
+						addr = addr + 8
+						break
+					end
+--]]
+					-- so bgs[i].addr is the address where bgs[i].ptr was found
+					-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
+					-- a little confusing
+					local bg = self:mapAddBG(addr)
+					bg.mdbs:insert(m)
+					rs.bgs:insert(bg)
+					addr = addr + ffi.sizeof'bg_t'
+				
+					addr=addr+8
+					do break end
+				end
+			
+				--[[ load data
+				-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
+				for _,bg in ipairs(rs.bgs) do
+					local addr = topc(bg.ptr.bank, bg.ptr.addr)
+					local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
+					bg.data = decompressed
+					mem:add(addr, compressedSize, 'bg data', m)
+				end
+				--]]
+			end
+		end
+
+		for _,rs in ipairs(m.roomStates) do
+			if rs.ptr.layerHandling > 0x8000 then
+				local addr = topc(self.layerHandlingBank, rs.ptr.layerHandling)
+				rs.layerHandling = self:mapAddLayerHandling(addr)
+				rs.layerHandling.roomStates:insert(rs)
+			end
+			
+			local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
+			rs.room = self:mapAddRoom(addr, m)
+			rs.room.mdbs:insertUnique(m)
+			rs.room.roomStates:insert(rs)
+		end
+
+		-- door addrs
+		local startaddr = topc(self.doorAddrBank, m.ptr.doors)
+		local addr = startaddr
+		local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+		addr = addr + 2
+		while doorAddr > 0x8000 do
+			m.doors:insert{
+				addr = doorAddr,
+			}
+			doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+			addr = addr + 2
+		end
+		-- exclude terminator
+		addr = addr - 2
+		local len = addr - startaddr
+		
+		-- doors
+		for _,door in ipairs(m.doors) do
+			local addr = topc(self.doorBank, door.addr)
+			data = rom + addr 
+			local dest_mdb = ffi.cast('uint16_t*', data)[0]
+			-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
+			local ctype = dest_mdb == 0 and 'lift_t' or 'door_t'
+			door.ctype = ctype
+			door.ptr = ffi.cast(ctype..'*', data)
+			if ctype == 'door_t' 
+			and door.ptr.code > 0x8000 
+			then
+				door.doorCodeAddr = topc(self.doorCodeBank, door.ptr.code)
+				door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
+			end
+		end
+	
+
+		-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
+		-- pointed to by mdb[00/15].roomstate_t[#1].roomvarAddr
+		-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
+		-- this is the rescue animals roomstate
+		-- so this data has to do with the destructable wall on the right side
+		--if mdbaddr == 0x79804 then
+		if rs.ptr.roomvarAddr ~= 0 then
+			local d = rom + self.plmOffset + rs.ptr.roomvarAddr
+			local roomvar = table()
+			repeat
+				roomvar:insert(d[0])	-- x
+				roomvar:insert(d[1])	-- y
+				if ffi.cast('uint16_t*', d)[0] == 0 then break end
+				roomvar:insert(d[2])	-- mod 1 == 0x52
+				roomvar:insert(d[3])	-- mod 2 == 0x00
+				-- TODO insert roomvar_t and uint16_t term (or omit term)
+				d = d + 4
+			until false
+			-- TODO should be roomstate
+			rs.roomvar = roomvar
+		end
+	end
+	return m
+end
+
 
 function SMMap:newPLMSet(args)
 	local plmset = PLMSet(args)
@@ -1232,18 +1513,6 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 end
 
 
-local function readCode(rom, addr, maxlen)
-	local code = table()
-	for i=0,maxlen-1 do
-		local r = rom[addr] addr=addr+1
-		code:insert(r)
-		if r == 0x60 then break end
-		if i == maxlen-1 then error("code read overflow") end
-	end
-	return code
-end
-
-
 function SMMap:mapAddLayerHandling(addr)
 	local _,layerHandling = self.layerHandlings:find(nil, function(layerHandling)
 		return layerHandling.addr == addr
@@ -1293,275 +1562,18 @@ function SMMap:mapInit()
 	- from mdb's, read all roomstates, and read all their rooms, and read all their door mdbs
 	--]]
 	
-	for x=0x8000,0xffff do
-		local data = rom + topc(self.mdbBank, x)
-		local function read(ctype)
-			local result = ffi.cast(ctype..'*', data)
-			data = data + ffi.sizeof(ctype)
-			return result[0]
-		end
-
-		local mptr = ffi.cast('mdb_t*', data)
+	for pageofs=0x8000,0xffff do
+		local ptr = rom + topc(self.mdbBank, pageofs)
+		local mptr = ffi.cast('mdb_t*', ptr)
 		if (
-			(data[12] == 0xE5 or data[12] == 0xE6) 
+			(ptr[12] == 0xE5 or ptr[12] == 0xE6) 
 			and mptr.region < 8 
 			and (mptr.width ~= 0 and mptr.width < 20) 
 			and (mptr.height ~= 0 and mptr.height < 20)
 			and mptr.gfxFlags < 0x10 
 			and mptr.doors > 0x7F00
 		) then
-			
-			local m = {
-				roomStates = table(),
-				doors = table(),
--- TODO bank-offset addr vs pc addr for all my structures ...
-				addr = x,
-				ptr = mptr,
-			}	
-			self.mdbs:insert(m)
-			data = data + ffi.sizeof'mdb_t'
-
-			-- roomstates
-			while true do
-				local testcode = ffi.cast('uint16_t*',data)[0]
-				
-				local ctype
-				if testcode == 0xe5e6 then 
-					ctype = 'uint16_t'
-				elseif testcode == 0xe612
-				or testcode == 0xe629
-				then
-					ctype = 'roomselect_t'
-				elseif testcode == 0xe5eb then
-					ctype = 'roomselect_t'	-- this is for doors.  but it's not used. so whatever.
-				else
-					ctype = 'roomselect2_t'
-				end
-				local rs = RoomState{
-					m = m,
-					select = ffi.cast(ctype..'*', data),
-					select_ctype = ctype,	-- using for debug print only
-				}
-				m.roomStates:insert(rs)
-				
-				data = data + ffi.sizeof(ctype)
-
-				if ctype == 'uint16_t' then break end	-- term
-			end
-
-			do
-				-- after the last roomselect is the first roomstate_t
-				local rs = m.roomStates:last()
-				-- uint16_t select means a terminator
-				assert(rs.select_ctype == 'uint16_t')
-				rs.ptr = ffi.cast('roomstate_t*', data)
-				data = data + ffi.sizeof'roomstate_t'
-
-				-- then the rest of the roomstates come
-				for _,rs in ipairs(m.roomStates) do
-					if rs.select_ctype ~= 'uint16_t' then
-						assert(not rs.ptr)
-						local addr = topc(self.roomStateBank, rs.select[0].roomstate)
-						rs.ptr = ffi.cast('roomstate_t*', rom + addr)
-					end
-
-					assert(rs.ptr)
-				end
-
-				-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
-				-- they sure aren't sequential
-				-- they might be reverse-sequential
-				-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
-				--[[
-				for i=1,#m.roomStates-1 do
-					assert(m.roomStates[i+1].ptr + 1 == m.roomStates[i].ptr)
-				end
-				--]]
-
-				for _,rs in ipairs(m.roomStates) do
-					if rs.ptr.scroll > 0x0001 and rs.ptr.scroll ~= 0x8000 then
-						local addr = topc(self.scrollBank, rs.ptr.scroll)
-						local size = m.ptr.width * m.ptr.height
-						rs.scrollData = range(size):map(function(i)
-							return rom[addr+i-1]
-						end)
-					end
-				end
-
-				-- add plms in reverse order, because the roomstates are in reverse order of roomselects,
-				-- and the plms are stored in-order with roomselects
-				-- so now, when writing them out, they will be in the same order in memory as they were when being read in
-				for i=#m.roomStates,1,-1 do
-					local rs = m.roomStates[i]
-					if rs.ptr.plm ~= 0 then
-						local addr = topc(self.plmBank, rs.ptr.plm)
-						local plmset = self:mapAddPLMSetFromAddr(addr, m)
-						rs:setPLMSet(plmset)
-					end
-				end
-
-				-- enemySpawnSet
-				-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
-				for _,rs in ipairs(m.roomStates) do
-					local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.ptr.enemySpawn))
-					rs:setEnemySpawnSet(enemySpawnSet)
-				end
-				
-				for _,rs in ipairs(m.roomStates) do
-					local enemyGFXSet = self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.ptr.enemyGFX))
-					rs:setEnemyGFXSet(enemyGFXSet)
-				end
-
-				-- some rooms use the same fx1 ptr
-				-- and from there they are read in contiguous blocks until a term is encountered
-				-- so I should make these fx1sets (like plmsets)
-				-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
-				-- then make one set and just put the subset's at the end
-				-- (unless the order matters...)
-				for _,rs in ipairs(m.roomStates) do
-					local startaddr = topc(self.fx1Bank, rs.ptr.fx1)
-					local addr = startaddr
-					local retry
-					while true do
-						local cmd = ffi.cast('uint16_t*', rom+addr)[0]
-						
-						-- null sets are represented as an immediate ffff
-						-- whereas sets of more than 1 value use 0000 as a term ...
-						-- They can also be used to terminate a set of fx1_t
-						if cmd == 0xffff then
-							-- include terminator bytes in block length:
-							rs.fx1term = true
-							addr = addr + 2
-							break
-						end
-						
-						--if cmd == 0
-						-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
-						--or m.doors:find(nil, function(door) return door.addr == cmd end)
-						--then
-						if true then
-							local fx1 = self:mapAddFX1(addr)
--- this misses 5 fx1_t's
-local done = fx1.ptr.doorSelect == 0 
-							fx1.mdbs:insert(m)
-							rs.fx1s:insert(fx1)
-							
-							addr = addr + ffi.sizeof'fx1_t'
-
--- term of 0 past the first entry
-if done then break end
-						end
-					end
-				end
-				
-				for _,rs in ipairs(m.roomStates) do
-					if rs.ptr.bgdata > 0x8000 then
-						local addr = topc(self.bgBank, rs.ptr.bgdata)
-						while true do
-							local ptr = ffi.cast('bg_t*', rom+addr)
-							
--- this is a bad test of validity
--- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
--- in fact, I never read more than 1 bg, and sometimes I read 0
---[[
-							if ptr.header ~= 0x04 then
-								addr = addr + 8
-								break
-							end
---]]
-							-- so bgs[i].addr is the address where bgs[i].ptr was found
-							-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
-							-- a little confusing
-							local bg = self:mapAddBG(addr)
-							bg.mdbs:insert(m)
-							rs.bgs:insert(bg)
-							addr = addr + ffi.sizeof'bg_t'
-						
-							addr=addr+8
-							do break end
-						end
-					
-						--[[ load data
-						-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
-						for _,bg in ipairs(rs.bgs) do
-							local addr = topc(bg.ptr.bank, bg.ptr.addr)
-							local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
-							bg.data = decompressed
-							mem:add(addr, compressedSize, 'bg data', m)
-						end
-						--]]
-					end
-				end
-
-				for _,rs in ipairs(m.roomStates) do
-					if rs.ptr.layerHandling > 0x8000 then
-						local addr = topc(self.layerHandlingBank, rs.ptr.layerHandling)
-						rs.layerHandling = self:mapAddLayerHandling(addr)
-						rs.layerHandling.roomStates:insert(rs)
-					end
-					
-					local addr = topc(rs.ptr.roomBank, rs.ptr.roomAddr)
-					rs.room = self:mapAddRoom(addr, m)
-					rs.room.mdbs:insertUnique(m)
-					rs.room.roomStates:insert(rs)
-				end
-
-				-- door addrs
-				local startaddr = topc(self.doorAddrBank, m.ptr.doors)
-				local addr = startaddr
-				local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
-				addr = addr + 2
-				while doorAddr > 0x8000 do
-					m.doors:insert{
-						addr = doorAddr,
-					}
-					doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
-					addr = addr + 2
-				end
-				-- exclude terminator
-				addr = addr - 2
-				local len = addr - startaddr
-				
-				-- doors
-				for _,door in ipairs(m.doors) do
-					local addr = topc(self.doorBank, door.addr)
-					data = rom + addr 
-					local dest_mdb = ffi.cast('uint16_t*', data)[0]
-					-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
-					local ctype = dest_mdb == 0 and 'lift_t' or 'door_t'
-					door.ctype = ctype
-					door.ptr = ffi.cast(ctype..'*', data)
-					if ctype == 'door_t' 
-					and door.ptr.code > 0x8000 
-					then
-						door.doorCodeAddr = topc(self.doorCodeBank, door.ptr.code)
-						door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
-					end
-				end
-			
-	
-				-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
-				-- pointed to by mdb[00/15].roomstate_t[#1].roomvarAddr
-				-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
-				-- this is the rescue animals roomstate
-				-- so this data has to do with the destructable wall on the right side
-				--if mdbaddr == 0x79804 then
-				if rs.ptr.roomvarAddr ~= 0 then
-					local d = rom + self.plmOffset + rs.ptr.roomvarAddr
-					local roomvar = table()
-					repeat
-						roomvar:insert(d[0])	-- x
-						roomvar:insert(d[1])	-- y
-						if ffi.cast('uint16_t*', d)[0] == 0 then break end
-						roomvar:insert(d[2])	-- mod 1 == 0x52
-						roomvar:insert(d[3])	-- mod 2 == 0x00
-						-- TODO insert roomvar_t and uint16_t term (or omit term)
-						d = d + 4
-					until false
-					-- TODO should be roomstate
-					rs.roomvar = roomvar
-				end
-			end
+			self:mapAddMDB(pageofs)
 		end
 	end
 
