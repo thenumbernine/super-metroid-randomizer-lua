@@ -198,7 +198,7 @@ function byteArrayToHexStr(src, len, sep)
 	local tsep = ''
 	for i=1,len do
 		s = s .. tsep..('%02x'):format(src[i-1])
-		tsep = sep
+		tsep = sep or ''
 	end
 	return s
 end

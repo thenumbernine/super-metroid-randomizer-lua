@@ -56,6 +56,10 @@ local mdb_t = struct'mdb_t'{	-- aka mdb, aka mdb_header
 	{doors = 'uint16_t'},		-- 9 offset at bank  ... 9f?
 }
 
+local roomselect0_t = struct'roomselect0_t'{
+	{testcode = 'uint16_t'},
+}
+
 -- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
 local roomselect_t = struct'roomselect_t'{
 	{testcode = 'uint16_t'},	-- ptr to test code in bank $8f
@@ -544,13 +548,17 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 
 	local rom = self.rom
 	local data = rom + absaddr
-	
+	local mptr = ffi.cast('mdb_t*', data)
 	local m = {
 		roomStates = table(),
 		doors = table(),
 	-- TODO bank-offset addr vs pc addr for all my structures ...
 		addr = pageofs,
-		ptr = ffi.cast('mdb_t*', data),
+		
+		-- switch over to this from ptr, and then to pure lua from this
+		obj = ffi.new('mdb_t', mptr[0]),
+		
+		ptr = mptr,
 	}	
 	self.mdbs:insert(m)
 	
@@ -562,7 +570,7 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		
 		local ctype
 		if testcode == 0xe5e6 then 
-			ctype = 'uint16_t'
+			ctype = 'roomselect0_t'
 		elseif testcode == 0xe612
 		or testcode == 0xe629
 		then
@@ -581,19 +589,19 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		
 		data = data + ffi.sizeof(ctype)
 
-		if ctype == 'uint16_t' then break end	-- term
+		if ctype == 'roomselect0_t' then break end	-- term
 	end
 
 	-- after the last roomselect is the first roomstate_t
 	local rs = m.roomStates:last()
 	-- uint16_t select means a terminator
-	assert(rs.select_ctype == 'uint16_t')
+	assert(rs.select_ctype == 'roomselect0_t')
 	rs.ptr = ffi.cast('roomstate_t*', data)
 	data = data + ffi.sizeof'roomstate_t'
 
 	-- then the rest of the roomstates come
 	for _,rs in ipairs(m.roomStates) do
-		if rs.select_ctype ~= 'uint16_t' then
+		if rs.select_ctype ~= 'roomselect0_t' then
 			assert(not rs.ptr)
 			local addr = topc(self.roomStateBank, rs.select[0].roomstate)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
@@ -1583,14 +1591,7 @@ function SMMap:mapInit()
 			self:mapAddMDB(pageofs, false)
 		end
 	end
-	--]]
-	-- [[ method #2: recursively construct, starting at room 00/00 at $0791f8
-	assert(self:mapAddMDB(0x91f8, true))	-- Zebes
-	assert(self:mapAddMDB(0xdf45, true))	-- Ceres
-	--]]
-
 	-- link all doors to their mdbs
-	-- TODO in the future, maybe a door:setMDB function?
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
@@ -1604,7 +1605,12 @@ function SMMap:mapInit()
 			end
 		end
 	end
-	
+	--]]
+	-- [[ method #2: recursively construct, starting at room 00/00 at $0791f8
+	assert(self:mapAddMDB(0x91f8, true))	-- Zebes
+	assert(self:mapAddMDB(0xdf45, true))	-- Ceres
+	--]]
+
 	--[[ get a table of doors based on their plm arg low byte
 	self.doorPLMForID = table()
 	for _,plmset in ipairs(self.plmsets) do
@@ -1618,7 +1624,6 @@ function SMMap:mapInit()
 		end
 	end
 	--]]
-
 
 	-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
 	-- asserting underlying contiguousness of structure of the mdb_t's...
@@ -1647,11 +1652,15 @@ function SMMap:mapInit()
 		-- and that room is $07ad1b, the speed booster room
 		-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		-- says it is just part of the speed booster room
+		-- the memory map at http://patrickjohnston.org/bank/8F
+		-- doesn't say it is anything
 		if mdbaddr == 0x07ad1b then
+--[[ if you want to keep it ...
 			local data = ffi.new('uint8_t[?]', 26)
 			ffi.copy(data, d, 26)
 			m.speedBoosterRoomExtraData = data
 print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..byteArrayToHexStr(data))
+--]]			
 			d = d + 26
 		end
 		local dooraddr = topc(self.doorAddrBank, m.ptr.doors)
@@ -2534,11 +2543,7 @@ function SMMap:mapPrint()
 		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
-			
-			local selectStr = rs.select_ctype == 'uint16_t' 
-				and ('%04x'):format(rs.select[0])
-				or tostring(rs.select[0])
-			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..selectStr)
+			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select) - rom)..' '..tostring(rs.select[0]))
 			-- [[
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
@@ -3253,8 +3258,8 @@ function SMMap:mapWriteMDBs()
 	-- for all plm scrollmods, if they have matching data then combine their addresses
 
 	for _,m in ipairs(self.mdbs) do
-		-- write the mdb_t
-		-- write the roomselects
+		-- write m.obj (C pos)
+		-- write m.roomStates[1..n].select
 		-- write the roomstates
 		-- write the dooraddrs
 		-- write roomvar (only for grey torizo room)
