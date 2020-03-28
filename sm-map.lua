@@ -3331,28 +3331,10 @@ function SMMap:mapWriteMDBs()
 		
 		-- write m.obj
 		local addr, endaddr = mdbWriteRanges:get(totalSize)
--- [[ debugging
-local addr = topc(self.mdbBank, m.addr)
-endaddr = addr + totalSize		
---]]		
 		local ptr = rom + addr
-		mptr = ffi.cast('mdb_t*', ptr)
--- [[ debugging -- what changed?
-print('old '..m.ptr[0])
-print('new '..m.obj)
--- if nothing is different then why does writing it screw upthe rom?
-if m.ptr[0] ~= m.obj then print('!!!!!!! DIFFER !!!!!!!') end
---]]
-		mptr[0] = m.obj
-
-		local oldptr = m.ptr
--- [[ debugging
-assert(m.ptr == mptr)
---]]
-		m.ptr = mptr
+		m.ptr = ffi.cast('mdb_t*', ptr)
+		m.ptr[0] = m.obj
 		m.addr = bit.band(addr, 0xffff)	-- TODO get rid of this field and only use m.ptr
-		print('moving mdb '..('%02x/%02x'):format(m.obj.region, m.obj.index)..' from '..('%06x'):format(ffi.cast('uint8_t*',oldptr)-rom)..' to '..('%06x'):format(addr))
-print(('$%06x'):format(ptr-rom)..' mdb_t')
 		ptr = ptr + ffi.sizeof'mdb_t'
 
 		-- write m.roomStates[1..n].select
@@ -3360,7 +3342,6 @@ print(('$%06x'):format(ptr-rom)..' mdb_t')
 			local selptr = ffi.cast(rs.select_ctype..'*', ptr)
 			selptr[0] = rs.select
 			rs.select_ptr = selptr
-print(('$%06x'):format(ptr-rom)..' '..rs.select_ctype)
 			ptr = ptr + ffi.sizeof(rs.select_ctype)
 		end
 		-- write m.roomStates[n..1].obj (reverse order ... last roomselect matches first roomstate, and that's why last roomselect has no pointer.  the others do have roomstate addrs, but maybe keep the roomstates reverse-sequential just in case) 
@@ -3371,7 +3352,6 @@ print(('$%06x'):format(ptr-rom)..' '..rs.select_ctype)
 			local rsptr = ffi.cast('roomstate_t*', ptr)
 			rsptr[0] = rs.obj
 			rs.ptr = rsptr
-print(('$%06x'):format(ptr-rom)..' roomstate_t')
 			if rs.select_ctype ~= 'roomselect1_t' then
 				rs.select_ptr.roomStateAddr = roomStateAddr		-- update previous write in rom
 				rs.select.roomStateAddr = roomStateAddr		-- update POD
@@ -3383,7 +3363,6 @@ print(('$%06x'):format(ptr-rom)..' roomstate_t')
 		
 		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between mdbs.
 		--		update m.obj.doors
-print(('$%06x'):format(ptr-rom)..' dooraddrs')
 		m.obj.doors = bit.band(0xffff, ptr-rom)
 		m.ptr.doors = m.obj.doors
 		for _,door in ipairs(m.doors) do
@@ -3396,7 +3375,6 @@ print(('$%06x'):format(ptr-rom)..' dooraddrs')
 		--		update m.roomStates[1..n].ptr.roomvarAddr
 		for _,rs in ipairs(m.roomStates) do
 			if rs.roomvar then
-print(('$%06x'):format(ptr-rom)..' roomvar')
 				rs.obj.roomvarAddr = bit.band(0xffff, ptr-rom)
 				rs.ptr.roomvarAddr = rs.obj.roomvarAddr
 				for _,c in ipairs(rs.roomvar) do
@@ -3426,7 +3404,6 @@ print(('$%06x'):format(ptr-rom)..' roomvar')
 					rs.obj.scrollAddr = matches
 					rs.ptr.scrollAddr = matches
 				else
-print(('$%06x'):format(ptr-rom)..' scrolldata')
 					rs.obj.scrollAddr = bit.band(0xffff, ptr-rom)
 					rs.ptr.scrollAddr = rs.obj.scrollAddr
 					for i=1,m.obj.width * m.obj.height do
@@ -3539,16 +3516,13 @@ end
 -- right now my structures are mixed between ptrs and by-value copied objects
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
-	-- [[ write these before writing roomstates
-	-- write rooms first so the rest can use the free space?
-	--  too bad, they use a different bank from the others
+	-- write these before writing roomstates
 	self:mapWriteRooms()
 	self:mapWritePLMs()
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
-	--]]
 
-	self:mapWriteMDBs()	-- buggy
+	self:mapWriteMDBs()
 end
 
 return SMMap
