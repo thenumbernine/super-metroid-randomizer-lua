@@ -502,15 +502,15 @@ for _,info in ipairs{
 		return m.obj.region == region and m.obj.index == index
 	end))
 	assert(m)
-	local room = m.roomStates[1].room	-- TODO assert all roomStates have matching rooms?
+	local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?
 	for j=0,h-1 do
 		local y = y1 + j
-		assert(y >= 0 and y < room.height)
+		assert(y >= 0 and y < roomBlockData.height)
 		for i=0,w-1 do
 			local x = x1 + i
-			assert(x >= 0 and x < room.width)
-			local bi = 1 + 3 * (x + room.width * y)
-			room.blocks[bi] = bit.bor(bit.band(room.blocks[bi], 0x0f), 0x80)
+			assert(x >= 0 and x < roomBlockData.width)
+			local bi = 1 + 3 * (x + roomBlockData.width * y)
+			roomBlockData.blocks[bi] = bit.bor(bit.band(roomBlockData.blocks[bi], 0x0f), 0x80)
 		end
 	end
 end

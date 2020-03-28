@@ -10,7 +10,7 @@ local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
 local function burrowIntoWall(pos, breakType)
 	if not config.randomizeItemsScavengerHuntProps.burrowItems then return pos end
 
-	local x,y,room = table.unpack(pos)
+	local x,y,roomBlockData = table.unpack(pos)
 	
 	local plmpos
 	local startx, starty = x, y
@@ -23,28 +23,28 @@ local function burrowIntoWall(pos, breakType)
 	local function touchScreen(x,y)
 		local sx = math.floor(x/16)
 		local sy = math.floor(y/16)
-		touchedSIs[sx + room.width/16 * sy] = true
+		touchedSIs[sx + roomBlockData.width/16 * sy] = true
 	end
 
 	-- TODO pick your break type.  TODO base it on what items you have so far.
 	breakType = breakType or pickRandom{
-		room.extTileTypes.beam_1x1,
-		room.extTileTypes.bombable_1x1,
-		room.extTileTypes.powerbomb_1x1,
-		room.extTileTypes.supermissile_1x1,
+		roomBlockData.extTileTypes.beam_1x1,
+		roomBlockData.extTileTypes.bombable_1x1,
+		roomBlockData.extTileTypes.powerbomb_1x1,
+		roomBlockData.extTileTypes.supermissile_1x1,
 	}	
 	local origBreakType = breakType
-	room:splitCopies(x,y)
-	room:setExtTileType(x,y,breakType)
+	roomBlockData:splitCopies(x,y)
+	roomBlockData:setExtTileType(x,y,breakType)
 	touchScreen(x,y)
 
 	--local len = math.floor(math.sqrt(math.random(100*100)))
 	local len = math.random(config.randomizeItemsScavengerHuntProps.burrowLength)
---print('boring break type '..room.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
+--print('boring break type '..roomBlockData.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
 	
 	-- after the first one, set them to something easier ... empty maybe?
 	-- or TODO make sure the player has room to stand up
-	breakType = room.tileTypes.empty
+	breakType = roomBlockData.tileTypes.empty
 
 	local burrowMethod = pickRandom{'worm', 'spider'}
 
@@ -66,13 +66,13 @@ local function burrowIntoWall(pos, breakType)
 			local nx, ny = x + dir[1], y + dir[2]
 --print('examining '..posstr(nx,ny))		
 			-- don't include the border
-			if nx >= 1 and nx < room.width-1 
-			and ny >= 1 and ny < room.height-1
+			if nx >= 1 and nx < roomBlockData.width-1 
+			and ny >= 1 and ny < roomBlockData.height-1
 			then
 				-- if the new place is blocked on 3 out of 4 sides then it is good
 				local solidSides = 0
 				for _,odir in ipairs(dirs) do
-					if room:isSolid(nx+odir[1], ny+odir[2]) then 
+					if roomBlockData:isSolid(nx+odir[1], ny+odir[2]) then 
 						solidSides = solidSides + 1 
 					end
 				end
@@ -92,8 +92,8 @@ local function burrowIntoWall(pos, breakType)
 
 					x,y = nx,ny
 					-- don't clear the entrance
-					if room:getExtTileType(x,y) ~= origBreakType then
-						room:setExtTileType(x,y,breakType)
+					if roomBlockData:getExtTileType(x,y) ~= origBreakType then
+						roomBlockData:setExtTileType(x,y,breakType)
 					end
 					touchScreen(x,y)
 					all:insert{x,y}
@@ -110,7 +110,7 @@ local function burrowIntoWall(pos, breakType)
 	end
 
 	local newpos = all:last()
-	newpos[3] = room
+	newpos[3] = roomBlockData
 	return newpos, touchedSIs:keys(), plmpos
 end
 
@@ -163,8 +163,8 @@ local function getRoomsForMDBs(mdbs)
 	local rooms = table()
 	for _,m in ipairs(mdbs) do
 		for i,rs in ipairs(m.roomStates) do
-			assert(rs.room)
-			rooms[rs.room.addr] = rs.room
+			assert(rs.roomBlockData)
+			rooms[rs.roomBlockData.addr] = rs.roomBlockData
 		end
 	end
 	return rooms:values()
@@ -174,14 +174,14 @@ local allRooms = getRoomsForMDBs(allMDBs)
 
 local allLocs = table()
 local locsPerRoom = table()
-for _,room in ipairs(allRooms) do
-	locsPerRoom[room.addr] = table()
-	for y=0,room.height-1 do
-		for x=0,room.width-1 do
-			if room:isBorderAndNotCopy(x,y) then
+for _,roomBlockData in ipairs(allRooms) do
+	locsPerRoom[roomBlockData.addr] = table()
+	for y=0,roomBlockData.height-1 do
+		for x=0,roomBlockData.width-1 do
+			if roomBlockData:isBorderAndNotCopy(x,y) then
 			-- TODO CHECK PLMS.  THOSE FACES IN BLUE BRINSTAR WILL SPAWN OVER ITEMS.
-				allLocs:insert{x,y,room}
-				locsPerRoom[room.addr]:insert{x,y,room}
+				allLocs:insert{x,y,roomBlockData}
+				locsPerRoom[roomBlockData.addr]:insert{x,y,roomBlockData}
 			end
 		end
 	end
@@ -231,22 +231,22 @@ local firstMissileMDBs = table{
 
 do
 	local rooms = getRoomsForMDBs(firstMissileMDBs)
---	local poss = table():append(rooms:mapi(function(room) 
---		return assert(locsPerRoom[room.addr], "failed to find locs for room "..('%06x'):format(room.addr))
+--	local poss = table():append(rooms:mapi(function(roomBlockData) 
+--		return assert(locsPerRoom[roomBlockData.addr], "failed to find locs for roomblocks "..('%06x'):format(roomBlockData.addr))
 --	end):unpack())
 	local poss = table()
-	for _,room in ipairs(rooms) do
---print('room '..('%06x'):format(room.addr)..' has locs:')
-		for _,loc in ipairs(locsPerRoom[room.addr]) do
+	for _,roomBlockData in ipairs(rooms) do
+--print('roomblocks '..('%06x'):format(roomBlockData.addr)..' has locs:')
+		for _,loc in ipairs(locsPerRoom[roomBlockData.addr]) do
 --print('', table.unpack(loc))
 			poss:insert(loc)
 		end
 	end	
 	local pos = pickRandom(poss)
-	local room = pos[3]
-	assert(room.mdbs, "found a room without any mdbs")
---	pos = burrowIntoWall(pos, room.extTileTypes.beam_1x1)
-	local m = pickRandom(room.mdbs:filter(function(m) 
+	local roomBlockData = pos[3]
+	assert(roomBlockData.mdbs, "found a roomblock without any mdbs")
+--	pos = burrowIntoWall(pos, roomBlockData.extTileTypes.beam_1x1)
+	local m = pickRandom(roomBlockData.mdbs:filter(function(m) 
 		return firstMissileMDBs:find(m)
 	end))
 	for _,plmset in ipairs(getAllMDBPLMs(m)) do
@@ -270,7 +270,7 @@ for rep=1,1 do
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
 
 		local enterpos = pickRandom(allLocs)
-		local room = enterpos[3]
+		local roomBlockData = enterpos[3]
 		local itempos, touchedSIs, plmpos = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
 		local scrollmodData 
 		if #touchedSIs > 0 then
@@ -281,7 +281,7 @@ for rep=1,1 do
 			end
 			scrollmodData:insert(0x80)
 		end
-		local m = pickRandom(room.mdbs:filter(function(m)
+		local m = pickRandom(roomBlockData.mdbs:filter(function(m)
 			return allMDBSet[m]
 		end))
 		for _,plmset in ipairs(getAllMDBPLMs(m)) do

@@ -32,8 +32,8 @@ randomizing all doors ...
 local newDoorCount = 0
 for _,m in ipairs(sm.mdbs) do
 	for _,rs in ipairs(m.roomStates) do
-		local room = rs.room
-		for _,door in ipairs(room.doors) do
+		local roomBlockData = rs.roomBlockData
+		for _,door in ipairs(roomBlockData.doors) do
 			-- TODO store this in room load
 			local plmindex, plm = rs.plmset.plms:find(nil, function(plm)
 				return plm.x == door.x and plm.y == door.y
@@ -119,20 +119,20 @@ low nibble:
 08 = flip left/right:
 
 --]=]
-for _,room in ipairs(sm.rooms) do
-	local w,h = room.width, room.height
+for _,roomBlockData in ipairs(sm.roomblocks) do
+	local w,h = roomBlockData.width, roomBlockData.height
 
 	for j=0,h-1 do
 		for i=0,w-1 do
 			-- make sure we're not in any door regions, because those have to be shootable/whatever
-			local door = room.doors:find(nil, function(door)
+			local door = roomBlockData.doors:find(nil, function(door)
 				return i >= door.x and i <= door.x + door.w
 				and j >= door.y and j <= door.y + door.h
 			end)
 			if not door then
-				local a = room.blocks[0 + 3 * (i + w * j)]
-				local b = room.blocks[1 + 3 * (i + w * j)]
-				local c = room.blocks[2 + 3 * (i + w * j)]
+				local a = roomBlockData.blocks[0 + 3 * (i + w * j)]
+				local b = roomBlockData.blocks[1 + 3 * (i + w * j)]
+				local c = roomBlockData.blocks[2 + 3 * (i + w * j)]
 --I'm still missing the bomable block in the loewr red room brinstar
 				-- notice that doors and platforms and IDs for doors and platforms can be just about anything
 				if 
@@ -154,18 +154,18 @@ for _,room in ipairs(sm.rooms) do
 				--or c == 0xf	-- speed block
 				then
 					--[=[ remove
-					room.blocks[0 + 3 * (i + w * j)] = 0xff
-					room.blocks[1 + 3 * (i + w * j)] = 0
-					room.blocks[2 + 3 * (i + w * j)] = 0
+					roomBlockData.blocks[0 + 3 * (i + w * j)] = 0xff
+					roomBlockData.blocks[1 + 3 * (i + w * j)] = 0
+					roomBlockData.blocks[2 + 3 * (i + w * j)] = 0
 					--]=]
 					-- [=[ turn to destructable blocks
-					--room.blocks[0 + 3 * (i + w * j)] = 0
-					room.blocks[1 + 3 * (i + w * j)] = bit.bor(
+					--roomBlockData.blocks[0 + 3 * (i + w * j)] = 0
+					roomBlockData.blocks[1 + 3 * (i + w * j)] = bit.bor(
 						0xc0, 	-- shootable
 						--0xf0,	-- bombable
 						bit.band(b, 0x0f))
 					-- ch3 4's bit means 'no respawn' ?
-					room.blocks[2 + 3 * (i + w * j)] = 4
+					roomBlockData.blocks[2 + 3 * (i + w * j)] = 4
 					--]=]
 					
 					--c = 0 -- means bombable/shootable, respawning
@@ -173,10 +173,10 @@ for _,room in ipairs(sm.rooms) do
 					--c = 0xc
 					
 					-- btw, how come there are ch3==0 bombable blocks? (escaping alcatraz)
-					--room.blocks[2 + 3 * (i + w * j)] = c
+					--roomBlockData.blocks[2 + 3 * (i + w * j)] = c
 					
 --					b = bit.bor(bit.band(b, 0x0f), 0xc0)
---					room.blocks[1 + 3 * (i + w * j)] = b
+--					roomBlockData.blocks[1 + 3 * (i + w * j)] = b
 				end
 			end
 		end

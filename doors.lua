@@ -17,14 +17,14 @@ if not this then it seems like there is some extra data I'm missing that tells d
 --]=]
 local oldNumDoors = 0
 local oldDoors = table()	-- table of all door locations
-for _,room in ipairs(sm.rooms) do
-	local w,h = room.width, room.height
-	for _,door in ipairs(room.doors) do
+for _,roomBlockData in ipairs(sm.roomblocks) do
+	local w,h = roomBlockData.width, roomBlockData.height
+	for _,door in ipairs(roomBlockData.doors) do
 		-- the doors that point to this door probably also need a flag set for 'don't spawn a door'
 		-- lets see, the door going to the tube to the right of the start ... is all zeros
 		-- in contrast, the other doors, some have 04 set on the direction, others have 01 on capX, some have 06 on capY, some have 04 on screenX 
 		-- [=[
-		for _,rs in ipairs(room.roomStates) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
 			local doorIsSpecial = false
 			assert(rs.plmset)
 			for i=#rs.plmset.plms,1,-1 do
@@ -46,7 +46,7 @@ for _,room in ipairs(sm.rooms) do
 --			local _,door2 = m.doors:find(nil, function(door2) return door2.index == door.index+1 end) -- TODO change name
 --			door2.ptr.direction = bit.band(door2.ptr.direction, 3)
 			if not doorIsSpecial then
-				oldDoors:insert{room=room, rs=rs, door=door}
+				oldDoors:insert{roomBlockData=roomBlockData, rs=rs, door=door}
 			end
 		end
 		--]=]
@@ -57,17 +57,17 @@ for _,room in ipairs(sm.rooms) do
 			local i,j = door.x, door.y
 			for k=0,3 do
 				if door.dir == 2 or door.dir == 3 then	-- left/right
-					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." mdb "..room.roomStates[1].m.ptr[0])
+					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." mdb "..roomBlockData.roomStates[1].m.ptr[0])
 					assert(j >= 0 and j < h)
-					room.blocks[0 + 3 * ((i+k) + w * j)] = 0xff
-					room.blocks[1 + 3 * ((i+k) + w * j)] = 0
-					room.blocks[2 + 3 * ((i+k) + w * j)] = 0
+					roomBlockData.blocks[0 + 3 * ((i+k) + w * j)] = 0xff
+					roomBlockData.blocks[1 + 3 * ((i+k) + w * j)] = 0
+					roomBlockData.blocks[2 + 3 * ((i+k) + w * j)] = 0
 				elseif door.dir == 0 or door.dir == 1 then	-- up/down
 					assert(i >= 0 and i < w)
 					assert(j+k >= 0 and j+k < h)
-					room.blocks[0 + 3 * (i + w * (j+k))] = 0xff
-					room.blocks[1 + 3 * (i + w * (j+k))] = 0
-					room.blocks[2 + 3 * (i + w * (j+k))] = 0
+					roomBlockData.blocks[0 + 3 * (i + w * (j+k))] = 0xff
+					roomBlockData.blocks[1 + 3 * (i + w * (j+k))] = 0
+					roomBlockData.blocks[2 + 3 * (i + w * (j+k))] = 0
 				else
 					error'here'
 				end
@@ -91,7 +91,7 @@ for i=0,numDoorsToMake-1 do
 	if #oldDoors == 0 then break end
 	local j = math.random(#oldDoors)
 	local od = oldDoors:remove(j)
-	local room, rs, door = od.room, od.rs, od.door
+	local roomBlockData, rs, door = od.roomBlockData, od.rs, od.door
 	-- TODO make sure we only do this once per plmset?
 	local color = math.random(3)	-- red, green, orange, rest are blue options
 	do --if color <= 3 then	-- skip blue doors completely
