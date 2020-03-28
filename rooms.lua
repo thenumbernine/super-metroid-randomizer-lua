@@ -30,7 +30,7 @@ randomizing all doors ...
 4) last make sure to give doors unique ids 
 --]=]
 local newDoorCount = 0
-for _,m in ipairs(sm.mdbs) do
+for _,m in ipairs(sm.rooms) do
 	for _,rs in ipairs(m.roomStates) do
 		local roomBlockData = rs.roomBlockData
 		for _,door in ipairs(roomBlockData.doors) do
@@ -186,17 +186,17 @@ end
 
 --[[ make the first Ceres door go to Zebes
 -- screws up graphics ... permanently ...
-local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
-local _,ceres = assert(sm.mdbs:find(nil, function(m) return m.obj.region == 6 and m.obj.index == 0 end))
+local _,startRoom = assert(sm.rooms:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
+local _,ceres = assert(sm.rooms:find(nil, function(m) return m.obj.region == 6 and m.obj.index == 0 end))
 local doorptr = ceres.doors[1].ptr
-doorptr.dest_mdb = startRoom.addr
+doorptr.destRoomAddr = startRoom.addr
 doorptr.screenX = 3
 doorptr.screenY = 3
 --]]
 
 
 --[[ make the first room have every item in the game
-local _,startRoom = assert(sm.mdbs:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
+local _,startRoom = assert(sm.rooms:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
 local newPLMSet = sm:newPLMSet{
 	-- make a PLM of each item in the game
@@ -233,7 +233,7 @@ for _,plmset in ipairs(sm.plmsets) do
 	end
 end
 -- change all scroll values to 01
-for _,m in ipairs(sm.mdbs) do
+for _,m in ipairs(sm.rooms) do
 	for _,rs in ipairs(m.roomStates) do
 		rs.obj.scroll = 1
 	end

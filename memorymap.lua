@@ -7,15 +7,15 @@ function MemoryMap:init()
 	self.ranges = table()
 end
 
-function MemoryMap:add(addr, len, name, m, ...)
+function MemoryMap:add(addr, len, name, room, ...)
 	if not self.ranges:find(nil, function(range)
 		return range.addr == addr and range.len == len and range.name == name
 	end) then
 		self.ranges:insert{
 			addr = assert(addr), 
-			len=len, 
-			name=name, 
-			m=m, 
+			len = len, 
+			name = name, 
+			room = room,
 			...
 		}
 	end
@@ -33,7 +33,7 @@ function MemoryMap:print(filename)
 		local rb = ranges[i+1]
 		if ra.addr + ra.len == rb.addr
 		and ra.name == rb.name
-		and ra.m == rb.m
+		and ra.room == rb.room
 		then
 			ra.len = ra.len + rb.len
 			ra.dup = (ra.dup or 1) + (rb.dup or 1)
@@ -67,9 +67,9 @@ function MemoryMap:print(filename)
 			f:write'--------------\n'
 		end
 		
-		local m = range.m
-		if m then
-			f:write(('%02x/%02x'):format(m.obj.region, m.obj.index))
+		local room = range.room
+		if room then
+			f:write(('%02x/%02x'):format(room.obj.region, room.obj.index))
 		else
 			f:write('     ')
 		end

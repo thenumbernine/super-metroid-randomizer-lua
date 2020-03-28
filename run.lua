@@ -357,11 +357,7 @@ the two plmsets differ...
 --]]
 -- [[
 if config.wakeZebesEarly then
-	-- find mdb 01/0e, find its plmset
-	local _,m = sm.mdbs:find(nil, function(m)
-		return m.obj.index == 0x0e and m.obj.region == 0x01
-	end)
-	if not m then error'here' end
+	local m = assert(sm:mapFindRoom(1, 0x0e))
 	assert(#m.roomStates == 2)
 	local rsNormal = m.roomStates[1]
 	local rsIntro = m.roomStates[2]
@@ -399,7 +395,7 @@ end
 -- hmm sometimes it is only waking up the brinstar rooms, but not the crateria rooms (intro items were super x2, power x1, etank x2, speed)
 -- it seems Crateria won't wake up until you get your first missile tank ...
 if config.wakeZebesEarly then
-	for _,m in ipairs(sm.mdbs) do
+	for _,m in ipairs(sm.rooms) do
 		--[=[ 00/00 = first room ... doesn't seem to work
 		-- maybe this has to be set only after the player walks through old mother brain room?
 		if m.obj.index == 0x00
@@ -432,7 +428,7 @@ end
 
 -- also (only for wake zebes early?) open the grey door from old mother brain so you don't need morph to get back?
 do
-	local m = select(2, sm.mdbs:find(nil, function(m) 
+	local m = select(2, sm.rooms:find(nil, function(m) 
 		return m.obj.region == 0 and m.obj.index == 0x13 
 	end))
 	local rs = m.roomStates[2]	-- sleeping old mother brain
@@ -442,11 +438,11 @@ do
 end
 
 -- also while I'm here, lets remove the unfinished/unused rooms
--- notice, when using recursive mdb building, this skips them anyways
+-- notice, when using recursive room building, this skips them anyways
 -- [[
-sm:mapRemoveMDB(sm:mapFindMDB(2, 0x3d))
-sm:mapRemoveMDB(sm:mapFindMDB(4, 0x1f))
-sm:mapRemoveMDB(sm:mapFindMDB(7, 0x00))
+sm:mapRemoveRoom(sm:mapFindRoom(2, 0x3d))
+sm:mapRemoveRoom(sm:mapFindRoom(4, 0x1f))
+sm:mapRemoveRoom(sm:mapFindRoom(7, 0x00))
 --]]
 
 -- [=[
@@ -498,7 +494,7 @@ for _,info in ipairs{
 
 } do
 	local region, index, x1,y1,w,h = table.unpack(info)
-	local m = select(2, sm.mdbs:find(nil, function(m) 
+	local m = select(2, sm.rooms:find(nil, function(m) 
 		return m.obj.region == region and m.obj.index == index
 	end))
 	assert(m)

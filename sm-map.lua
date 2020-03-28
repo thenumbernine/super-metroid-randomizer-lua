@@ -16,31 +16,30 @@ local SMMap = {}
 SMMap.fx1Bank = 0x83
 SMMap.doorBank = 0x83
 
--- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
+-- each room and its roomstates, dooraddrs, and scrolldata are stored grouped together
 	-- should this be 0x8f? check my topc() function vs http://patrickjohnston.org/bank/8F
-SMMap.mdbBank = 0x8f
+SMMap.roomBank = 0x8f
 SMMap.roomStateBank = 0x8f	-- bank for roomselect_t.roomStateAddr
-SMMap.doorAddrBank = 0x8f	-- bank for mdb_t.doors
-SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
--- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
+SMMap.doorAddrBank = 0x8f	-- bank for room_t.doors
+SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to room, roomstate, and dooraddr, then why does it have a separate bank?
+-- then between groups of rooms (and their content) are groups of bg_t's and doorcodes
 SMMap.bgBank = 0x8f			
 SMMap.doorCodeBank = 0x8f
 -- then comes a group o fplms, and then comes a group of layer handling
 SMMap.layerHandlingBank = 0x8f
--- TODO if there was a 'plm bank' it would go here
--- and then we go back to some more mdbs
+-- TODO use a bank? isn't it the same as the roomBank?  0x8f.
+SMMap.plmOffset = 0x70000
+-- and then we go back to some more rooms
 
 SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
 
--- TODO use a bank? isn't it the same as the mdbBank?  0x8f.
-SMMap.plmOffset = 0x70000
 
 
 
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
-local mdb_t = struct'mdb_t'{	-- aka mdb, aka mdb_header
+local room_t = struct'room_t'{	-- aka mdb, aka mdb_header
 	{index = 'uint8_t'},
 	{region = 'uint8_t'},
 	{x = 'uint8_t'},
@@ -74,8 +73,8 @@ local roomselect3_t = struct'roomselect3_t'{
 
 
 local roomstate_t = struct'roomstate_t'{
-	{roomAddr = 'uint16_t'},		-- points to block data
-	{roomBank = 'uint8_t'},			-- $c2 to $c9
+	{roomBlockAddr = 'uint16_t'},		-- points to block data
+	{roomBlockBank = 'uint8_t'},		-- $c2 to $c9
 	{gfxSet = 'uint8_t'},
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
@@ -95,7 +94,7 @@ local roomstate_t = struct'roomstate_t'{
 	{scrollAddr = 'uint16_t'},
 	
 	--[[
-	this is only used by the grey torizo room, and points to the extra data after mdb_t
+	this is only used by the grey torizo room, and points to the extra data after room_t
 	--]]
 	{roomvarAddr = 'uint16_t'},				
 	{fx2Addr = 'uint16_t'},					-- TODO - aka 'main asm ptr'
@@ -187,7 +186,7 @@ local bg_t = struct'bg_t'{
 -- This doesn't reference the in-room door object so much as vice-versa.
 -- I'm tempted to call this 'exit_t' ... since you don't need a door
 local door_t = struct'door_t'{
-	{destMdbAddr = 'uint16_t'},				-- 0: points to the mdb_t to transition into
+	{destRoomAddr = 'uint16_t'},				-- 0: points to the room_t to transition into
 	
 --[[
 0x40 = change regions
@@ -541,15 +540,15 @@ end
 
 
 
-function SMMap:mapAddMDB(pageofs, buildRecursively)
-	local _,m = self.mdbs:find(nil, function(m) return m.addr == pageofs end)
+function SMMap:mapAddRoom(pageofs, buildRecursively)
+	local _,m = self.rooms:find(nil, function(m) return m.addr == pageofs end)
 	if m then return m end
 
-	local absaddr = topc(self.mdbBank, pageofs)
+	local absaddr = topc(self.roomBank, pageofs)
 
 	local rom = self.rom
 	local data = rom + absaddr
-	local mptr = ffi.cast('mdb_t*', data)
+	local mptr = ffi.cast('room_t*', data)
 	local m = {
 		roomStates = table(),
 		doors = table(),
@@ -557,13 +556,13 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		addr = pageofs,
 		
 		-- switch over to this from ptr, and then to pure lua from this
-		obj = ffi.new('mdb_t', mptr[0]),
+		obj = ffi.new('room_t', mptr[0]),
 		
 		ptr = mptr,
 	}	
-	self.mdbs:insert(m)
+	self.rooms:insert(m)
 	
-	data = data + ffi.sizeof'mdb_t'
+	data = data + ffi.sizeof'room_t'
 
 	-- roomstates
 	while true do
@@ -582,7 +581,7 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 		end
 		local selptr = ffi.cast(select_ctype..'*', data)
 		local rs = RoomState{
-			m = m,
+			room = m,
 			select_ptr = selptr,
 			select = ffi.new(select_ctype, selptr[0]),
 			select_ctype = select_ctype,	-- using for debug print only
@@ -689,7 +688,7 @@ function SMMap:mapAddMDB(pageofs, buildRecursively)
 				local fx1 = self:mapAddFX1(addr)
 -- this misses 5 fx1_t's
 local done = fx1.ptr.doorSelect == 0 
-				fx1.mdbs:insert(m)
+				fx1.rooms:insert(m)
 				rs.fx1s:insert(fx1)
 				
 				addr = addr + ffi.sizeof'fx1_t'
@@ -719,7 +718,7 @@ if done then break end
 				-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
 				-- a little confusing
 				local bg = self:mapAddBG(addr)
-				bg.mdbs:insert(m)
+				bg.rooms:insert(m)
 				rs.bgs:insert(bg)
 				addr = addr + ffi.sizeof'bg_t'
 			
@@ -746,9 +745,9 @@ if done then break end
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
 		
-		local addr = topc(rs.obj.roomBank, rs.obj.roomAddr)
+		local addr = topc(rs.obj.roomBlockBank, rs.obj.roomBlockAddr)
 		rs.roomBlockData = self:mapAddRoomBlocks(addr, m)
-		rs.roomBlockData.mdbs:insertUnique(m)
+		rs.roomBlockData.rooms:insertUnique(m)
 		rs.roomBlockData.roomStates:insert(rs)
 	end
 
@@ -772,9 +771,9 @@ if done then break end
 	for _,door in ipairs(m.doors) do
 		local addr = topc(self.doorBank, door.addr)
 		local data = rom + addr 
-		local destMdbAddr = ffi.cast('uint16_t*', data)[0]
-		-- if destMdbAddr == 0 then it is just a 2-byte 'lift' structure ...
-		local doorType = destMdbAddr == 0 and 'lift_t' or 'door_t'
+		local destRoomAddr = ffi.cast('uint16_t*', data)[0]
+		-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
+		local doorType = destRoomAddr == 0 and 'lift_t' or 'door_t'
 		door.ctype = doorType
 		door.ptr = ffi.cast(doorType..'*', data)
 		if doorType == 'door_t' 
@@ -787,11 +786,11 @@ if done then break end
 
 
 	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
-	-- pointed to by mdb[00/15].roomstate_t[#1].roomvarAddr
+	-- pointed to by room[00/15].roomstate_t[#1].roomvarAddr
 	-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
 	-- this is the rescue animals roomstate
 	-- so this data has to do with the destructable wall on the right side
-	--if mdbaddr == 0x79804 then
+	--if roomAddr == 0x79804 then
 	if rs.obj.roomvarAddr ~= 0 then
 		local d = rom + self.plmOffset + rs.obj.roomvarAddr
 		local roomvar = table()
@@ -811,7 +810,7 @@ if done then break end
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				door.destMDB = self:mapAddMDB(door.ptr.destMdbAddr, true)
+				door.destRoom = self:mapAddRoom(door.ptr.destRoomAddr, true)
 			end
 		end
 	end
@@ -819,34 +818,34 @@ if done then break end
 	return m
 end
 
-function SMMap:mapRemoveMDB(m)
-	-- TODO remove all unused roomStates as well? or just let mapWriteMDBs take care of it?
+function SMMap:mapRemoveRoom(m)
+	-- TODO remove all unused roomStates as well? or just let mapWriteRooms take care of it?
 	for j=#self.roomblocks,1,-1 do
 		local roomBlockData = self.roomblocks[j]
-		roomBlockData.mdbs:removeObject(m)
-		if #roomBlockData.mdbs == 0 then
+		roomBlockData.rooms:removeObject(m)
+		if #roomBlockData.rooms == 0 then
 			self.roomblocks:remove(j)
 		end
 	end
 	for j=#self.bgs,1,-1 do
 		local bg = self.bgs[j]
-		bg.mdbs:removeObject(m)
-		if #bg.mdbs == 0 then
+		bg.rooms:removeObject(m)
+		if #bg.rooms == 0 then
 			self.bgs:remove(j)
 		end
 	end
 	for j=#self.fx1s,1,-1 do
 		local fx1 = self.fx1s[j]
-		fx1.mdbs:removeObject(m)
-		if #fx1.mdbs == 0 then
+		fx1.rooms:removeObject(m)
+		if #fx1.rooms == 0 then
 			self.fx1s:remove(j)
 		end
 	end
-	self.mdbs:remove(i)
+	self.rooms:remove(i)
 end
 
-function SMMap:mapFindMDB(region, index)
-	for _,m in ipairs(sm.mdbs) do
+function SMMap:mapFindRoom(region, index)
+	for _,m in ipairs(sm.rooms) do
 		if m.obj.region == region and m.obj.index == index then return m end
 	end
 	return false, "couldn't find "..('%02x/%02x'):format(region, index)
@@ -861,7 +860,7 @@ function SMMap:newPLMSet(args)
 end
 
 -- table of all unique plm regions
--- m is only used for MemoryMap.  you have to add to plmset.mdbs externally
+-- m is only used for MemoryMap.  you have to add to plmset.rooms externally
 function SMMap:mapAddPLMSetFromAddr(addr, m)
 	local rom = self.rom
 	local startaddr = addr
@@ -994,7 +993,7 @@ function SMMap:mapAddBG(addr)
 		addr = addr,
 		ptr = ffi.cast('bg_t*', self.rom + addr),
 		-- list of all m's that use this bg
-		mdbs = table(),
+		rooms = table(),
 	}
 	self.bgs:insert(bg)
 	return bg
@@ -1007,7 +1006,7 @@ function SMMap:mapAddFX1(addr)
 	fx1 = {
 		addr = addr,
 		ptr = ffi.cast('fx1_t*', self.rom + addr),
-		mdbs = table(),
+		rooms = table(),
 	}
 	self.fx1s:insert(fx1)
 	return fx1
@@ -1021,7 +1020,7 @@ function RoomBlocks:init(args)
 	for k,v in pairs(args) do
 		self[k] = v
 	end
-	self.mdbs = table()
+	self.rooms = table()
 	self.roomStates = table()
 end
 
@@ -1404,11 +1403,11 @@ function SMMap:mapAddRoomBlocks(addr, m)
 		return roomBlockData.addr == addr 
 	end)
 	if roomBlockData then 
-		-- rooms can come from separate mdb_t's
+		-- rooms can come from separate room_t's
 		-- which means they can have separate widths & heights
 		-- so here, assert that their width & height matches
-		assert(16 * roomBlockData.mdbs[1].obj.width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..m.obj.width)
-		assert(16 * roomBlockData.mdbs[1].obj.height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m.obj.height)
+		assert(16 * roomBlockData.rooms[1].obj.width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..m.obj.width)
+		assert(16 * roomBlockData.rooms[1].obj.height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m.obj.height)
 		return roomBlockData 
 	end
 	
@@ -1546,7 +1545,7 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 
 	local roomBlockData = RoomBlocks{
 		addr = addr,
-		-- this is just 16 * mdb's (width, height)
+		-- this is just 16 * room's (width, height)
 		width = w,
 		height = h,
 		-- rule of thumb: do not exceed this
@@ -1559,7 +1558,7 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 		doors = doors,
 		blocksForExit = blocksForExit,
 	}
-	roomBlockData.mdbs:insert(m)
+	roomBlockData.rooms:insert(m)
 	self.roomblocks:insert(roomBlockData)
 	return roomBlockData
 end
@@ -1587,7 +1586,7 @@ function SMMap:mapInit()
 	-- TODO this will affect the items.lua addresses
 	self.plmBank = rom[0x204ac]
 	
-	self.mdbs = table()
+	self.rooms = table()
 	self.roomblocks = table()
 	self.bgs = table()
 	self.fx1s = table()
@@ -1599,9 +1598,9 @@ function SMMap:mapInit()
 
 	--[[
 	from $078000 to $079193 is plm_t data
-	the first mdb_t is at $0791f8
+	the first room_t is at $0791f8
 	from there it is a dense structure of ...
-	mdb_t
+	room_t
 	roomselect's (in reverse order)
 	roomstate_t's (in forward order)
 	dooraddrs
@@ -1610,13 +1609,13 @@ function SMMap:mapInit()
 	plm scrollmod
 
 	TODO don't check *every* byte from 0x8000 to 0xffff
-	instead start with one mdb_t - wherever you start: $079202 
-	- from mdb's, read all roomstates, and read all their rooms, and read all their door mdbs
+	instead start with one room_t - wherever you start: $079202 
+	- from room's, read all roomstates, and read all their rooms, and read all their door rooms
 	--]]
 	--[[ method #1: scan every possible byte from $078000 to $079193
 	for pageofs=0x8000,0xffff do
-		local ptr = rom + topc(self.mdbBank, pageofs)
-		local mptr = ffi.cast('mdb_t*', ptr)
+		local ptr = rom + topc(self.roomBank, pageofs)
+		local mptr = ffi.cast('room_t*', ptr)
 		if (
 			(ptr[12] == 0xE5 or ptr[12] == 0xE6) 
 			and mptr.region < 8 
@@ -1625,27 +1624,27 @@ function SMMap:mapInit()
 			and mptr.gfxFlags < 0x10 
 			and mptr.doors > 0x7F00
 		) then
-			self:mapAddMDB(pageofs, false)
+			self:mapAddRoom(pageofs, false)
 		end
 	end
-	-- link all doors to their mdbs
-	for _,m in ipairs(self.mdbs) do
+	-- link all doors to their rooms
+	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				local destMDB = assert(
-					select(2, self.mdbs:find(nil, function(m) 
-						return m.addr == door.ptr.destMdbAddr 
+				local destRoom = assert(
+					select(2, self.rooms:find(nil, function(m) 
+						return m.addr == door.ptr.destRoomAddr 
 					end)), 
 					'!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
-				-- points to the dest mdb
-				door.destMDB = destMDB
+				-- points to the dest room
+				door.destRoom = destRoom
 			end
 		end
 	end
 	--]]
 	-- [[ method #2: recursively construct, starting at room 00/00 at $0791f8
-	assert(self:mapAddMDB(0x91f8, true))	-- Zebes
-	assert(self:mapAddMDB(0xdf45, true))	-- Ceres
+	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
+	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
 	--]]
 
 	--[[ get a table of doors based on their plm arg low byte
@@ -1663,16 +1662,16 @@ function SMMap:mapInit()
 	--]]
 
 	-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
-	-- asserting underlying contiguousness of structure of the mdb_t's...
-	-- verify that after each mdb_t, the roomselect / roomstate_t / dooraddrs are packed together
+	-- asserting underlying contiguousness of structure of the room_t's...
+	-- verify that after each room_t, the roomselect / roomstate_t / dooraddrs are packed together
 
-	-- before the first mdb_t is 174 plm_t's, 
+	-- before the first room_t is 174 plm_t's, 
 	-- then 100 bytes of something
-	assert(self.mdbs)
-	for j,m in ipairs(self.mdbs) do
+	assert(self.rooms)
+	for j,m in ipairs(self.rooms) do
 		local d = ffi.cast('uint8_t*',m.ptr)
-		local mdbaddr = d - rom
-		d = d + ffi.sizeof'mdb_t'
+		local roomaddr = d - rom
+		d = d + ffi.sizeof'room_t'
 		-- last roomselect should always be 2 byte term
 		--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
 		-- if there's only 1 roomState then it is a term, and
@@ -1691,7 +1690,7 @@ function SMMap:mapInit()
 		-- says it is just part of the speed booster room
 		-- the memory map at http://patrickjohnston.org/bank/8F
 		-- doesn't say it is anything
-		if mdbaddr == 0x07ad1b then
+		if roomaddr == 0x07ad1b then
 --[[ if you want to keep it ...
 			local data = ffi.new('uint8_t[?]', 26)
 			ffi.copy(data, d, 26)
@@ -1704,7 +1703,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 		assert(d == rom + dooraddr)
 		d = d + 2 * #m.doors
 		
-		-- now expect all scrolldatas of all rooms of this mdb_t
+		-- now expect all scrolldatas of all rooms of this room_t
 		-- the # of unique scrolldatas is either 0 or 1
 		local scrolls = m.roomStates:map(function(rs)
 			return true, rs.obj.scrollAddr
@@ -1712,7 +1711,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 			return scroll > 1 and scroll ~= 0x8000
 		end):sort()
 		assert(#scrolls <= 1)
-		-- mdb_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
+		-- room_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
 		-- so... shouldn't this assertion fail?
 		for _,scroll in ipairs(scrolls) do
 			local addr = topc(self.scrollBank, scroll)
@@ -1759,7 +1758,7 @@ local ofsPerRegion = {
 }
 
 
--- it'd be really nice to draw the mdb region/index next to the room ...
+-- it'd be really nice to draw the room region/index next to the room ...
 -- now it'd be nice if i didn't draw over the numbers ... either by the room tile data, or by other numbers ...
 local digits = {
 	['$'] = {
@@ -1945,13 +1944,13 @@ local mapDrawExcludeMapBlocks = {
 }
 
 
-local function drawRoom(ctx, roomBlockData, m)
+local function drawRoomBlocks(ctx, roomBlockData, m)
 	local mapimg = ctx.mapimg
 	local mapBinImage = ctx.mapBinImage
 	local blocks = roomBlockData.blocks
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for mdb:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsx, ofsy = ofscalc(m.ptr)
 	local xofs = roomSizeInPixels * (ofsx - 4)
 	local yofs = roomSizeInPixels * (ofsy + 1)
@@ -2072,33 +2071,33 @@ local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
 	end
 end
 
-local function drawRoomDoors(ctx, roomBlockData)
+local function drawRoomBlockDoors(ctx, roomBlockData)
 	local mapimg = ctx.mapimg
 	local blocks = roomBlockData.blocks
 	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
 	-- then, cycle through exits, and draw lines from each block to the exit destination
 
-	for _,srcm in ipairs(roomBlockData.mdbs) do
-		local srcm_ofsx, srcm_ofsy = ofsPerRegion[srcm.obj.region+1](srcm.ptr)
-		local srcm_xofs = roomSizeInPixels * (srcm_ofsx - 4)
-		local srcm_yofs = roomSizeInPixels * (srcm_ofsy + 1)
+	for _,srcRoom in ipairs(roomBlockData.rooms) do
+		local srcRoom_ofsx, srcRoom_ofsy = ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
+		local srcRoom_xofs = roomSizeInPixels * (srcRoom_ofsx - 4)
+		local srcRoom_yofs = roomSizeInPixels * (srcRoom_ofsy + 1)
 		for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
---print('in mdb '..('%02x/%02x'):format(srcm.obj.region, srcm.obj.index)..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
+--print('in room '..('%02x/%02x'):format(srcRoom.obj.region, srcRoom.obj.index)..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
 			-- TODO lifts will mess up the order of this, maybe?
-			local door = srcm.doors[exitIndex+1]
+			local door = srcRoom.doors[exitIndex+1]
 			if not door then
 --print('found no door')
 			elseif door.ctype ~= 'door_t' then
 --print("door isn't a ctype")
 			-- TODO handle lifts?
 			else
-				local dstm = assert(door.destMDB)
-				local dstm_ofsx, dstm_ofsy = ofsPerRegion[dstm.obj.region+1](dstm.ptr)
-				local dstm_xofs = roomSizeInPixels * (dstm_ofsx - 4)
-				local dstm_yofs = roomSizeInPixels * (dstm_ofsy + 1)
+				local dstRoom = assert(door.destRoom)
+				local dstRoom_ofsx, dstRoom_ofsy = ofsPerRegion[dstRoom.obj.region+1](dstRoom.ptr)
+				local dstRoom_xofs = roomSizeInPixels * (dstRoom_ofsx - 4)
+				local dstRoom_yofs = roomSizeInPixels * (dstRoom_ofsy + 1)
 			
 				-- draw an arrow or something on the map where the door drops us off at
-				-- door.destMDB is the mdb
+				-- door.destRoom is the room
 				-- draw it at door.ptr.screenX by door.ptr.screenY
 				-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
@@ -2125,13 +2124,13 @@ local function drawRoomDoors(ctx, roomBlockData)
 				end
 			
 				-- here's the pixel x & y of the door destination
-				local x1 = dstm_xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (dstm.obj.x + i))
-				local y1 = dstm_yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (dstm.obj.y + j))
+				local x1 = dstRoom_xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (dstRoom.obj.x + i))
+				local y1 = dstRoom_yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (dstRoom.obj.y + j))
 
 				for _,pos in ipairs(blockpos) do
 					-- now for src block pos
-					local x2 = srcm_xofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[1] + blocksPerRoom * srcm.obj.x)
-					local y2 = srcm_yofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[2] + blocksPerRoom * srcm.obj.y)
+					local x2 = srcRoom_xofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[1] + blocksPerRoom * srcRoom.obj.x)
+					local y2 = srcRoom_yofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[2] + blocksPerRoom * srcRoom.obj.y)
 					drawline(mapimg,x1,y1,x2,y2)
 				end
 			end
@@ -2139,10 +2138,10 @@ local function drawRoomDoors(ctx, roomBlockData)
 	end
 end
 
-function drawRoomPLMs(ctx, roomBlockData)
+function drawRoomBlockPLMs(ctx, roomBlockData)
 	local mapimg = ctx.mapimg
 	for _,rs in ipairs(roomBlockData.roomStates) do
-		local m = rs.m
+		local m = rs.room
 		local ofsx, ofsy = ofsPerRegion[m.obj.region+1](m.ptr)
 		local xofs = roomSizeInPixels * (ofsx - 4)
 		local yofs = roomSizeInPixels * (ofsy + 1)
@@ -2183,14 +2182,14 @@ function SMMap:mapSaveImage(filenamePrefix)
 	}
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.mdbs) do
-			drawRoom(ctx, roomBlockData, m)
+		for _,m in ipairs(roomBlockData.rooms) do
+			drawRoomBlocks(ctx, roomBlockData, m)
 		end
 	end
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		drawRoomDoors(ctx, roomBlockData)
-		drawRoomPLMs(ctx, roomBlockData)
+		drawRoomBlockDoors(ctx, roomBlockData)
+		drawRoomBlockPLMs(ctx, roomBlockData)
 	end
 
 	mapimg:save(filenamePrefix..'.png')
@@ -2198,13 +2197,13 @@ function SMMap:mapSaveImage(filenamePrefix)
 end
 
 
-function SMMap:mapPrintRooms()
+function SMMap:mapPrintRoomBlocks()
 	-- print/draw rooms
 	print()
 	print'all rooms'
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		local w,h = roomBlockData.width, roomBlockData.height
-		for _,m in ipairs(roomBlockData.mdbs) do
+		for _,m in ipairs(roomBlockData.rooms) do
 			io.write(' '..('%02x/%02x'):format(m.obj.region, m.obj.index))
 		end
 		print()
@@ -2251,35 +2250,35 @@ function SMMap:mapWriteGraphDot()
 	--local nl = '-'
 	local levelsep = '/'	-- doesn't work with cluster labels
 	--local levelsep = ''
-	local function getMDBName(m)
+	local function getRoomName(m)
 		return 
 			--('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)
 --			('%04x'):format(bit.band(0xffff, ffi.cast('uint8_t*', m.ptr) - rom))..nl..
 			('%02x'..levelsep..'%02x'):format(m.obj.region, m.obj.index)
 	end
-	local function getClusterName(mdbName)
+	local function getClusterName(roomName)
 		-- graphviz clusters have to have 'cluster' as a prefix
-		return 'cluster_'..mdbName
+		return 'cluster_'..roomName
 	end
 	local function getRoomStateName(rs)
 		return ('%04x'):format(bit.band(0xffff,ffi.cast('uint8_t*',rs.ptr)-rom))
 	end
 --print'building graph'			
 	local edges = table()
-	--for _,m in ipairs(self.mdbs) do
+	--for _,m in ipairs(self.rooms) do
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.mdbs) do
-			local mdbName = getMDBName(m)
+		for _,m in ipairs(roomBlockData.rooms) do
+			local roomName = getRoomName(m)
 			
 			if showRoomStates then
 				local itemIndex = 0
-				f:write('\tsubgraph "',getClusterName(mdbName),'" {\n')
+				f:write('\tsubgraph "',getClusterName(roomName),'" {\n')
 				f:write('\t\trank="same";\n')
-				--f:write('\t\tlabel="', mdbName, '";\n')
-				f:write('\t\t"', mdbName, '" [pos="0,0" shape=box];\n')
+				--f:write('\t\tlabel="', roomName, '";\n')
+				f:write('\t\t"', roomName, '" [pos="0,0" shape=box];\n')
 				for i,rs in ipairs(m.roomStates) do
 					local rsName = getRoomStateName(rs)
-					local rsNodeName = mdbName..nl..rsName
+					local rsNodeName = roomName..nl..rsName
 					f:write('\t\t"', rsNodeName, '"')
 					f:write(' [pos="0,',tostring(-i),'" shape=box label="',rsName,'"]')
 					f:write(';\n')
@@ -2289,7 +2288,7 @@ function SMMap:mapWriteGraphDot()
 						for plmIndex,plm in ipairs(rs.plmset.plms) do
 							local plmname = plm:getName()
 							if plmname and plmname:match'^item_' then
-								local itemNodeName = mdbName..nl..rsName..nl..plmIndex
+								local itemNodeName = roomName..nl..rsName..nl..plmIndex
 								f:write('\t\t"', itemNodeName, '" [pos="1,',tostring(-itemIndex),'" shape=box label="', plmname, '"];\n')
 								itemIndex = itemIndex + 1
 							
@@ -2300,36 +2299,36 @@ function SMMap:mapWriteGraphDot()
 				end
 			end
 			
-			-- for each mdb door, find the room door with a matching index
-			-- TODO maybe I should go by room doors.  room doors are based on map tiles, and they reference the mdb door with their index.
-			-- however lifts are not specified by room doors, but they are always the last mdb door.
+			-- for each room door, find the room door with a matching index
+			-- TODO maybe I should go by room doors.  room doors are based on map tiles, and they reference the room door with their index.
+			-- however lifts are not specified by room doors, but they are always the last room door.
 			-- and open exits are not room doors either ... this is where roomBlockData.blocksForExit comes in handy 
 			for exitIndex, blockpos in pairs(roomBlockData.blocksForExit) do
-				local mdbDoor = m.doors[exitIndex+1]
+				local roomDoor = m.doors[exitIndex+1]
 				
-				if mdbDoor 
-				and mdbDoor.ctype == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
+				if roomDoor 
+				and roomDoor.ctype == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
 				then
 
-					assert(mdbDoor.destMDB)
-					local destMdbName = getMDBName(mdbDoor.destMDB)
+					assert(roomDoor.destRoom)
+					local destRoomName = getRoomName(roomDoor.destRoom)
 				
-					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
+					-- if there is no matching roomBlockDoor then it could just be a walk-out-of-the-room exit
 					local color
 					
 					-- notice, if we reverse the search, and cycle through all roomBlockData.doors and then lookup the associated mdb.door, we come up with only one room door that doesn't have a mdb door ...
-					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated MDB door
-					local _, roomDoor = roomBlockData.doors:find(nil, function(roomDoor)
-						-- TODO is this always true?  the blockpos exitIndex matches the roomDoor.index?
-						return roomDoor.index == exitIndex
+					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated room door
+					local _, roomBlockDoor = roomBlockData.doors:find(nil, function(roomBlockDoor)
+						-- TODO is this always true?  the blockpos exitIndex matches the roomBlockDoor.index?
+						return roomBlockDoor.index == exitIndex
 					end)
-					if roomDoor then
+					if roomBlockDoor then
 						-- if there is a room door then the exit is a blue door by default ... unless we find a plm for the door
 						color = 'blue'
 
 						-- we're getting multiple edges here
 						-- room pertains to block data, and it will be repeated for reused block data rooms (like save points, etc)
-						-- now this means roomBlockData.roomStates will have as many roomStates as there are multiple mdbs which reference it
+						-- now this means roomBlockData.roomStates will have as many roomStates as there are multiple rooms which reference it
 						-- so we only want to look through the roomStates that pertain to our current mdb
 						--for _,rs in ipairs(roomBlockData.roomStates) do
 						for _,rs in ipairs(m.roomStates) do	
@@ -2344,7 +2343,7 @@ function SMMap:mapWriteGraphDot()
 --local plmname = plm:getName()
 --print('   plm_t: '..plmname..' '..plm)
 									-- find a matching door plm
-									if plm.x == roomDoor.x and plm.y == roomDoor.y then
+									if plm.x == roomBlockDoor.x and plm.y == roomBlockDoor.y then
 										local plmname = assert(plm:getName(), "expected door plm to have a valid name "..plm)
 										color = plmname:match'^door_([^_]*)'
 										doorarg = plm.args
@@ -2355,17 +2354,17 @@ function SMMap:mapWriteGraphDot()
 							if color == 'eye' then color = 'darkseagreen4' end
 							
 							if showDoors then
-								local srcNodeName = mdbName
-								local dstNodeName = destMdbName
-								local doorName = 'door'..('%04x'):format(mdbDoor.addr)
-								local doorNodeName = mdbName..':'..doorName
+								local srcNodeName = roomName
+								local dstNodeName = destRoomName
+								local doorName = 'door'..('%04x'):format(roomDoor.addr)
+								local doorNodeName = roomName..':'..doorName
 								local colorTag = '[color='..color..']'
 								local labelTag = color == 'blue' and '[label=""]' or ('[label="'..('%04x'):format(doorarg)..'"]') 
 								f:write('\t"', doorNodeName, '"', colorTag, labelTag, ';\n')
 								-- TODO connect the src door with the dest door
-								-- look at the mdbDoor destination information
+								-- look at the roomDoor destination information
 								-- compare it to the room doors xy in the destination room 
-								-- just like in the drawRoomDoors code
+								-- just like in the drawRoomBlockDoors code
 								-- if you have a match then pair the doors together
 								-- then TODO store this elsewhere
 								-- and TODO TODO then with a bidirectional graph, next add some extra nodes to that graph based on obstructions, and last use this graph for placement and traversal of items
@@ -2373,16 +2372,16 @@ function SMMap:mapWriteGraphDot()
 								edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
 							else
 								-- create door edges from each roomstate to each mdb
-								local srcNodeName = mdbName
-								local dstNodeName = destMdbName
+								local srcNodeName = roomName
+								local dstNodeName = destRoomName
 								if showRoomStates then
 									srcNodeName = srcNodeName .. nl .. rsName
-									--local dstRSName = getRoomStateName(assert(mdbDoor.destMDB.roomStates[1]))	-- TODO how to determine destination room state?
+									--local dstRSName = getRoomStateName(assert(roomDoor.destRoom.roomStates[1]))	-- TODO how to determine destination room state?
 									--dstNodeName = dstNodeName .. nl .. dstRSName
 								end
 								local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
 								if showRoomStates then
-									--edgecode = edgecode..'lhead="'..getClusterName(destMdbName)..'" '
+									--edgecode = edgecode..'lhead="'..getClusterName(destRoomName)..'" '
 								end
 								edgecode = edgecode .. 'color=' .. color 
 								if color ~= 'blue' then
@@ -2392,12 +2391,12 @@ function SMMap:mapWriteGraphDot()
 								edges:insert(edgecode)
 							end
 						end
-					else	-- no roomDoor, so it's just a walk-out-the-wall door or a lift
+					else	-- no roomBlockDoor, so it's just a walk-out-the-wall door or a lift
 						if showDoors then
-							local srcNodeName = mdbName
-							local dstNodeName = destMdbName
-							local doorName = 'door'..('%04x'):format(mdbDoor.addr)
-							local doorNodeName = mdbName..':'..doorName
+							local srcNodeName = roomName
+							local dstNodeName = destRoomName
+							local doorName = 'door'..('%04x'):format(roomDoor.addr)
+							local doorNodeName = roomName..':'..doorName
 							local colorTag = ''
 							local labelTag = '[label=""]'
 							f:write('\t"', doorNodeName, '"', colorTag, labelTag, ';\n')
@@ -2405,22 +2404,22 @@ function SMMap:mapWriteGraphDot()
 							edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
 						else
 							--if m.doors:last().ctype == 'lift_t' then
-							--local mdbDoor = m.doors[#m.doors-1]
-							local destMdbName = getMDBName(mdbDoor.destMDB)
+							--local roomDoor = m.doors[#m.doors-1]
+							local destRoomName = getRoomName(roomDoor.destRoom)
 							-- create door edges from each roomstate to each mdb
-							local srcNodeName = mdbName
-							local dstNodeName = destMdbName
+							local srcNodeName = roomName
+							local dstNodeName = destRoomName
 							if showRoomStates then
 								--local srcRSName = getRoomStateName(assert(m.roomStates[1]))
 								--srcNodeName = srcNodeName .. nl .. srcRSName
-								--local dstRSName = getRoomStateName(assert(mdbDoor.destMDB.roomStates[1]))
+								--local dstRSName = getRoomStateName(assert(roomDoor.destRoom.roomStates[1]))
 								--dstNodeName = dstNodeName .. nl .. dstRSName
 							end
 							local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
 							if showRoomStates then
 								--edgecode = edgecode
-								--	..'lhead="'..getClusterName(destMdbName)..'" '
-								--	..'ltail="'..getClusterName(mdbName)..'" '
+								--	..'lhead="'..getClusterName(destRoomName)..'" '
+								--	..'ltail="'..getClusterName(roomName)..'" '
 							end
 							edgecode = edgecode .. ']'
 							edges:insert(edgecode)
@@ -2455,8 +2454,8 @@ function SMMap:mapPrint()
 	for _,plmset in ipairs(self.plmsets) do
 		print(' '
 			..(plmset.addr and ('$%06x'):format(plmset.addr) or 'nil')
-			..' mdbs: '..plmset.roomStates:map(function(rs)
-				local m = rs.m
+			..' rooms: '..plmset.roomStates:map(function(rs)
+				local m = rs.room
 				return ('%02x/%02x'):format(m.obj.region, m.obj.index)
 			end):concat' '
 		)
@@ -2473,8 +2472,8 @@ function SMMap:mapPrint()
 	for _,plmset in ipairs(self.plmsets) do
 		local rsstrs = table()
 		for _,rs in ipairs(plmset.roomStates) do
-			local region = assert(tonumber(rs.m.obj.region))
-			local index = assert(tonumber(rs.m.obj.index))
+			local region = assert(tonumber(rs.room.obj.region))
+			local index = assert(tonumber(rs.room.obj.index))
 			rsstrs:insert(('%02x/%02x'):format(region, index))
 		end
 		rsstrs = rsstrs:concat', '
@@ -2492,8 +2491,8 @@ function SMMap:mapPrint()
 		for _,plmset in ipairs(self.plmsets) do
 			local rsstrs = table()
 			for _,rs in ipairs(plmset.roomStates) do
-				local region = assert(tonumber(rs.m.obj.region))
-				local index = assert(tonumber(rs.m.obj.index))
+				local region = assert(tonumber(rs.room.obj.region))
+				local index = assert(tonumber(rs.room.obj.index))
 				rsstrs:insert(('%02x/%02x'):format(region, index))
 			end
 			rsstrs = rsstrs:concat', '
@@ -2517,8 +2516,8 @@ function SMMap:mapPrint()
 		print(' '..('$%06x'):format(enemySpawnSet.addr)..' '..tolua{
 			enemiesToKill = enemySpawnSet.enemiesToKill, 
 		}
-			..' mdbs: '..enemySpawnSet.roomStates:map(function(rs)
-				return ('%02x/%02x'):format(rs.m.obj.region, rs.m.obj.index)
+			..' rooms: '..enemySpawnSet.roomStates:map(function(rs)
+				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' '
 		)
 		for _,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do	
@@ -2536,8 +2535,8 @@ function SMMap:mapPrint()
 	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
 	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
 		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '..enemyGFXSet.name
-			..' mdbs: '..enemyGFXSet.roomStates:map(function(rs)
-				return ('%02x/%02x'):format(rs.m.obj.region, rs.m.obj.index)
+			..' rooms: '..enemyGFXSet.roomStates:map(function(rs)
+				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' '
 		)
 		for _,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
@@ -2556,7 +2555,7 @@ function SMMap:mapPrint()
 	self.fx1s:sort(function(a,b) return a.addr < b.addr end)
 	for _,fx1 in ipairs(self.fx1s) do
 		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
-			..' mdbs: '..fx1.mdbs:map(function(m)
+			..' rooms: '..fx1.rooms:map(function(m)
 				return ('%02x/%02x'):format(m.obj.region, m.obj.index)
 			end):concat' '
 		)
@@ -2568,7 +2567,7 @@ function SMMap:mapPrint()
 	self.bgs:sort(function(a,b) return a.addr < b.addr end)
 	for _,bg in ipairs(self.bgs) do
 		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
-			..' mdbs: '..bg.mdbs:map(function(m)
+			..' rooms: '..bg.rooms:map(function(m)
 				return ('%02x/%02x'):format(m.obj.region, m.obj.index)
 			end):concat' '
 		)
@@ -2576,9 +2575,9 @@ function SMMap:mapPrint()
 
 	-- print mdb info
 	print()
-	print("all mdb_t's:")
-	for _,m in ipairs(self.mdbs) do
-		print(' mdb_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
+	print("all room_t's:")
+	for _,m in ipairs(self.rooms) do
+		print(' room_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
 			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select_ptr) - rom)..' '..tostring(rs.select))
@@ -2622,7 +2621,7 @@ function SMMap:mapPrint()
 	end
 
 	--[[ print plmset information
-	-- half this is in the all plms_ts and the other half is in all mdb_ts
+	-- half this is in the all plms_ts and the other half is in all room_ts
 	print()
 	print'all plmsets:'
 	for i,plmset in ipairs(self.plmsets) do
@@ -2646,11 +2645,11 @@ function SMMap:mapPrint()
 	self:mapWriteGraphDot()
 	--]]
 
-	self:mapPrintRooms()
+	self:mapPrintRoomBlocks()
 
 	--[[ debugging: print all unique test codes
 	local testCodeAddrs = table()
-	for _,m in ipairs(self.mdbs) do
+	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
 			testCodeAddrs[rs.select.testCodeAddr] = true
 		end
@@ -2663,7 +2662,7 @@ function SMMap:mapPrint()
 
 	--[[ debugging: print all unique door codes
 	local doorcodes = table()
-	for _,m in ipairs(self.mdbs) do
+	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
 				doorcodes[door.ptr.code] = true
@@ -2679,9 +2678,9 @@ end
 
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
-	for _,m in ipairs(self.mdbs) do
-		local addr = topc(self.mdbBank, m.addr)	
-		mem:add(addr, ffi.sizeof'mdb_t', 'mdb_t', m)
+	for _,m in ipairs(self.rooms) do
+		local addr = topc(self.roomBank, m.addr)	
+		mem:add(addr, ffi.sizeof'room_t', 'room_t', m)
 		for _,rs in ipairs(m.roomStates) do
 			assert(rs.select_ptr)
 			mem:add(ffi.cast('uint8_t*', rs.select_ptr) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
@@ -2695,7 +2694,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 			mem:add(topc(self.bgBank, rs.obj.bgdataAddr), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
 
-			local addr = topc(self.mdbBank, rs.select.testCodeAddr)
+			local addr = topc(self.roomBank, rs.select.testCodeAddr)
 			local code = readCode(rom, addr, 100)
 			mem:add(addr, #code, 'room select code', m)
 		end
@@ -2710,19 +2709,19 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	for _,layerHandling in ipairs(self.layerHandlings) do
-		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].m)
+		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].room)
 	end
 
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
-		mem:add(enemySpawnSet.addr, 3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t', 'enemySpawn_t', enemySpawnSet.roomStates[1].m)
+		mem:add(enemySpawnSet.addr, 3 + #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t', 'enemySpawn_t', enemySpawnSet.roomStates[1].room)
 	end
 	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
 		-- 10 = 8 for name, 2 for term
-		mem:add(enemyGFXSet.addr - 8, 10 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t', 'enemyGFX_t', enemyGFXSet.roomStates[1].m)
+		mem:add(enemyGFXSet.addr - 8, 10 + #enemyGFXSet.enemyGFXs * ffi.sizeof'enemyGFX_t', 'enemyGFX_t', enemyGFXSet.roomStates[1].room)
 	end
 
 	for _,plmset in ipairs(self.plmsets) do
-		local m = plmset.roomStates[1].m
+		local m = plmset.roomStates[1].room
 		--[[ entry-by-entry
 		local addr = plmset.addr
 		for _,plm in ipairs(plmset.plms) do
@@ -2748,7 +2747,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		end
 	end
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks', roomBlockData.mdbs[1])
+		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks', roomBlockData.rooms[1])
 	end
 end
 
@@ -2763,10 +2762,10 @@ function SMMap:mapWritePLMs()
 	(probably used wrt savefiles, to know what doors have been opened)
 	certain grey doors have nonzero upper bytes, either  0x00, 0x04, 0x08, 0x0c, 0x18, 0x90, 0x94
 	
-	TODO the plm is associated with a sm.rooms[i].doors[j]
+	TODO the plm is associated with a sm.roomblocks[i].doors[j]
 	is the plm:door relation always 1-1, or can you have multiple plms per door, as you can have multiple roomStates per room?
 	in that case, should I be duplicating IDs between PLMs?
-	or perhaps I should not reindex here, but instead I should use the PLM's index to look up the associated sm.rooms[].doors[]?
+	or perhaps I should not reindex here, but instead I should use the PLM's index to look up the associated sm.roomblocks[].doors[]?
 	--]=]
 	print'all door plm ids:'
 	-- re-id all door plms?
@@ -2954,8 +2953,8 @@ print("used a total of "..doorid.." special and non-special doors")
 		--[[
 		-- TODO write plm scrollmods to these locations
 		-- scrollmods are per-plm, and plms are grouped on one place, but scrollmods seem to be grouped in another spot ...
-		-- these are all the scrollmod ranges that are scattered between the mdb_t, roomstate_t, roomselect_t, dooraddrs, scrolldata
-		-- TODO get rid of this once we automatically place the mdb_t's
+		-- these are all the scrollmod ranges that are scattered between the room_t, roomstate_t, roomselect_t, dooraddrs, scrolldata
+		-- TODO get rid of this once we automatically place the room_t's
 		-- but so far scrollmods fit withiin the free space above
 		{0x0792b0, 0x0792b2},
 		{0x079389, 0x0793a9},
@@ -3247,20 +3246,20 @@ function SMMap:mapWriteEnemyGFXSets()
 end
 
 
-function SMMap:mapWriteMDBs()
+function SMMap:mapWriteRooms()
 	local rom = self.rom
 	
 	
 	
-	-- writing back mdb_t
-	-- if you move a mdb_t
-	-- then don't forget to reassign all mdb.dooraddr.door_t.destMDB
-	local mdbWriteRanges = WriteRange('mdb_t', {
-		{0x791f8, 0x7b769},	-- mdbs of regions 0-2
+	-- writing back room_t
+	-- if you move a room_t
+	-- then don't forget to reassign all mdb.dooraddr.door_t.destRoom
+	local mdbWriteRanges = WriteRange('room_t', {
+		{0x791f8, 0x7b769},	-- rooms of regions 0-2
 		-- then comes bg_t's 
 		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
 		-- then comes plm_t's
-		{0x7c98e, 0x7e0fc},	-- mdbs of regions 3-6
+		{0x7c98e, 0x7e0fc},	-- rooms of regions 3-6
 -- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
 		-- then comes db_t's 
 		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
@@ -3268,11 +3267,11 @@ function SMMap:mapWriteMDBs()
 		-- then comes door code
 	})
 	
-	for _,m in ipairs(self.mdbs) do
+	for _,m in ipairs(self.rooms) do
 		assert(m.obj.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 	end
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.mdbs) do
+		for _,m in ipairs(roomBlockData.rooms) do
 			assert(m.obj.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 		end
 	end
@@ -3280,8 +3279,8 @@ function SMMap:mapWriteMDBs()
 	-- compress roomstates ...
 	-- for all plm scrollmods, if they have matching data then combine their addresses
 
-	-- sort mdbs by region and by index
-	self.mdbs:sort(function(a,b)
+	-- sort rooms by region and by index
+	self.rooms:sort(function(a,b)
 		-- [[
 		if a.obj.region < b.obj.region then return true end
 		if a.obj.region > b.obj.region then return false end
@@ -3292,9 +3291,9 @@ function SMMap:mapWriteMDBs()
 		--]]
 	end)
 	-- grab and write new regions
-	for _,m in ipairs(self.mdbs) do
-		print('mdb size '..('0x%x'):format(ffi.sizeof'mdb_t'))	
-		local totalSize = ffi.sizeof'mdb_t'
+	for _,m in ipairs(self.rooms) do
+		print('mdb size '..('0x%x'):format(ffi.sizeof'room_t'))	
+		local totalSize = ffi.sizeof'room_t'
 		for _,rs in ipairs(m.roomStates) do
 			print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
 			totalSize = totalSize + ffi.sizeof(rs.select_ctype)
@@ -3329,10 +3328,10 @@ function SMMap:mapWriteMDBs()
 		-- write m.obj
 		local addr, endaddr = mdbWriteRanges:get(totalSize)
 		local ptr = rom + addr
-		m.ptr = ffi.cast('mdb_t*', ptr)
+		m.ptr = ffi.cast('room_t*', ptr)
 		m.ptr[0] = m.obj
 		m.addr = bit.band(addr, 0xffff)	-- TODO get rid of this field and only use m.ptr
-		ptr = ptr + ffi.sizeof'mdb_t'
+		ptr = ptr + ffi.sizeof'room_t'
 
 		-- write m.roomStates[1..n].select
 		for _,rs in ipairs(m.roomStates) do
@@ -3358,7 +3357,7 @@ function SMMap:mapWriteMDBs()
 			ptr = ptr + ffi.sizeof'roomstate_t'
 		end
 		
-		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between mdbs.
+		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between rooms.
 		--		update m.obj.doors
 		m.obj.doors = bit.band(0xffff, ptr-rom)
 		m.ptr.doors = m.obj.doors
@@ -3414,27 +3413,27 @@ function SMMap:mapWriteMDBs()
 		assert(endaddr == ptr - rom)
 	end
 
-	-- update m.doors[1..n].ptr.destMdbAddr
-	for _,m in ipairs(self.mdbs) do
+	-- update m.doors[1..n].ptr.destRoomAddr
+	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				door.ptr.destMdbAddr = bit.band(0xffff, ffi.cast('uint8_t*', door.destMDB.ptr) - rom)
+				door.ptr.destRoomAddr = bit.band(0xffff, ffi.cast('uint8_t*', door.destRoom.ptr) - rom)
 			end
 		end
 	end
 
-	for _,m in ipairs(self.mdbs) do
+	for _,m in ipairs(self.rooms) do
 		assert(m.ptr.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 	end
-	-- if you remove mdbs but forget to remove them from rooms then you could end up here ... 
+	-- if you remove rooms but forget to remove them from rooms then you could end up here ... 
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.mdbs) do
+		for _,m in ipairs(roomBlockData.rooms) do
 			assert(m.ptr.region == m.obj.region, "regions dont match for mdb:\nptr "..m.ptr[0].."\nobj "..m.obj)
 		end
 	end
 end
 
-function SMMap:mapWriteRooms()
+function SMMap:mapWriteRoomBlocks()
 	local rom = self.rom
 	-- [[ write back compressed data
 	local roomWriteRanges = WriteRange('roomblocks', {
@@ -3470,7 +3469,7 @@ function SMMap:mapWriteRooms()
 		ffi.copy(rom + roomBlockData.addr, data, ffi.sizeof(data))
 		--]=]
 		-- [=[ write back at a contiguous location
-		-- (don't forget to update all roomstate_t's roomBank:roomAddr's to point to this
+		-- (don't forget to update all roomstate_t's roomBlockBank:roomBlockAddr's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
 		local fromaddr, toaddr = roomWriteRanges:get(ffi.sizeof(data))
 
@@ -3480,10 +3479,10 @@ function SMMap:mapWriteRooms()
 		roomBlockData.addr = fromaddr
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			rs.obj.roomBank = bit.rshift(roomBlockData.addr, 15) + 0x80 
-			rs.ptr.roomBank = rs.obj.roomBank
-			rs.obj.roomAddr = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
-			rs.ptr.roomAddr = rs.obj.roomAddr
+			rs.obj.roomBlockBank = bit.rshift(roomBlockData.addr, 15) + 0x80 
+			rs.ptr.roomBlockBank = rs.obj.roomBlockBank
+			rs.obj.roomBlockAddr = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
+			rs.ptr.roomBlockAddr = rs.obj.roomBlockAddr
 		end
 		--]=]
 
@@ -3511,12 +3510,12 @@ end
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
 	-- write these before writing roomstates
-	self:mapWriteRooms()
+	self:mapWriteRoomBlocks()
 	self:mapWritePLMs()
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
 
-	self:mapWriteMDBs()
+	self:mapWriteRooms()
 end
 
 return SMMap

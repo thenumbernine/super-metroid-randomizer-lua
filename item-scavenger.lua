@@ -142,8 +142,8 @@ for _,plmset in ipairs(sm.plmsets) do
 end
 --]]
 
--- remove the debug mdbs
-local allMDBs = sm.mdbs:filter(function(m)
+-- remove the debug rooms
+local allRooms = sm.rooms:filter(function(m)
 	-- remove crateria?
 	if m.obj.region == 6 then return false end
 
@@ -157,24 +157,24 @@ local allMDBs = sm.mdbs:filter(function(m)
 	return true
 end)
 -- TODO use m.ptr instead?
-local allMDBSet = allMDBs:mapi(function(m) return true, m end)
+local allRoomSet = allRooms:mapi(function(m) return true, m end)
 
-local function getRoomsForMDBs(mdbs)
-	local rooms = table()
-	for _,m in ipairs(mdbs) do
+local function getRoomBlocksForRooms(rooms)
+	local roomblocks = table()
+	for _,m in ipairs(rooms) do
 		for i,rs in ipairs(m.roomStates) do
 			assert(rs.roomBlockData)
-			rooms[rs.roomBlockData.addr] = rs.roomBlockData
+			roomblocks[rs.roomBlockData.addr] = rs.roomBlockData
 		end
 	end
-	return rooms:values()
+	return roomblocks:values()
 end
 
-local allRooms = getRoomsForMDBs(allMDBs)
+local allRoomBlocks = getRoomBlocksForRooms(allRooms)
 
 local allLocs = table()
 local locsPerRoom = table()
-for _,roomBlockData in ipairs(allRooms) do
+for _,roomBlockData in ipairs(allRoomBlocks) do
 	locsPerRoom[roomBlockData.addr] = table()
 	for y=0,roomBlockData.height-1 do
 		for x=0,roomBlockData.width-1 do
@@ -188,7 +188,7 @@ for _,roomBlockData in ipairs(allRooms) do
 end
 
 local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for debug printing
-	local m = args.mdb
+	local m = args.room
 	local plmset = args.plmset
 	local pos = args.pos
 	local cmd = args.cmd
@@ -207,7 +207,7 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 	plmset.plms:insert(plm)
 end
 
-local function getAllMDBPLMs(m)
+local function getAllRoomPLMs(m)
 	local plmsets = table()
 	for _,rs in ipairs(m.roomStates) do
 		plmsets[rs.plmset] = true
@@ -224,18 +224,18 @@ rooms to put a missile tank in:
 01/18 = missile room
 01/10 = next room ... but there is a risk of it going in the top
 --]]
-local firstMissileMDBs = table{
-	sm:mapFindMDB(1, 0x0f),
-	sm:mapFindMDB(1, 0x18),
+local firstMissileRooms = table{
+	sm:mapFindRoom(1, 0x0f),
+	sm:mapFindRoom(1, 0x18),
 }
 
 do
-	local rooms = getRoomsForMDBs(firstMissileMDBs)
---	local poss = table():append(rooms:mapi(function(roomBlockData) 
+	local roomblocks = getRoomBlocksForRooms(firstMissileRooms)
+--	local poss = table():append(roomblocks:mapi(function(roomBlockData) 
 --		return assert(locsPerRoom[roomBlockData.addr], "failed to find locs for roomblocks "..('%06x'):format(roomBlockData.addr))
 --	end):unpack())
 	local poss = table()
-	for _,roomBlockData in ipairs(rooms) do
+	for _,roomBlockData in ipairs(roomblocks) do
 --print('roomblocks '..('%06x'):format(roomBlockData.addr)..' has locs:')
 		for _,loc in ipairs(locsPerRoom[roomBlockData.addr]) do
 --print('', table.unpack(loc))
@@ -244,13 +244,13 @@ do
 	end	
 	local pos = pickRandom(poss)
 	local roomBlockData = pos[3]
-	assert(roomBlockData.mdbs, "found a roomblock without any mdbs")
+	assert(roomBlockData.rooms, "found a roomblock without any rooms")
 --	pos = burrowIntoWall(pos, roomBlockData.extTileTypes.beam_1x1)
-	local m = pickRandom(roomBlockData.mdbs:filter(function(m) 
-		return firstMissileMDBs:find(m)
+	local m = pickRandom(roomBlockData.rooms:filter(function(m) 
+		return firstMissileRooms:find(m)
 	end))
-	for _,plmset in ipairs(getAllMDBPLMs(m)) do
-		placeInPLMSet{mdb=m, plmset=plmset, pos=pos, cmd=sm.plmCmdValueForName.item_missile}
+	for _,plmset in ipairs(getAllRoomPLMs(m)) do
+		placeInPLMSet{room=m, plmset=plmset, pos=pos, cmd=sm.plmCmdValueForName.item_missile}
 	end
 	-- TODO and remove the location from the list of being picked again?
 end
@@ -281,11 +281,11 @@ for rep=1,1 do
 			end
 			scrollmodData:insert(0x80)
 		end
-		local m = pickRandom(roomBlockData.mdbs:filter(function(m)
-			return allMDBSet[m]
+		local m = pickRandom(roomBlockData.rooms:filter(function(m)
+			return allRoomSet[m]
 		end))
-		for _,plmset in ipairs(getAllMDBPLMs(m)) do
-			placeInPLMSet{mdb=m, plmset=plmset, pos=itempos, cmd=cmd}
+		for _,plmset in ipairs(getAllRoomPLMs(m)) do
+			placeInPLMSet{room=m, plmset=plmset, pos=itempos, cmd=cmd}
 			-- if the item was burrowed at all into the wall 
 			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) 
 			-- and if there are any screens we want to change the scrollmod of
@@ -295,14 +295,14 @@ for rep=1,1 do
 				
 				-- just add the scroll plm anyways.  we'll squeeze in the new scrollmod data somewhere
 				placeInPLMSet{
-					mdb = m, 
+					room = m, 
 					plmset = plmset, 
 					pos = plmpos, 
 					cmd = sm.plmCmdValueForName.scrollmod, 	-- 'Normal Scroll PLM (DONE)'
 					scrollmod = scrollmodData,
 				}
 			end
-			-- ah but now you also have to add to the plm scrollmod list of the mdb ...
+			-- ah but now you also have to add to the plm scrollmod list of the room ...
 		end
 	end
 end
@@ -311,10 +311,10 @@ end
 -- [[ debugging: put bombs by morph
 
 do
-	local m = sm:mapFindMDB(1, 0x0e)
-	for _,plmset in ipairs(getAllMDBPLMs(m)) do
-		placeInPLMSet{mdb=m, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
-		placeInPLMSet{mdb=m, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
+	local m = sm:mapFindRoom(1, 0x0e)
+	for _,plmset in ipairs(getAllRoomPLMs(m)) do
+		placeInPLMSet{room=m, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
+		placeInPLMSet{room=m, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
 	end
 end
 --]]

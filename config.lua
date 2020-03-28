@@ -19,7 +19,7 @@ return {
 	-- and same with doors
 	--
 	-- TODO new idea, possibly a separate algo: (items2.lua)
-	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room mdb_t's and door_t's themselves.
+	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room room_t's and door_t's themselves.
 	-- 1) remove the door tests from 'can access' code.  instead just pick an item location arbitrarily.
 	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
 	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
