@@ -395,42 +395,29 @@ end
 -- hmm sometimes it is only waking up the brinstar rooms, but not the crateria rooms (intro items were super x2, power x1, etank x2, speed)
 -- it seems Crateria won't wake up until you get your first missile tank ...
 if config.wakeZebesEarly then
-	for _,m in ipairs(sm.rooms) do
-		--[=[ 00/00 = first room ... doesn't seem to work
-		-- maybe this has to be set only after the player walks through old mother brain room?
-		if m.obj.index == 0x00
-		and m.obj.region == 0x00
-		then
-			for _,door in ipairs(m.doors) do
-				door.code = assert(wakeZebesEarlyDoorCode)
-			end
-		end
-		--]=]
-		-- [=[ change the lift going down into blue brinstar
-		-- hmm, in all cases it seems the change doesn't happen until after you leave the next room
-		if m.obj.index == 0x14
-		and m.obj.region == 0x00
-		then
-			assert(m.doors[2].addr == 0x8b9e)
-			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
-		end
-		--]=]
-		--[=[ 01/0e = blue brinstar first room
-		if m.obj.index == 0x0e
-		and m.obj.region == 0x01
-		then
-			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
-		end
-		--]=]
+	--[=[ 00/00 = first room ... doesn't seem to work
+	-- maybe this has to be set only after the player walks through old mother brain room?
+	local m = sm:mapFindRoom(0, 0x00)
+	for _,door in ipairs(m.doors) do
+		door.code = assert(wakeZebesEarlyDoorCode)
 	end
+	--]=]
+	-- [=[ change the lift going down into blue brinstar
+	-- hmm, in all cases it seems the change doesn't happen until after you leave the next room
+	local m = sm:mapFindRoom(0, 0x14)
+	assert(m.doors[2].addr == 0x8b9e)
+	m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+	--]=]
+	--[=[ 01/0e = blue brinstar first room
+	locla m = sm:mapFindRoom(1, 0x0e)
+	m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
+	--]=]
 end
 --]]
 
 -- also (only for wake zebes early?) open the grey door from old mother brain so you don't need morph to get back?
 do
-	local m = select(2, sm.rooms:find(nil, function(m) 
-		return m.obj.region == 0 and m.obj.index == 0x13 
-	end))
+	local m = sm:mapFindRoom(0, 0x13)
 	local rs = m.roomStates[2]	-- sleeping old mother brain
 	local plmset = rs.plmset
 	local plm = plmset.plms:remove(4)		-- remove the grey door
@@ -494,10 +481,7 @@ for _,info in ipairs{
 
 } do
 	local region, index, x1,y1,w,h = table.unpack(info)
-	local m = select(2, sm.rooms:find(nil, function(m) 
-		return m.obj.region == region and m.obj.index == index
-	end))
-	assert(m)
+	local m = assert(sm:mapFindRoom(region, index))
 	local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?
 	for j=0,h-1 do
 		local y = y1 + j

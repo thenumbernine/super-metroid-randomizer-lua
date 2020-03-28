@@ -186,8 +186,8 @@ end
 
 --[[ make the first Ceres door go to Zebes
 -- screws up graphics ... permanently ...
-local _,startRoom = assert(sm.rooms:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
-local _,ceres = assert(sm.rooms:find(nil, function(m) return m.obj.region == 6 and m.obj.index == 0 end))
+local startRoom = assert(sm:mapFindRoom(0, 0x00))
+local ceres = assert(sm:mapFindRoom(6, 0x00)) 
 local doorptr = ceres.doors[1].ptr
 doorptr.destRoomAddr = startRoom.addr
 doorptr.screenX = 3
@@ -196,7 +196,7 @@ doorptr.screenY = 3
 
 
 --[[ make the first room have every item in the game
-local _,startRoom = assert(sm.rooms:find(nil, function(m) return m.obj.region == 0 and m.obj.index == 0 end))
+local startRoom = assert(sm:mapFindRoom(0, 0x00))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
 local newPLMSet = sm:newPLMSet{
 	-- make a PLM of each item in the game

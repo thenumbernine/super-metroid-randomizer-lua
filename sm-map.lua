@@ -1740,8 +1740,8 @@ colormap[255] = 255
 -- data is sized 32*m.width x 16*m.width
 local ofsPerRegion = {
 	function(m) 
-		-- special case for crateria
-		if m.region == 0	-- crateria
+		-- special case for Crateria right of Wrecked Ship
+		if m.region == 0	-- Crateria
 		and m.x > 45 
 		then
 			return 10,0
