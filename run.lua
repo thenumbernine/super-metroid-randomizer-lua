@@ -234,6 +234,7 @@ function topc(bank, offset)
 banksRequested[bank] = true 
 	-- why only these banks? maybe I should be removing the top bit from the addr?
 	if bank == 0xb4 
+	or bank == 0x80	
 	or bank == 0x83		-- for doors.
 --	or bank == 0x8e 	-- 
 	or bank == 0x8f		-- scroll and plm

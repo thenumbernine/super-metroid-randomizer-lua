@@ -218,6 +218,32 @@ local lift_t = struct'lift_t'{
 	{zero = 'uint16_t'},
 }
 
+
+-- http://patrickjohnston.org/bank/80
+local loadStation_t = struct'loadStation_t'{
+	{roomAddr = 'uint16_t'},
+	{doorAddr = 'uint16_t'},
+	{doorBTS = 'uint16_t'},
+	{screenX = 'uint16_t'},
+	{screenY = 'uint16_t'},
+	{offsetX = 'uint16_t'},
+	{offsetY = 'uint16_t'},
+}
+
+-- http://patrickjohnston.org/bank/82
+local demoRoom_t = struct'demoRoom_t'{
+	{roomAddr = 'uint16_t'},
+	{doorAddr = 'uint16_t'},
+	{doorSlot = 'uint16_t'},
+	{screenX = 'uint16_t'},
+	{screenY = 'uint16_t'},
+	{offsetX = 'uint16_t'},
+	{offsetY = 'uint16_t'},
+	{demoLength = 'uint16_t'},
+	{codeAddr = 'uint16_t'},
+}
+
+
 SMMap.plmCmdValueForName = table{
 	
 	-- I don't know about these ...
@@ -431,6 +457,21 @@ local function readCode(rom, addr, maxlen)
 end
 
 
+local Room = class()
+function Room:init(args)
+	for k,v in pairs(args) do
+		self[k] = v
+	end
+end
+function Room:setAddr(sm, addr)
+	assert(addr >= 0 and addr < 0xffff, "expects a 16-bit addr, not 24-bit")
+	self.ptr = sm.rom + topc(sm.roomBank, addr)
+end
+function Room:getAddr(sm)
+	assert(self.ptr, "you can't get the addr if you don't know the ptr")
+	return bit.band(0xffff, ffi.cast('uint8_t*', self.ptr) - sm.rom)
+end
+
 
 local RoomState = class()
 function RoomState:init(args)
@@ -549,7 +590,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	local rom = self.rom
 	local data = rom + absaddr
 	local mptr = ffi.cast('room_t*', data)
-	local m = {
+	local m = Room{
 		roomStates = table(),
 		doors = table(),
 	-- TODO bank-offset addr vs pc addr for all my structures ...
@@ -1722,6 +1763,34 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 
 
 	--]] --------------------------------------------------------------------------------
+
+
+	-- load stations
+	-- http://patrickjohnston.org/bank/82
+	self.loadStations = table()
+	local ptr = rom + topc(0x80, 0xc4c5)
+	local loadStationCountr = 151
+	for i=0,loadStationCountr-1 do
+		local ls = {}
+		ls.ptr = ffi.cast('loadStation_t*', ptr)
+		ls.obj = ffi.new('loadStation_t', ls.ptr[0])
+
+		if ls.ptr.roomAddr ~= 0 
+		and ls.ptr.roomAddr ~= 0xe82c	-- debug rooms.  I think with the sweep based method, I miss out on section 7.  tehn again, mabye this isn't seciton 7
+		then
+			ls.room = assert(select(2, self.rooms:find(nil, function(room)
+				return room:getAddr(self) == ls.ptr.roomAddr
+			end)), "failed to find the room for addr "..('%04x'):format(ls.ptr.roomAddr))
+		end
+		-- TODO similar pointer for door_t? though I don't move doors yet.
+		
+print('loadStation_t'..ls.obj..' '..(ls.room and ('room_t'..ls.room.obj) or ''))
+		self.loadStations[i+1] = ls
+		ptr = ptr + ffi.sizeof'loadStation_t'
+	end
+
+	-- if you want to do demo rooms here too, they are starting at $82:8774
+	-- there are 4 groups, each has 6 demoRoom_t's then 0xffff term
 end
 
 
@@ -2316,7 +2385,7 @@ function SMMap:mapWriteGraphDot()
 					-- if there is no matching roomBlockDoor then it could just be a walk-out-of-the-room exit
 					local color
 					
-					-- notice, if we reverse the search, and cycle through all roomBlockData.doors and then lookup the associated mdb.door, we come up with only one room door that doesn't have a mdb door ...
+					-- notice, if we reverse the search, and cycle through all roomBlockData.doors and then lookup the associated room.door, we come up with only one room door that doesn't have a mdb door ...
 					-- !!! WARNING !!! 02/3d roomDoorIndex=1 has no associated room door
 					local _, roomBlockDoor = roomBlockData.doors:find(nil, function(roomBlockDoor)
 						-- TODO is this always true?  the blockpos exitIndex matches the roomBlockDoor.index?
@@ -2329,7 +2398,7 @@ function SMMap:mapWriteGraphDot()
 						-- we're getting multiple edges here
 						-- room pertains to block data, and it will be repeated for reused block data rooms (like save points, etc)
 						-- now this means roomBlockData.roomStates will have as many roomStates as there are multiple rooms which reference it
-						-- so we only want to look through the roomStates that pertain to our current mdb
+						-- so we only want to look through the roomStates that pertain to our current room
 						--for _,rs in ipairs(roomBlockData.roomStates) do
 						for _,rs in ipairs(m.roomStates) do	
 							local rsName = getRoomStateName(rs)
@@ -2371,7 +2440,7 @@ function SMMap:mapWriteGraphDot()
 								edges:insert('"'..srcNodeName..'" -> "'..doorNodeName..'"'..colorTag)
 								edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
 							else
-								-- create door edges from each roomstate to each mdb
+								-- create door edges from each roomstate to each room
 								local srcNodeName = roomName
 								local dstNodeName = destRoomName
 								if showRoomStates then
@@ -2406,7 +2475,7 @@ function SMMap:mapWriteGraphDot()
 							--if m.doors:last().ctype == 'lift_t' then
 							--local roomDoor = m.doors[#m.doors-1]
 							local destRoomName = getRoomName(roomDoor.destRoom)
-							-- create door edges from each roomstate to each mdb
+							-- create door edges from each roomstate to each room
 							local srcNodeName = roomName
 							local dstNodeName = destRoomName
 							if showRoomStates then
@@ -2573,7 +2642,7 @@ function SMMap:mapPrint()
 		)
 	end
 
-	-- print mdb info
+	-- print room info
 	print()
 	print("all room_t's:")
 	for _,m in ipairs(self.rooms) do
@@ -2686,7 +2755,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(ffi.cast('uint8_t*', rs.select_ptr) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
-				-- sized mdb width x height
+				-- sized room width x height
 				local addr = topc(self.scrollBank, rs.obj.scrollAddr)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
@@ -2751,9 +2820,23 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 end
 
-function SMMap:mapWritePLMs()
+function SMMap:mapWritePLMs(roomBankWriteRanges)
 	local rom = self.rom
-	
+
+	local plmWriteRanges = WriteRange({
+		{0x78000, 0x79193},     
+		-- then comes 100 bytes of layer handling code
+		-- then rooms (see roomWriteRanges {0x791f8, 0x7b769})
+		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
+		{0x7c215, 0x7c8c6},
+		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
+		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
+		{0x7e87f, 0x7e880},     -- a single plm_t 2-byte terminator ...
+		
+		-- free space: 
+		{0x7e99b, 0x7ffff},     
+	}, 'plm_t')
+
 	-- [[ re-indexing the doors
 	--[=[
 	notes on doors:
@@ -2937,101 +3020,6 @@ print("used a total of "..doorid.." special and non-special doors")
 	--]=]
 	-- where plms were written before, so should be safe, right?
 	-- ranges are inclusive
-	local plmWriteRanges = WriteRange('plm_t', {
-		{0x78000, 0x79193},	
-		-- then comes 100 bytes of layer handling code
-		-- then mdb's (see mdbWriteRanges {0x791f8, 0x7b769})
-		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
-		{0x7c215, 0x7c8c6},
-		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
-		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
-		{0x7e87f, 0x7e880},	-- a single plm_t 2-byte terminator ...
-		
-		-- free space: 
-		{0x7e99b, 0x7ffff},	
-	
-		--[[
-		-- TODO write plm scrollmods to these locations
-		-- scrollmods are per-plm, and plms are grouped on one place, but scrollmods seem to be grouped in another spot ...
-		-- these are all the scrollmod ranges that are scattered between the room_t, roomstate_t, roomselect_t, dooraddrs, scrolldata
-		-- TODO get rid of this once we automatically place the room_t's
-		-- but so far scrollmods fit withiin the free space above
-		{0x0792b0, 0x0792b2},
-		{0x079389, 0x0793a9},
-		{0x0794c2, 0x0794cb},
-		{0x0794fa, 0x0794fc},
-		{0x079658, 0x07965a},
-		{0x07968c, 0x07968e},
-		{0x079744, 0x07975b},
-		{0x0797ab, 0x0797b4},
-		{0x079801, 0x079803},
-		{0x079966, 0x079968},
-		{0x0799f3, 0x0799f8},
-		{0x079b46, 0x079b5a},
-		{0x079b98, 0x079b9c},
-		{0x079bf9, 0x079c06},
-		{0x079c32, 0x079c34},
-		{0x079d11, 0x079d18},
-		{0x079d84, 0x079d9b},
-		{0x079e40, 0x079e51},
-		{0x079f05, 0x079f10},
-		{0x079f5f, 0x079f63},
-		{0x079fb7, 0x079fb9},
-		{0x07a04a, 0x07a050},
-		{0x07a104, 0x07a106},
-		{0x07a28e, 0x07a292},
-		{0x07a36f, 0x07a37b},
-		{0x07a3a9, 0x07a3ad},
-		{0x07a3da, 0x07a3dc},
-		{0x07a439, 0x07a446},
-		{0x07a4a2, 0x07a4b0},
-		{0x07a50f, 0x07a520},
-		{0x07a59c, 0x07a59e},
-		{0x07a6d6, 0x07a6e1},
-		{0x07a860, 0x07a864},
-		{0x07a8ec, 0x07a8f7},
-		{0x07a980, 0x07a98c},
-		{0x07aa70, 0x07aa81},
-		{0x07acb0, 0x07acb2},
-		{0x07ada7, 0x07adac},
-		{0x07ae66, 0x07ae73},
-		{0x07aea9, 0x07aeb3},
-		{0x07af0f, 0x07af13},
-		{0x07af6f, 0x07af71},
-		{0x07b0a7, 0x07b0b3},
-		{0x07b224, 0x07b235},
-		{0x07b27d, 0x07b282},
-		{0x07b2d1, 0x07b2d9},
-		{0x07b3d9, 0x07b3e0},
-		{0x07b445, 0x07b456},
-		{0x07b4e0, 0x07b4e4},
-		{0x07b547, 0x07b559},
-		{0x07b5c3, 0x07b5d4},
-		{0x07b612, 0x07b62a},
-		{0x07b68d, 0x07b697},
-		{0x07b72d, 0x07b740},
-		{0x07c9ec, 0x07c9fb},
-		{0x07cb7a, 0x07cb8a},
-		{0x07cc24, 0x07cc26},
-		{0x07ccc0, 0x07ccc7},
-		{0x07ce3d, 0x07ce3f},
-		{0x07cf4c, 0x07cf53},
-		{0x07cfb5, 0x07cfc8},
-		{0x07d012, 0x07d016},
-		{0x07d052, 0x07d054},
-		{0x07d135, 0x07d13a},
-		{0x07d16a, 0x07d16c},
-		{0x07d1a0, 0x07d1a2},
-		{0x07d1d8, 0x07d1dc},
-		{0x07d216, 0x07d21b},
-		{0x07d24d, 0x07d251},
-		{0x07d4bd, 0x07d4c1},
-		{0x07d67d, 0x07d699},
-		{0x07d6c8, 0x07d6cf},
-		{0x07d7df, 0x07d7e3},
-		{0x07d951, 0x07d95d},
-		--]]
-	})
 
 	-- TODO any code that points to a PLM needs to be updated as well
 	-- like whatever changes doors around from blue to grey, etc
@@ -3110,7 +3098,7 @@ print("used a total of "..doorid.." special and non-special doors")
 		end
 	end
 	--]]
-	
+
 	plmWriteRanges:print()
 end
 
@@ -3157,10 +3145,10 @@ function SMMap:mapWriteEnemySpawnSets()
 	--]]
 
 	-- [[ update enemy spawn
-	local enemySpawnWriteRanges = WriteRange('enemySpawn_t', {
+	local enemySpawnWriteRanges = WriteRange({
 		-- original spawns goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
-		{0x108000, 0x10ffff},
-	})
+		{0x108000, 0x110000},
+	}, 'enemySpawn_t')
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
 		local bytesToWrite = #enemySpawnSet.enemySpawns * ffi.sizeof'enemySpawn_t' + 3 	-- 2 for term, 1 for enemiesToKill
 		local addr, endaddr = enemySpawnWriteRanges:get(bytesToWrite)
@@ -3200,11 +3188,11 @@ function SMMap:mapWriteEnemyGFXSets()
 	
 	-- [[ update enemy set
 	-- I'm sure this will fail.  there's lots of mystery padding here.
-	local enemyGFXWriteRanges = WriteRange('enemyGFX_t', {
-		{0x1a0000, 0x1a12c5},
+	local enemyGFXWriteRanges = WriteRange({
+		{0x1a0000, 0x1a12c6},
 		-- next comes a debug routine, listed as $9809-$981e
 		-- then next comes a routine at $9961 ...
-	})
+	}, 'enemyGFX_t')
 	for j,enemyGFXSet in ipairs(self.enemyGFXSets) do
 		-- special case for the first one -- it has no name so we don't need 8 bytes preceding
 		-- it also has no entries, so that makes things easy
@@ -3246,35 +3234,32 @@ function SMMap:mapWriteEnemyGFXSets()
 end
 
 
-function SMMap:mapWriteRooms()
+function SMMap:mapWriteRooms(roomBankWriteRanges)
 	local rom = self.rom
 	
-	
-	
-	-- writing back room_t
-	-- if you move a room_t
-	-- then don't forget to reassign all mdb.dooraddr.door_t.destRoom
-	local mdbWriteRanges = WriteRange('room_t', {
-		{0x791f8, 0x7b769},	-- rooms of regions 0-2
-		-- then comes bg_t's 
-		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
-		-- then comes plm_t's
-		{0x7c98e, 0x7e0fc},	-- rooms of regions 3-6
--- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
-		-- then comes db_t's 
-		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
-		{0x7e82c, 0x7e85a},	-- single mdb of region 7
-		-- then comes door code
-	})
-	
 	for _,m in ipairs(self.rooms) do
-		assert(m.obj.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+		assert(m.obj.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 	end
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,m in ipairs(roomBlockData.rooms) do
-			assert(m.obj.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+			assert(m.obj.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 		end
 	end
+
+
+	local roomWriteRanges = WriteRange({
+		 {0x791f8, 0x7b769},     -- rooms of regions 0-2
+		 -- then comes bg_t's
+		 -- then comes door codes 0x7b971 to end of 0x7c0fa routine
+		 -- then comes plm_t's
+		 {0x7c98e, 0x7e0fc},     -- rooms of regions 3-6
+-- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
+		 -- then comes db_t's
+		 -- then comes door codes 0x7e1d8 to end of 0x7e513 routine
+		 {0x7e82c, 0x7e85a},     -- single mdb of region 7
+		 -- then comes door code
+	}, 'room_t')
+
 
 	-- compress roomstates ...
 	-- for all plm scrollmods, if they have matching data then combine their addresses
@@ -3292,7 +3277,7 @@ function SMMap:mapWriteRooms()
 	end)
 	-- grab and write new regions
 	for _,m in ipairs(self.rooms) do
-		print('mdb size '..('0x%x'):format(ffi.sizeof'room_t'))	
+		print('room size '..('0x%x'):format(ffi.sizeof'room_t'))	
 		local totalSize = ffi.sizeof'room_t'
 		for _,rs in ipairs(m.roomStates) do
 			print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
@@ -3324,9 +3309,12 @@ function SMMap:mapWriteRooms()
 				end
 			end
 		end
-		
+	
 		-- write m.obj
-		local addr, endaddr = mdbWriteRanges:get(totalSize)
+		local reqAddr
+--		if m.obj.region == 0 and m.obj.index == 0 then reqAddr = 0x0791f8 end
+--		if m.obj.region == 6 and m.obj.index == 0 then reqAddr = 0x07c96e end
+		local addr, endaddr = roomWriteRanges:get(totalSize, reqAddr)
 		local ptr = rom + addr
 		m.ptr = ffi.cast('room_t*', ptr)
 		m.ptr[0] = m.obj
@@ -3352,7 +3340,7 @@ function SMMap:mapWriteRooms()
 				rs.select_ptr.roomStateAddr = roomStateAddr		-- update previous write in rom
 				rs.select.roomStateAddr = roomStateAddr		-- update POD
 			else
-				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 			end
 			ptr = ptr + ffi.sizeof'roomstate_t'
 		end
@@ -3423,32 +3411,34 @@ function SMMap:mapWriteRooms()
 	end
 
 	for _,m in ipairs(self.rooms) do
-		assert(m.ptr.region == m.obj.region, "regions dont match for mdb "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+		assert(m.ptr.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 	end
 	-- if you remove rooms but forget to remove them from rooms then you could end up here ... 
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,m in ipairs(roomBlockData.rooms) do
-			assert(m.ptr.region == m.obj.region, "regions dont match for mdb:\nptr "..m.ptr[0].."\nobj "..m.obj)
+			assert(m.ptr.region == m.obj.region, "regions dont match for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 		end
 	end
+	
+	roomWriteRanges:print()
 end
 
 function SMMap:mapWriteRoomBlocks()
 	local rom = self.rom
 	-- [[ write back compressed data
-	local roomWriteRanges = WriteRange('roomblocks', {
+	local roomBlockWriteRanges = WriteRange({
 		--[=[ there are some bytes outside compressed regions but between a few roomdatas
 		-- the metroid rom map says these are a part of the room block data
 		-- this includes those breaks
-		{0x2142bb, 0x235d76},
-		{0x235ee0, 0x244da8},
-		{0x24559c, 0x272502},
-		{0x272823, 0x27322d},
+		{0x2142bb, 0x235d77},
+		{0x235ee0, 0x244da9},
+		{0x24559c, 0x272503},
+		{0x272823, 0x27322e},
 		--]=]
 		-- [=[ and this doesn't -- one giant contiguous region
-		{0x2142bb, 0x277fff},
+		{0x2142bb, 0x278000},
 		--]=]
-	})
+	}, 'roomblocks')
 	-- ... reduces to 56% of the original compressed data
 	-- but goes slow
 	local totalOriginalCompressedSize = 0
@@ -3471,7 +3461,7 @@ function SMMap:mapWriteRoomBlocks()
 		-- [=[ write back at a contiguous location
 		-- (don't forget to update all roomstate_t's roomBlockBank:roomBlockAddr's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
-		local fromaddr, toaddr = roomWriteRanges:get(ffi.sizeof(data))
+		local fromaddr, toaddr = roomBlockWriteRanges:get(ffi.sizeof(data))
 
 		-- do the write
 		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
@@ -3501,7 +3491,7 @@ function SMMap:mapWriteRoomBlocks()
 		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
 	-- output memory ranges
-	roomWriteRanges:print()
+	roomBlockWriteRanges:print()
 	--]]
 end
 
@@ -3509,13 +3499,60 @@ end
 -- right now my structures are mixed between ptrs and by-value copied objects
 -- so TODO eventually have all ROM writing in this routine
 function SMMap:mapWrite()
+	-- TODO everything in 3 steps
+	-- 0) don't use ptrs before this at all, only objs and copied data
+	-- 1) request all ranges up front
+	-- 2) update all addrs in all objs based on the ptrs
+	-- 3) write last
+
+
+	local roomBankWriteRanges = WriteRange({
+		{0x78000, 0x79194},		-- plms
+		-- 9194-91f7 = asm
+		{0x791f8, 0x7b76a},		-- rooms of regions 0-2
+		-- b76a-b970 = 'library backgrounds'
+		-- b971-c116 = door asm
+		-- c117-c214 = asm
+		{0x7c215, 0x7c8c7},
+		-- c8c7-c98d = layer asm, which is L12 data
+		{0x7c98e, 0x7e0fd},	-- rooms of regions 3-6
+		-- e1d8-e513 = door asm 
+		-- e514-e689 = room select asm.  notice these call one another, so you can't just omve them around willy nilly
+		-- e68a-e82b = more tables and stuff
+		{0x7e82c, 0x7e881},	-- within this region is e85b-e87e, which is assumed to be unused ...
+		-- e88f-e99a = setup asm
+		{0x7e99b, 0x80000},	-- free space: 
+	
+-- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
+		-- then comes door code
+	})
+	
 	-- write these before writing roomstates
+	
 	self:mapWriteRoomBlocks()
-	self:mapWritePLMs()
+	
+	roomBankWriteRanges.name = 'plm_t'
+	self:mapWritePLMs(roomBankWriteRanges)
+	
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
 
-	self:mapWriteRooms()
+	roomBankWriteRanges.name = 'room_t'
+	self:mapWriteRooms(roomBankWriteRanges)
+	
+	roomBankWriteRanges:print()
+
+
+	-- now that we've moved some rooms around, update them in the loading station and demo section
+	for _,ls in ipairs(self.loadStations) do
+		if ls.room then
+			ls.ptr.roomAddr = ls.room:getAddr(self)
+--print("updating loadStation addr "..ls.ptr.roomAddr)
+		end
+	end
+
+	-- TODO same with demo?
 end
+
 
 return SMMap
