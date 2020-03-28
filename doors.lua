@@ -79,7 +79,7 @@ end
 
 -- remove all tourian and ceres doors
 oldDoors = oldDoors:filter(function(od)
-	return od.rs.m.ptr.region < 5
+	return od.rs.m.obj.region < 5
 end)
 
 print('old # non-special non-blue doors: '..oldNumDoors)
@@ -107,8 +107,8 @@ for i=0,numDoorsToMake-1 do
 		rs.plmset.plms:insert(plm)
 		newNumDoors = newNumDoors + 1
 		
-		local region = rs.m.ptr.region
-		local index = rs.m.ptr.index
+		local region = rs.m.obj.region
+		local index = rs.m.obj.index
 		print('making new '..color..' door at '..door.x..', '..door.y..' region/room: '..('%02x/%02x'):format(region, index))
 	end
 end

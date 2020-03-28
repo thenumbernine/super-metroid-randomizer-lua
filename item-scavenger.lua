@@ -144,10 +144,10 @@ end
 -- remove the debug mdbs
 local allMDBs = sm.mdbs:filter(function(m)
 	-- remove crateria?
-	if m.ptr.region == 6 then return false end
+	if m.obj.region == 6 then return false end
 
 	-- remove tourian?
-	if m.ptr.region == 5 then return false end
+	if m.obj.region == 5 then return false end
 
 	-- TODO remove intro room?  or at least remove their plmsets until after you wake zebes?
 	-- TODO also remove escape plmsets
@@ -201,7 +201,7 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 		scrollmod = args.scrollmod
 	}
 	print('placing in room '
-		..('%02x/%02x'):format(m.ptr.region, m.ptr.index)
+		..('%02x/%02x'):format(m.obj.region, m.obj.index)
 		..' plm '..plm)
 	plmset.plms:insert(plm)
 end

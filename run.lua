@@ -357,21 +357,21 @@ the two plmsets differ...
 if config.wakeZebesEarly then
 	-- find mdb 01/0e, find its plmset
 	local _,m = sm.mdbs:find(nil, function(m)
-		return m.ptr.index == 0x0e and m.ptr.region == 0x01
+		return m.obj.index == 0x0e and m.obj.region == 0x01
 	end)
 	if not m then error'here' end
 	assert(#m.roomStates == 2)
 	local rsNormal = m.roomStates[1]
 	local rsIntro = m.roomStates[2]
-	rsIntro.ptr.musicTrack = rsNormal.ptr.musicTrack
-	rsIntro.ptr.musicControl = rsNormal.ptr.musicControl
+	rsIntro.obj.musicTrack = rsNormal.obj.musicTrack
+	rsIntro.obj.musicControl = rsNormal.obj.musicControl
 -- the security cameras stay there, and if I update these then their palette gets messed up
 -- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall 
 -- however there's no way to get morph + powerbomb all in one go for the first time you're in the room, so I think I'll leave it this way for now
---	rsIntro.ptr.fx1 = rsNormal.ptr.fx1
---	rsIntro.ptr.enemySpawn = rsNormal.ptr.enemySpawn
---	rsIntro.ptr.enemySet = rsNormal.ptr.enemySet
-	rsIntro.ptr.layerHandling = rsNormal.ptr.layerHandling
+--	rsIntro.obj.fx1Addr = rsNormal.obj.fx1Addr
+--	rsIntro.obj.enemySpawnAddr = rsNormal.obj.enemySpawnAddr
+--	rsIntro.obj.enemySet = rsNormal.obj.enemySet
+	rsIntro.obj.layerHandlingAddr = rsNormal.obj.layerHandlingAddr
 	local rsIntroPLMSet = rsIntro.plmset
 	rsIntro:setPLMSet(rsNormal.plmset)
 	-- TODO remove the rsIntroPLMSet from the list of all PLMSets
@@ -400,8 +400,8 @@ if config.wakeZebesEarly then
 	for _,m in ipairs(sm.mdbs) do
 		--[=[ 00/00 = first room ... doesn't seem to work
 		-- maybe this has to be set only after the player walks through old mother brain room?
-		if m.ptr.index == 0x00
-		and m.ptr.region == 0x00
+		if m.obj.index == 0x00
+		and m.obj.region == 0x00
 		then
 			for _,door in ipairs(m.doors) do
 				door.code = assert(wakeZebesEarlyDoorCode)
@@ -410,16 +410,16 @@ if config.wakeZebesEarly then
 		--]=]
 		-- [=[ change the lift going down into blue brinstar
 		-- hmm, in all cases it seems the change doesn't happen until after you leave the next room
-		if m.ptr.index == 0x14
-		and m.ptr.region == 0x00
+		if m.obj.index == 0x14
+		and m.obj.region == 0x00
 		then
 			assert(m.doors[2].addr == 0x8b9e)
 			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
 		end
 		--]=]
 		--[=[ 01/0e = blue brinstar first room
-		if m.ptr.index == 0x0e
-		and m.ptr.region == 0x01
+		if m.obj.index == 0x0e
+		and m.obj.region == 0x01
 		then
 			m.doors[2].ptr.code = assert(wakeZebesEarlyDoorCode)
 		end
@@ -431,7 +431,7 @@ end
 -- also (only for wake zebes early?) open the grey door from old mother brain so you don't need morph to get back?
 do
 	local m = select(2, sm.mdbs:find(nil, function(m) 
-		return m.ptr.region == 0 and m.ptr.index == 0x13 
+		return m.obj.region == 0 and m.obj.index == 0x13 
 	end))
 	local rs = m.roomStates[2]	-- sleeping old mother brain
 	local plmset = rs.plmset
@@ -497,7 +497,7 @@ for _,info in ipairs{
 } do
 	local region, index, x1,y1,w,h = table.unpack(info)
 	local m = select(2, sm.mdbs:find(nil, function(m) 
-		return m.ptr.region == region and m.ptr.index == index
+		return m.obj.region == region and m.obj.index == index
 	end))
 	assert(m)
 	local room = m.roomStates[1].room	-- TODO assert all roomStates have matching rooms?

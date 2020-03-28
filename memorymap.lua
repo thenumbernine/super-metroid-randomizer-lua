@@ -69,7 +69,7 @@ function MemoryMap:print(filename)
 		
 		local m = range.m
 		if m then
-			f:write(('%02x/%02x'):format(m.ptr.region, m.ptr.index))
+			f:write(('%02x/%02x'):format(m.obj.region, m.obj.index))
 		else
 			f:write('     ')
 		end
