@@ -51,6 +51,25 @@ My next goal is to randomize blocks in certain passageways.
 
 ![graph of Super Metroid rooms](roomgraph.svg)
 
+
+Here's the burrowed items in action:
+
+![alt text](screenshots/pic1.png)
+![alt text](screenshots/pic2.png)
+![alt text](screenshots/pic3.png)
+![alt text](screenshots/pic4.png)
+![alt text](screenshots/pic5.png)
+![alt text](screenshots/pic6.png)
+![alt text](screenshots/pic7.png)
+![alt text](screenshots/pic8.png)
+![alt text](screenshots/pic9.png)
+![alt text](screenshots/pic10.png)
+![alt text](screenshots/pic11.png)
+![alt text](screenshots/pic12.png)
+![alt text](screenshots/pic13.png)
+![alt text](screenshots/pic14.png)
+
+
 Sources: (you can find a full list with `grep http *`)
 - http://deanyd.net/sm/index.php?title=List_of_rooms
 - http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
