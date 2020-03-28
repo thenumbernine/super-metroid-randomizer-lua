@@ -287,7 +287,8 @@ for rep=1,1 do
 		for _,plmset in ipairs(getAllRoomPLMs(m)) do
 			placeInPLMSet{room=m, plmset=plmset, pos=itempos, cmd=cmd}
 			-- if the item was burrowed at all into the wall 
-			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) 
+			if not (enterpos[1]==itempos[1] and enterpos[2]==itempos[2]) 	-- don't overwrite the break block
+			and not (plmpos[1]==itempos[1] and plmpos[2]==itempos[2])		-- don't overwrite the item
 			-- and if there are any screens we want to change the scrollmod of
 			and scrollmodData 
 			then
