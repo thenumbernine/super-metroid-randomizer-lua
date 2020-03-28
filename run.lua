@@ -228,12 +228,14 @@ end
 local banksRequested = table()
 function topc(bank, offset)
 	assert(offset >= 0 and offset < 0x10000, "got a bad offset for addr $"..('%02x'):format(bank)..':'..('%04x'):format(offset))
+
 --	assert(bit.band(0x8000, offset) ~= 0)
+
 banksRequested[bank] = true 
-	-- why only these banks?
+	-- why only these banks? maybe I should be removing the top bit from the addr?
 	if bank == 0xb4 
 	or bank == 0x83		-- for doors.
---	or bank == 0x8e 	-- map mdb's, roomstate's, door tables.  nope, not this one
+--	or bank == 0x8e 	-- 
 	or bank == 0x8f		-- scroll and plm
 	or bank == 0xa1
 	or bank == 0xb9 or bank == 0xba	-- both for bg_t

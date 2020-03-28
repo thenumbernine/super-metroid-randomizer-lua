@@ -18,9 +18,9 @@ SMMap.doorBank = 0x83
 
 -- each mdb and its roomstates, dooraddrs, and scrolldata are stored grouped together
 	-- should this be 0x8f? check my topc() function vs http://patrickjohnston.org/bank/8F
-SMMap.mdbBank = 0x8e
-SMMap.roomStateBank = 0x8e	-- bank for roomselect_t.roomStateAddr
-SMMap.doorAddrBank = 0x8e	-- bank for mdb_t.doors
+SMMap.mdbBank = 0x8f
+SMMap.roomStateBank = 0x8f	-- bank for roomselect_t.roomStateAddr
+SMMap.doorAddrBank = 0x8f	-- bank for mdb_t.doors
 SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to mdb, roomstate, and dooraddr, then why does it have a separate bank?
 -- then between groups of mdbs (and their content) are groups of bg_t's and doorcodes
 SMMap.bgBank = 0x8f			
@@ -190,7 +190,7 @@ local bg_t = struct'bg_t'{
 -- This doesn't reference the in-room door object so much as vice-versa.
 -- I'm tempted to call this 'exit_t' ... since you don't need a door
 local door_t = struct'door_t'{
-	{dest_mdb = 'uint16_t'},				-- 0: points to the mdb_t to transition into
+	{destMdbAddr = 'uint16_t'},				-- 0: points to the mdb_t to transition into
 	
 --[[
 0x40 = change regions
@@ -775,9 +775,9 @@ if done then break end
 	for _,door in ipairs(m.doors) do
 		local addr = topc(self.doorBank, door.addr)
 		local data = rom + addr 
-		local dest_mdb = ffi.cast('uint16_t*', data)[0]
-		-- if dest_mdb == 0 then it is just a 2-byte 'lift' structure ...
-		local doorType = dest_mdb == 0 and 'lift_t' or 'door_t'
+		local destMdbAddr = ffi.cast('uint16_t*', data)[0]
+		-- if destMdbAddr == 0 then it is just a 2-byte 'lift' structure ...
+		local doorType = destMdbAddr == 0 and 'lift_t' or 'door_t'
 		door.ctype = doorType
 		door.ptr = ffi.cast(doorType..'*', data)
 		if doorType == 'door_t' 
@@ -814,7 +814,7 @@ if done then break end
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				door.dest_mdb = self:mapAddMDB(door.ptr.dest_mdb, true)
+				door.destMDB = self:mapAddMDB(door.ptr.destMdbAddr, true)
 			end
 		end
 	end
@@ -1635,13 +1635,13 @@ function SMMap:mapInit()
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				local dest_mdb = assert(
+				local destMDB = assert(
 					select(2, self.mdbs:find(nil, function(m) 
-						return m.addr == door.ptr.dest_mdb 
+						return m.addr == door.ptr.destMdbAddr 
 					end)), 
 					'!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
 				-- points to the dest mdb
-				door.dest_mdb = dest_mdb
+				door.destMDB = destMDB
 			end
 		end
 	end
@@ -2095,13 +2095,13 @@ local function drawRoomDoors(ctx, room)
 --print("door isn't a ctype")
 			-- TODO handle lifts?
 			else
-				local dstm = assert(door.dest_mdb)
+				local dstm = assert(door.destMDB)
 				local dstm_ofsx, dstm_ofsy = ofsPerRegion[dstm.obj.region+1](dstm.ptr)
 				local dstm_xofs = roomSizeInPixels * (dstm_ofsx - 4)
 				local dstm_yofs = roomSizeInPixels * (dstm_ofsy + 1)
 			
 				-- draw an arrow or something on the map where the door drops us off at
-				-- door.dest_mdb is the mdb
+				-- door.destMDB is the mdb
 				-- draw it at door.ptr.screenX by door.ptr.screenY
 				-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
@@ -2314,8 +2314,8 @@ function SMMap:mapWriteGraphDot()
 				and mdbDoor.ctype == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
 				then
 
-					assert(mdbDoor.dest_mdb)
-					local destMdbName = getMDBName(mdbDoor.dest_mdb)
+					assert(mdbDoor.destMDB)
+					local destMdbName = getMDBName(mdbDoor.destMDB)
 				
 					-- if there is no matching roomDoor then it could just be a walk-out-of-the-room exit
 					local color
@@ -2380,7 +2380,7 @@ function SMMap:mapWriteGraphDot()
 								local dstNodeName = destMdbName
 								if showRoomStates then
 									srcNodeName = srcNodeName .. nl .. rsName
-									--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))	-- TODO how to determine destination room state?
+									--local dstRSName = getRoomStateName(assert(mdbDoor.destMDB.roomStates[1]))	-- TODO how to determine destination room state?
 									--dstNodeName = dstNodeName .. nl .. dstRSName
 								end
 								local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
@@ -2409,14 +2409,14 @@ function SMMap:mapWriteGraphDot()
 						else
 							--if m.doors:last().ctype == 'lift_t' then
 							--local mdbDoor = m.doors[#m.doors-1]
-							local destMdbName = getMDBName(mdbDoor.dest_mdb)
+							local destMdbName = getMDBName(mdbDoor.destMDB)
 							-- create door edges from each roomstate to each mdb
 							local srcNodeName = mdbName
 							local dstNodeName = destMdbName
 							if showRoomStates then
 								--local srcRSName = getRoomStateName(assert(m.roomStates[1]))
 								--srcNodeName = srcNodeName .. nl .. srcRSName
-								--local dstRSName = getRoomStateName(assert(mdbDoor.dest_mdb.roomStates[1]))
+								--local dstRSName = getRoomStateName(assert(mdbDoor.destMDB.roomStates[1]))
 								--dstNodeName = dstNodeName .. nl .. dstRSName
 							end
 							local edgecode = '"'..srcNodeName..'" -> "'..dstNodeName..'" ['
@@ -3257,7 +3257,7 @@ function SMMap:mapWriteMDBs()
 	
 	-- writing back mdb_t
 	-- if you move a mdb_t
-	-- then don't forget to reassign all mdb.dooraddr.door_t.dest_mdb
+	-- then don't forget to reassign all mdb.dooraddr.door_t.destMDB
 	local mdbWriteRanges = WriteRange('mdb_t', {
 		{0x791f8, 0x7b769},	-- mdbs of regions 0-2
 		-- then comes bg_t's 
@@ -3331,10 +3331,24 @@ function SMMap:mapWriteMDBs()
 		
 		-- write m.obj
 		local addr, endaddr = mdbWriteRanges:get(totalSize)
+-- [[ debugging
+local addr = topc(self.mdbBank, m.addr)
+endaddr = addr + totalSize		
+--]]		
 		local ptr = rom + addr
 		mptr = ffi.cast('mdb_t*', ptr)
+-- [[ debugging -- what changed?
+print('old '..m.ptr[0])
+print('new '..m.obj)
+-- if nothing is different then why does writing it screw upthe rom?
+if m.ptr[0] ~= m.obj then print('!!!!!!! DIFFER !!!!!!!') end
+--]]
 		mptr[0] = m.obj
+
 		local oldptr = m.ptr
+-- [[ debugging
+assert(m.ptr == mptr)
+--]]
 		m.ptr = mptr
 		m.addr = bit.band(addr, 0xffff)	-- TODO get rid of this field and only use m.ptr
 		print('moving mdb '..('%02x/%02x'):format(m.obj.region, m.obj.index)..' from '..('%06x'):format(ffi.cast('uint8_t*',oldptr)-rom)..' to '..('%06x'):format(addr))
@@ -3426,11 +3440,11 @@ print(('$%06x'):format(ptr-rom)..' scrolldata')
 		assert(endaddr == ptr - rom)
 	end
 
-	--		update m.doors[1..n].ptr.dest_mdb
+	-- update m.doors[1..n].ptr.destMdbAddr
 	for _,m in ipairs(self.mdbs) do
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
-				door.ptr.dest_mdb = bit.band(0xffff, ffi.cast('uint8_t*',m.ptr) - rom)
+				door.ptr.destMdbAddr = bit.band(0xffff, ffi.cast('uint8_t*', door.destMDB.ptr) - rom)
 			end
 		end
 	end
@@ -3534,7 +3548,7 @@ function SMMap:mapWrite()
 	self:mapWriteEnemySpawnSets()
 	--]]
 
---	self:mapWriteMDBs()	-- buggy
+	self:mapWriteMDBs()	-- buggy
 end
 
 return SMMap

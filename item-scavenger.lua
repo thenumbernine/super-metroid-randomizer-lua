@@ -5,7 +5,8 @@ local rom = sm.rom
 
 local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
 
--- TODO make sure the player has bombs or springball first
+-- *) make sure the player has bombs or springball first.  I'm manually adding them at the bottom of this file.
+-- *) don't do this below the waterline if the player doesn't have gravity.  otherwise they still might be impossible to reach ... unless you take special care, i.e. only burrow up/down, no further than jump height, etc.
 local function burrowIntoWall(pos, breakType)
 	if not config.randomizeItemsScavengerHuntProps.burrowItems then return pos end
 
