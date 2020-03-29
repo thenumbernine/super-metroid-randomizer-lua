@@ -175,16 +175,35 @@ local allRoomBlocks = getRoomBlocksForRooms(allRooms)
 local allLocs = table()
 local locsPerRoom = table()
 for _,roomBlockData in ipairs(allRoomBlocks) do
-	locsPerRoom[roomBlockData.addr] = table()
+	local thisRoomLocs = table()
 	for y=0,roomBlockData.height-1 do
 		for x=0,roomBlockData.width-1 do
 			if roomBlockData:isBorderAndNotCopy(x,y) then
-			-- TODO CHECK PLMS.  THOSE FACES IN BLUE BRINSTAR WILL SPAWN OVER ITEMS.
-				allLocs:insert{x,y,roomBlockData}
-				locsPerRoom[roomBlockData.addr]:insert{x,y,roomBlockData}
+				thisRoomLocs:insert{x,y,roomBlockData}
 			end
 		end
 	end
+	-- now check all the enemySpawns, and remove blocks covered by those stupid blue faces in Brinstar
+	-- but removing item placement isn't enough.  a blue block could still obstruct a path because the isBorderd didn't consider it when looking over the map solid information.
+	-- I should just make them destructable, or make them not change their underlying blocks to solid.
+	for _,rs in ipairs(roomBlockData.roomStates) do
+		if rs.enemySpawnSet then
+			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
+				if enemySpawn.enemyAddr == 0xea7f then	-- Koma
+					for i=#thisRoomLocs,1,-1 do
+						if thisRoomLocs[i][1] == math.floor((enemySpawn.x-4)/16)
+						and thisRoomLocs[i][2] == math.floor((enemySpawn.y-4)/16)
+						then
+							print('removing blocks for blue face at '..thisRoomLocs[i][1]..', '..thisRoomLocs[i][2])
+							thisRoomLocs:remove(i)
+						end
+					end
+				end
+			end
+		end
+	end
+	locsPerRoom[roomBlockData.addr] = thisRoomLocs
+	allLocs:append(thisRoomLocs)
 end
 
 local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for debug printing
@@ -310,12 +329,38 @@ end
 --]]
 
 -- [[ debugging: put bombs by morph
-
+-- TODO also remove these items from the placement above
 do
-	local m = sm:mapFindRoom(1, 0x0e)
-	for _,plmset in ipairs(getAllRoomPLMs(m)) do
-		placeInPLMSet{room=m, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
-		placeInPLMSet{room=m, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
+	local morphRoom = sm:mapFindRoom(1, 0x0e)
+	if config.randomizeItemsScavengerHuntProps.startWithBombs then
+		for _,plmset in ipairs(getAllRoomPLMs(morphRoom)) do
+			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
+		end
 	end
+	if config.randomizeItemsScavengerHuntProps.startWithXRay then
+		for _,plmset in ipairs(getAllRoomPLMs(morphRoom)) do
+			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
+		end
+	end
+end
+--]]
+-- [[ debugging: make sure all the doors leading there are blue
+-- I need a command for find-door-color based on coordinates 
+-- TODO also consider colored door unique IDs
+-- I should create doors with their unique ids to match across all roomstates
+-- then I should remap the indexes to compact them at the write, and complain if there is an overflow
+-- but the write shouldn't be separating the groups of matching door unique ids
+-- same with items?
+if config.randomizeItemsScavengerHuntProps.clearDoorsToGetToMorph then
+	-- this is just going to clear all colors regardless,
+	--  which means the escape tourian sequence will get some blue doors
+	sm:mapClearDoorColor(0, 0x00, 0, 72)	-- landing to parlor
+	sm:mapClearDoorColor(0, 0x02, 24, 80)	-- parlor to climb
+	sm:mapClearDoorColor(0, 0x12, 32, 136)	-- climb to old mother brain
+	sm:mapClearDoorColor(0, 0x13, 48, 8)	-- old mother brain to elevator
+	sm:mapClearDoorColor(1, 0x0e, 128, 8)	-- morph room to 2nd blue brinstar room
+	sm:mapClearDoorColor(1, 0x0f, 0, 8)		-- 2nd blue brinstar room to morph room
+	sm:mapClearDoorColor(1, 0x0f, 0, 24)	-- 2nd blue brinstar room to first missile room
+	sm:mapClearDoorColor(1, 0x18, 16, 8)	-- first missile room
 end
 --]]

@@ -106,7 +106,7 @@ local roomstate_t = struct'roomstate_t'{
 -- plm = 'post-load modification'
 -- this is a non-enemy object in a map.
 local plm_t = struct'plm_t'{
-	{cmd = 'uint16_t'},
+	{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemy_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
 	{x = 'uint8_t'},
 	{y = 'uint8_t'},
 	{args = 'uint16_t'},
@@ -892,6 +892,28 @@ function SMMap:mapFindRoom(region, index)
 	return false, "couldn't find "..('%02x/%02x'):format(region, index)
 end
 
+function SMMap:mapClearDoorColor(region, roomIndex, x,y)
+	print('searching for door to remove at '..('%02x/%02x %d,%d'):format(region, roomIndex, x,y))
+	local room = assert(self:mapFindRoom(region, roomIndex))
+	for _,rs in ipairs(room.roomStates) do
+		if rs.plmset then
+			for j=#rs.plmset.plms,1,-1 do
+				local plm = rs.plmset.plms[j]
+				local name = plm:getName()
+				if name and name:match'^door_' then
+					local dx = plm.x - x
+					local dy = plm.y - y
+					local l0 = math.abs(dx) + math.abs(dy)
+					local linf = math.max(math.abs(dx), math.abs(dy))
+					if linf < 8 then
+						print('...removing door')
+						rs.plmset.plms:remove(j)
+					end
+				end
+			end
+		end
+	end
+end
 
 
 function SMMap:newPLMSet(args)

@@ -48,6 +48,10 @@ return {
 
 		burrowItems = true,
 		burrowLength = 100,		-- how far to try to burrow items into the wall
+	
+		startWithBombs = true,			-- put bombs next to morph
+		startWithXRay = true,			-- put xray next to bombs
+		clearDoorsToGetToMorph = true,	-- make sure morph is accessible in its original room
 	},
 
 	randomizeWeaponProps = {
