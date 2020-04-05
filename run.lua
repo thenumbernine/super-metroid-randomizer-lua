@@ -236,8 +236,10 @@ banksRequested[bank] = true
 	if bank == 0xb4 
 	or bank == 0x80	
 	or bank == 0x83		-- for doors.
+	or bank == 0x88
 --	or bank == 0x8e 	-- 
 	or bank == 0x8f		-- scroll and plm
+	or bank == 0x91
 	or bank == 0xa1
 	or bank == 0xb9 or bank == 0xba	-- both for bg_t
 	or (bank >= 0xc2 and bank <= 0xce)	-- room block data
@@ -258,13 +260,46 @@ if config.skipIntro then
 end
 
 
+if config.beefUpXRay then
+	local function write(bank, pageofs, newValue, oldValue)
+		local addr = topc(bank, pageofs)
+		if oldValue ~= nil then
+			assert(rom[addr] == oldValue)
+		end
+		rom[addr] = newValue
+	end
+	
+	-- set max angle to nearly 180' (can't go past that, and can't get it to aim above or below the vertical half-plane.  how to get rid of the vertical limit...
+	write(0x88, 0x8792, 0x3f, 0x0b)
+	write(0x88, 0x879a, 0x3f, 0x0a)
+	-- set angle delta to as fast as possible:
+	write(0x88, 0x8770, 0xff, 0x00)
+	write(0x88, 0x8771, 0xff, 0x08)
+	-- x-ray works in fireflea room
+	--write(0x91, 0xd156, 0xea, 0xf0)
+	--write(0x91, 0xd157, 0xea, 0x1a)
+	-- x-ray works in all rooms (just have 91:d143 immediately return)
+	write(0x91, 0xd143, 0x6b, 0xad)
+
+	-- x-ray acts like it is off-screen (and that makes it fill the whole screen)
+	write(0x88, 0x8919, 0x11, 0x4b)
+	write(0x88, 0x891a, 0xbe, 0xc5)
+
+	-- or better yet, crystal flash (88:8b69) ... doesn't work, but try to figure out how to put a radius of x-ray always around you regardless of pushing 'a' button
+
+	-- make x-ray always on...
+	-- freeze-time is stored at 7e:0a78, but it is used in a lot of the detection of whether x-ray is active or not, so just removing code that sets this won't make time continue -- it has side-effects
+	-- actually -- fixing it always-on using zsnes causes the x-ray effect to glitch, but while you turn left and right back and forth while using x-ray, enemies will continue to move.  side effects: can't open doors, sometimes freezes.
+end
+
+
 -- [=[ using the ips contents of wake_zebes.ips
 -- if I skip writing the plms back then all works fine
 if config.wakeZebesEarly then
 	
 	--wakeZebesEarlyDoorCode = 0xe51f	-- DONT USE THIS - THIS IS WHERE SOME CERES DOOR CODE IS.  right after the last door code
 	--wakeZebesEarlyDoorCode = 0xe99b	-- somewhere further out
-	wakeZebesEarlyDoorCode = 0xff00		-- original location of the patch.  works as long as I don't re-compress the plms and tiles.
+	wakeZebesEarlyDoorCode = 0xff00		-- original location of the patch.  works.  will re-compressing the plms and tiles affect this?
 	
 	--patching offset 018eb4 size 0002
 	--local i = 0x018eb4	-- change the far right door code to $ff00
@@ -429,13 +464,65 @@ end
 -- notice, when using recursive room building, this skips them anyways
 -- [[
 sm:mapRemoveRoom(sm:mapFindRoom(2, 0x3d))
-sm:mapRemoveRoom(sm:mapFindRoom(4, 0x1f))
 sm:mapRemoveRoom(sm:mapFindRoom(7, 0x00))
+--]]
+
+--[[ redirect our doors to cut out the toned-down rooms (like the horseshoe shaped room before springball)
+local merging424and425 = true
+do
+	local m4_24 = assert(sm:mapFindRoom(4, 0x24))
+	local m4_25 = assert(sm:mapFindRoom(4, 0x25))
+	local m4_30 = assert(sm:mapFindRoom(4, 0x30))
+	
+	-- clear the code on the door in 04/24 that points back to itself?
+	local door = assert(m4_24:findDoorTo(m4_24))
+	local doorToSelfDoorCode = door.ptr.code
+	door.ptr.code = 0
+	
+	local door = assert(m4_24:findDoorTo(m4_24))
+	door.ptr.code = 0
+	
+	for _,m in ipairs{m4_24, m4_30} do
+		-- find the door that points to 4/25, redirect it to 4/24
+		local door = assert(m:findDoorTo(m4_25))
+		door:setDestRoom(m4_24)
+--		door.ptr.code = doorToSelfDoorCode -- this is in the other door that points to itself in this room
+		door.ptr.code = 0
+		if m == m4_24 then
+			assert(door.ptr.screenX == 0)
+			assert(door.ptr.screenY == 2)
+			door.ptr.screenX = 1
+			door.ptr.screenY = 3
+			assert(door.ptr.capY == 0x26)
+			door.ptr.capY = 0x36
+		elseif m == m4_30 then
+			assert(door.ptr.screenX == 0)
+			assert(door.ptr.screenY == 1)
+			door.ptr.screenX = 1
+			door.ptr.screenY = 2
+		else
+			error'here'
+		end
+	end
+
+	-- change the scroll data of the room from 0 to 1?
+	-- if you leave all original then walking through the door from 0,3 to 1,3 messes up the scroll effect
+	-- if you change the starting room to 0 then walking into 0,3 messes up the scroll effect
+	-- if you set 0,3 to 1 then it works, but you can see the room that you're walking into.
+	-- (maybe I should make the door somehow fix the scrolldata when you walk through it?) 
+	for _,rs in ipairs(m4_24.roomStates) do
+		rs.scrollData[1+1+2*2] = 2
+		rs.scrollData[1+1+2*3] = 1
+	end
+	
+	-- and now remove 04/25
+	sm:mapRemoveRoom(m4_25)
+end
 --]]
 
 -- [=[
 -- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
-for _,info in ipairs{
+local fillSolidInfo = table{
 	--[[
 	-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
 	-- I might have to just excise regions from the item-scavenger instead
@@ -476,11 +563,15 @@ for _,info in ipairs{
 	{4, 0x24, 0, 64-5, 4, 4},		-- maridia lower right sand area
 	{4, 0x24, 16-4, 64-5, 8, 4},	-- "
 	{4, 0x24, 32-4, 64-5, 4, 4},	-- "
-	{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
-	{4, 0x25, 16-4, 48-5, 4, 4},	-- "
 	{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
-
-} do
+} 
+if not merging424and425 then
+	fillSolidInfo:append{
+		{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
+		{4, 0x25, 16-4, 48-5, 4, 4},	-- "
+	}
+end
+for _,info in ipairs(fillSolidInfo) do
 	local region, index, x1,y1,w,h = table.unpack(info)
 	local m = assert(sm:mapFindRoom(region, index))
 	local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?

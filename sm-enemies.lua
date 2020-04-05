@@ -679,7 +679,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xf4d3, name="Grey Zebesian (Fighter)"},
 		{addr=0xf513, name="Green Zebesian (Fighter)"},
 		{addr=0xf553, name="Red Zebesian (Fighter)"},
-		{addr=0xf593, name="Gold Zebesian (Fighter)"},
+		{addr=0xf593, name="Gold Zebesian (Fighter)"},	-- this is black/gold
 		{addr=0xf5d3, name="Pink Zebesian (Fighter)"},
 		{addr=0xf613, name="Black Zebesian (Fighter)"},
 		{addr=0xf653, name="Grey Zebesian"},

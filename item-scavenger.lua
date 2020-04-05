@@ -31,21 +31,45 @@ local function burrowIntoWall(pos, breakType)
 		roomBlockData.extTileTypes.beam_1x1,
 		roomBlockData.extTileTypes.bombable_1x1,
 		roomBlockData.extTileTypes.powerbomb_1x1,
-		roomBlockData.extTileTypes.supermissile_1x1,
-	}	
+		roomBlockData.extTileTypes.supermissile_1x1,	-- needs a 1x1 space underneath it
+		roomBlockData.extTileTypes.grappling_break,		-- needs a 1x1 space underneath it
+		--roomBlockData.extTileTypes.speed,				-- ... only if you know you can carry a charge there
+		--roomBlockData.extTileTypes.crumble_1x1,			-- hmm, only secrets openingdown ...
+	}
+	local breakTypeStack = table{breakType}
+	if breakType == roomBlockData.extTileTypes.supermissile_1x1 
+	or breakType == roomBlockData.extTileTypes.grappling_break
+	then
+		breakTypeStack:insert(1,  pickRandom{
+			roomBlockData.extTileTypes.beam_1x1,
+			roomBlockData.extTileTypes.bombable_1x1,
+		})
+	end
+	-- ok now add some random non-expendible breakable types after the fact
+	for i=1,100 do
+		breakTypeStack:insert(pickRandom{
+			roomBlockData.extTileTypes.beam_1x1,
+			roomBlockData.extTileTypes.bombable_1x1,
+			roomBlockData.tileTypes.empty,
+		})
+	end
+
+	-- and last empty?
+	-- breakTypeStack:insert(roomBlockData.tileTypes.empty)
+
 	local origBreakType = breakType
+	
 	roomBlockData:splitCopies(x,y)
+	
+	breakType = breakTypeStack:remove(1) or breakType
 	roomBlockData:setExtTileType(x,y,breakType)
+	
 	touchScreen(x,y)
 
 	--local len = math.floor(math.sqrt(math.random(100*100)))
 	local len = math.random(config.randomizeItemsScavengerHuntProps.burrowLength)
 --print('boring break type '..roomBlockData.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
 	
-	-- after the first one, set them to something easier ... empty maybe?
-	-- or TODO make sure the player has room to stand up
-	breakType = roomBlockData.tileTypes.empty
-
 	local burrowMethod = pickRandom{'worm', 'spider'}
 
 	local all = table{{x,y}}
@@ -91,8 +115,8 @@ local function burrowIntoWall(pos, breakType)
 					end
 
 					x,y = nx,ny
-					-- don't clear the entrance
-					if roomBlockData:getExtTileType(x,y) ~= origBreakType then
+					if roomBlockData:isSolid(x,y) then
+						breakType = breakTypeStack:remove(1) or breakType
 						roomBlockData:setExtTileType(x,y,breakType)
 					end
 					touchScreen(x,y)
@@ -178,7 +202,18 @@ for _,roomBlockData in ipairs(allRoomBlocks) do
 	local thisRoomLocs = table()
 	for y=0,roomBlockData.height-1 do
 		for x=0,roomBlockData.width-1 do
-			if roomBlockData:isBorderAndNotCopy(x,y) then
+			if roomBlockData:isBorder(x,y,
+				function(roomBlockData,i,j) 
+					return roomBlockData:isSolid(i,j)
+					-- and not a stupid blue face
+				end,
+				function(roomBlockData,i,j) 
+					return roomBlockData:isAccessible(i,j)
+				end
+			)
+			and not roomBlockData:isCopy(x,y)
+			and not roomBlockData:isCopied(x,y)
+			then
 				thisRoomLocs:insert{x,y,roomBlockData}
 			end
 		end

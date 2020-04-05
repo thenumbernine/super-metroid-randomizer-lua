@@ -203,12 +203,12 @@ local door_t = struct'door_t'{
 --]]
 	{direction = 'uint8_t'},			-- 3
 	
-	{capX = 'uint8_t'},					-- 4
-	{capY = 'uint8_t'},					-- 5
-	{screenX = 'uint8_t'},				-- 6	target room x offset to place you at?
-	{screenY = 'uint8_t'},				-- 7	... y ...
-	{distToSpawnSamus = 'uint16_t'},	-- 9
-	{code = 'uint16_t'},				-- A
+	{capX = 'uint8_t'},					-- 4	target room x offset lo to place you at
+	{capY = 'uint8_t'},					-- 5	target room y offset lo
+	{screenX = 'uint8_t'},				-- 6	target room x offset hi
+	{screenY = 'uint8_t'},				-- 7	target room y offset hi
+	{distToSpawnSamus = 'uint16_t'},	-- 9	distance from door to spawn samus
+	{code = 'uint16_t'},				-- A	custom asm for the door
 }
 
 -- this is what the metroid ROM map says ... "Elevator thing"
@@ -459,6 +459,8 @@ end
 
 local Room = class()
 function Room:init(args)
+	self.roomStates = table()
+	self.doors = table()
 	for k,v in pairs(args) do
 		self[k] = v
 	end
@@ -471,7 +473,12 @@ function Room:getAddr(sm)
 	assert(self.ptr, "you can't get the addr if you don't know the ptr")
 	return bit.band(0xffff, ffi.cast('uint8_t*', self.ptr) - sm.rom)
 end
-
+function Room:findDoorTo(destRoom)
+	local _, door = self.doors:find(nil, function(door) 
+		return door.destRoom == destRoom
+	end)
+	return door
+end
 
 local RoomState = class()
 function RoomState:init(args)
@@ -507,6 +514,17 @@ function RoomState:setEnemyGFXSet(enemyGFXSet)
 	self.enemyGFXSet = enemyGFXSet
 	if self.enemyGFXSet then
 		self.enemyGFXSet.roomStates:insert(self)
+	end
+end
+function RoomState:setRoomBlockData(roomBlockData)
+	if self.roomBlockData then
+		self.roomBlockData.roomStates:removeObject(self)
+		self.roomBlockData:refreshRooms()
+	end
+	self.roomBlockData = roomBlockData
+	if self.roomBlockData then
+		self.roomBlockData.roomStates:insert(self)
+		self.roomBlockData:refreshRooms()
 	end
 end
 
@@ -579,6 +597,37 @@ function PLMSet:init(args)
 end
 
 
+local Door = class()
+SMMap.Door = Door
+
+-- args: 
+-- 	just 'addr' right now - points to the door structure
+--	and 'sm' for the super metroid hack global info
+function Door:init(args)
+	self.addr = assert(args.addr)
+	local sm = args.sm
+	local rom = sm.rom
+
+	-- derived fields:
+	local addr = topc(sm.doorBank, self.addr)
+	local data = rom + addr 
+	local destRoomAddr = ffi.cast('uint16_t*', data)[0]
+	-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
+	local doorType = destRoomAddr == 0 and 'lift_t' or 'door_t'
+	self.ctype = doorType
+	self.ptr = ffi.cast(doorType..'*', data)
+	if doorType == 'door_t' 
+	and self.ptr.code > 0x8000 
+	then
+		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
+		self.doorCode = readCode(rom, self.doorCodeAddr, 0x100)
+	end
+end
+
+function Door:setDestRoom(room)
+	self.ptr.destRoomAddr = bit.band(0xffff, room.addr)
+	self.destRoom = room
+end
 
 
 function SMMap:mapAddRoom(pageofs, buildRecursively)
@@ -591,8 +640,6 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	local data = rom + absaddr
 	local mptr = ffi.cast('room_t*', data)
 	local m = Room{
-		roomStates = table(),
-		doors = table(),
 	-- TODO bank-offset addr vs pc addr for all my structures ...
 		addr = pageofs,
 		
@@ -787,9 +834,7 @@ if done then break end
 		end
 		
 		local addr = topc(rs.obj.roomBlockBank, rs.obj.roomBlockAddr)
-		rs.roomBlockData = self:mapAddRoomBlocks(addr, m)
-		rs.roomBlockData.rooms:insertUnique(m)
-		rs.roomBlockData.roomStates:insert(rs)
+		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
 	end
 
 	-- door addrs
@@ -798,9 +843,10 @@ if done then break end
 	local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
 	addr = addr + 2
 	while doorAddr > 0x8000 do
-		m.doors:insert{
+		m.doors:insert(Door{
+			sm = self,
 			addr = doorAddr,
-		}
+		})
 		doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
 		addr = addr + 2
 	end
@@ -808,23 +854,6 @@ if done then break end
 	addr = addr - 2
 	local len = addr - startaddr
 	
-	-- doors
-	for _,door in ipairs(m.doors) do
-		local addr = topc(self.doorBank, door.addr)
-		local data = rom + addr 
-		local destRoomAddr = ffi.cast('uint16_t*', data)[0]
-		-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
-		local doorType = destRoomAddr == 0 and 'lift_t' or 'door_t'
-		door.ctype = doorType
-		door.ptr = ffi.cast(doorType..'*', data)
-		if doorType == 'door_t' 
-		and door.ptr.code > 0x8000 
-		then
-			door.doorCodeAddr = topc(self.doorCodeBank, door.ptr.code)
-			door.doorCode = readCode(rom, door.doorCodeAddr, 0x100)
-		end
-	end
-
 
 	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
 	-- pointed to by room[00/15].roomstate_t[#1].roomvarAddr
@@ -860,14 +889,20 @@ if done then break end
 end
 
 function SMMap:mapRemoveRoom(m)
-	-- TODO remove all unused roomStates as well? or just let mapWriteRooms take care of it?
-	for j=#self.roomblocks,1,-1 do
-		local roomBlockData = self.roomblocks[j]
-		roomBlockData.rooms:removeObject(m)
-		if #roomBlockData.rooms == 0 then
-			self.roomblocks:remove(j)
-		end
+	if not m then return end
+	
+	local i = self.rooms:find(m)
+	assert(i, "tried to remove a room that I couldn't find")
+	
+	-- TODO in theory a room state could be pointed to by more than one room (if its roomselect's point to the same one)
+	for _,rs in ipairs(m.roomStates) do
+		rs:setPLMSet(nil)
+		-- technically these should never be nil, so only do this if we're getting rid of the roomstate
+		rs:setEnemySpawnSet(nil)
+		rs:setEnemyGFXSet(nil)
+		rs:setRoomBlockData(nil)
 	end
+	-- TODO do the occluding in mapWrite, and just clear the pointers here?
 	for j=#self.bgs,1,-1 do
 		local bg = self.bgs[j]
 		bg.rooms:removeObject(m)
@@ -882,6 +917,8 @@ function SMMap:mapRemoveRoom(m)
 			self.fx1s:remove(j)
 		end
 	end
+	
+	-- TODO remove all doors targetting this room?
 	self.rooms:remove(i)
 end
 
@@ -1107,6 +1144,13 @@ function RoomBlocks:getData()
 		ch3,
 		self.tail
 	)
+end
+
+function RoomBlocks:refreshRooms()
+	self.rooms = table()
+	for _,rs in ipairs(self.roomStates) do
+		self.rooms:insertUnique(assert(rs.room))
+	end
 end
 
 --[[ for the room tile data:
@@ -1435,16 +1479,19 @@ the next room over, the crab room, has lots of internal borders
 the next room over from that, the hermit crab room, has lots of internal borders
 the speed room before the mocktroids has a few internal borders
 --]]
-function RoomBlocks:isBorder(x,y)
+function RoomBlocks:isBorder(x,y, incl, excl)
+	incl = incl or self.isSolid
+	excl = excl or self.isAccessible
+	
 	--if x == 0 or y == 0 or x == self.width-1 or y == self.height-1 then return false end
-	if self:isSolid(x,y) then
+	if incl(self,x,y) then
 		for i,offset in ipairs{
 			{1,0},
 			{-1,0},
 			{0,1},
 			{0,-1},
 		} do
-			if self:isAccessible(x+offset[1], y+offset[2]) then 
+			if excl(self,x+offset[1], y+offset[2]) then 
 				return true
 			end
 		end
@@ -3129,7 +3176,16 @@ function SMMap:mapWriteEnemySpawnSets()
 
 	-- preserve order
 	self.enemySpawnSets:sort(function(a,b) return a.addr < b.addr end)
-	
+
+	-- remove any enemy spawn sets that no one points to
+	for i=#self.enemySpawnSets,1,-1 do
+		local spawnset = self.enemySpawnSets[i]
+		if #spawnset.roomStates == 0 then
+			print('removing unused enemy gfx set: '..('%04x'):format(spawnset.addr))
+			self.enemySpawnSets:remove(i)
+		end
+	end
+
 	-- [[ get rid of duplicate enemy spawns
 	-- this currently crashes the game
 	-- notice that re-writing the enemy spawns is working fine
@@ -3207,7 +3263,16 @@ function SMMap:mapWriteEnemyGFXSets()
 	
 	-- preserve order
 	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
-	
+
+	-- remove any enemy gfx sets that no one points to
+	for i=#self.enemyGFXSets,1,-1 do
+		local gfxset = self.enemyGFXSets[i]
+		if #gfxset.roomStates == 0 then
+			print('removing unused enemy gfx set: '..('%04x'):format(gfxset.addr))
+			self.enemyGFXSets:remove(i)
+		end
+	end
+
 	-- [[ update enemy set
 	-- I'm sure this will fail.  there's lots of mystery padding here.
 	local enemyGFXWriteRanges = WriteRange({
@@ -3447,6 +3512,16 @@ end
 
 function SMMap:mapWriteRoomBlocks()
 	local rom = self.rom
+	
+	-- remove any roomblocks that no one is using
+	for i=#self.roomblocks,1,-1 do
+		local rb = self.roomblocks[i]
+		if #rb.rooms == 0 then
+			print('removing unused room blocks at: '..('%04x'):format(rb.addr))
+			self.roomblocks:remove(i)
+		end
+	end
+
 	-- [[ write back compressed data
 	local roomBlockWriteRanges = WriteRange({
 		--[=[ there are some bytes outside compressed regions but between a few roomdatas

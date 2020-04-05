@@ -1341,8 +1341,8 @@ items:insert{
 	plmIndex=1, plmsetIndex=171,
 	access=function() 
 		return accessLowerNorfair() 
-		-- and you can get through the black zebesian rooms
-		and canKill'Black Zebesian (Fighter)'
+		-- and you can get through the black/gold zebesian rooms
+		and canKill'Gold Zebesian (Fighter)'
 		-- how much health should we give?
 		and effectiveEnergyCount() >= 4 
 		-- and you can kill ridley

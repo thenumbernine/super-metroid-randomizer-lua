@@ -1,6 +1,12 @@
 return {
 	writeOutImage = true,
 
+
+	---------------------------------------------------------
+	----------------- some ips's / patches ------------------
+	---------------------------------------------------------
+
+
 	-- wake zebes when you go through the room to the right of the first blue brinstar room.
 	-- notice that even if zebes is asleep, you can still get the two items in the room above the first missile... but you can't get the powerbomb behind the powerbomb walls behind morph ball.
 	wakeZebesEarly = true,
@@ -10,7 +16,16 @@ return {
 
 	-- skips the intro cutscene
 	skipIntro = true,
-	
+
+	-- make x-ray fullscreen
+	beefUpXRay = true,
+
+
+	---------------------------------------------------------
+	--------------------- randomization ---------------------
+	---------------------------------------------------------
+
+
 	-- this just randomizes enemy stats, not their placement
 	randomizeEnemies = true,
 
@@ -44,7 +59,7 @@ return {
 
 
 	randomizeItemsScavengerHuntProps = {
-		hideItems = false,		-- whether to hide items or not.  caution, you might want to start with x-ray scope
+		hideItems = true,		-- whether to hide items or not.  caution, you might want to start with x-ray scope
 
 		burrowItems = true,
 		burrowLength = 100,		-- how far to try to burrow items into the wall

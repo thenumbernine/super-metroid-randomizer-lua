@@ -32,6 +32,8 @@ end
 ]], {name=name, fields=fields})
 		ffi.cdef(code)
 
+		-- also in common with my hydro-cl project
+		-- consider merging
 		local metatable = {
 			toLua = function(self)
 				local result = {}
