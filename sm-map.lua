@@ -35,7 +35,11 @@ SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
 
 
+local commonRoomTileAddr = 0x1c8000
+local commonRoomTile2Addr = 0x1ca09d
 
+local mode7tileWidth = 128
+local mode7tileHeight = 128
 
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
@@ -75,10 +79,10 @@ local roomselect3_t = struct'roomselect3_t'{
 local roomstate_t = struct'roomstate_t'{
 	{roomBlockAddr = 'uint16_t'},		-- points to block data
 	{roomBlockBank = 'uint8_t'},		-- $c2 to $c9
-	{gfxSet = 'uint8_t'},
+	{tileSet = 'uint8_t'},				-- tile graphics data
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
-	{fx1Addr = 'uint16_t'},
+	{fx1Addr = 'uint16_t'},				-- $83
 	{enemySpawnAddr = 'uint16_t'},
 	{enemyGFXAddr = 'uint16_t'},
 	{layer2scrollAddr = 'uint16_t'},	-- TODO
@@ -243,6 +247,22 @@ local demoRoom_t = struct'demoRoom_t'{
 	{codeAddr = 'uint16_t'},
 }
 
+local tileSetCount = 29	-- this is the # that are used in metroid.
+
+-- the first two bytes at 0x07e6a0 are the uint16 value 0xdc8, 
+-- which equals 9 * 392 
+-- ... but adding that to the tileSetBaseOffset would overlap with plm_t data
+local tileSetBaseOffset = 0x07e6a2 
+
+local tileSet_t = struct'tileSet_t'{
+	{furtherAddr = 'uint16_t'},	-- subtileAddr
+	{furtherBank = 'uint8_t'},	-- subtileBank
+	{mode7Addr = 'uint16_t'},
+	{mode7Bank = 'uint8_t'},
+	{paletteAddr = 'uint16_t'},
+	{paletteBank = 'uint8_t'},
+}
+assert(ffi.sizeof'tileSet_t' == 9)
 
 SMMap.plmCmdValueForName = table{
 	
@@ -525,6 +545,15 @@ function RoomState:setRoomBlockData(roomBlockData)
 	if self.roomBlockData then
 		self.roomBlockData.roomStates:insert(self)
 		self.roomBlockData:refreshRooms()
+	end
+end
+function RoomState:setTileSet(tileSet)
+	if self.tileSet then
+		self.tileSet.roomStates:removeObject(self)
+	end
+	self.tileSet = tileSet
+	if self.tileSet then
+		self.tileSet.roomStates:insert(self)
 	end
 end
 
@@ -861,20 +890,30 @@ if done then break end
 	-- this is the rescue animals roomstate
 	-- so this data has to do with the destructable wall on the right side
 	--if roomAddr == 0x79804 then
-	if rs.obj.roomvarAddr ~= 0 then
-		local d = rom + self.plmOffset + rs.obj.roomvarAddr
-		local roomvar = table()
-		repeat
-			roomvar:insert(d[0])	-- x
-			roomvar:insert(d[1])	-- y
-			if ffi.cast('uint16_t*', d)[0] == 0 then break end
-			roomvar:insert(d[2])	-- mod 1 == 0x52
-			roomvar:insert(d[3])	-- mod 2 == 0x00
-			-- TODO insert roomvar_t and uint16_t term (or omit term)
-			d = d + 4
-		until false
-		-- TODO should be roomstate
-		rs.roomvar = roomvar
+	for _,rs in ipairs(m.roomStates) do
+		if rs.obj.roomvarAddr ~= 0 then
+			local d = rom + self.plmOffset + rs.obj.roomvarAddr
+			local roomvar = table()
+			repeat
+				roomvar:insert(d[0])	-- x
+				roomvar:insert(d[1])	-- y
+				if ffi.cast('uint16_t*', d)[0] == 0 then break end
+				roomvar:insert(d[2])	-- mod 1 == 0x52
+				roomvar:insert(d[3])	-- mod 2 == 0x00
+				-- TODO insert roomvar_t and uint16_t term (or omit term)
+				d = d + 4
+			until false
+			-- TODO should be roomstate
+			rs.roomvar = roomvar
+		end
+	end
+
+	-- try to load tile graphics from rs.tileSet
+	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
+	for _,rs in ipairs(m.roomStates) do
+		local tileSetIndex = rs.obj.tileSet
+		local tileSet = assert(self.tileSets[tileSetIndex+1])
+		rs:setTileSet(tileSet)
 	end
 
 	if buildRecursively then
@@ -1157,7 +1196,7 @@ end
 looks like this is channel 2:
 lower nibble channel 2 bits:
 bit 0
-bit 1
+bit 1 = foreground (not background)
 bit 2 = flip up/down
 bit 3 = flip left/right
 
@@ -1254,7 +1293,7 @@ RoomBlocks.tileTypes = {
 	grappling			= 0xe,
 	bombable			= 0xf,
 }
--- this is ch3lo:ch2hi
+-- this is ch2hi:ch3lo
 RoomBlocks.extTileTypes = {
 	spike_solid_1x1			= 0x20,
 	spike_notsolid_1x1		= 0x22,
@@ -1266,6 +1305,7 @@ RoomBlocks.extTileTypes = {
 	push_conveyor_right		= 0x38,
 	push_conveyor_left		= 0x39,
 	spike_solid2_1x1		= 0xa0,
+	spike_solid3_1x1		= 0xa1,	-- used in the hallway to kraid
 	spike_notsolid2_1x1		= 0xa3,
 	invisble_solid			= 0xae,
 	spike_notsolid3_1x1		= 0xaf,
@@ -1287,12 +1327,16 @@ RoomBlocks.extTileTypes = {
 	beam_2x1				= 0xc5,
 	beam_1x2				= 0xc6,
 	beam_2x2				= 0xc7,
+	--powerbomb_1x1_regen	= 0xc8
 	powerbomb_1x1			= 0xc9,
 	supermissile_1x1_regen	= 0xca,
 	supermissile_1x1		= 0xcb,
+	beam_door				= 0xcf,
 	grappling				= 0xe0,
 	grappling_break_regen 	= 0xe1,
 	grappling_break			= 0xe2,
+	grappling2				= 0xe3,		-- \_ these two alternate in the roof of the room before the wave room
+	grappling3				= 0xef,		-- /
 	bombable_1x1_regen		= 0xf0,
 	bombable_2x1_regen		= 0xf1,
 	bombable_1x2_regen		= 0xf2,
@@ -1628,7 +1672,7 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 						dir = bit.band(3, c),
 						index = doorIndex,
 					}
-				elseif j<h-3	-- TODO assert this
+				elseif j < h-3	-- TODO assert this
 				and (c == 0x40 or c == 0x41)
 				and blocks[2 + 3 * (i + w * (j+1))] == 0xff 
 				and blocks[2 + 3 * (i + w * (j+2))] == 0xfe 
@@ -1705,6 +1749,278 @@ function SMMap:mapInit()
 	self.plmsets = table()
 	self.enemySpawnSets = table()
 	self.enemyGFXSets = table()
+
+
+-- [[
+	local function loRomToOffset(bank, address)
+		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(address,0x7fff))
+	end
+
+	local tileSizeInPixels = 16
+	local halfTileSizeInPixels = bit.rshift(tileSizeInPixels, 1)
+
+
+	self.commonRoomTileData, self.commonRoomTileCompressedSize = lz.decompress(rom, commonRoomTileAddr, 0x10000) --common room elements
+	self.commonRoomTileSize = ffi.sizeof(self.commonRoomTileData)
+
+	self.commonRoomTile2Data, self.commonRoomTile2CompressedSize = lz.decompress(rom, commonRoomTile2Addr, 0x10000) --common room elements
+	self.commonRoomTile2Size = ffi.sizeof(self.commonRoomTile2Data)
+
+
+	-- load all the tileset address info that is referenced by per-room stuff
+	-- do this before any mapAddRoom calls
+	self.tileSets = table()
+	for tileSetIndex=0,tileSetCount-1 do
+		local tileSet = {}
+		self.tileSets:insert(tileSet)
+		tileSet.addr = tileSetBaseOffset + tileSetIndex * ffi.sizeof'tileSet_t'
+		tileSet.ptr = ffi.cast('tileSet_t*', rom + tileSet.addr)
+		tileSet.obj = ffi.new('tileSet_t', tileSet.ptr[0])
+		tileSet.roomStates = table()	-- which roomStates use this tileset
+		local paletteOffset = topc(tileSet.obj.paletteBank, tileSet.obj.paletteAddr)
+		local data, compressedSize = lz.decompress(rom, paletteOffset, 0x200)
+		local len = ffi.sizeof(data)
+		assert(bit.band(len, 1) == 0)
+		tileSet.palette = table()
+		local p = ffi.cast('uint16_t*', data)
+		for i=0,len,2 do
+			tileSet.palette:insert{
+				bit.band(p[0], 0x1f),
+				bit.band(bit.rshift(p[0], 5), 0x1f),
+				bit.band(bit.rshift(p[0], 10), 0x1f),
+			}
+			p=p+1
+		end
+
+		-- tileSet_t has 3 pointers in it: paletteAddr, furtherAddr, and mode7Addr
+		-- paletteAddr is independent of roomstate_t
+		-- but the other two are not, so, load them with the roomstate_t
+
+		-- here in the roomstate_t, load the tile data that coincides with the 
+		-- TODO instead of determining by roomstate info, determine by which tileSet_t it is
+		-- that way we don't get so many multiples of the same tileSet_t's
+
+		-- decompress(rom->buffer, loRomToOffset(readU24(rom->buffer, tileSetPointer+3)), &buffer);
+		local bufferOffset = loRomToOffset(tileSet.obj.mode7Bank, tileSet.obj.mode7Addr)
+		local buffer, bufferCompressedSize = lz.decompress(rom, bufferOffset, 0x10000)	-- TODO how big?
+		
+		-- funny thing, these only seem to be writing for ceres space station anyways
+		-- so I wonder if that mode7 tileSetIndex if condition is even needed
+		tileSet.mode7addr = bufferOffset
+		tileSet.mode7compressedSize = bufferCompressedSize
+		
+		local bufferSize = ffi.sizeof(buffer)
+		if tileSetIndex >= 0x11 and tileSetIndex <= 0x14 then
+
+			--mode7.open(tileSetIndex)
+			-- decompress(rom->buffer, dataOffset(tileSet), &mode7.data);
+			-- this is the same as the previous decompress
+			local mode7Data, mode7Offset = buffer, bufferOffset
+			
+			--mode7TileSet.resize(256);
+			tileSet.mode7TileSet = {}
+			for i=0,255 do
+			--for(unsigned i=0; i<mode7TileSet.size(); ++i){
+				--mode7TileSet[i].resize(TILE_SIZE/2, TILE_SIZE/2);
+				tileSet.mode7TileSet[i+1] = {}
+				--for(unsigned x=0; x<TILE_SIZE/2; ++x)
+				for x=0,halfTileSizeInPixels-1 do
+					tileSet.mode7TileSet[i+1][x+1] = {}
+					--for(unsigned y=0; y<TILE_SIZE/2; ++y)
+					for y=0,halfTileSizeInPixels-1 do
+						--mode7TileSet[i].at(x, y)=palette[buffer[2*(TILE_SIZE/2*TILE_SIZE/2*i+8*y+x)+1]];
+						local rgb = tileSet.palette[
+							1 + mode7Data[
+								1 + 2 * (x + halfTileSizeInPixels * (y + halfTileSizeInPixels * i))
+							]
+						]
+						tileSet.mode7TileSet[i+1][x+1][y+1] = rgb
+					end
+				end
+			end
+
+
+			-- [=[
+			--tiles.resize(mode7tileWidth, mode7tileHeight)
+			-- TODO who uses this?
+			-- is this what index in the lookup to use?
+			tileSet.mode7tiles = {}
+			for i=0,mode7tileWidth-1 do
+				tileSet.mode7tiles[i+1] = {}
+				for j=0,mode7tileHeight-1 do
+					-- mode7.tiles.at(i, j)=data[2*(j*tiles.readISize()+i)];
+					tileSet.mode7tiles[i+1][j+1] = mode7Data[0 + 2 * (i + mode7tileWidth * j)]	-- uint8_t
+				end
+			end
+			--]=]
+			--buffer.clear();
+			--[[ vanilla ceres ridley room layer handling, when layerHandlingAddr == $c97b
+			used with roomstate_t's $07dd95, $07dd7b
+			which are only for room_t $07dd69 06/05 -- and they are the only roomstates_t's of that room, so I can check via room
+			roomstate_t $07dd95 => tileSet $14 ... used by no one else
+			roomstate_t $07dd7b => tileSet $13 ... used by no one else
+			so we can instead test by tileSetIndex here
+			--]]
+			--if rs.layerHandlingAddr == 0xc97b then	
+			if tileSetIndex == 0x13 or tileSetIndex == 0x14 then
+				bufferSize = 0x2000
+				buffer = ffi.new('uint8_t[?]', bufferSize)
+				ffi.copy(buffer, rom + 0x182000, bufferSize)
+			end
+		end
+
+		
+		--[[
+		region 6 tilesets used:
+		room $00: $11 $12
+		room $01: $0f $10
+		room $02: $0f $10
+		room $03: $0f $10
+		room $04: $0f $10
+		room $05: $13 $14
+		... all are only used in region 6
+		--]]
+		--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7TileSet == 0
+		local loadCommonRoomElements = not (tileSetIndex >= 0x0f and tileSetIndex <= 0x14)
+
+		do
+			--get subtiles
+			local newBufferSize
+			--[[
+			dansSuperMetroidLibrary has this resize, for tileSets other than $26 
+			... which is interseting because it means that, for tileSet $11 and $12 (only used in Ceres) we are sizing down from 0x8000 to 0x5000
+			otherwise, for tileSets $0-$10, $13-$19, $1b, $1c  this is resized up from 0x4800 to 0x5000
+			so ... should $11 and $12 be resized down?
+			--]]
+			if tileSetIndex == 26 then	--Kraid room
+				newBufferSize = 0x8000	
+			else 
+				newBufferSize = 0x5000
+			end
+			if newBufferSize ~= bufferSize then
+				print("tileSet "..('%02x'):format(tileSetIndex).." buffer was "..('$%x'):format(bufferSize).." but was resized to "..('$%x'):format(newBufferSize))
+				local newBuffer = ffi.new('uint8_t[?]', newBufferSize)
+				ffi.copy(newBuffer, buffer, math.min(bufferSize, newBufferSize))
+				buffer, bufferSize = newBuffer, newBufferSize
+			end
+		end
+
+		if loadCommonRoomElements then-- this is going after the subtile 0x5000 / 0x8000
+			local newBuffer = ffi.new('uint8_t[?]', bufferSize + self.commonRoomTileSize)
+			ffi.copy(newBuffer, buffer, bufferSize)
+			ffi.copy(newBuffer + bufferSize, self.commonRoomTileData, self.commonRoomTileSize)
+			buffer, bufferSize = newBuffer, bufferSize + self.commonRoomTileSize
+		end
+		for i=0,bufferSize-1,32 do
+			local copy = ffi.new('uint8_t[?]', 32)
+			ffi.copy(copy, buffer+i, 32)
+			ffi.fill(buffer+i, 32, 0)
+			for y=0,7 do
+				local line = ffi.new('uint8_t[?]', 4)
+				line[0] = copy[y*2]
+				line[1] = copy[y*2+1]
+				line[2] = copy[y*2+16]
+				line[3] = copy[y*2+17]
+				for x=0,7 do
+					local shift = (7 - x) * 4
+					local word = 0	-- uint32_t
+					for j=0,3 do
+						word = word + bit.lshift(bit.band(line[j], 1), shift+j)
+					end
+					for j=0,3 do
+						buffer[i+y*4+j] = bit.bor(buffer[i+y*4+j], bit.rshift(word, bit.band(bit.lshift(j, 3), 0xff)))
+						line[j] = bit.rshift(line[j], 1)
+					end
+				end
+			end
+		end
+
+		local subtiles = ffi.new('uint8_t[?]', bufferSize*2)	-- uint4_t
+		for i=0,bufferSize-1 do
+			--subtiles.push_back(buffer[i]&0xf);
+			subtiles[0 + 2 * i] = bit.band(buffer[i], 0x0f)
+			--subtiles.push_back(buffer[i]>>4);
+			subtiles[1 + 2 * i] = bit.rshift(buffer[i], 4)
+		end
+
+-- TODO don't use 'buffer' -- pick a new var scope/name
+		
+		--get tile assemblers
+		--buffer.clear();
+		buffer, bufferSize = nil, 0
+		--if(loadCommonRoomElements) decompress(rom->buffer, 0x1CA09Du, &buffer);//common room elements
+		if loadCommonRoomElements then
+			bufferSize = self.commonRoomTile2Size
+			buffer = ffi.new('uint8_t[?]', bufferSize)
+			ffi.copy(buffer, self.commonRoomTile2Data, bufferSize)
+		end
+		--furtherBuffer.clear();
+		local furtherBuffer, furtherBufferSize
+		do
+			--decompress(rom->buffer, loRomToOffset(readU24(rom->buffer, tileSetPointer)), &furtherBuffer);
+			local furtherAddr = loRomToOffset(tileSet.obj.furtherBank, tileSet.obj.furtherAddr)
+			local furtherBuffer, furtherCompressedSize = lz.decompress(rom, furtherAddr, 0x10000)
+			local furtherBufferSize = ffi.sizeof(furtherBuffer)
+			tileSet.subtileAddr = furtherAddr 
+			tileSet.subtileCompressedSize = furtherCompressedSize 
+			--for(unsigned i=0; i<furtherBuffer.size(); ++i) buffer.push_back(furtherBuffer[i]);
+			if not buffer then
+				buffer, bufferSize = furtherBuffer, furtherBufferSize
+			else
+				local newBuffer = ffi.new('uint8_t[?]', bufferSize + furtherBufferSize)
+				ffi.copy(newBuffer, buffer, bufferSize)
+				ffi.copy(newBuffer + bufferSize, furtherBuffer, furtherBufferSize)
+				buffer, bufferSize = newBuffer, bufferSize + furtherBufferSize
+			end
+		end
+-- [==[
+		--vector<TileAssembler> tileAssemblers;
+		local wbuffer = ffi.cast('uint16_t*', buffer)
+		local wbufferSize = bit.rshift(bufferSize, 1)
+		--assemble subtiles into tiles
+		tileSet.tileGfxCount = bit.rshift(bufferSize, 3)
+		-- store as 16 x 16 x index rgb
+		tileSet.tileGfxBmp = ffi.new('uint8_t[?]', 3*16*16*tileSet.tileGfxCount)
+		for tileIndex=0,tileSet.tileGfxCount-1 do
+			--tiles[tileIndex].resize(tileSizeInPixels, tileSizeInPixels)
+			for xofs=0,1 do
+				for yofs=0,1 do
+					--drawSubtile(subtiles, wbuffer[xofs + 2 * yofs + 4 * tileIndex], palette, tiles[tileIndex], xofs*halfTileSizeInPixels, yofs*halfTileSizeInPixels)
+					--void drawSubtile(const Buffer& subtiles, uint16_t tileInfo, const vector<Color>& palette, Array2D<Color>& destination, unsigned x, unsigned y)
+					do
+						local x = xofs*halfTileSizeInPixels
+						local y = yofs*halfTileSizeInPixels
+						local tileInfo = wbuffer[xofs + 2 * yofs + 4 * tileIndex]
+						local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
+						local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
+						local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
+						for ty=0,7 do
+							for tx=0,7 do
+								local lo = subtiles[bit.bxor(tx, xMask) + 8 * bit.bxor(ty, yMask) + 64 * bit.band(tileInfo, 0x3ff)]
+								local dstIndex = x+tx + 16*(y+ty + 16*tileIndex)
+								if lo > 0 then
+									local paletteIndex = bit.bor(hi,lo)
+									local rgb = assert(tileSet.palette[1 + paletteIndex])
+									tileSet.tileGfxBmp[0 + 3 * dstIndex] = math.floor(rgb[1]/31*255)
+									tileSet.tileGfxBmp[1 + 3 * dstIndex] = math.floor(rgb[2]/31*255)
+									tileSet.tileGfxBmp[2 + 3 * dstIndex] = math.floor(rgb[3]/31*255)
+								else 
+									tileSet.tileGfxBmp[0 + 3 * dstIndex] = 0
+									tileSet.tileGfxBmp[1 + 3 * dstIndex] = 0
+									tileSet.tileGfxBmp[2 + 3 * dstIndex] = 0
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+--]==]
+
+
+	end
+--]]
+
 
 	--[[
 	from $078000 to $079193 is plm_t data
@@ -1853,13 +2169,99 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 		end
 		-- TODO similar pointer for door_t? though I don't move doors yet.
 		
-print('loadStation_t'..ls.obj..' '..(ls.room and ('room_t'..ls.room.obj) or ''))
+--print('loadStation_t'..ls.obj..' '..(ls.room and ('room_t'..ls.room.obj) or ''))
 		self.loadStations[i+1] = ls
 		ptr = ptr + ffi.sizeof'loadStation_t'
 	end
 
 	-- if you want to do demo rooms here too, they are starting at $82:8774
 	-- there are 4 groups, each has 6 demoRoom_t's then 0xffff term
+
+
+--[[
+regions:
+0 = crateria
+1 = brinstar
+2 = norfair
+3 = wrecked ship
+4 = maridia
+5 = tourian
+6 = ceres space station
+7 = test regions?
+--]]
+
+	-- now to load tile graphic data
+	-- thx to pikensoft.com's help:
+	local commonGraphicTilesOffset = 0x1c8000
+	local commonGraphicTileTableOffset = 0x1ca09d
+	local graphicsDataPerRegion = {
+		[0] = {
+			-- Crateria just west of Wrecked Ship.
+			areaSpecificGraphicTilesOffset = 0x1D4629,
+			areaSpecificGraphicTileTableOffset = 0x20B6F6,
+			areaSpecificGraphicTileTableLength = 6144,
+			areaSpecificPaletteOffset = 0x212D7C,
+			levelTilemapDataOffset = 0x216B45,-- 0x793FE;
+			levelWidth = 128,
+			levelHeight = 96,
+		},
+		[1] = {
+			-- Brinstar
+			areaSpecificGraphicTilesOffset = 0x1DE6B0,
+			areaSpecificGraphicTileTableOffset = 0x20CFA6,
+			areaSpecificGraphicTileTableLength = 6144,
+			areaSpecificPaletteOffset = 0x213264,
+			levelTilemapDataOffset = 0x22B54D, -- Room description at 0x79D19
+			levelWidth = 16*5,
+			levelHeight = 16*10,
+		},
+		[2] = {
+			-- Norfair
+			areaSpecificGraphicTilesOffset = 0x1EC3F9,
+			areaSpecificGraphicTileTableOffset = 0x20E361,
+			areaSpecificGraphicTileTableLength = 6144,
+			areaSpecificPaletteOffset = 0x2135E4,
+			levelTilemapDataOffset = 0x23A18D, -- Room description at 0x7AA0E
+			levelWidth = 16*4,
+			levelHeight = 16*2,
+		},
+		[3] = {	-- Landing area... also region 0
+			areaSpecificGraphicTilesOffset = 0x1D4629,
+			areaSpecificGraphicTileTableOffset = 0x20B6F6,
+			areaSpecificGraphicTileTableLength = 6144,
+			areaSpecificPaletteOffset = 0x212D7C,
+			levelTilemapDataOffset = 0x2142BB,
+			levelWidth = 16*9,
+			levelHeight = 16*5,
+		},
+		[4] = {
+			-- Room 9, near wrecked ship... also region 0
+			-- Seems to have compression issue, since 
+			areaSpecificGraphicTilesOffset = 0x1D4629,
+			areaSpecificGraphicTileTableOffset = 0x20B6F6,
+			areaSpecificGraphicTileTableLength = 6144,
+			areaSpecificPaletteOffset = 0x212D7C,
+			levelTilemapDataOffset = 0x219DB8,
+			levelWidth = 16*7,
+			levelHeight = 16*6,
+			g_imagePixelOffsetY = -64 * 16, -- Ignore all the empty space above the level.
+		},
+	}
+
+--[[
+commonGraphicTiles = decompress(commonGraphicTilesOffset to +0x8000)
+
+g_vramData = decompress(areaSpecificGraphicTilesOffset to +0x8000)
+g_vramData += 0x800 -- blank space
+g_vramData += commonGraphicTiles 
+
+subtilesData = decompress(commonGraphicTileTableOffset, 0xa634 - 0xa09d)
+subtilesData += decompress(areaSpecificGraphicTileTableOffset, 6144)
+
+g_paletteRawData = decompress(areaSpecificPaletteOffset, 0x200)
+
+subtiles = {subtilesData.data(), 2,2,1,1024, sizeof(uint16_t), 2*sizeof(uint16_t), 0, 2*2*sizeof(uint16_t)};
+--]]
 end
 
 
@@ -2081,6 +2483,39 @@ local mapDrawExcludeMapBlocks = {
 	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
 }
 
+local dumpworldTileTypes = {
+	empty = 0,
+	solid = 1,
+	slope45_ul_diag45 = 2,
+	slope45_ur_diag45 = 3,
+	slope45_dl_diag45 = 4, 
+	slope45_dr_diag45 = 5,
+	slope27_ul2_diag27 = 6, 
+	slope27_ul1_diag27 = 7,
+	slope27_ur2_diag27 = 8, 
+	slope27_ur1_diag27 = 9, 
+	slope27_dl2_diag27 = 10, 
+	slope27_dl1_diag27 = 11,
+	slope27_dr2_diag27 = 12, 
+	slope27_dr1_diag27 = 13, 
+	water = 14,
+	ladder = 15,
+	blasterbreak = 16,
+	plasmabreak = 17,
+	skillsawbreak = 18,
+	missilebreak = 19,
+	grenadebreak = 20,
+	speedbreak = 21,
+	spikes = 22,
+	blasterbreak_regen = 23,
+	plasmabreak_regen = 24,
+	skillsawbreak_regen = 25,
+	missilebreak_regen = 26,
+	grenadebreak_regen = 27,
+	speedbreak_regen = 28,
+	fallbreak = 29,
+	fallbreak_regen = 30,
+}
 
 local function drawRoomBlocks(ctx, roomBlockData, m)
 	local mapimg = ctx.mapimg
@@ -2114,7 +2549,7 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 						local dx = ti + blocksPerRoom * i
 						local dy = tj + blocksPerRoom * j
 						local di = dx + blocksPerRoom * w * dy
-						-- blocks is 1-based
+						-- blocks is 0-based
 						local d1 = blocks[0 + 3 * di] or 0
 						local d2 = blocks[1 + 3 * di] or 0
 						local d3 = blocks[2 + 3 * di] or 0
@@ -2153,14 +2588,228 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							end
 						end
 
-						
-						
-						-- write out solid tiles only
-
 						-- TODO isSolid will overlap between a few rooms
 						local isBorder = roomBlockData:isBorderAndNotCopy(dx,dy)
 						do --if isBorder or isSolid then
 							local isSolid = roomBlockData:isSolid(dx,dy)
+							
+							do
+								local y = yofs / blockSizeInPixels + tj + blocksPerRoom * (m.obj.y + j)
+								local x = xofs / blockSizeInPixels + ti + blocksPerRoom * (m.obj.x + i)
+								if x >= 0 and x < ctx.dumpworldTileImg.width
+								and y >= 0 and y < ctx.dumpworldTileImg.height 
+								then
+									local dstIndex = x + ctx.dumpworldTileImg.width * y
+								
+
+-- [==[
+										local foreground = bit.band(d2, 2) == 2
+										-- TODO determine foreground vs background info here
+										local sx, sy = dx,dy
+										if roomBlockData:isCopy(dx,dy) then
+											sx, sy = roomBlockData:getCopySource(dx,dy)
+										end
+										-- this function will do getCopySource if you want
+										local tt, ett = roomBlockData:getTileType(sx,sy)
+										local copych1, copych2, copych3 = roomBlockData:getTileData(sx,sy)
+										local dtt = dumpworldTileTypes.empty
+-- [====[
+										if tt == RoomBlocks.tileTypes.empty then
+											dtt = dumpworldTileTypes.empty
+										elseif tt == RoomBlocks.tileTypes.slope then
+											--[[ TODO pick the right one
+											-- also note, SM has 1:3 slopes as well, I only have 1:1 and 1:2
+											-- I could just do half blocks in all 4 directions to turn 1:3 into 1:2's
+											slope45_ul_diag45 = 2,
+											slope45_ur_diag45 = 3,
+											slope45_dl_diag45 = 4, 
+											slope45_dr_diag45 = 5,
+											slope27_ul2_diag27 = 6, 
+											slope27_ul1_diag27 = 7,
+											slope27_ur2_diag27 = 8, 
+											slope27_ur1_diag27 = 9, 
+											slope27_dl2_diag27 = 10, 
+											slope27_dl1_diag27 = 11,
+											slope27_dr2_diag27 = 12, 
+											slope27_dr1_diag27 = 13, 
+											--]]
+											dtt = dumpworldTileTypes.slope45_ul_diag45
+										elseif tt == RoomBlocks.tileTypes.spikes then
+											--[[ TODO
+											spike_solid_1x1			= 0x20,
+											spike_notsolid_1x1		= 0x22,
+											--]]
+											dtt = dumpworldTileTypes.spikes
+										elseif tt == RoomBlocks.tileTypes.push then
+											--[[ TODO
+											push_quicksand1			= 0x30,
+											push_quicksand2			= 0x31,
+											push_quicksand3			= 0x32,
+											push_quicksand4			= 0x33,
+											push_quicksand1_2		= 0x35,
+											push_conveyor_right		= 0x38,
+											push_conveyor_left		= 0x39,
+											--]]
+											dtt = dumpworldTileTypes.empty
+										elseif tt == RoomBlocks.tileTypes.copy_left then
+											error("I thought I got the copy offset location")
+										elseif tt == RoomBlocks.tileTypes.solid  then
+											dtt = dumpworldTileTypes.solid
+										elseif tt == RoomBlocks.tileTypes.door then
+											-- this is represented as an object in dumpworld
+											-- and for what it's worth it is an object in super metroid also
+											dtt = dumpworldTileTypes.empty
+										elseif tt == RoomBlocks.tileTypes.spikes_or_invis then
+											if ett == RoomBlocks.extTileTypes.spike_solid2_1x1 then
+												dtt = dumpworldTileTypes.spikes
+											elseif ett == RoomBlocks.extTileTypes.spike_solid3_1x1 then
+												dtt = dumpworldTileTypes.spikes
+											elseif ett == RoomBlocks.extTileTypes.spike_notsolid2_1x1 then
+												dtt = dumpworldTileTypes.spikes
+											elseif ett == RoomBlocks.extTileTypes.invisble_solid	then
+												dtt = dumpworldTileTypes.solid
+											elseif ett == RoomBlocks.extTileTypes.spike_notsolid3_1x1 then
+												dtt = dumpworldTileTypes.spikes
+											else
+												error'here'
+											end
+										elseif tt == RoomBlocks.tileTypes.crumble_or_speed then
+											if ett == RoomBlocks.extTileTypes.crumble_1x1_regen then
+												dtt = dumpworldTileTypes.fallbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.crumble_2x1_regen then
+												dtt = dumpworldTileTypes.fallbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.crumble_1x2_regen then
+												dtt = dumpworldTileTypes.fallbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.crumble_2x2_regen then
+												dtt = dumpworldTileTypes.fallbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.crumble_1x1 then
+												dtt = dumpworldTileTypes.fallbreak
+											elseif ett == RoomBlocks.extTileTypes.crumble_2x1 then
+												dtt = dumpworldTileTypes.fallbreak
+											elseif ett == RoomBlocks.extTileTypes.crumble_1x2 then
+												dtt = dumpworldTileTypes.fallbreak
+											elseif ett == RoomBlocks.extTileTypes.crumble_2x2 then
+												dtt = dumpworldTileTypes.fallbreak
+											elseif ett == RoomBlocks.extTileTypes.speed_regen then
+												dtt = dumpworldTileTypes.speedbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.speed then
+												dtt = dumpworldTileTypes.speedbreak
+											else
+												error'here'
+											end
+										elseif tt == RoomBlocks.tileTypes.breakable then
+											if ett == RoomBlocks.extTileTypes.beam_1x1_regen then
+												dtt = dumpworldTileTypes.blasterbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.beam_2x1_regen then
+												dtt = dumpworldTileTypes.blasterbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.beam_1x2_regen then
+												dtt = dumpworldTileTypes.blasterbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.beam_2x2_regen then
+												dtt = dumpworldTileTypes.blasterbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.beam_1x1 then
+												dtt = dumpworldTileTypes.blasterbreak
+											elseif ett == RoomBlocks.extTileTypes.beam_2x1 then
+												dtt = dumpworldTileTypes.blasterbreak
+											elseif ett == RoomBlocks.extTileTypes.beam_1x2 then
+												dtt = dumpworldTileTypes.blasterbreak
+											elseif ett == RoomBlocks.extTileTypes.beam_2x2 then
+												dtt = dumpworldTileTypes.blasterbreak
+											elseif ett == RoomBlocks.extTileTypes.powerbomb_1x1 then
+												dtt = dumpworldTileTypes.plasmabreak
+											elseif ett == RoomBlocks.extTileTypes.supermissile_1x1_regen then
+												dtt = dumpworldTileTypes.grenadebreak_regen
+											elseif ett == RoomBlocks.extTileTypes.supermissile_1x1 then
+												dtt = dumpworldTileTypes.grenadebreak
+											elseif ett == RoomBlocks.extTileTypes.beam_door then
+												dtt = dumpworldTileTypes.solid
+											else
+											
+												error'here'
+											end
+										elseif tt == RoomBlocks.tileTypes.copy_up  then
+											error("I thought I got the copy offset location")
+										elseif tt == RoomBlocks.tileTypes.grappling then
+											if ett == RoomBlocks.extTileTypes.grappling then
+												dtt = dumpworldTileTypes.solid
+											elseif ett == RoomBlocks.extTileTypes.grappling_break_regen then
+												dtt = dumpworldTileTypes.solid
+											elseif ett == RoomBlocks.extTileTypes.grappling_break then
+												dtt = dumpworldTileTypes.solid
+											elseif ett == RoomBlocks.extTileTypes.grappling2 then
+												dtt = dumpworldTileTypes.solid
+											elseif ett == RoomBlocks.extTileTypes.grappling3 then
+												dtt = dumpworldTileTypes.solid
+											else
+--[===[
+												print('here with ext tiletype '..tolua{
+													region = ('%02x'):format(m.obj.region),
+													index = ('%02x'):format(m.obj.index),
+													i = i,
+													j = j,
+													ti = ti,
+													tj = tj,
+													dx = dx,
+													dy = dy,
+													sx = sx,
+													sy = sy,
+													tt = ('%02x'):format(tt),
+													ett = ('%02x'):format(ett),
+													d1 = ('%02x'):format(d1),
+													d2 = ('%02x'):format(d2),
+													d3 = ('%02x'):format(d3),
+													copych1 = ('%02x'):format(copych1),
+													copych2 = ('%02x'):format(copych2),
+													copych3 = ('%02x'):format(copych3),
+												})
+--]===]											
+												error'here'
+											end
+											-- TODO grappling blocks eh
+											dtt = dumpworldTileTypes.solid
+										elseif tt == RoomBlocks.tileTypes.bombable then
+											if ett == RoomBlocks.extTileTypes.bombable_1x1_regen then
+												dtt = dumpworldTileTypes.skillsawbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.bombable_2x1_regen then
+												dtt = dumpworldTileTypes.skillsawbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.bombable_1x2_regen then
+												dtt = dumpworldTileTypes.skillsawbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.bombable_2x2_regen then
+												dtt = dumpworldTileTypes.skillsawbreak_regen
+											elseif ett == RoomBlocks.extTileTypes.bombable_1x1 then
+												dtt = dumpworldTileTypes.skillsawbreak
+											elseif ett == RoomBlocks.extTileTypes.bombable_2x1 then
+												dtt = dumpworldTileTypes.skillsawbreak
+											elseif ett == RoomBlocks.extTileTypes.bombable_1x2 then
+												dtt = dumpworldTileTypes.skillsawbreak
+											elseif ett == RoomBlocks.extTileTypes.bombable_2x2 then
+												dtt = dumpworldTileTypes.skillsawbreak
+											else
+												error'here'
+											end
+										else
+											error'here'
+										end
+--]====]										
+
+										-- write out a dumpworld map
+										ctx.dumpworldTileImg.buffer[0+3*dstIndex] = dtt
+										ctx.dumpworldTileImg.buffer[1+3*dstIndex] = 0
+										ctx.dumpworldTileImg.buffer[2+3*dstIndex] = 0
+										
+										if foreground then
+											ctx.dumpworldTileFgImg.buffer[0+3*dstIndex] = d1
+											ctx.dumpworldTileFgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
+											ctx.dumpworldTileFgImg.buffer[2+3*dstIndex] = 0
+										else
+											ctx.dumpworldTileBgImg.buffer[0+3*dstIndex] = d1
+											ctx.dumpworldTileBgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
+											ctx.dumpworldTileBgImg.buffer[2+3*dstIndex] = 0
+										end
+--]==]
+								end
+							end
+
+
 							for pi=0,blockSizeInPixels-1 do
 								for pj=0,blockSizeInPixels-1 do
 									local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j))
@@ -2168,9 +2817,11 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 									if x >= 0 and x < mapimg.width
 									and y >= 0 and y < mapimg.height 
 									then
-										mapBinImage.buffer[0+3*(x+mapBinImage.width*y)] = isBorder and 0xff or 0x00
-										mapBinImage.buffer[1+3*(x+mapBinImage.width*y)] = isSolid and 0xff or 0x00
-										mapBinImage.buffer[2+3*(x+mapBinImage.width*y)] = 0xff
+										local dstIndex = x + mapBinImage.width * y
+										-- write out solid tiles only
+										mapBinImage.buffer[0+3*dstIndex] = isBorder and 0xff or 0x00
+										mapBinImage.buffer[1+3*dstIndex] = isSolid and 0xff or 0x00
+										mapBinImage.buffer[2+3*dstIndex] = 0xff
 									end
 								end
 							end
@@ -2314,9 +2965,19 @@ function SMMap:mapSaveImage(filenamePrefix)
 	local h = roomSizeInPixels*58
 	local mapimg = Image(w, h, 3, 'unsigned char')
 	local mapBinImage = Image(w, h, 3, 'unsigned char')
+	
+	local dumpw = blocksPerRoom*68
+	local dumph = blocksPerRoom*58
+	local dumpworldTileImg = Image(dumpw, dumph, 3, 'unsigned char')
+	local dumpworldTileFgImg = Image(dumpw, dumph, 3, 'unsigned char')
+	local dumpworldTileBgImg = Image(dumpw, dumph, 3, 'unsigned char')
+	
 	local ctx = {
 		mapimg = mapimg,
 		mapBinImage = mapBinImage,
+		dumpworldTileImg = dumpworldTileImg,
+		dumpworldTileFgImg = dumpworldTileFgImg,
+		dumpworldTileBgImg = dumpworldTileBgImg,
 	}
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
@@ -2332,6 +2993,62 @@ function SMMap:mapSaveImage(filenamePrefix)
 
 	mapimg:save(filenamePrefix..'.png')
 	mapBinImage:save(filenamePrefix..'-mask.png')
+	if filenamePrefix == 'map' then
+		dumpworldTileImg:save('../dumpworld/zeta/maps/sm3/tile.png')
+		dumpworldTileFgImg:save('../dumpworld/zeta/maps/sm3/tile-fg.png')
+		dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
+	end
+
+	for k,tileSet in ipairs(self.tileSets) do
+		local tileSetIndex = k+1
+		if tileSet.mode7TileSet then
+			assert(#tileSet.mode7TileSet == 256)
+			-- TODO this only in the mapSaveImage function
+			local mode7image = Image(8*mode7tileWidth, 8*mode7tileHeight, 3, 'unsigned char')
+			local maxdestx = 0
+			local maxdesty = 0	
+			for i=0,mode7tileWidth-1 do
+				for j=0,mode7tileHeight-1 do
+					local mode7tile = tileSet.mode7TileSet[1+tileSet.mode7tiles[i+1][j+1]]
+					for y=0,7 do
+						for x=0,7 do
+							local destx = x + 8 * i
+							local desty = y + 8 * j
+							local rgb = mode7tile[x+1][y+1]
+							if rgb[1] > 0 or rgb[2] > 0 or rgb[3] > 0 then
+								maxdestx = math.max(maxdestx, destx)
+								maxdesty = math.max(maxdestx, desty)
+								local pixelIndex = destx + mode7image.width * desty
+								mode7image.buffer[0 + 3 * pixelIndex] = math.floor(rgb[1]/31*255)
+								mode7image.buffer[1 + 3 * pixelIndex] = math.floor(rgb[2]/31*255)
+								mode7image.buffer[2 + 3 * pixelIndex] = math.floor(rgb[3]/31*255)
+							end
+						end
+					end				
+				end
+			end
+			mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
+			mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' mode7.png')
+		end
+		if tileSet.tileGfx then
+			local rowWidth = 32
+			local img = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+			for tileIndex=0,tileSet.tileGfxCount-1 do
+				local xofs = tileIndex%rowWidth
+				local yofs = math.floor(tileIndex/rowWidth)
+				for i=0,15 do
+					for j=0,15 do
+						local dstIndex = i + 16 * xofs + img.width * (j + 16 * yofs)
+						local srcIndex = i + 16 * (j + 16 * tileIndex)
+						img.buffer[0 + 3 * dstIndex] = tileSet.tileGfxBmp[0 + 3 * srcIndex]
+						img.buffer[1 + 3 * dstIndex] = tileSet.tileGfxBmp[1 + 3 * srcIndex]
+						img.buffer[2 + 3 * dstIndex] = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+					end
+				end
+			end
+			img:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
+		end
+	end
 end
 
 
@@ -2747,6 +3464,11 @@ function SMMap:mapPrint()
 			for _,bg in ipairs(rs.bgs) do
 				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
 			end
+			print('   palette: {'..rs.tileSet.palette:mapi(function(rgb) 
+					return '{'..table.mapi(rgb,function(ch) 
+						return ('%02x'):format(ch) 
+					end):concat','..'}' end
+				):concat', '..'}')
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
@@ -2812,6 +3534,20 @@ function SMMap:mapPrint()
 		print(('$%04x'):format(doorcode))
 	end
 	--]]
+
+-- [[
+	print()
+	print'all tileSets'
+	for i,tileSet in ipairs(self.tileSets) do
+		print(('tileSetInfo %02x'):format(i-1))
+		print('   palette: {'..tileSet.palette:mapi(function(rgb) 
+				return '{'..table.mapi(rgb,function(ch) 
+					return ('%02x'):format(ch) 
+				end):concat','..'}' end
+			):concat', '..'}')
+		print(' rooms used: '..tileSet.roomStates:mapi(function(rs) return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index) end):concat', ')
+	end
+--]]
 end
 
 function SMMap:mapBuildMemoryMap(mem)
@@ -2885,8 +3621,48 @@ function SMMap:mapBuildMemoryMap(mem)
 		end
 	end
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks', roomBlockData.rooms[1])
+		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks lz data', roomBlockData.rooms[1])
 	end
+
+
+	mem:add(
+		commonRoomTileAddr,
+		self.commonRoomTileCompressedSize,
+		'common room tile lz data')
+	mem:add(
+		commonRoomTile2Addr,
+		self.commonRoomTile2CompressedSize,
+		'common room tile lz data')
+
+-- [[
+	-- should I do this for used palettes, not just my fixed maximum?
+	-- and TODO how about declaring this write range and only writing back the tileSets used
+	for _,tileSet in ipairs(self.tileSets) do
+		local room = #tileSet.roomStates > 0 and tileSet.roomStates[1].room or nil
+		mem:add(
+			tileSet.addr,
+			ffi.sizeof'tileSet_t',
+			'tileSet_t',
+			room
+		)
+		if tileSet.mode7TileSet then
+			mem:add(
+				tileSet.mode7addr,
+				tileSet.mode7compressedSize,
+				'tileSet mode7 lz data',
+				room
+			)	
+		end
+		if tileSet.subtileAddr then
+			mem:add(
+				tileSet.subtileAddr,
+				tileSet.subtileCompressedSize,
+				'tileSet subtile lz data',
+				room
+			)
+		end
+	end
+--]]
 end
 
 function SMMap:mapWritePLMs(roomBankWriteRanges)
