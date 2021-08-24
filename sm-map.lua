@@ -41,6 +41,12 @@ local commonRoomTile2Addr = 0x1ca09d
 local mode7tileWidth = 128
 local mode7tileHeight = 128
 
+local blocksPerRoom = 16
+local blockSizeInPixels = 16	-- TODO 'blockSizeInPixels' ? 'tile' becomes ambiguous
+local halfTileSizeInPixels = bit.rshift(blockSizeInPixels, 1)
+local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
+
+
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
 local room_t = struct'room_t'{	-- aka mdb, aka mdb_header
@@ -1756,9 +1762,6 @@ function SMMap:mapInit()
 		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(address,0x7fff))
 	end
 
-	local tileSizeInPixels = 16
-	local halfTileSizeInPixels = bit.rshift(tileSizeInPixels, 1)
-
 
 	self.commonRoomTileData, self.commonRoomTileCompressedSize = lz.decompress(rom, commonRoomTileAddr, 0x10000) --common room elements
 	self.commonRoomTileSize = ffi.sizeof(self.commonRoomTileData)
@@ -1982,7 +1985,7 @@ function SMMap:mapInit()
 		-- store as 16 x 16 x index rgb
 		tileSet.tileGfxBmp = ffi.new('uint8_t[?]', 3*16*16*tileSet.tileGfxCount)
 		for tileIndex=0,tileSet.tileGfxCount-1 do
-			--tiles[tileIndex].resize(tileSizeInPixels, tileSizeInPixels)
+			--tiles[tileIndex].resize(blockSizeInPixels, blockSizeInPixels)
 			for xofs=0,1 do
 				for yofs=0,1 do
 					--drawSubtile(subtiles, wbuffer[xofs + 2 * yofs + 4 * tileIndex], palette, tiles[tileIndex], xofs*halfTileSizeInPixels, yofs*halfTileSizeInPixels)
@@ -2266,17 +2269,13 @@ end
 
 
 
+local debugImageBlockSizeInPixels = 4
+local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
 
-
-
-local blockSizeInPixels = 4
-local blocksPerRoom = 16
-local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
-
-local colormap = range(254)
---colormap = shuffle(colormap)
-colormap[0] = 0
-colormap[255] = 255
+local debugImageColorMap = range(254)
+--debugImageColorMap = shuffle(debugImageColorMap)
+debugImageColorMap[0] = 0
+debugImageColorMap[255] = 255
 -- data is sized 32*m.width x 16*m.width
 local ofsPerRegion = {
 	function(m) 
@@ -2284,17 +2283,17 @@ local ofsPerRegion = {
 		if m.region == 0	-- Crateria
 		and m.x > 45 
 		then
-			return 10,0
+			return 6,1
 		end
-		return 3,0
+		return -1,1
 	end,	-- crateria
-	function(m) return 0,18 end,	-- brinstar
-	function(m) return 31,38 end,	-- norfair
-	function(m) return 37,-10 end,	-- wrecked ship
-	function(m) return 28,18 end,	-- maridia
-	function(m) return 0,0 end,	-- tourian
-	function(m) return -5,25 end,	-- ceres
-	function(m) return 7,47 end,	-- testing
+	function(m) return -4,19 end,	-- brinstar
+	function(m) return 27,39 end,	-- norfair
+	function(m) return 33,-9 end,	-- wrecked ship
+	function(m) return 24,19 end,	-- maridia
+	function(m) return -4,1 end,	-- tourian
+	function(m) return -9,26 end,	-- ceres
+	function(m) return 3,48 end,	-- testing
 }
 
 
@@ -2429,7 +2428,7 @@ local digits = {
 	},
 }
 
-local function drawstr(mapimg, posx, posy, s)
+local function drawstr(debugMapImage, posx, posy, s)
 	for i=1,#s do
 		local ch = digits[s:sub(i,i)]
 		if ch then
@@ -2440,12 +2439,12 @@ local function drawstr(mapimg, posx, posy, s)
 						local x = posx + pi + (i-1)*4
 						local y = posy + pj
 					
-						if x >= 0 and x < mapimg.width
-						and y >= 0 and y < mapimg.height 
+						if x >= 0 and x < debugMapImage.width
+						and y >= 0 and y < debugMapImage.height 
 						then
-							mapimg.buffer[0+3*(x+mapimg.width*y)] = c
-							mapimg.buffer[1+3*(x+mapimg.width*y)] = c
-							mapimg.buffer[2+3*(x+mapimg.width*y)] = c
+							debugMapImage.buffer[0+3*(x+debugMapImage.width*y)] = c
+							debugMapImage.buffer[1+3*(x+debugMapImage.width*y)] = c
+							debugMapImage.buffer[2+3*(x+debugMapImage.width*y)] = c
 						end	
 					end	
 				end
@@ -2518,15 +2517,13 @@ local dumpworldTileTypes = {
 }
 
 local function drawRoomBlocks(ctx, roomBlockData, m)
-	local mapimg = ctx.mapimg
-	local mapBinImage = ctx.mapBinImage
+	local debugMapImage = ctx.debugMapImage
+	local debugMapMaskImage = ctx.debugMapMaskImage
 	local blocks = roomBlockData.blocks
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
 	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
-	local ofsx, ofsy = ofscalc(m.ptr)
-	local xofs = roomSizeInPixels * (ofsx - 4)
-	local yofs = roomSizeInPixels * (ofsy + 1)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	local firstcoord
 
 	for j=0,h-1 do
@@ -2567,22 +2564,46 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 						and (d3 == 0x00 or d3 == 0x83 or d3 == 0xff)
 						then
 						else
-							for pi=0,blockSizeInPixels-1 do
-								for pj=0,blockSizeInPixels-1 do
-									local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j))
-									local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i))
-					--for y=(m.obj.y + j)* roomSizeInPixels + yofs, (m.obj.y + h) * roomSizeInPixels - 1 + yofs do
-					--	for x=m.obj.x * roomSizeInPixels + xofs, (m.obj.x + w) * roomSizeInPixels - 1 + xofs do
-									if x >= 0 and x < mapimg.width
-									and y >= 0 and y < mapimg.height 
+							for pj=0,debugImageBlockSizeInPixels-1 do
+								local y = pj + debugImageBlockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+								for pi=0,debugImageBlockSizeInPixels-1 do
+									local x = pi + debugImageBlockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+									if x >= 0 and x < debugMapImage.width
+									and y >= 0 and y < debugMapImage.height 
 									then
 										if not firstcoord then
 											firstcoord = {x,y}
 										end
 										
-										mapimg.buffer[0+3*(x+mapimg.width*y)] = colormap[tonumber(d1)]
-										mapimg.buffer[1+3*(x+mapimg.width*y)] = colormap[tonumber(d2)]
-										mapimg.buffer[2+3*(x+mapimg.width*y)] = colormap[tonumber(d3)]
+										debugMapImage.buffer[0+3*(x+debugMapImage.width*y)] = debugImageColorMap[tonumber(d1)]
+										debugMapImage.buffer[1+3*(x+debugMapImage.width*y)] = debugImageColorMap[tonumber(d2)]
+										debugMapImage.buffer[2+3*(x+debugMapImage.width*y)] = debugImageColorMap[tonumber(d3)]
+									end
+								end
+							end
+							local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
+							local flipx = bit.band(d2, 4) ~= 0
+							local flipy = bit.band(d2, 8) ~= 0
+							local tileSet = m.roomStates[1].tileSet
+							if tileSet
+							and tileIndex < tileSet.tileGfxCount
+							then
+								for pj=0,blockSizeInPixels-1 do
+									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										if x >= 0 and x < ctx.mapTexImage.width
+										and y >= 0 and y < ctx.mapTexImage.height 
+										then
+											local srcIndex 
+											local spi = flipx and blockSizeInPixels - 1 - pi or pi
+											local spj = flipy and blockSizeInPixels - 1 - pj or pj
+											srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local dstIndex = x + ctx.mapTexImage.width * y
+											ctx.mapTexImage.buffer[0 + 3 * dstIndex] = tileSet.tileGfxBmp[0 + 3 * srcIndex]
+											ctx.mapTexImage.buffer[1 + 3 * dstIndex] = tileSet.tileGfxBmp[1 + 3 * srcIndex]
+											ctx.mapTexImage.buffer[2 + 3 * dstIndex] = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+										end
 									end
 								end
 							end
@@ -2594,8 +2615,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							local isSolid = roomBlockData:isSolid(dx,dy)
 							
 							do
-								local y = yofs / blockSizeInPixels + tj + blocksPerRoom * (m.obj.y + j)
-								local x = xofs / blockSizeInPixels + ti + blocksPerRoom * (m.obj.x + i)
+								local x = ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksY)
+								local y = tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksX)
 								if x >= 0 and x < ctx.dumpworldTileImg.width
 								and y >= 0 and y < ctx.dumpworldTileImg.height 
 								then
@@ -2810,18 +2831,18 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							end
 
 
-							for pi=0,blockSizeInPixels-1 do
-								for pj=0,blockSizeInPixels-1 do
-									local y = yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j))
-									local x = xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i))
-									if x >= 0 and x < mapimg.width
-									and y >= 0 and y < mapimg.height 
+							for pi=0,debugImageBlockSizeInPixels-1 do
+								for pj=0,debugImageBlockSizeInPixels-1 do
+									local x = pi + debugImageBlockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+									local y = pj + debugImageBlockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									if x >= 0 and x < debugMapImage.width
+									and y >= 0 and y < debugMapImage.height 
 									then
-										local dstIndex = x + mapBinImage.width * y
+										local dstIndex = x + debugMapMaskImage.width * y
 										-- write out solid tiles only
-										mapBinImage.buffer[0+3*dstIndex] = isBorder and 0xff or 0x00
-										mapBinImage.buffer[1+3*dstIndex] = isSolid and 0xff or 0x00
-										mapBinImage.buffer[2+3*dstIndex] = 0xff
+										debugMapMaskImage.buffer[0+3*dstIndex] = isBorder and 0xff or 0x00
+										debugMapMaskImage.buffer[1+3*dstIndex] = isSolid and 0xff or 0x00
+										debugMapMaskImage.buffer[2+3*dstIndex] = 0xff
 									end
 								end
 							end
@@ -2832,11 +2853,11 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 		end
 	end
 
-	drawstr(mapimg, firstcoord[1], firstcoord[2], ('%x-%02x'):format(m.obj.region, m.obj.index))
-	drawstr(mapimg, firstcoord[1], firstcoord[2]+6, ('$%04x'):format(m.addr))
+	drawstr(debugMapImage, firstcoord[1], firstcoord[2], ('%x-%02x'):format(m.obj.region, m.obj.index))
+	drawstr(debugMapImage, firstcoord[1], firstcoord[2]+6, ('$%04x'):format(m.addr))
 end
 
-local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
+local function drawline(img, x1,y1,x2,y2, r,g,b)
 	r = r or 0xff
 	g = g or 0xff
 	b = b or 0xff
@@ -2850,26 +2871,26 @@ local function drawline(mapimg, x1,y1,x2,y2, r,g,b)
 		local t = 1 - s
 		local x = math.round(s * x1 + t * x2)
 		local y = math.round(s * y1 + t * y2)
-		if x >= 0 and x < mapimg.width
-		and y >= 0 and y < mapimg.height 
+		if x >= 0 and x < img.width
+		and y >= 0 and y < img.height 
 		then
-			mapimg.buffer[0+3*(x+mapimg.width*y)] = r
-			mapimg.buffer[1+3*(x+mapimg.width*y)] = g
-			mapimg.buffer[2+3*(x+mapimg.width*y)] = b
+			img.buffer[0+3*(x+img.width*y)] = r
+			img.buffer[1+3*(x+img.width*y)] = g
+			img.buffer[2+3*(x+img.width*y)] = b
 		end
 	end
 end
 
 local function drawRoomBlockDoors(ctx, roomBlockData)
-	local mapimg = ctx.mapimg
+	local debugMapImage = ctx.debugMapImage
 	local blocks = roomBlockData.blocks
 	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
 	-- then, cycle through exits, and draw lines from each block to the exit destination
 
 	for _,srcRoom in ipairs(roomBlockData.rooms) do
 		local srcRoom_ofsx, srcRoom_ofsy = ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
-		local srcRoom_xofs = roomSizeInPixels * (srcRoom_ofsx - 4)
-		local srcRoom_yofs = roomSizeInPixels * (srcRoom_ofsy + 1)
+		local srcRoom_xofs = debugImageRoomSizeInPixels * srcRoom_ofsx
+		local srcRoom_yofs = debugImageRoomSizeInPixels * srcRoom_ofsy
 		for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
 --print('in room '..('%02x/%02x'):format(srcRoom.obj.region, srcRoom.obj.index)..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
 			-- TODO lifts will mess up the order of this, maybe?
@@ -2882,8 +2903,8 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			else
 				local dstRoom = assert(door.destRoom)
 				local dstRoom_ofsx, dstRoom_ofsy = ofsPerRegion[dstRoom.obj.region+1](dstRoom.ptr)
-				local dstRoom_xofs = roomSizeInPixels * (dstRoom_ofsx - 4)
-				local dstRoom_yofs = roomSizeInPixels * (dstRoom_ofsy + 1)
+				local dstRoom_xofs = debugImageRoomSizeInPixels * dstRoom_ofsx
+				local dstRoom_yofs = debugImageRoomSizeInPixels * dstRoom_ofsy
 			
 				-- draw an arrow or something on the map where the door drops us off at
 				-- door.destRoom is the room
@@ -2895,32 +2916,32 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 				local dir = bit.band(door.ptr.direction, 3)	-- 0-based
 				local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
 					
-				local k=blockSizeInPixels*3-1 
+				local k=debugImageBlockSizeInPixels*3-1 
 					
 				local pi, pj
 				if dir == 0 then		-- enter from left
 					pi = k
-					pj = bit.rshift(roomSizeInPixels, 1)
+					pj = bit.rshift(debugImageRoomSizeInPixels, 1)
 				elseif dir == 1 then	-- enter from right
-					pi = roomSizeInPixels - k
-					pj = bit.rshift(roomSizeInPixels, 1)
+					pi = debugImageRoomSizeInPixels - k
+					pj = bit.rshift(debugImageRoomSizeInPixels, 1)
 				elseif dir == 2 then	-- enter from top
-					pi = bit.rshift(roomSizeInPixels, 1)
+					pi = bit.rshift(debugImageRoomSizeInPixels, 1)
 					pj = k
 				elseif dir == 3 then	-- enter from bottom
-					pi = bit.rshift(roomSizeInPixels, 1)
-					pj = roomSizeInPixels - k
+					pi = bit.rshift(debugImageRoomSizeInPixels, 1)
+					pj = debugImageRoomSizeInPixels - k
 				end
 			
 				-- here's the pixel x & y of the door destination
-				local x1 = dstRoom_xofs + pi + blockSizeInPixels * (ti + blocksPerRoom * (dstRoom.obj.x + i))
-				local y1 = dstRoom_yofs + pj + blockSizeInPixels * (tj + blocksPerRoom * (dstRoom.obj.y + j))
+				local x1 = dstRoom_xofs + pi + debugImageBlockSizeInPixels * (ti + blocksPerRoom * (dstRoom.obj.x + i))
+				local y1 = dstRoom_yofs + pj + debugImageBlockSizeInPixels * (tj + blocksPerRoom * (dstRoom.obj.y + j))
 
 				for _,pos in ipairs(blockpos) do
 					-- now for src block pos
-					local x2 = srcRoom_xofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[1] + blocksPerRoom * srcRoom.obj.x)
-					local y2 = srcRoom_yofs + blockSizeInPixels/2 + blockSizeInPixels * (pos[2] + blocksPerRoom * srcRoom.obj.y)
-					drawline(mapimg,x1,y1,x2,y2)
+					local x2 = srcRoom_xofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (pos[1] + blocksPerRoom * srcRoom.obj.x)
+					local y2 = srcRoom_yofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (pos[2] + blocksPerRoom * srcRoom.obj.y)
+					drawline(debugMapImage,x1,y1,x2,y2)
 				end
 			end
 		end
@@ -2928,28 +2949,28 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 end
 
 function drawRoomBlockPLMs(ctx, roomBlockData)
-	local mapimg = ctx.mapimg
+	local debugMapImage = ctx.debugMapImage
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		local m = rs.room
-		local ofsx, ofsy = ofsPerRegion[m.obj.region+1](m.ptr)
-		local xofs = roomSizeInPixels * (ofsx - 4)
-		local yofs = roomSizeInPixels * (ofsy + 1)
+		local ofsInRoomBlocksX, ofsInRoomBlocksY = ofsPerRegion[m.obj.region+1](m.ptr)
+		local xofs = debugImageRoomSizeInPixels * ofsInRoomBlocksX
+		local yofs = debugImageRoomSizeInPixels * ofsInRoomBlocksY
 		if rs.plmset then
 			for _,plm in ipairs(rs.plmset.plms) do
-				local x = xofs + blockSizeInPixels/2 + blockSizeInPixels * (plm.x + blocksPerRoom * m.obj.x)
-				local y = yofs + blockSizeInPixels/2 + blockSizeInPixels * (plm.y + blocksPerRoom * m.obj.y)
-				drawline(mapimg,x+2,y,x-2,y, 0x00, 0xff, 0xff)
-				drawline(mapimg,x,y+2,x,y-2, 0x00, 0xff, 0xff)
-				drawstr(mapimg, x+5, y, ('$%x'):format(plm.cmd))
+				local x = xofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (plm.x + blocksPerRoom * m.obj.x)
+				local y = yofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (plm.y + blocksPerRoom * m.obj.y)
+				drawline(debugMapImage,x+2,y,x-2,y, 0x00, 0xff, 0xff)
+				drawline(debugMapImage,x,y+2,x,y-2, 0x00, 0xff, 0xff)
+				drawstr(debugMapImage, x+5, y, ('$%x'):format(plm.cmd))
 			end
 		end
 		if rs.enemySpawnSet then
 			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
-				local x = math.round(xofs + blockSizeInPixels/2 + blockSizeInPixels * (enemySpawn.x / 16 + blocksPerRoom * m.obj.x))
-				local y = math.round(yofs + blockSizeInPixels/2 + blockSizeInPixels * (enemySpawn.y / 16 + blocksPerRoom * m.obj.y))
-				drawline(mapimg,x+2,y,x-2,y, 0xff, 0x00, 0xff)
-				drawline(mapimg,x,y+2,x,y-2, 0xff, 0x00, 0xff)
-				drawstr(mapimg, x+5, y, ('$%x'):format(enemySpawn.enemyAddr))
+				local x = math.round(xofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (enemySpawn.x / 16 + blocksPerRoom * m.obj.x))
+				local y = math.round(yofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (enemySpawn.y / 16 + blocksPerRoom * m.obj.y))
+				drawline(debugMapImage,x+2,y,x-2,y, 0xff, 0x00, 0xff)
+				drawline(debugMapImage,x,y+2,x,y-2, 0xff, 0x00, 0xff)
+				drawstr(debugMapImage, x+5, y, ('$%x'):format(enemySpawn.enemyAddr))
 			end
 		end
 	end
@@ -2961,20 +2982,30 @@ function SMMap:mapSaveImage(filenamePrefix)
 	
 	filenamePrefix = filenamePrefix or 'map'
 
-	local w = roomSizeInPixels*68
-	local h = roomSizeInPixels*58
-	local mapimg = Image(w, h, 3, 'unsigned char')
-	local mapBinImage = Image(w, h, 3, 'unsigned char')
+	local fullMapWidthInBlocks = 68
+	local fullMapHeightInBlocks = 58
+
+	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
+	local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
+	local debugMapImage = Image(w, h, 3, 'unsigned char')
+	local debugMapMaskImage = Image(w, h, 3, 'unsigned char')
 	
-	local dumpw = blocksPerRoom*68
-	local dumph = blocksPerRoom*58
+	local mapTexImage = Image(
+		blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
+		blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
+		3, 'unsigned char')
+
+	-- 1 pixel : 1 block for dumpworld
+	local dumpw = blocksPerRoom * fullMapWidthInBlocks
+	local dumph = blocksPerRoom * fullMapHeightInBlocks
 	local dumpworldTileImg = Image(dumpw, dumph, 3, 'unsigned char')
 	local dumpworldTileFgImg = Image(dumpw, dumph, 3, 'unsigned char')
 	local dumpworldTileBgImg = Image(dumpw, dumph, 3, 'unsigned char')
 	
 	local ctx = {
-		mapimg = mapimg,
-		mapBinImage = mapBinImage,
+		debugMapImage = debugMapImage,
+		debugMapMaskImage = debugMapMaskImage,
+		mapTexImage = mapTexImage,
 		dumpworldTileImg = dumpworldTileImg,
 		dumpworldTileFgImg = dumpworldTileFgImg,
 		dumpworldTileBgImg = dumpworldTileBgImg,
@@ -2991,9 +3022,10 @@ function SMMap:mapSaveImage(filenamePrefix)
 		drawRoomBlockPLMs(ctx, roomBlockData)
 	end
 
-	mapimg:save(filenamePrefix..'.png')
-	mapBinImage:save(filenamePrefix..'-mask.png')
-	if filenamePrefix == 'map' then
+	debugMapImage:save(filenamePrefix..'.png')
+	debugMapMaskImage:save(filenamePrefix..'-mask.png')
+	mapTexImage:save(filenamePrefix..'-tex.png')
+	if filenamePrefix == 'map' then	-- don't do this for the .random file
 		dumpworldTileImg:save('../dumpworld/zeta/maps/sm3/tile.png')
 		dumpworldTileFgImg:save('../dumpworld/zeta/maps/sm3/tile-fg.png')
 		dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
