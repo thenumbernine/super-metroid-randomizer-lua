@@ -87,10 +87,13 @@ local roomselect3_t = struct'roomselect3_t'{
 	{roomStateAddr = 'uint16_t'},		-- ptr to roomstate in bank $8f
 }
 
+local addr24_t = struct'addr24_t'{
+	{addr = 'uint16_t'},
+	{bank = 'uint8_t'},
+}
 
 local roomstate_t = struct'roomstate_t'{
-	{roomBlockAddr = 'uint16_t'},		-- points to block data
-	{roomBlockBank = 'uint8_t'},		-- $c2 to $c9
+	{roomBlockAddr = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
 	{tileSet = 'uint8_t'},				-- tile graphics data
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
@@ -184,8 +187,7 @@ local fx1_t = struct'fx1_t'{
 
 local bg_t = struct'bg_t'{
 	{header = 'uint16_t'},
-	{addr = 'uint16_t'},
-	{bank = 'uint8_t'},
+	{addr = 'addr24_t'},
 	-- skip the next 14 bytes
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
@@ -267,12 +269,9 @@ local tileSetCount = 29	-- this is the # that are used in metroid.
 local tileSetBaseOffset = 0x07e6a2 
 
 local tileSet_t = struct'tileSet_t'{
-	{furtherAddr = 'uint16_t'},	-- subtileAddr
-	{furtherBank = 'uint8_t'},	-- subtileBank
-	{tileAddr = 'uint16_t'},
-	{tileBank = 'uint8_t'},
-	{paletteAddr = 'uint16_t'},
-	{paletteBank = 'uint8_t'},
+	{further = 'addr24_t'},
+	{tile = 'addr24_t'},
+	{palette = 'addr24_t'},
 }
 assert(ffi.sizeof'tileSet_t' == 9)
 
@@ -844,7 +843,7 @@ if done then break end
 				end
 --]]
 				-- so bgs[i].addr is the address where bgs[i].ptr was found
-				-- and bgs[i].ptr.bank,addr points to where bgs[i].data was found
+				-- and bgs[i].ptr.addr.bank,addr points to where bgs[i].data was found
 				-- a little confusing
 				local bg = self:mapAddBG(addr)
 				bg.rooms:insert(m)
@@ -858,7 +857,7 @@ if done then break end
 			--[[ load data
 			-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 			for _,bg in ipairs(rs.bgs) do
-				local addr = topc(bg.ptr.bank, bg.ptr.addr)
+				local addr = topc(bg.ptr.addr.bank, bg.ptr.addr.addr)
 				local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
 				bg.data = decompressed
 				mem:add(addr, compressedSize, 'bg data', m)
@@ -874,7 +873,7 @@ if done then break end
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
 		
-		local addr = topc(rs.obj.roomBlockBank, rs.obj.roomBlockAddr)
+		local addr = topc(rs.obj.roomBlockAddr.bank, rs.obj.roomBlockAddr.addr)
 		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
 	end
 
@@ -1135,7 +1134,7 @@ end
 
 
 -- table of all unique bgs.
--- each entry has .addr and .ptr = (bg_t*)(rom+.addr)
+-- each entry has .addr and .ptr = (bg_t*)(rom+addr)
 -- doesn't create duplicates -- returns a previous copy if it exists
 function SMMap:mapAddBG(addr)
 	local _,bg = self.bgs:find(nil, function(bg) return bg.addr == addr end)
@@ -1780,13 +1779,14 @@ function SMMap:mapInit()
 	-- do this before any mapAddRoom calls
 	self.tileSets = table()
 	for tileSetIndex=0,tileSetCount-1 do
-		local tileSet = {}
+		local tileSet = {index=tileSetIndex}
 		self.tileSets:insert(tileSet)
 		tileSet.addr = tileSetBaseOffset + tileSetIndex * ffi.sizeof'tileSet_t'
 		tileSet.ptr = ffi.cast('tileSet_t*', rom + tileSet.addr)
 		tileSet.obj = ffi.new('tileSet_t', tileSet.ptr[0])
+		-- have each room write keys here coinciding blocks
 		tileSet.roomStates = table()	-- which roomStates use this tileset
-		local paletteOffset = topc(tileSet.obj.paletteBank, tileSet.obj.paletteAddr)
+		local paletteOffset = topc(tileSet.obj.palette.bank, tileSet.obj.palette.addr)
 		local data, compressedSize = lz.decompress(rom, paletteOffset, 0x200)
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
@@ -1797,6 +1797,7 @@ function SMMap:mapInit()
 				bit.band(p[0], 0x1f),
 				bit.band(bit.rshift(p[0], 5), 0x1f),
 				bit.band(bit.rshift(p[0], 10), 0x1f),
+				-- isn't the 15th bit the alpha mask?
 			}
 			p=p+1
 		end
@@ -1810,7 +1811,7 @@ function SMMap:mapInit()
 		-- TODO instead of determining by roomstate info, determine by which tileSet_t it is
 		-- that way we don't get so many multiples of the same tileSet_t's
 
-		local bufferOffset = loRomToOffset(tileSet.obj.tileBank, tileSet.obj.tileAddr)
+		local bufferOffset = loRomToOffset(tileSet.obj.tile.bank, tileSet.obj.tile.addr)
 		local buffer, bufferCompressedSize = lz.decompress(rom, bufferOffset, 0x10000)	-- TODO how big?
 		local bufferSize = ffi.sizeof(buffer)
 		
@@ -1888,7 +1889,7 @@ function SMMap:mapInit()
 			otherwise, for tileSets $0-$10, $13-$19, $1b, $1c  this is resized up from 0x4800 to 0x5000
 			so ... should $11 and $12 be resized down?
 			--]]
-			if tileSetIndex == 26 then	--Kraid room
+			if tileSetIndex == 0x1a then	--Kraid room
 				newBufferSize = 0x8000	
 			else 
 				newBufferSize = 0x5000
@@ -1907,16 +1908,14 @@ function SMMap:mapInit()
 			ffi.copy(newBuffer + bufferSize, self.commonRoomTileData, self.commonRoomTileSize)
 			buffer, bufferSize = newBuffer, bufferSize + self.commonRoomTileSize
 		end
+		local copy = ffi.new('uint8_t[?]', 32)
+		local line = ffi.new('uint8_t[?]', 4)
 		for i=0,bufferSize-1,32 do
-			local copy = ffi.new('uint8_t[?]', 32)
 			ffi.copy(copy, buffer+i, 32)
 			ffi.fill(buffer+i, 32, 0)
 			for y=0,7 do
-				local line = ffi.new('uint8_t[?]', 4)
-				line[0] = copy[y*2]
-				line[1] = copy[y*2+1]
-				line[2] = copy[y*2+16]
-				line[3] = copy[y*2+17]
+				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
+				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
 				for x=0,7 do
 					local shift = (7 - x) * 4
 					local word = 0	-- uint32_t
@@ -1942,7 +1941,7 @@ function SMMap:mapInit()
 			ffi.copy(buffer, self.commonRoomTile2Data, bufferSize)
 		end
 		do
-			local furtherAddr = loRomToOffset(tileSet.obj.furtherBank, tileSet.obj.furtherAddr)
+			local furtherAddr = loRomToOffset(tileSet.obj.further.bank, tileSet.obj.further.addr)
 			local furtherBuffer, furtherCompressedSize = lz.decompress(rom, furtherAddr, 0x10000)
 			local furtherBufferSize = ffi.sizeof(furtherBuffer)
 			tileSet.subtileAddr = furtherAddr 
@@ -2127,6 +2126,43 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 
 	--]] --------------------------------------------------------------------------------
 
+	-- collect all unique indexes of each roomblockdata	
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		roomBlockData.tileIndexesUsed = roomBlockData.tileIndexesUsed or {}
+		local blocks = roomBlockData.blocks
+		local w = roomBlockData.width / blocksPerRoom
+		local h = roomBlockData.height / blocksPerRoom
+		for j=0,h-1 do
+			for i=0,w-1 do
+				for ti=0,blocksPerRoom-1 do
+					for tj=0,blocksPerRoom-1 do
+						local dx = ti + blocksPerRoom * i
+						local dy = tj + blocksPerRoom * j
+						local di = dx + blocksPerRoom * w * dy
+						-- blocks is 0-based
+						local d1 = blocks[0 + 3 * di]
+						local d2 = blocks[1 + 3 * di]
+						local d3 = blocks[2 + 3 * di]	
+						local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
+						roomBlockData.tileIndexesUsed[tonumber(tileIndex)] = true
+					end
+				end
+			end
+		end
+	end
+
+-- [[ now do the same for tilesets 
+	for _,tileSet in ipairs(self.tileSets) do
+		tileSet.tileIndexesUsed = {}
+	end
+	for _,m in ipairs(self.rooms) do
+		for _,rs in ipairs(m.roomStates) do
+			for k,v in pairs(rs.roomBlockData.tileIndexesUsed) do
+				rs.tileSet.tileIndexesUsed[k] = true
+			end
+		end
+	end
+--]]
 
 	-- load stations
 	-- http://patrickjohnston.org/bank/82
@@ -2314,7 +2350,7 @@ local digits = {
 	},
 }
 
-local function drawstr(debugMapImage, posx, posy, s)
+local function drawstr(img, posx, posy, s)
 	for i=1,#s do
 		local ch = digits[s:sub(i,i)]
 		if ch then
@@ -2325,12 +2361,12 @@ local function drawstr(debugMapImage, posx, posy, s)
 						local x = posx + pi + (i-1)*4
 						local y = posy + pj
 					
-						if x >= 0 and x < debugMapImage.width
-						and y >= 0 and y < debugMapImage.height 
+						if x >= 0 and x < img.width
+						and y >= 0 and y < img.height 
 						then
-							debugMapImage.buffer[0+3*(x+debugMapImage.width*y)] = c
-							debugMapImage.buffer[1+3*(x+debugMapImage.width*y)] = c
-							debugMapImage.buffer[2+3*(x+debugMapImage.width*y)] = c
+							img.buffer[0+3*(x+img.width*y)] = c
+							img.buffer[1+3*(x+img.width*y)] = c
+							img.buffer[2+3*(x+img.width*y)] = c
 						end	
 					end	
 				end
@@ -2411,7 +2447,7 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	local firstcoord
-
+	
 	for j=0,h-1 do
 		for i=0,w-1 do
 			local ignore
@@ -2433,9 +2469,9 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 						local dy = tj + blocksPerRoom * j
 						local di = dx + blocksPerRoom * w * dy
 						-- blocks is 0-based
-						local d1 = blocks[0 + 3 * di] or 0
-						local d2 = blocks[1 + 3 * di] or 0
-						local d3 = blocks[2 + 3 * di] or 0
+						local d1 = blocks[0 + 3 * di]
+						local d2 = blocks[1 + 3 * di]
+						local d3 = blocks[2 + 3 * di]
 				
 						-- empty background tiles:
 						-- ff0000
@@ -2467,6 +2503,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 									end
 								end
 							end
+						end
+						do
 							local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
 							local flipx = bit.band(d2, 4) ~= 0
 							local flipy = bit.band(d2, 8) ~= 0
@@ -2494,6 +2532,10 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 									end
 								end
 							end
+							drawstr(ctx.mapTexImage, 
+								2 + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX)),
+								8 + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY)),
+								('%02x'):format(tileIndex))
 						end
 
 						-- TODO isSolid will overlap between a few rooms
@@ -2918,54 +2960,71 @@ function SMMap:mapSaveImage(filenamePrefix)
 		dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
 	end
 
-	for k,tileSet in ipairs(self.tileSets) do
-		local tileSetIndex = k-1
-		if tileSet.mode7TileSet then
-			assert(#tileSet.mode7TileSet == 256)
-			-- TODO this only in the mapSaveImage function
-			local mode7image = Image(8*mode7tileWidth, 8*mode7tileHeight, 3, 'unsigned char')
-			local maxdestx = 0
-			local maxdesty = 0	
-			for i=0,mode7tileWidth-1 do
-				for j=0,mode7tileHeight-1 do
-					local mode7tile = tileSet.mode7TileSet[1+tileSet.mode7tiles[i+1][j+1]]
-					for y=0,7 do
-						for x=0,7 do
-							local destx = x + 8 * i
-							local desty = y + 8 * j
-							local rgb = mode7tile[x+1][y+1]
-							if rgb[1] > 0 or rgb[2] > 0 or rgb[3] > 0 then
-								maxdestx = math.max(maxdestx, destx)
-								maxdesty = math.max(maxdestx, desty)
-								local pixelIndex = destx + mode7image.width * desty
-								mode7image.buffer[0 + 3 * pixelIndex] = math.floor(rgb[1]/31*255)
-								mode7image.buffer[1 + 3 * pixelIndex] = math.floor(rgb[2]/31*255)
-								mode7image.buffer[2 + 3 * pixelIndex] = math.floor(rgb[3]/31*255)
+	-- for now only write out tile graphics for the non-randomized version
+	if filenamePrefix == 'map' then
+		for _,tileSet in ipairs(self.tileSets) do
+			local tileSetIndex = tileSet.index
+			if tileSet.mode7TileSet then
+				assert(#tileSet.mode7TileSet == 256)
+				-- TODO this only in the mapSaveImage function
+				local mode7image = Image(8*mode7tileWidth, 8*mode7tileHeight, 3, 'unsigned char')
+				local maxdestx = 0
+				local maxdesty = 0	
+				for i=0,mode7tileWidth-1 do
+					for j=0,mode7tileHeight-1 do
+						local mode7tile = tileSet.mode7TileSet[1+tileSet.mode7tiles[i+1][j+1]]
+						for y=0,7 do
+							for x=0,7 do
+								local destx = x + 8 * i
+								local desty = y + 8 * j
+								local rgb = mode7tile[x+1][y+1]
+								if rgb[1] > 0 or rgb[2] > 0 or rgb[3] > 0 then
+									maxdestx = math.max(maxdestx, destx)
+									maxdesty = math.max(maxdestx, desty)
+									local pixelIndex = destx + mode7image.width * desty
+									mode7image.buffer[0 + 3 * pixelIndex] = math.floor(rgb[1]/31*255)
+									mode7image.buffer[1 + 3 * pixelIndex] = math.floor(rgb[2]/31*255)
+									mode7image.buffer[2 + 3 * pixelIndex] = math.floor(rgb[3]/31*255)
+								end
 							end
-						end
-					end				
-				end
-			end
-			mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
-			mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' mode7.png')
-		end
-		if tileSet.tileGfxBmp then
-			local rowWidth = 32
-			local img = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-			for tileIndex=0,tileSet.tileGfxCount-1 do
-				local xofs = tileIndex%rowWidth
-				local yofs = math.floor(tileIndex/rowWidth)
-				for i=0,15 do
-					for j=0,15 do
-						local dstIndex = i + 16 * xofs + img.width * (j + 16 * yofs)
-						local srcIndex = i + 16 * (j + 16 * tileIndex)
-						img.buffer[0 + 3 * dstIndex] = tileSet.tileGfxBmp[0 + 3 * srcIndex]
-						img.buffer[1 + 3 * dstIndex] = tileSet.tileGfxBmp[1 + 3 * srcIndex]
-						img.buffer[2 + 3 * dstIndex] = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+						end				
 					end
 				end
+				mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
+				mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' mode7.png')
 			end
-			img:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
+			if tileSet.tileGfxBmp then
+				local rowWidth = 32
+				local img = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+				local imgused = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+				for tileIndex=0,tileSet.tileGfxCount-1 do
+					local xofs = tileIndex%rowWidth
+					local yofs = math.floor(tileIndex/rowWidth)
+					for i=0,15 do
+						for j=0,15 do
+							local dstIndex = i + 16 * xofs + img.width * (j + 16 * yofs)
+							local srcIndex = i + 16 * (j + 16 * tileIndex)
+							local r = tileSet.tileGfxBmp[0 + 3 * srcIndex]
+							local g = tileSet.tileGfxBmp[1 + 3 * srcIndex]
+							local b = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+							img.buffer[0 + 3 * dstIndex] = r
+							img.buffer[1 + 3 * dstIndex] = g
+							img.buffer[2 + 3 * dstIndex] = b
+							
+							if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
+								r = math.floor(.5 * 0 + .5 * r)
+								g = math.floor(.5 * 255 + .5 * g)
+								b = math.floor(.5 * 0 + .5 * b)
+							end
+							imgused.buffer[0 + 3 * dstIndex] = r
+							imgused.buffer[1 + 3 * dstIndex] = g
+							imgused.buffer[2 + 3 * dstIndex] = b
+						end
+					end
+				end
+				img:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
+				imgused:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
+			end
 		end
 	end
 end
@@ -3004,6 +3063,7 @@ function SMMap:mapPrintRoomBlocks()
 				printblock(tableToByteArray(rs.scrollData), w/16)
 			end
 		end
+		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
 	end
 end
 
@@ -3308,7 +3368,7 @@ function SMMap:mapPrint()
 	print"all enemyGFX_t's:"
 	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
 	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
-		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '..enemyGFXSet.name
+		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '..tolua(enemyGFXSet.name)
 			..' rooms: '..enemyGFXSet.roomStates:map(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' '
@@ -3317,7 +3377,7 @@ function SMMap:mapPrint()
 			io.write('  '..enemyGFX)
 			local enemyName = (self.enemyForAddr[enemyGFX.enemyAddr] or {}).name
 			if enemyName then
-				io.write(' '..enemyName)
+				io.write(' '..tolua(enemyName))
 			end
 			print()
 		end
@@ -3457,14 +3517,15 @@ function SMMap:mapPrint()
 -- [[
 	print()
 	print'all tileSets'
-	for i,tileSet in ipairs(self.tileSets) do
-		print(('tileSetInfo %02x'):format(i-1))
+	for _,tileSet in ipairs(self.tileSets) do
+		print(('tileSetInfo %02x'):format(tileSet.index))
 		print('   palette: {'..tileSet.palette:mapi(function(rgb) 
 				return '{'..table.mapi(rgb,function(ch) 
 					return ('%02x'):format(ch) 
 				end):concat','..'}' end
 			):concat', '..'}')
 		print(' rooms used: '..tileSet.roomStates:mapi(function(rs) return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index) end):concat', ')
+		print(' tileIndexes used: '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
 	end
 --]]
 end
@@ -3587,18 +3648,19 @@ end
 function SMMap:mapWritePLMs(roomBankWriteRanges)
 	local rom = self.rom
 
+	-- [inclusive, exclusive)
 	local plmWriteRanges = WriteRange({
-		{0x78000, 0x79193},     
+		{0x78000, 0x79194},
 		-- then comes 100 bytes of layer handling code
 		-- then rooms (see roomWriteRanges {0x791f8, 0x7b769})
 		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
-		{0x7c215, 0x7c8c6},
+		{0x7c215, 0x7c8c7},
 		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
 		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
-		{0x7e87f, 0x7e880},     -- a single plm_t 2-byte terminator ...
+--		{0x7e87f, 0x7e880},     -- a single plm_t 2-byte terminator ... why do I think this is overlapping with some other data?
 		
 		-- free space: 
-		{0x7e99b, 0x7ffff},     
+		{0x7e99b, 0x80000},     
 	}, 'plm_t')
 
 	-- [[ re-indexing the doors
@@ -4251,7 +4313,7 @@ function SMMap:mapWriteRoomBlocks()
 		ffi.copy(rom + roomBlockData.addr, data, ffi.sizeof(data))
 		--]=]
 		-- [=[ write back at a contiguous location
-		-- (don't forget to update all roomstate_t's roomBlockBank:roomBlockAddr's to point to this
+		-- (don't forget to update all roomstate_t's roomBlockAddr.bank:roomBlockAddr.addr's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
 		local fromaddr, toaddr = roomBlockWriteRanges:get(ffi.sizeof(data))
 
@@ -4261,10 +4323,10 @@ function SMMap:mapWriteRoomBlocks()
 		roomBlockData.addr = fromaddr
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			rs.obj.roomBlockBank = bit.rshift(roomBlockData.addr, 15) + 0x80 
-			rs.ptr.roomBlockBank = rs.obj.roomBlockBank
-			rs.obj.roomBlockAddr = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
-			rs.ptr.roomBlockAddr = rs.obj.roomBlockAddr
+			rs.obj.roomBlockAddr.bank = bit.rshift(roomBlockData.addr, 15) + 0x80 
+			rs.obj.roomBlockAddr.addr = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
+			rs.ptr.roomBlockAddr.bank = rs.obj.roomBlockAddr.bank
+			rs.ptr.roomBlockAddr.addr = rs.obj.roomBlockAddr.addr
 		end
 		--]=]
 
