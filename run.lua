@@ -233,14 +233,14 @@ function topc(bank, offset)
 
 banksRequested[bank] = true 
 	-- why only these banks? maybe I should be removing the top bit from the addr?
-	if bank == 0xb4 
-	or bank == 0x80	
+	if bank == 0x80	
 	or bank == 0x83		-- for doors.
 	or bank == 0x88
 --	or bank == 0x8e 	-- 
 	or bank == 0x8f		-- scroll and plm
 	or bank == 0x91
 	or bank == 0xa1
+	or bank == 0xb4 
 	or bank == 0xb9 or bank == 0xba	-- both for bg_t
 	or (bank >= 0xc2 and bank <= 0xce)	-- room block data
 	-- it's not all even banks ...

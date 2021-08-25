@@ -2348,7 +2348,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/0a: $07e795..$07e79d (tileSet_t)
 04/37: $07e79e..$07e7a6 (tileSet_t) ... 6233 bytes of padding ...
 --------------
-00/19: $080000..$080007 (bg_t) ... 99369 bytes of padding ...
+00/19: $080000..$07ffff (bg_t) ... 99377 bytes of padding ...
 --------------
      : $098431..$098432 (weapon damage) ... 20 bytes of padding ...
      : $098447..$098448 (weapon damage) ... 20 bytes of padding ...
@@ -2998,7 +2998,63 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $1a7380..$1a7493 (itemDrop_t x46) ... 6 bytes of padding ...
      : $1a749a..$1a74b7 (itemDrop_t x5) ... 133960 bytes of padding ...
 --------------
-     : $1c8000..$1ca633 (common room tile lz data x2) ... 244726 bytes of padding ...
+     : $1c8000..$1ca633 (common room tile lz data x2)
+02/05: $1ca634..$1ca713 (bg lz data)
+02/04: $1ca714..$1ca75d (bg lz data) ... 220 bytes of padding ...
+02/3c: $1ca83a..$1cac82 (bg lz data)
+02/29: $1cac83..$1caefe (bg lz data)
+02/03: $1caeff..$1cb2ef (bg lz data)
+02/41: $1cb2f0..$1cb6ba (bg lz data)
+02/36: $1cb6bb..$1cbba4 (bg lz data)
+02/44: $1cbba5..$1cbf3a (bg lz data)
+02/47: $1cbf3b..$1cc26e (bg lz data)
+02/24: $1cc26f..$1cc5c7 (bg lz data)
+02/1a: $1cc5c8..$1cc971 (bg lz data)
+01/00: $1cc972..$1ccd00 (bg lz data)
+01/12: $1ccd01..$1cce9e (bg lz data)
+01/04: $1cce9f..$1ccff7 (bg lz data)
+01/02: $1ccff8..$1cd1fa (bg lz data)
+01/03: $1cd1fb..$1cd38e (bg lz data)
+01/01: $1cd38f..$1cd3c4 (bg lz data)
+01/0d: $1cd3c5..$1cd3fa (bg lz data)
+01/0e: $1cd3fb..$1cd569 (bg lz data) ... 110 bytes of padding ...
+01/09: $1cd5d8..$1cd714 (bg lz data)
+01/20: $1cd715..$1cd99b (bg lz data) ... 2071 bytes of padding ...
+01/23: $1ce1b3..$1ce61b (bg lz data)
+01/25: $1ce61c..$1ce884 (bg lz data)
+01/28: $1ce885..$1ce94e (bg lz data) ... 305 bytes of padding ...
+01/22: $1cea80..$1cebc6 (bg lz data)
+01/34: $1cebc7..$1cee51 (bg lz data)
+01/2d: $1cee52..$1cf11c (bg lz data) ... 171 bytes of padding ...
+00/30: $1cf1c8..$1cf70c (bg lz data) ... 578 bytes of padding ...
+01/26: $1cf94f..$1cfa37 (bg lz data) ... 1606 bytes of padding ...
+--------------
+00/0a: $1d007e..$1d02c3 (bg lz data)
+00/06: $1d02c4..$1d0436 (bg lz data)
+00/02: $1d0437..$1d05b9 (bg lz data)
+00/18: $1d05ba..$1d06fb (bg lz data)
+00/16: $1d06fc..$1d077f (bg lz data)
+00/13: $1d0780..$1d0a48 (bg lz data)
+00/17: $1d0a49..$1d0acc (bg lz data)
+00/0f: $1d0acd..$1d0dbc (bg lz data)
+00/1c: $1d0dbd..$1d0de6 (bg lz data)
+03/01: $1d0de7..$1d1022 (bg lz data) ... 867 bytes of padding ...
+03/05: $1d1386..$1d188c (bg lz data)
+03/02: $1d188d..$1d1c34 (bg lz data)
+03/0b: $1d1c35..$1d1f11 (bg lz data)
+03/04: $1d1f12..$1d2118 (bg lz data)
+03/03: $1d2119..$1d2474 (bg lz data)
+04/07: $1d2475..$1d269e (bg lz data)
+04/1a: $1d269f..$1d2a77 (bg lz data)
+05/04: $1d2a78..$1d2def (bg lz data)
+05/03: $1d2df0..$1d2fe5 (bg lz data)
+05/0b: $1d2fe6..$1d336a (bg lz data)
+05/0e: $1d336b..$1d35d7 (bg lz data)
+05/0f: $1d35d8..$1d39a2 (bg lz data)
+05/11: $1d39a3..$1d3dd8 (bg lz data)
+05/0a: $1d3dd9..$1d4229 (bg lz data)
+06/01: $1d422a..$1d44bb (bg lz data)
+00/33: $1d44bc..$1d461f (bg lz data) ... 203786 bytes of padding ...
 --------------
 06/00: $20622a..$208da8 (tileSet mode7 lz data)
 --------------

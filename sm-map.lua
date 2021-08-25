@@ -88,7 +88,7 @@ local roomselect3_t = struct'roomselect3_t'{
 }
 
 local addr24_t = struct'addr24_t'{
-	{addr = 'uint16_t'},
+	{ofs = 'uint16_t'},
 	{bank = 'uint8_t'},
 }
 
@@ -118,7 +118,7 @@ local roomstate_t = struct'roomstate_t'{
 	{roomvarAddr = 'uint16_t'},				
 	{fx2Addr = 'uint16_t'},					-- TODO - aka 'main asm ptr'
 	{plmAddr = 'uint16_t'},
-	{bgdataAddr = 'uint16_t'},
+	{bgAddr = 'uint16_t'},				-- offset to bg_t's
 	{layerHandlingAddr = 'uint16_t'},
 }
 
@@ -185,18 +185,81 @@ local fx1_t = struct'fx1_t'{
 	{last = 'uint16_t'},					-- 0xe
 }
 
+
+--[[
+based on header vs spacing between bg_t's:
+header=0x0004 => sizeof=27 (overwhelmingly) ... except for $07e248 and $07e25a which have sizeof=18
+	on those two, sizeof=18, and ofs[17:16:15]=00:00:10
+	on the rest, ofs[15]=
+
+header=0x000e => 3 instances: sizeof is 68, 68, 24. ofs[15]=0x80 always.  maybe this is sizeof=24 and there is an extra 17 bytes after the first two?
+here's the header==0x000e instances:
+ $07b76a: {header=000e, addr={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089} rooms: 00/00 00/00 00/00 00/00
+ $07b7ae: {header=000e, addr={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1} rooms: 00/05
+ $07b7f2: {header=000e, addr={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000} rooms: 00/09
+
+size==0x44 for ofs[5] = 0xc1, ofs[0x16]=0x0e, size==0x18 for ofs[5] = 0xd9, ofs[0x16]=0x00
+
+--]]
 local bg_t = struct'bg_t'{
 	{header = 'uint16_t'},
-	{addr = 'addr24_t'},
+	{addr = 'addr24_t'},		-- address to ... what? 
 	-- skip the next 14 bytes
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
 	{unknown3 = 'uint16_t'},
+-- sometimes bg_t's break here before the next bg_t
 	{unknown4 = 'uint16_t'},
 	{unknown5 = 'uint16_t'},
 	{unknown6 = 'uint16_t'},
 	{unknown7 = 'uint16_t'},
+	{unknown8 = 'uint16_t'},
+	{unknown9 = 'uint16_t'},
+	{unknowna = 'uint16_t'},
+	{unknownb = 'uint16_t'},
 }
+assert(ffi.sizeof'bg_t' == 0x1b)
+
+--[[
+header=0x0002 => sizeof=11 always (5 instances)
+ $07b80a: {header=0002, addr={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000} rooms: 00/11
+ $07b84d: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
+ $07b858: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
+ $07e0fd: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 03/0a
+ $07e108: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 04/37
+--]]
+-- struct of bg_t when header==0x0002
+local bg02_t = struct'bg02_t'{
+	{header = 'uint16_t'},
+	{addr = 'addr24_t'},
+	{unknown1 = 'uint16_t'},
+	{unknown2 = 'uint16_t'},
+	{unknown3 = 'uint16_t'},
+}
+assert(ffi.sizeof'bg02_t' == 11)
+
+--[[
+header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 13 (ofs[15]=0x00)
+ $07b815: {header=0008, addr={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004} rooms: 01/2f
+ 	... 43 from head to next bg_t
+ $07b840: {header=0008, addr={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000} rooms: 01/2f
+	... 13 from head to next bg_t
+--]]
+--local bg08_t = struct'bg08_t'{
+--}
+
+--[[
+header=0x000a => 2 instances, both have sizeof=4
+ $07e113: {header=000a, zero=0000} rooms: 04/37 03/0a
+ $07e1d4: {header=000a, zero=0000} rooms: 06/00 06/00
+--]]
+-- struct of bg_t when header==0x000a
+local bg0a_t = struct'bg0a_t'{
+	{header = 'uint16_t'},		-- always 0x000a
+	{zero = 'uint16_t'},		-- always 0x0000
+}
+assert(ffi.sizeof'bg0a_t' == 4)
+
 
 -- described in section 12 of metroidconstruction.com/SMMM
 -- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
@@ -828,8 +891,8 @@ if done then break end
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.bgdataAddr > 0x8000 then
-			local addr = topc(self.bgBank, rs.obj.bgdataAddr)
+		if rs.obj.bgAddr > 0x8000 then
+			local addr = topc(self.bgBank, rs.obj.bgAddr)
 			while true do
 				local ptr = ffi.cast('bg_t*', rom+addr)
 				
@@ -838,26 +901,38 @@ if done then break end
 -- in fact, I never read more than 1 bg, and sometimes I read 0
 --[[
 				if ptr.header ~= 0x04 then
-					addr = addr + 8
 					break
 				end
 --]]
-				-- so bgs[i].addr is the address where bgs[i].ptr was found
-				-- and bgs[i].ptr.addr.bank,addr points to where bgs[i].data was found
-				-- a little confusing
+-- so intsead I just added the extra 8 bytes to the struct
+-- so bgs[i].addr is the address where bgs[i].ptr was found
+-- and bgs[i].ptr.addr.bank:ofs points to where bgs[i].data was found
+-- a little confusing
+-- sure enough, using header~=0x04, using sizeof(bg_t)==0x19 as per tewtal/SMLib as condition means we will load either 0 or 1 bg_t
+-- it also means we have paddings of -6 or 2 between bg_t's
+-- hinting further that the bg_t should be of size 0x13 or 0x1b depending on some condition that i'm not finding
 				local bg = self:mapAddBG(addr)
 				bg.rooms:insert(m)
 				rs.bgs:insert(bg)
+
+				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
+				if ptr.header == 4 then
+					local bgDataAddr = topc(ptr.addr.bank, ptr.addr.ofs)
+					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
+					bg.data = bgData
+					bg.dataAddr = bgDataAddr
+					bg.dataCompressedSize = compressedSize 
+				end
+				
 				addr = addr + ffi.sizeof'bg_t'
 			
-				addr=addr+8
 				do break end
 			end
-		
+
 			--[[ load data
 			-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 			for _,bg in ipairs(rs.bgs) do
-				local addr = topc(bg.ptr.addr.bank, bg.ptr.addr.addr)
+				local addr = topc(bg.ptr.addr.bank, bg.ptr.addr.ofs)
 				local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
 				bg.data = decompressed
 				mem:add(addr, compressedSize, 'bg data', m)
@@ -873,7 +948,7 @@ if done then break end
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
 		
-		local addr = topc(rs.obj.roomBlockAddr.bank, rs.obj.roomBlockAddr.addr)
+		local addr = topc(rs.obj.roomBlockAddr.bank, rs.obj.roomBlockAddr.ofs)
 		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
 	end
 
@@ -1133,9 +1208,13 @@ function SMMap:mapAddEnemyGFXSet(addr)
 end
 
 
--- table of all unique bgs.
--- each entry has .addr and .ptr = (bg_t*)(rom+addr)
--- doesn't create duplicates -- returns a previous copy if it exists
+--[[
+table of all unique bgs.
+each entry has .addr and .ptr = (bg_t*)(rom+addr)
+doesn't create duplicates -- returns a previous copy if it exists
+
+b9:a634 -> $1ca634
+--]]
 function SMMap:mapAddBG(addr)
 	local _,bg = self.bgs:find(nil, function(bg) return bg.addr == addr end)
 	if bg then return bg end
@@ -1145,6 +1224,7 @@ function SMMap:mapAddBG(addr)
 		-- list of all m's that use this bg
 		rooms = table(),
 	}
+	bg.obj = ffi.new('bg_t', bg.ptr[0])
 	self.bgs:insert(bg)
 	return bg
 end
@@ -1763,8 +1843,8 @@ function SMMap:mapInit()
 
 
 -- [[
-	local function loRomToOffset(bank, address)
-		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(address,0x7fff))
+	local function loRomToOffset(bank, offset)
+		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
 	end
 
 
@@ -1786,7 +1866,7 @@ function SMMap:mapInit()
 		tileSet.obj = ffi.new('tileSet_t', tileSet.ptr[0])
 		-- have each room write keys here coinciding blocks
 		tileSet.roomStates = table()	-- which roomStates use this tileset
-		local paletteOffset = topc(tileSet.obj.palette.bank, tileSet.obj.palette.addr)
+		local paletteOffset = topc(tileSet.obj.palette.bank, tileSet.obj.palette.ofs)
 		local data, compressedSize = lz.decompress(rom, paletteOffset, 0x200)
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
@@ -1811,17 +1891,17 @@ function SMMap:mapInit()
 		-- TODO instead of determining by roomstate info, determine by which tileSet_t it is
 		-- that way we don't get so many multiples of the same tileSet_t's
 
-		local bufferOffset = loRomToOffset(tileSet.obj.tile.bank, tileSet.obj.tile.addr)
-		local buffer, bufferCompressedSize = lz.decompress(rom, bufferOffset, 0x10000)	-- TODO how big?
+		local bufferAddr = loRomToOffset(tileSet.obj.tile.bank, tileSet.obj.tile.ofs)
+		local buffer, bufferCompressedSize = lz.decompress(rom, bufferAddr, 0x10000)	-- TODO how big?
 		local bufferSize = ffi.sizeof(buffer)
 		
 		-- funny thing, these only seem to be writing for ceres space station anyways
 		-- so I wonder if that mode7 tileSetIndex if condition is even needed
-		tileSet.mode7addr = bufferOffset
+		tileSet.mode7addr = bufferAddr
 		tileSet.mode7compressedSize = bufferCompressedSize
 		
 		if tileSetIndex >= 0x11 and tileSetIndex <= 0x14 then
-			local mode7Data, mode7Offset = buffer, bufferOffset
+			local mode7Data = buffer
 			
 			tileSet.mode7TileSet = {}
 			for i=0,255 do
@@ -1941,7 +2021,7 @@ function SMMap:mapInit()
 			ffi.copy(buffer, self.commonRoomTile2Data, bufferSize)
 		end
 		do
-			local furtherAddr = loRomToOffset(tileSet.obj.further.bank, tileSet.obj.further.addr)
+			local furtherAddr = loRomToOffset(tileSet.obj.further.bank, tileSet.obj.further.ofs)
 			local furtherBuffer, furtherCompressedSize = lz.decompress(rom, furtherAddr, 0x10000)
 			local furtherBufferSize = ffi.sizeof(furtherBuffer)
 			tileSet.subtileAddr = furtherAddr 
@@ -3434,7 +3514,7 @@ function SMMap:mapPrint()
 			print('   enemyGFXSet: '..tolua(rs.enemyGFXSet.name))	--:match'\0*(.*)')
 			for _,enemyGFX in ipairs(rs.enemyGFXSet.enemyGFXs) do
 				print('    enemyGFX_t: '
-					..((self.enemyForAddr[enemyGFX.enemyAddr] or {}).name or '')
+					..tolua((self.enemyForAddr[enemyGFX.enemyAddr] or {}).name or '')
 					..': '..enemyGFX)
 			end
 			for _,fx1 in ipairs(rs.fx1s) do
@@ -3546,7 +3626,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			end
 			
 			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
-			mem:add(topc(self.bgBank, rs.obj.bgdataAddr), #rs.bgs * ffi.sizeof'bg_t' + 8, 'bg_t', m)
+			mem:add(topc(self.bgBank, rs.obj.bgAddr), #rs.bgs * ffi.sizeof'bg_t', 'bg_t', m)
 
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
 			local code = readCode(rom, addr, 100)
@@ -3600,10 +3680,22 @@ function SMMap:mapBuildMemoryMap(mem)
 			end
 		end
 	end
+	
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks lz data', roomBlockData.rooms[1])
 	end
 
+	for _,bg in ipairs(self.bgs) do
+		local room = #bg.rooms > 0 and bg.rooms[1] or nil
+		if bg.data then
+			mem:add(
+				bg.dataAddr,
+				bg.dataCompressedSize,
+				'bg lz data',
+				room
+			)
+		end
+	end
 
 	mem:add(
 		commonRoomTileAddr,
@@ -4313,7 +4405,7 @@ function SMMap:mapWriteRoomBlocks()
 		ffi.copy(rom + roomBlockData.addr, data, ffi.sizeof(data))
 		--]=]
 		-- [=[ write back at a contiguous location
-		-- (don't forget to update all roomstate_t's roomBlockAddr.bank:roomBlockAddr.addr's to point to this
+		-- (don't forget to update all roomstate_t's roomBlockAddr.bank:roomBlockAddr.ofs's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
 		local fromaddr, toaddr = roomBlockWriteRanges:get(ffi.sizeof(data))
 
@@ -4324,9 +4416,9 @@ function SMMap:mapWriteRoomBlocks()
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			rs.obj.roomBlockAddr.bank = bit.rshift(roomBlockData.addr, 15) + 0x80 
-			rs.obj.roomBlockAddr.addr = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
+			rs.obj.roomBlockAddr.ofs = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
 			rs.ptr.roomBlockAddr.bank = rs.obj.roomBlockAddr.bank
-			rs.ptr.roomBlockAddr.addr = rs.obj.roomBlockAddr.addr
+			rs.ptr.roomBlockAddr.ofs = rs.obj.roomBlockAddr.ofs
 		end
 		--]=]
 
@@ -4390,6 +4482,8 @@ function SMMap:mapWrite()
 	
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
+
+	-- TODO recompress and write bg_t's
 
 	roomBankWriteRanges.name = 'room_t'
 	self:mapWriteRooms(roomBankWriteRanges)
