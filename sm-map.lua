@@ -101,7 +101,21 @@ local roomstate_t = struct'roomstate_t'{
 	{fx1Addr = 'uint16_t'},				-- $83
 	{enemySpawnAddr = 'uint16_t'},
 	{enemyGFXAddr = 'uint16_t'},
-	{layer2scrollAddr = 'uint16_t'},	-- TODO
+	
+	--[[
+	From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
+			
+		The layer 2 scroll X/Y is a value that determines whether or not custom layer 2 is used, and how fast layer 2 scrolls compared to layer 1 (parallax effect)
+			In binary, let layer 2 scroll X/Y = sssssssb
+			If b = 1, then the library background is used, otherwise custom layer 2 (defined in level data) is used
+			s = 0 is a special case that depends on b
+				If b = 0 (custom layer 2), then layer 2 and layer 1 scroll together at the same speed (like an extension of layer 1)
+				If b = 1 (library background), then layer 2 does not scroll at all (static image background)
+			Otherwise (if s != 0), layer 2 scroll speed = (layer 1 scroll speed) * (s / 0x80)
+	
+	... I'm really not sure what this means.  Not sure if the 'sssb' means 'b' is bit0 or bit7 ... or bit15 since it's referering to a uint16_t .... smh 
+	--]]
+	{layer2scrollXY = 'uint16_t'},	-- TODO
 	
 	--[[
 	scroll is either a constant, or an offset in bank $8f to 1 byte per map block
@@ -923,10 +937,13 @@ if done then break end
 				rs.bgs:insert(bg)
 
 				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
+				-- but it looks like any other has an address, except for header==0xa
+				-- though who knows what it points to  ... decompressing all other header types fails
 				if ptr.header == 4 then
 					local bgDataAddr = topc(ptr.addr24.bank, ptr.addr24.ofs)
 					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
 					bg.data = bgData
+					bg.dataSize = ffi.sizeof(bgData)
 					bg.dataAddr = bgDataAddr
 					bg.dataCompressedSize = compressedSize 
 				end
@@ -936,6 +953,7 @@ if done then break end
 				do break end
 			end
 
+			-- decode bg data this after setting roomstate_t's tileSet objects
 			--[[ load data
 			-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 			for _,bg in ipairs(rs.bgs) do
@@ -947,7 +965,7 @@ if done then break end
 			--]]
 		end
 	end
-
+		
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.layerHandlingAddr > 0x8000 then
 			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingAddr)
@@ -1009,6 +1027,52 @@ if done then break end
 		assert(tileSet.index == tileSetIndex)
 		rs:setTileSet(tileSet)
 	end
+
+
+-- [=[
+	-- now that tileSet is loaded, decode the bgdata
+	-- TODO how about grouping by unique bg_t + tileSet pairs?
+	-- to reduce redundant outputs
+	-- actually we can't do this for bgs that have multiple rs's / varying tileSet's
+	-- so do it upon decode
+	for _,rs in ipairs(m.roomStates) do
+		--[[
+		ok so what is bg.data?
+		i'm guessing it represents tileIndex's somehow, since the background seems to be stored in the tileData 
+		for example, in room 0-0a and 0-0c (0-0c is the far right down-lift to maridia, 0-0a is the vertical hallway that leads to the crab room that leads to it)
+		the bgAddr is b87e, the header is 0004
+		the tileSet of these rooms is 00
+		the bg dataAddr is 0x1cd715
+		the bg dataSize is 0x800 / 2048 bytes
+		the bg data looks like it is uint16_t's, in rows of 0x20 uint16_t's, so 0x40 bytes per row, and 0x20 rows of that makes 0x800 bytes
+		so it is data[32][32][2] 
+		... this is mode7 data, right?
+		if so then it is probably more like:
+		data[16][16][8], with each 8 bytes = 4 uint16's of the 4 subtile corners
+		--]]
+		for _,bg in ipairs(rs.bgs) do
+			if bg.obj.header == 4 then
+				assert(rs.tileSet.tileData.subtileVec)
+				-- most are dataSize==0x800 <=> 16x16x8
+				-- some are dataSize==0x1000 <=> 32x16x8 or something
+				local numTiles = bg.dataSize / 8
+				bg.dataBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * numTiles)
+				self:decodeSubtileBmp(
+					bg.dataBmp,
+					bg.data,
+					rs.tileSet.tileData.subtileVec.v
+						-- skip common subtile stuff?
+						-- but it seems the common stuff is at the end of the subtileVec already ... hmm
+						--+ 0x3000	
+						-- also this causes segfaults
+					,
+					numTiles
+				)
+			end
+		end
+	end
+--]=]
+
 
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
@@ -1831,6 +1895,49 @@ function SMMap:mapAddLayerHandling(addr)
 	return layerHandling
 end
 
+--[[
+dst should be the destination indexed bitmap
+src should be tileData.tileVec.v, or whatever else
+subtiles should be tileData.subtileVec.v
+count should be tileData.tileVec.size/8 or whatever else
+
+dst = destination, in uint8_t[count][16][16]
+src = source tile data, in uint16_t[count][4] ... for each 4 subtile corners
+subtiles = source subtile data ... idk how big this should be ... usu 0x4800 or 0x8000 incl common data
+count = count
+--]]
+function SMMap:decodeSubtileBmp(dst, src, subtiles, count)
+	for tileIndex=0,count-1 do
+		for xofs=0,1 do
+			for yofs=0,1 do
+				local x = bit.lshift(xofs, 3)
+				local y = bit.lshift(yofs, 3)
+				
+				local tileInfo = ffi.cast('uint16_t*', src)[bit.bor(xofs, bit.lshift(yofs, 1))]
+				
+				local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
+				local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
+				local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
+				for ty=0,7 do
+					for tx=0,7 do
+						local subtileIndex = bit.bor(bit.bxor(tx, xMask), bit.lshift(bit.bxor(ty, yMask), 3), bit.lshift(bit.band(tileInfo, 0x3ff), 6))
+						local lo = subtiles[bit.rshift(subtileIndex, 1)]
+						lo = bit.band(bit.rshift(lo, bit.lshift(bit.band(subtileIndex,1),2)), 0xf)
+						local dstIndex = x + tx + blockSizeInPixels * (y + ty)
+						local paletteIndex = bit.bor(hi, lo)
+						dst[dstIndex] = paletteIndex
+					end
+				end
+			end
+		end
+
+		src = src + 8
+		dst = dst + blockSizeInPixels * blockSizeInPixels
+	end
+end
+
+
+
 function SMMap:mapReadTileGfx()
 	local rom = self.rom
 
@@ -1905,6 +2012,8 @@ print('self.commonRoomTileVec size', ('$%x'):format(self.commonRoomTileVec.size)
 		do
 			local buffer
 			buffer, tileData.subtileCompressedSize = lz.decompress(rom, tileData.subtileAddr, 0x10000)	-- TODO how big?
+-- stored for debugging only
+tileData.subtileBufferSize = ffi.sizeof(buffer)
 			subtileVec:insert(subtileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
 		end
 
@@ -1981,6 +2090,7 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 		local word = ffi.new('uint32_t[1]')
 		for i=0,subtileVec.size-1,32 do
 			ffi.copy(copy, subtileVec.v + i, 32)
+			-- in place convert, row by row ... why are we converting ?
 			ffi.fill(subtileVec.v + i, 32, 0)
 			for y=0,7 do
 				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
@@ -2015,48 +2125,26 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 		do
 			local buffer
 			buffer, tileData.tileCompressedSize = lz.decompress(rom, tileData.tileAddr, 0x10000)
+-- stored for debugging only
+tileData.tileBufferSize = ffi.sizeof(buffer)
 			tileVec:insert(tileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
 		end
 -- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 print('tileVec.size', ('$%x'):format(tileVec.size))
-		local src = tileVec.v
 		tileData.tileGfxCount = bit.rshift(tileVec.size, 3)
 		-- store as 16 x 16 x index rgb
 		tileData.tileGfxBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * tileData.tileGfxCount)
-		local dst = tileData.tileGfxBmp
-		for tileIndex=0,tileData.tileGfxCount-1 do
-			for xofs=0,1 do
-				for yofs=0,1 do
-					local x = bit.lshift(xofs, 3)
-					local y = bit.lshift(yofs, 3)
-					
-					local tileInfo = ffi.cast('uint16_t*', src)[bit.bor(xofs, bit.lshift(yofs, 1))]
-					
-					local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
-					local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
-					local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
-					for ty=0,7 do
-						for tx=0,7 do
-							local subtileIndex = bit.bor(bit.bxor(tx, xMask), bit.lshift(bit.bxor(ty, yMask), 3), bit.lshift(bit.band(tileInfo, 0x3ff), 6))
-							local lo = subtileVec.v[bit.rshift(subtileIndex, 1)]
-							lo = bit.band(bit.rshift(lo, bit.lshift(bit.band(subtileIndex,1),2)), 0xf)
-							local dstIndex = x + tx + blockSizeInPixels * (y + ty)
-							local paletteIndex = bit.bor(hi, lo)
-							dst[dstIndex] = paletteIndex
-						end
-					end
-				end
-			end
-	
-			src = src + 8
-			dst = dst + blockSizeInPixels * blockSizeInPixels
-		end
-		--[[
-		next goal:
-		if we are tracking indexes used via tileset, also track indexes used per referenced decompressed region by the tilesets
-		speaking of which, how about decompressing them into color table images separate of palette?  not til I find a guaranteed clear color, or alpha mask in palettes.
-		--]]
 
+		self:decodeSubtileBmp(
+			tileData.tileGfxBmp,
+			tileVec.v,
+			subtileVec.v,
+			tileData.tileGfxCount
+		)
+
+		-- bg_t's need this
+		-- ... will they need this, or just the non-common portion of it?
+		tileData.subtileVec = subtileVec
 
 		self.tileDatas:insert(tileData)
 		return tileData
@@ -3216,6 +3304,55 @@ function SMMap:mapSaveImage(filenamePrefix)
 				imgused:save('tilegfx used/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
 			end
 		end
+		for _,m in ipairs(self.rooms) do
+			for _,rs in ipairs(m.roomStates) do
+				if rs.tileSet then
+					for _,bg in ipairs(rs.bgs) do
+						if bg.dataBmp then
+							local fn = ('bgs/%02x-%02x-%x.png'):format(
+								m.obj.region,
+								m.obj.index,
+								ffi.cast('uint8_t*', rs.ptr) - self.rom
+							)
+							local numTiles = bg.dataSize / 8
+							local tw = 16
+							local th = numTiles / tw
+							assert(tw * th == numTiles)
+							local dataIndexedBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * numTiles)
+							self:decodeSubtileBmp(
+								dataIndexedBmp,
+								bg.data,
+								rs.tileSet.tileData.subtileVec.v,
+								numTiles
+							)
+						
+							local img = Image(blockSizeInPixels * tw, blockSizeInPixels * th, 3, 'unsigned char')
+							for j=0,th-1 do
+								for i=0,tw-1 do
+									for y=0,blockSizeInPixels-1 do
+										for x=0,blockSizeInPixels-1 do
+											local dst = img.buffer + 3 * (
+												x + blockSizeInPixels * i
+												+ img.width * (y + blockSizeInPixels * j)
+											)
+											local paletteIndex = dataIndexedBmp[ 
+												x + blockSizeInPixels * y
+												+ blockSizeInPixels * blockSizeInPixels * (i + tw * j)
+											]
+											local rgb = rs.tileSet.palette + 4 * paletteIndex
+											dst[0] = math.floor(rgb[0]*255/31)
+											dst[1] = math.floor(rgb[1]*255/31)
+											dst[2] = math.floor(rgb[2]*255/31)
+										end
+									end
+								end
+							end
+							img:save(fn)
+						end
+					end
+				end
+			end
+		end
 	end
 end
 
@@ -3591,11 +3728,17 @@ function SMMap:mapPrint()
 	print("all bg_t's:")
 	self.bgs:sort(function(a,b) return a.addr < b.addr end)
 	for _,bg in ipairs(self.bgs) do
-		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0]
-			..' rooms: '..bg.rooms:map(function(m)
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0])
+		print('  rooms: '..bg.rooms:map(function(m)
 				return ('%02x/%02x'):format(m.obj.region, m.obj.index)
-			end):concat' '
-		)
+			end):concat' ')
+		if bg.data then
+			print('  dataSize: '..('$%x'):format(bg.dataSize))
+			print('  dataAddr: '..('$%x'):format(bg.dataAddr))
+			print('  data: '..range(0,bg.dataSize-1):mapi(function(i)
+					return ('%02x'):format(bg.data[i])
+				end):concat' ')
+		end
 	end
 
 	-- print room info
@@ -3723,7 +3866,9 @@ function SMMap:mapPrint()
 	print"all tileData's:"
 	for _,tileData in ipairs(self.tileDatas) do
 		print('  tileAddr='..('$%06x'):format(tileData.tileAddr))
+		print('  tileBufferSize='..('$%x'):format(tileData.tileBufferSize))
 		print('  subtileAddr='..('$%06x'):format(tileData.subtileAddr))
+		print('  subtileBufferSize='..('$%x'):format(tileData.subtileBufferSize))
 		print('  tileIndexes used = '..table.keys(tileData.tileIndexesUsed):sort():mapi(function(s)
 				return ('$%03x'):format(s)
 			end):concat', ')

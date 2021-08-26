@@ -650,4 +650,7 @@ if not config.randomizeItems and not config.randomizeItemsScavengerHunt then
 end
 print()
 
-print('banks requested: '..banksRequested:keys():map(function(bank) return ('$%02x'):format(bank) end):concat', ')
+print('banks requested: '..banksRequested:keys():sort():map(function(bank) return ('$%02x'):format(bank) end):concat', ')
+--[[ last result:
+banks requested: $80, $83, $86, $88, $8f, $91, $93, $9f, $a1, $b4, $b9, $ba, $c2, $c3, $c4, $c5, $c6, $c7, $c8, $c9, $ca, $cb, $cc, $cd, $ce, 
+--]]
