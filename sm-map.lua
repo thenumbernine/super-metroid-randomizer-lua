@@ -94,7 +94,7 @@ local addr24_t = struct'addr24_t'{
 }
 
 local roomstate_t = struct'roomstate_t'{
-	{roomBlockAddr = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
+	{roomBlockAddr24 = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
 	{tileSet = 'uint8_t'},				-- tile graphics data
 	{musicTrack = 'uint8_t'},
 	{musicControl = 'uint8_t'},
@@ -126,7 +126,7 @@ local roomstate_t = struct'roomstate_t'{
 -- plm = 'post-load modification'
 -- this is a non-enemy object in a map.
 local plm_t = struct'plm_t'{
-	{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemy_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
+	{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemyClass_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
 	{x = 'uint8_t'},
 	{y = 'uint8_t'},
 	{args = 'uint16_t'},
@@ -134,7 +134,7 @@ local plm_t = struct'plm_t'{
 
 -- this is a single spawn location of an enemy.
 local enemySpawn_t = struct'enemySpawn_t'{
-	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
+	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
 	{x = 'uint16_t'},
 	{y = 'uint16_t'},
 	{initGFX = 'uint16_t'},	-- init param / tilemaps / orientation
@@ -195,16 +195,16 @@ header=0x0004 => sizeof=27 (overwhelmingly) ... except for $07e248 and $07e25a w
 
 header=0x000e => 3 instances: sizeof is 68, 68, 24. ofs[15]=0x80 always.  maybe this is sizeof=24 and there is an extra 17 bytes after the first two?
 here's the header==0x000e instances:
- $07b76a: {header=000e, addr={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089} rooms: 00/00 00/00 00/00 00/00
- $07b7ae: {header=000e, addr={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1} rooms: 00/05
- $07b7f2: {header=000e, addr={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000} rooms: 00/09
+ $07b76a: {header=000e, addr24={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089} rooms: 00/00 00/00 00/00 00/00
+ $07b7ae: {header=000e, addr24={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1} rooms: 00/05
+ $07b7f2: {header=000e, addr24={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000} rooms: 00/09
 
 size==0x44 for ofs[5] = 0xc1, ofs[0x16]=0x0e, size==0x18 for ofs[5] = 0xd9, ofs[0x16]=0x00
 
 --]]
 local bg_t = struct'bg_t'{
 	{header = 'uint16_t'},
-	{addr = 'addr24_t'},		-- address to ... what? 
+	{addr24 = 'addr24_t'},		-- address to ... what? 
 	-- skip the next 14 bytes
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
@@ -223,16 +223,16 @@ assert(ffi.sizeof'bg_t' == 0x1b)
 
 --[[
 header=0x0002 => sizeof=11 always (5 instances)
- $07b80a: {header=0002, addr={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000} rooms: 00/11
- $07b84d: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
- $07b858: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
- $07e0fd: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 03/0a
- $07e108: {header=0002, addr={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 04/37
+ $07b80a: {header=0002, addr24={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000} rooms: 00/11
+ $07b84d: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
+ $07b858: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
+ $07e0fd: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 03/0a
+ $07e108: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 04/37
 --]]
 -- struct of bg_t when header==0x0002
 local bg02_t = struct'bg02_t'{
 	{header = 'uint16_t'},
-	{addr = 'addr24_t'},
+	{addr24 = 'addr24_t'},
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
 	{unknown3 = 'uint16_t'},
@@ -241,9 +241,9 @@ assert(ffi.sizeof'bg02_t' == 11)
 
 --[[
 header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 13 (ofs[15]=0x00)
- $07b815: {header=0008, addr={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004} rooms: 01/2f
+ $07b815: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004} rooms: 01/2f
  	... 43 from head to next bg_t
- $07b840: {header=0008, addr={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000} rooms: 01/2f
+ $07b840: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000} rooms: 01/2f
 	... 13 from head to next bg_t
 --]]
 --local bg08_t = struct'bg08_t'{
@@ -339,9 +339,9 @@ and that means i should try to decompress each into 16x16 bmps separately
 and store separately sets of which are being referenced, for optimizations sake
 --]]
 local tileSet_t = struct'tileSet_t'{
-	{tile = 'addr24_t'},
-	{subtile = 'addr24_t'},
-	{palette = 'addr24_t'},
+	{tileAddr24 = 'addr24_t'},
+	{subtileAddr24 = 'addr24_t'},
+	{paletteAddr24 = 'addr24_t'},
 }
 assert(ffi.sizeof'tileSet_t' == 9)
 
@@ -913,7 +913,7 @@ if done then break end
 --]]
 -- so intsead I just added the extra 8 bytes to the struct
 -- so bgs[i].addr is the address where bgs[i].ptr was found
--- and bgs[i].ptr.addr.bank:ofs points to where bgs[i].data was found
+-- and bgs[i].ptr.addr24.bank:ofs points to where bgs[i].data was found
 -- a little confusing
 -- sure enough, using header~=0x04, using sizeof(bg_t)==0x19 as per tewtal/SMLib as condition means we will load either 0 or 1 bg_t
 -- it also means we have paddings of -6 or 2 between bg_t's
@@ -924,7 +924,7 @@ if done then break end
 
 				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
 				if ptr.header == 4 then
-					local bgDataAddr = topc(ptr.addr.bank, ptr.addr.ofs)
+					local bgDataAddr = topc(ptr.addr24.bank, ptr.addr24.ofs)
 					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
 					bg.data = bgData
 					bg.dataAddr = bgDataAddr
@@ -932,7 +932,7 @@ if done then break end
 				end
 				
 				addr = addr + ffi.sizeof'bg_t'
-			
+				
 				do break end
 			end
 
@@ -955,7 +955,7 @@ if done then break end
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
 		
-		local addr = topc(rs.obj.roomBlockAddr.bank, rs.obj.roomBlockAddr.ofs)
+		local addr = topc(rs.obj.roomBlockAddr24.bank, rs.obj.roomBlockAddr24.ofs)
 		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
 	end
 
@@ -1881,20 +1881,23 @@ function SMMap:mapInit()
 		tileSet.obj = ffi.new('tileSet_t', tileSet.ptr[0])
 		-- have each room write keys here coinciding blocks
 		tileSet.roomStates = table()	-- which roomStates use this tileset
-		local paletteOffset = topc(tileSet.obj.palette.bank, tileSet.obj.palette.ofs)
-		local data, compressedSize = lz.decompress(rom, paletteOffset, 0x200)
+		-- what do I call this?  abs-addr (as opposed to 24-bit addrs)?  file-offset?
+		tileSet.paletteAddr = topc(tileSet.obj.paletteAddr24.bank, tileSet.obj.paletteAddr24.ofs)
+		local data, compressedSize = lz.decompress(rom, tileSet.paletteAddr, 0x200)
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
 		tileSet.paletteSize = bit.rshift(len,1)
-		tileSet.palette = ffi.new('uint8_t[?]', 3 * tileSet.paletteSize)
+		tileSet.palette = ffi.new('uint8_t[?]', 4 * tileSet.paletteSize)
 		local src = ffi.cast('uint16_t*', data)
+		local dst = tileSet.palette
 		for paletteIndex=0,tileSet.paletteSize-1 do
-			local dst = tileSet.palette + 3 * paletteIndex
 			dst[0] = bit.band(src[0], 0x1f)
 			dst[1] = bit.band(bit.rshift(src[0], 5), 0x1f)
 			dst[2] = bit.band(bit.rshift(src[0], 10), 0x1f)
+			dst[3] = bit.band(bit.rshift(src[0], 15), 0x01)	-- seems this is never set in any palettes...
 			-- isn't the 15th bit the alpha mask?
 			src = src + 1
+			dst = dst + 4
 		end
 
 
@@ -1913,7 +1916,7 @@ function SMMap:mapInit()
 
 
 		-- tileSet_t has 3 pointers in it: palette, tile, and subtile
-		-- paletteAddr is independent of roomstate_t
+		-- paletteAddr24 is independent of roomstate_t
 		-- but the other two are not, so, load them with the roomstate_t
 
 		-- here in the roomstate_t, load the tile data that coincides with the 
@@ -1924,7 +1927,7 @@ function SMMap:mapInit()
 		-- so I wonder if that mode7 tileSetIndex if condition is even needed
 		local subtileVec = vector'uint8_t'
 		do
-			tileSet.subtileAddr = loRomToOffset(tileSet.obj.subtile.bank, tileSet.obj.subtile.ofs)
+			tileSet.subtileAddr = loRomToOffset(tileSet.obj.subtileAddr24.bank, tileSet.obj.subtileAddr24.ofs)
 			local buffer
 			buffer, tileSet.subtileCompressedSize = lz.decompress(rom, tileSet.subtileAddr, 0x10000)	-- TODO how big?
 			subtileVec:insert(subtileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
@@ -1934,17 +1937,14 @@ function SMMap:mapInit()
 		-- for tileSet 0x11-0x14
 		-- tileSet 0x11, 0x12 = room 06/00
 		-- tileSet 0x13, 0x14 = room 06/05
-		-- for these rooms, the tileSet.tile addr points to the mode7 data
+		-- for these rooms, the tileSet.tileAddr points to the mode7 data
 		if tileSetIndex >= 0x11 and tileSetIndex <= 0x14 then
 print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
-			tileSet.mode7TileSet = ffi.new('uint8_t[?]', 3 * halfBlockSizeInPixels * halfBlockSizeInPixels * numMode7Tiles)
+			tileSet.mode7TileSet = ffi.new('uint8_t[?]', halfBlockSizeInPixels * halfBlockSizeInPixels * numMode7Tiles)
 			for mode7tileIndex=0,numMode7Tiles-1 do
 				for x=0,halfBlockSizeInPixels-1 do
 					for y=0,halfBlockSizeInPixels-1 do
-						local paletteIndex = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
-						local src = tileSet.palette + 3 * paletteIndex
-						local dst = tileSet.mode7TileSet + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
-						ffi.copy(dst, src, 3)
+						tileSet.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
 					end
 				end
 			end
@@ -1974,6 +1974,7 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 			ffi.fill(subtileVec.v, subtileVec.size, 0)
 			if tileSetIndex == 0x13 or tileSetIndex == 0x14 then	
 				ffi.copy(subtileVec.v, rom + 0x182000, 0x2000)
+-- TODO mem:add for this ... once I get these Ceres rooms to even show up, to verify this is even right			
 			end
 		else
 			--get subtiles
@@ -1993,8 +1994,10 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 		if loadCommonRoomElements then-- this is going after the subtile 0x5000 / 0x8000
 			subtileVec:insert(subtileVec:iend(), self.commonRoomSubtileVec:begin(), self.commonRoomSubtileVec:iend())
 		end
+		
 		local copy = ffi.new('uint8_t[?]', 32)
 		local line = ffi.new('uint8_t[?]', 4)
+		local word = ffi.new('uint32_t[1]')
 		for i=0,subtileVec.size-1,32 do
 			ffi.copy(copy, subtileVec.v+i, 32)
 			ffi.fill(subtileVec.v+i, 32, 0)
@@ -2002,14 +2005,22 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
 				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
 				for x=0,7 do
-					local shift = (7 - x) * 4
-					local word = 0	-- uint32_t
+					local shift = bit.lshift(7 - x, 2)
+					word[0] = 0	-- uint32_t
 					for j=0,3 do
-						word = word + bit.lshift(bit.band(line[j], 1), shift+j)
+						word[0] = bit.bor(
+							word[0],
+							bit.lshift(
+								bit.band(bit.rshift(line[j], x), 1),
+								bit.bor(shift, j)
+							)
+						)
 					end
 					for j=0,3 do
-						subtileVec.v[i+y*4+j] = bit.bor(subtileVec.v[i+y*4+j], bit.rshift(word, bit.band(bit.lshift(j, 3), 0xff)))
-						line[j] = bit.rshift(line[j], 1)
+						subtileVec.v[i+y*4+j] = bit.bor(
+							subtileVec.v[i + 4*y + j],
+							bit.rshift(word[0], bit.band(bit.lshift(j, 3), 0xff))
+						)
 					end
 				end
 			end
@@ -2021,7 +2032,7 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 			tileVec:insert(tileVec:iend(), self.commonRoomTileVec:begin(), self.commonRoomTileVec:iend())
 		end
 		do
-			tileSet.tileAddr = loRomToOffset(tileSet.obj.tile.bank, tileSet.obj.tile.ofs)
+			tileSet.tileAddr = loRomToOffset(tileSet.obj.tileAddr24.bank, tileSet.obj.tileAddr24.ofs)
 			local buffer
 			buffer, tileSet.tileCompressedSize = lz.decompress(rom, tileSet.tileAddr, 0x10000)
 			tileVec:insert(tileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
@@ -2056,7 +2067,7 @@ print('tileVec.size', ('$%x'):format(tileVec.size))
 							local dstIndex = x + tx + blockSizeInPixels * (y + ty)
 							if lo > 0 then
 								local paletteIndex = bit.bor(hi, lo)
-								local src = tileSet.palette + 3 * paletteIndex
+								local src = tileSet.palette + 4 * paletteIndex
 								dstp[0 + 3 * dstIndex] = math.floor(src[0]/31*255)
 								dstp[1 + 3 * dstIndex] = math.floor(src[1]/31*255)
 								dstp[2 + 3 * dstIndex] = math.floor(src[2]/31*255)
@@ -2073,6 +2084,11 @@ print('tileVec.size', ('$%x'):format(tileVec.size))
 			srcp = srcp + 8
 			dstp = dstp + 3 * blockSizeInPixels * blockSizeInPixels
 		end
+		--[[
+		next goal:
+		if we are tracking indexes used via tileset, also track indexes used per referenced decompressed region by the tilesets
+		speaking of which, how about decompressing them into color table images separate of palette?  not til I find a guaranteed clear color, or alpha mask in palettes.
+		--]]
 	end
 --]]
 
@@ -3040,7 +3056,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 		dumpworldTileFgImg:save('../dumpworld/zeta/maps/sm3/tile-fg.png')
 		dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
 	end
-
+	
 	-- for now only write out tile graphics for the non-randomized version
 	if filenamePrefix == 'map' then
 		for _,tileSet in ipairs(self.tileSets) do
@@ -3057,7 +3073,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.mode7TileSet + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
+								local src = tileSet.palette + 4 * tileSet.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)]
 								
 								-- TODO what about pixel/palette mask/alpha?
 								if src[0] > 0 or src[1] > 0 or src[2] > 0 then
@@ -3106,8 +3122,8 @@ function SMMap:mapSaveImage(filenamePrefix)
 						end
 					end
 				end
-				img:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
-				imgused:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
+				img:save('tilegfx/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
+				imgused:save('tilegfx used/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
 			end
 		end
 	end
@@ -3527,11 +3543,6 @@ function SMMap:mapPrint()
 			for _,bg in ipairs(rs.bgs) do
 				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
 			end
-			print('   palette: {'..range(rs.tileSet.paletteSize):mapi(function(i)
-					return '{'..range(3):mapi(function(j)
-						return ('%02x'):format(rs.tileSet.palette[j + 3 * i])
-					end):concat','..'}' end
-				):concat', '..'}')
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
@@ -3605,13 +3616,20 @@ function SMMap:mapPrint()
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
 		print(': '..tileSet.obj)
-		print('  palette: {'..range(tileSet.paletteSize):mapi(function(i)
-				return '{'..range(3):mapi(function(j)
-					return ('%02x'):format(tileSet.palette[j + 3 * i])
+		print('  tileAddr: '..('$%06x'):format(tileSet.tileAddr))
+		print('  subtileAddr: '..('$%06x'):format(tileSet.subtileAddr))
+		print('  paletteAddr: '..('$%06x'):format(tileSet.paletteAddr))
+		print('  palette: {'..range(0,tileSet.paletteSize-1):mapi(function(i)
+				return '{'..range(0,3):mapi(function(j)
+					return ('%02x'):format(tileSet.palette[j + 4 * i])
 				end):concat','..'}' end
 			):concat', '..'}')
-		print('  rooms used: '..tileSet.roomStates:mapi(function(rs) return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index) end):concat', ')
-		print('  tileIndexes used: '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
+		print('  rooms used: '..tileSet.roomStates:mapi(function(rs)
+				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
+			end):concat', ')
+		print('  tileIndexes used: '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
+				return ('$%03x'):format(s)
+			end):concat', ')
 	end
 --]]
 end
@@ -4407,7 +4425,7 @@ function SMMap:mapWriteRoomBlocks()
 		ffi.copy(rom + roomBlockData.addr, data, ffi.sizeof(data))
 		--]=]
 		-- [=[ write back at a contiguous location
-		-- (don't forget to update all roomstate_t's roomBlockAddr.bank:roomBlockAddr.ofs's to point to this
+		-- (don't forget to update all roomstate_t's roomBlockAddr24.bank:roomBlockAddr24.ofs's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
 		local fromaddr, toaddr = roomBlockWriteRanges:get(ffi.sizeof(data))
 
@@ -4417,10 +4435,10 @@ function SMMap:mapWriteRoomBlocks()
 		roomBlockData.addr = fromaddr
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			rs.obj.roomBlockAddr.bank = bit.rshift(roomBlockData.addr, 15) + 0x80 
-			rs.obj.roomBlockAddr.ofs = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
-			rs.ptr.roomBlockAddr.bank = rs.obj.roomBlockAddr.bank
-			rs.ptr.roomBlockAddr.ofs = rs.obj.roomBlockAddr.ofs
+			rs.obj.roomBlockAddr24.bank = bit.rshift(roomBlockData.addr, 15) + 0x80 
+			rs.obj.roomBlockAddr24.ofs = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
+			rs.ptr.roomBlockAddr24.bank = rs.obj.roomBlockAddr24.bank
+			rs.ptr.roomBlockAddr24.ofs = rs.obj.roomBlockAddr24.ofs
 		end
 		--]=]
 

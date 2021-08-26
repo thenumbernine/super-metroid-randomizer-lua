@@ -12,7 +12,7 @@ local typeinfo = {
 local function randomizeFieldExp(enemyPtr, fieldname)
 	if randomizeEnemyProps[fieldname] then
 		local value = expRand(table.unpack(randomizeEnemyProps[fieldname..'ScaleRange'])) * enemyPtr[0][fieldname]
-		local field = select(2, enemy_t_fields:find(nil, function(field) return next(field) == fieldname end))
+		local field = select(2, enemyClass_t_fields:find(nil, function(field) return next(field) == fieldname end))
 		local fieldtype = select(2, next(field))
 		local fieldrange = typeinfo[fieldtype].range
 		value = math.clamp(value, fieldrange[1], fieldrange[2])

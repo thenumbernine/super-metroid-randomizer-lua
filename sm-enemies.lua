@@ -68,7 +68,7 @@ local enemy2Start = topc(enemyBank, 0xf153)
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
 
 -- TODO is still a global...
-enemy_t_fields = table{
+enemyClass_t_fields = table{
 	{tileDataSize = 'uint16_t'},
 	{palette = 'uint16_t'},
 	{health = 'uint16_t'},
@@ -103,7 +103,7 @@ enemy_t_fields = table{
 	{weakness = 'uint16_t'},	-- pointer 
 	{name = 'uint16_t'},		-- pointer
 }
-struct'enemy_t'(enemy_t_fields)
+struct'enemyClass_t'(enemyClass_t_fields)
 
 
 struct'enemyShot_t'{
@@ -286,7 +286,7 @@ end
 local EnemyItemDropTable = class(EnemyAuxTable)
 
 EnemyItemDropTable.name = 'enemy item drop table'
-EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemy_t to get addresses from
+EnemyItemDropTable.enemyField = 'itemdrop'	-- field in enemyClass_t to get addresses from
 EnemyItemDropTable.structName = 'itemDrop_t'	-- structure at the address
 EnemyItemDropTable.fields = itemDrop_t_fields
 
@@ -705,7 +705,7 @@ function SMEnemies:enemiesInit()
 
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
-		enemy.ptr = ffi.cast('enemy_t*', rom + addr)
+		enemy.ptr = ffi.cast('enemyClass_t*', rom + addr)
 	end
 
 
@@ -860,12 +860,13 @@ function SMEnemies:enemiesPrint()
 	-- do the printing
 
 
-	print'enemies:'
+	print"enemyClass_t's:"
 	for i,enemy in ipairs(self.enemies) do
 		print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
 
 		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
-		
+	
+		-- wait, is the aiBank the aiBank or the paletteBank?
 		print(' palette='
 			..('$%02x'):format(enemy.ptr.aiBank)
 			..(':%04x'):format(enemy.ptr.palette))
@@ -909,7 +910,7 @@ end
 function SMEnemies:enemiesBuildMemoryMap(mem)
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
-		mem:add(addr, ffi.sizeof'enemy_t', 'enemy_t')
+		mem:add(addr, ffi.sizeof'enemyClass_t', 'enemyClass_t')
 		if enemy.ptr.name ~= 0 then
 			mem:add(topc(0xb4, enemy.ptr.name), 14, 'debug name')
 		end
