@@ -1831,36 +1831,21 @@ function SMMap:mapAddLayerHandling(addr)
 	return layerHandling
 end
 
-
-function SMMap:mapInit()
+function SMMap:mapReadTileGfx()
 	local rom = self.rom
 
-	-- check where the PLM bank is
-	-- TODO this will affect the items.lua addresses
-	self.plmBank = rom[0x204ac]
-	
-	self.rooms = table()
-	self.roomblocks = table()
-	self.bgs = table()
-	self.fx1s = table()
-	self.layerHandlings = table()
-	
-	self.plmsets = table()
-	self.enemySpawnSets = table()
-	self.enemyGFXSets = table()
-
-
--- [[
+	-- how is this different from topc() ?  some banks are 0x8000 off, some are equal
 	local function loRomToOffset(bank, offset)
 		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
 	end
-
 
 	do
 		local buffer
 		buffer, self.commonRoomSubtileCompressedSize = lz.decompress(rom, commonRoomSubtileAddr, 0x10000) --common room elements
 		self.commonRoomSubtileVec = vector'uint8_t'
 		self.commonRoomSubtileVec:insert(self.commonRoomSubtileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+		-- size is 0x3000
+print('self.commonRoomSubtileVec size', ('$%x'):format(self.commonRoomSubtileVec.size))
 	end
 
 	do
@@ -1868,6 +1853,213 @@ function SMMap:mapInit()
 		buffer, self.commonRoomTileCompressedSize = lz.decompress(rom, commonRoomTileAddr, 0x10000) --common room elements
 		self.commonRoomTileVec = vector'uint8_t'
 		self.commonRoomTileVec:insert(self.commonRoomTileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+		-- size is 0x800 ... so 256 8bit tile infos
+		-- in my 32-tiles-per-row pics, this is 8 rows
+print('self.commonRoomTileVec size', ('$%x'):format(self.commonRoomTileVec.size))
+	end
+
+	-- key by address, keep track of decompressed data, so that we don't have to re-decompress them
+	-- and so I can keep track of tilesets used per decompressed region (so I can remove unused ones)
+	--[[
+	EXCEPT for ceres space station (tileSet 0f-14)
+	 all tileSet_t tileAddr24's match with subtileAddr24's
+	for tileSets 0f-14 we find that 0f & 10, 11 & 12, and 13 & 14 have subtileAddr24 matching each other but separate of the rest of 0f-14
+	... and of those, rooms 11-12 are all black, and 13-14 are garbage
+
+	which means that for the rest, which do use common tilesets, i can save this
+	
+	how about I just cache tileData by tile:subtile?
+	--]]
+	self.tileDatas = table()
+	local function mapAddTileDataLoc(
+		tileAddr,
+		subtileAddr,
+		loadMode7,
+		loadCommonRoomElements
+	)
+		local key = ('%04x%04x'):format(tileAddr, subtileAddr)
+		
+		local _, tileData = self.tileDatas:find(nil, function(cmp)
+			return cmp.tileAddr == tileAddr and cmp.subtileAddr == subtileAddr
+		end)
+		if tileData then return tileData end
+		
+		local tileData = {
+			tileAddr = tileAddr,
+			subtileAddr = subtileAddr,
+			tileSets = table(),
+		}
+
+
+		-- tileSet_t has 3 pointers in it: palette, tile, and subtile
+		-- paletteAddr24 is independent of roomstate_t
+		-- but the other two are not, so, load them with the roomstate_t
+
+		-- here in the roomstate_t, load the tile data that coincides with the 
+		-- TODO instead of determining by roomstate info, determine by which tileSet_t it is
+		-- that way we don't get so many multiples of the same tileSet_t's
+
+		-- funny thing, these only seem to be writing for ceres space station anyways
+		-- so I wonder if that mode7 tileSetIndex if condition is even needed
+		local subtileVec = vector'uint8_t'
+		do
+			local buffer
+			buffer, tileData.subtileCompressedSize = lz.decompress(rom, tileData.subtileAddr, 0x10000)	-- TODO how big?
+			subtileVec:insert(subtileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+		end
+
+		-- for tileSet 0x11-0x14
+		-- tileSet 0x11, 0x12 = room 06/00
+		-- tileSet 0x13, 0x14 = room 06/05
+		-- for these rooms, the tileData.tileAddr points to the mode7 data
+		if loadMode7 then
+print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
+			tileData.mode7TileSet = ffi.new('uint8_t[?]', halfBlockSizeInPixels * halfBlockSizeInPixels * numMode7Tiles)
+			for mode7tileIndex=0,numMode7Tiles-1 do
+				for x=0,halfBlockSizeInPixels-1 do
+					for y=0,halfBlockSizeInPixels-1 do
+						tileData.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
+					end
+				end
+			end
+
+
+			-- who uses this?
+			-- just a few rooms in Ceres space station -- the rotating room, and the rotating image of Ridley flying away
+			tileData.mode7tiles = ffi.new('uint8_t[?]', mode7sizeIn8PixelTiles * mode7sizeIn8PixelTiles)
+			for i=0,mode7sizeIn8PixelTiles-1 do
+				for j=0,mode7sizeIn8PixelTiles-1 do
+					tileData.mode7tiles[i + mode7sizeIn8PixelTiles * j] = subtileVec.v[0 + 2 * (i + mode7sizeIn8PixelTiles * j)]
+				end
+			end
+			
+			--[[ vanilla ceres ridley room layer handling, when layerHandlingAddr == $c97b
+			used with roomstate_t's $07dd95, $07dd7b
+			which are only for room_t $07dd69 06/05 -- and they are the only roomstates_t's of that room, so I can check via room
+			roomstate_t $07dd95 => tileSet $14 ... used by no one else
+			roomstate_t $07dd7b => tileSet $13 ... used by no one else
+			so we can instead test by tileSetIndex here
+			
+			room 06/05's block tileIndex data is all value $1f anyways,
+			so regardless of fixing this tileset, we still have nothing to display.
+			--]]
+			--if rs.layerHandlingAddr == 0xc97b then
+			subtileVec:resize(0x5000)
+			ffi.fill(subtileVec.v, subtileVec.size, 0)
+			if isCeresRidleyRoom then
+				ffi.copy(subtileVec.v, rom + 0x182000, 0x2000)
+-- TODO mem:add for this ... once I get these Ceres rooms to even show up, to verify this is even right			
+			end
+		else
+			--get subtiles
+			-- also notice that the tileSets used for mode7 are not used for this (unless 06/05 happens to also be)
+			--[[
+			dansSuperMetroidLibrary has this resize, for tileSets other than $26 
+			... which is interseting because it means that, for tileSet $11 and $12 (only used in Ceres) we are sizing down from 0x8000 to 0x5000
+			otherwise, for tileSets $0-$10, $13-$19, $1b, $1c  this is resized up from 0x4800 to 0x5000
+			so ... should $11 and $12 be resized down?
+			--]]
+			-- all (except for $11-$14 above) tileSets are 0x4800 in size, except Kraid's room that alone uses tileSet $0a, which is 0x8000 in size
+			-- so the rest have to be sized up the extra 0x200 bytes ... how many 16x16 blocks is that?
+			--[[
+			TODO if this does go here then there should be an equivalent resizing of the tileVec
+			... however I'm not seeing it
+			... and as a result of the mismatch, you see the commonRoomElements get lost
+			but on the flip side, with the mismatch and garbled tileset texture,
+			the room does decode correctly
+			--]]	
+			if subtileVec.size < 0x5000 then
+				subtileVec:resize(0x5000)
+			end
+		end
+		if loadCommonRoomElements then-- this is going after the subtile 0x5000 / 0x8000
+			subtileVec:insert(subtileVec:iend(), self.commonRoomSubtileVec:begin(), self.commonRoomSubtileVec:iend())
+		end
+		
+		local copy = ffi.new('uint8_t[?]', 32)
+		local line = ffi.new('uint8_t[?]', 4)
+		local word = ffi.new('uint32_t[1]')
+		for i=0,subtileVec.size-1,32 do
+			ffi.copy(copy, subtileVec.v + i, 32)
+			ffi.fill(subtileVec.v + i, 32, 0)
+			for y=0,7 do
+				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
+				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
+				for x=0,7 do
+					local shift = bit.lshift(7 - x, 2)
+					word[0] = 0	-- uint32_t
+					for j=0,3 do
+						word[0] = bit.bor(
+							word[0],
+							bit.lshift(
+								bit.band(bit.rshift(line[j], x), 1),
+								bit.bor(shift, j)
+							)
+						)
+					end
+					for j=0,3 do
+						subtileVec.v[j + 4*y + i] = bit.bor(
+							subtileVec.v[j + 4*y + i],
+							bit.rshift(word[0], bit.band(bit.lshift(j, 3), 0xff))
+						)
+					end
+				end
+			end
+		end
+
+
+		local tileVec = vector'uint8_t'
+		if loadCommonRoomElements then
+			tileVec:insert(tileVec:iend(), self.commonRoomTileVec:begin(), self.commonRoomTileVec:iend())
+		end
+		do
+			local buffer
+			buffer, tileData.tileCompressedSize = lz.decompress(rom, tileData.tileAddr, 0x10000)
+			tileVec:insert(tileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+		end
+-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
+print('tileVec.size', ('$%x'):format(tileVec.size))
+		local src = tileVec.v
+		tileData.tileGfxCount = bit.rshift(tileVec.size, 3)
+		-- store as 16 x 16 x index rgb
+		tileData.tileGfxBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * tileData.tileGfxCount)
+		local dst = tileData.tileGfxBmp
+		for tileIndex=0,tileData.tileGfxCount-1 do
+			for xofs=0,1 do
+				for yofs=0,1 do
+					local x = bit.lshift(xofs, 3)
+					local y = bit.lshift(yofs, 3)
+					
+					local tileInfo = ffi.cast('uint16_t*', src)[bit.bor(xofs, bit.lshift(yofs, 1))]
+					
+					local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
+					local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
+					local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
+					for ty=0,7 do
+						for tx=0,7 do
+							local subtileIndex = bit.bor(bit.bxor(tx, xMask), bit.lshift(bit.bxor(ty, yMask), 3), bit.lshift(bit.band(tileInfo, 0x3ff), 6))
+							local lo = subtileVec.v[bit.rshift(subtileIndex, 1)]
+							lo = bit.band(bit.rshift(lo, bit.lshift(bit.band(subtileIndex,1),2)), 0xf)
+							local dstIndex = x + tx + blockSizeInPixels * (y + ty)
+							local paletteIndex = bit.bor(hi, lo)
+							dst[dstIndex] = paletteIndex
+						end
+					end
+				end
+			end
+	
+			src = src + 8
+			dst = dst + blockSizeInPixels * blockSizeInPixels
+		end
+		--[[
+		next goal:
+		if we are tracking indexes used via tileset, also track indexes used per referenced decompressed region by the tilesets
+		speaking of which, how about decompressing them into color table images separate of palette?  not til I find a guaranteed clear color, or alpha mask in palettes.
+		--]]
+
+
+		self.tileDatas:insert(tileData)
+		return tileData
 	end
 
 	-- load all the tileset address info that is referenced by per-room stuff
@@ -1887,6 +2079,7 @@ function SMMap:mapInit()
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
 		tileSet.paletteSize = bit.rshift(len,1)
+		assert(tileSet.paletteSize == 128)	-- always true
 		tileSet.palette = ffi.new('uint8_t[?]', 4 * tileSet.paletteSize)
 		local src = ffi.cast('uint16_t*', data)
 		local dst = tileSet.palette
@@ -1910,188 +2103,63 @@ function SMMap:mapInit()
 		room $04: $0f $10
 		room $05: $13 $14
 		... all are only used in region 6
+	
+		rooms used:
+		tileSet index $0f: 06/01, 06/02, 06/03, 06/04
+		tileSet index $10: 06/01, 06/02, 06/03, 06/04
+		tileSet index $11: 06/00
+		tileSet index $12: 06/00
+		tileSet index $13: 06/05
+		tileSet index $14: 06/05
+		
+		so there you have it,
+		ceres rooms is 1:1 with tileSets 0f-14
+		and specifically
+			ceres room 6-01 thru 6-04 is 1:1 with tileSets 0f-10
+			ceres room 6-00 is 1:1 with tileSets 11-12
+			ceres room 6-05 is 1:1 with tileSets 13-14
 		--]]
 		--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7TileSet == 0
-		local loadCommonRoomElements = not (tileSetIndex >= 0x0f and tileSetIndex <= 0x14)
-
-
-		-- tileSet_t has 3 pointers in it: palette, tile, and subtile
-		-- paletteAddr24 is independent of roomstate_t
-		-- but the other two are not, so, load them with the roomstate_t
-
-		-- here in the roomstate_t, load the tile data that coincides with the 
-		-- TODO instead of determining by roomstate info, determine by which tileSet_t it is
-		-- that way we don't get so many multiples of the same tileSet_t's
-
-		-- funny thing, these only seem to be writing for ceres space station anyways
-		-- so I wonder if that mode7 tileSetIndex if condition is even needed
-		local subtileVec = vector'uint8_t'
-		do
-			tileSet.subtileAddr = loRomToOffset(tileSet.obj.subtileAddr24.bank, tileSet.obj.subtileAddr24.ofs)
-			local buffer
-			buffer, tileSet.subtileCompressedSize = lz.decompress(rom, tileSet.subtileAddr, 0x10000)	-- TODO how big?
-			subtileVec:insert(subtileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		end
-		
-
-		-- for tileSet 0x11-0x14
-		-- tileSet 0x11, 0x12 = room 06/00
-		-- tileSet 0x13, 0x14 = room 06/05
-		-- for these rooms, the tileSet.tileAddr points to the mode7 data
-		if tileSetIndex >= 0x11 and tileSetIndex <= 0x14 then
-print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
-			tileSet.mode7TileSet = ffi.new('uint8_t[?]', halfBlockSizeInPixels * halfBlockSizeInPixels * numMode7Tiles)
-			for mode7tileIndex=0,numMode7Tiles-1 do
-				for x=0,halfBlockSizeInPixels-1 do
-					for y=0,halfBlockSizeInPixels-1 do
-						tileSet.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
-					end
-				end
-			end
-
-
-			-- who uses this?
-			-- just a few rooms in Ceres space station -- the rotating room, and the rotating image of Ridley flying away
-			tileSet.mode7tiles = ffi.new('uint8_t[?]', mode7sizeIn8PixelTiles * mode7sizeIn8PixelTiles)
-			for i=0,mode7sizeIn8PixelTiles-1 do
-				for j=0,mode7sizeIn8PixelTiles-1 do
-					tileSet.mode7tiles[i + mode7sizeIn8PixelTiles * j] = subtileVec.v[0 + 2 * (i + mode7sizeIn8PixelTiles * j)]
-				end
-			end
+		local isCeres = tileSetIndex >= 0x0f and tileSetIndex <= 0x14		-- all ceres
+		local isCeresRidleyRoom = tileSetIndex == 0x13 or tileSetIndex == 0x14
+		local loadMode7 = tileSetIndex >= 0x11 and tileSetIndex <= 0x14		-- ceres rooms 6-00 and 6-05
+		local loadCommonRoomElements = not isCeres
 			
-			--[[ vanilla ceres ridley room layer handling, when layerHandlingAddr == $c97b
-			used with roomstate_t's $07dd95, $07dd7b
-			which are only for room_t $07dd69 06/05 -- and they are the only roomstates_t's of that room, so I can check via room
-			roomstate_t $07dd95 => tileSet $14 ... used by no one else
-			roomstate_t $07dd7b => tileSet $13 ... used by no one else
-			so we can instead test by tileSetIndex here
-			
-			room 06/05's block tileIndex data is all value $1f anyways,
-			so regardless of fixing this tileset, we still have nothing to display.
-			--]]
-			--if rs.layerHandlingAddr == 0xc97b then
-			subtileVec:resize(0x5000)
-			ffi.fill(subtileVec.v, subtileVec.size, 0)
-			if tileSetIndex == 0x13 or tileSetIndex == 0x14 then	
-				ffi.copy(subtileVec.v, rom + 0x182000, 0x2000)
--- TODO mem:add for this ... once I get these Ceres rooms to even show up, to verify this is even right			
-			end
-		else
-			--get subtiles
-			-- also notice that the tileSets used for mode7 are not used for this (unless 06/05 happens to also be)
-			--[[
-			dansSuperMetroidLibrary has this resize, for tileSets other than $26 
-			... which is interseting because it means that, for tileSet $11 and $12 (only used in Ceres) we are sizing down from 0x8000 to 0x5000
-			otherwise, for tileSets $0-$10, $13-$19, $1b, $1c  this is resized up from 0x4800 to 0x5000
-			so ... should $11 and $12 be resized down?
-			--]]
-			-- all (except for $11-$14 above) tileSets are 0x4800 in size, except Kraid's room which is 0x8000 in size
-			-- so the rest have to be sized up the extra 0x200 bytes ... how many 16x16 blocks is that?
-			if subtileVec.size < 0x5000 then
-				subtileVec:resize(0x5000)
-			end
-		end
-		if loadCommonRoomElements then-- this is going after the subtile 0x5000 / 0x8000
-			subtileVec:insert(subtileVec:iend(), self.commonRoomSubtileVec:begin(), self.commonRoomSubtileVec:iend())
-		end
-		
-		local copy = ffi.new('uint8_t[?]', 32)
-		local line = ffi.new('uint8_t[?]', 4)
-		local word = ffi.new('uint32_t[1]')
-		for i=0,subtileVec.size-1,32 do
-			ffi.copy(copy, subtileVec.v+i, 32)
-			ffi.fill(subtileVec.v+i, 32, 0)
-			for y=0,7 do
-				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
-				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
-				for x=0,7 do
-					local shift = bit.lshift(7 - x, 2)
-					word[0] = 0	-- uint32_t
-					for j=0,3 do
-						word[0] = bit.bor(
-							word[0],
-							bit.lshift(
-								bit.band(bit.rshift(line[j], x), 1),
-								bit.bor(shift, j)
-							)
-						)
-					end
-					for j=0,3 do
-						subtileVec.v[i+y*4+j] = bit.bor(
-							subtileVec.v[i + 4*y + j],
-							bit.rshift(word[0], bit.band(bit.lshift(j, 3), 0xff))
-						)
-					end
-				end
-			end
-		end
+		local tileAddr = loRomToOffset(tileSet.obj.tileAddr24.bank, tileSet.obj.tileAddr24.ofs)
+		local subtileAddr = loRomToOffset(tileSet.obj.subtileAddr24.bank, tileSet.obj.subtileAddr24.ofs)
 
-
-		local tileVec = vector'uint8_t'
-		if loadCommonRoomElements then
-			tileVec:insert(tileVec:iend(), self.commonRoomTileVec:begin(), self.commonRoomTileVec:iend())
-		end
-		do
-			tileSet.tileAddr = loRomToOffset(tileSet.obj.tileAddr24.bank, tileSet.obj.tileAddr24.ofs)
-			local buffer
-			buffer, tileSet.tileCompressedSize = lz.decompress(rom, tileSet.tileAddr, 0x10000)
-			tileVec:insert(tileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		end
--- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
-print('tileVec.size', ('$%x'):format(tileVec.size))
-		local srcp = tileVec.v
-		tileSet.tileGfxCount = bit.rshift(tileVec.size, 3)
-		-- store as 16 x 16 x index rgb
-		tileSet.tileGfxBmp = ffi.new('uint8_t[?]', 3*blockSizeInPixels*blockSizeInPixels*tileSet.tileGfxCount)
-		local dstp = tileSet.tileGfxBmp
-		for tileIndex=0,tileSet.tileGfxCount-1 do
-			for xofs=0,1 do
-				for yofs=0,1 do
-					local x = xofs * halfBlockSizeInPixels
-					local y = yofs * halfBlockSizeInPixels
-					
-					local tileInfo = ffi.cast('uint16_t*', srcp)[bit.bor(xofs, bit.lshift(yofs, 1))]
-					
-					local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
-					local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
-					local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
-					for ty=0,7 do
-						for tx=0,7 do
-							local subtileIndex = bit.bor(bit.bxor(tx, xMask), bit.lshift(bit.bxor(ty, yMask), 3), bit.lshift(bit.band(tileInfo, 0x3ff), 6))
-							local lo = subtileVec.v[bit.rshift(subtileIndex, 1)]
-							if bit.band(subtileIndex, 1) == 0 then
-								lo = bit.band(lo, 0xf)
-							else
-								lo = bit.rshift(lo, 4)
-							end
-							local dstIndex = x + tx + blockSizeInPixels * (y + ty)
-							if lo > 0 then
-								local paletteIndex = bit.bor(hi, lo)
-								local src = tileSet.palette + 4 * paletteIndex
-								dstp[0 + 3 * dstIndex] = math.floor(src[0]/31*255)
-								dstp[1 + 3 * dstIndex] = math.floor(src[1]/31*255)
-								dstp[2 + 3 * dstIndex] = math.floor(src[2]/31*255)
-							else 
-								dstp[0 + 3 * dstIndex] = 0
-								dstp[1 + 3 * dstIndex] = 0
-								dstp[2 + 3 * dstIndex] = 0
-							end
-						end
-					end
-				end
-			end
-	
-			srcp = srcp + 8
-			dstp = dstp + 3 * blockSizeInPixels * blockSizeInPixels
-		end
-		--[[
-		next goal:
-		if we are tracking indexes used via tileset, also track indexes used per referenced decompressed region by the tilesets
-		speaking of which, how about decompressing them into color table images separate of palette?  not til I find a guaranteed clear color, or alpha mask in palettes.
-		--]]
+		local tileData = mapAddTileDataLoc(
+			tileAddr,
+			subtileAddr,
+			-- these flags are 1:1 with tileAddr:subtileAddr
+			loadMode7,
+			loadCommonRoomElements
+		)
+		tileSet.tileData = tileData
+		tileData.tileSets:insert(tileSet)
 	end
---]]
+end
 
+
+function SMMap:mapInit()
+	local rom = self.rom
+
+	-- check where the PLM bank is
+	-- TODO this will affect the items.lua addresses
+	self.plmBank = rom[0x204ac]
+	
+	self.rooms = table()
+	self.roomblocks = table()
+	self.bgs = table()
+	self.fx1s = table()
+	self.layerHandlings = table()
+	
+	self.plmsets = table()
+	self.enemySpawnSets = table()
+	self.enemyGFXSets = table()
+
+
+	self:mapReadTileGfx()
 
 	--[[
 	from $078000 to $079193 is plm_t data
@@ -2246,13 +2314,13 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 	end
 
 -- [[ now do the same for tilesets 
-	for _,tileSet in ipairs(self.tileSets) do
-		tileSet.tileIndexesUsed = {}
+	for _,tileData in ipairs(self.tileDatas) do
+		tileData.tileIndexesUsed = {}
 	end
 	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
 			for k,v in pairs(rs.roomBlockData.tileIndexesUsed) do
-				rs.tileSet.tileIndexesUsed[k] = true
+				rs.tileSet.tileData.tileIndexesUsed[k] = true
 			end
 		end
 	end
@@ -2479,6 +2547,7 @@ local mapDrawExcludeMapBlocks = {
 	{1, 0x09, 0, 1, 2, 2},	-- "
 	{1, 0x0e, 0, 0, 5, 2},	-- brinstar blue first room
 	{1, 0x13, 2, 0, 3, 1},	-- brinstar bottom flea room
+	{1, 0x24, 1, 4, 1, 1},	-- red room ascending to lift to brinstar, blocks save to the right
 	{1, 0x2c, 0, 1, 1, 1},	-- brinstar kraid fly room
 	{2, 0x04, 0, 0, 3, 3},	-- norfair speed room to ice
 	{2, 0x04, 4, 3, 3, 1},	-- "
@@ -2486,8 +2555,11 @@ local mapDrawExcludeMapBlocks = {
 	{2, 0x07, 1, 2, 1, 1},	-- "
 	{2, 0x14, 5, 0, 3, 2},	-- norfair room before grappling
 	{2, 0x21, 0, 0, 2, 2},	-- norfair lava rise room run to wave
-	{2, 0x36, 5, 0, 3, 2},	-- norfair lower first room
+	{2, 0x25, 3, 2, 1, 1},	-- norfair entrance to lower norfair lava swim, lower right corner occuldes room 2-3c, even though there are gfx tiles here
+	{2, 0x35, 2, 0, 1, 1},	-- chozo morph to lower acid room, upper right overlaps with room to the right
+--	{2, 0x36, 5, 0, 3, 2},	-- norfair lower first room ... i guess this would overlap with the norfair entrance to lower norfair, but i'm not seeing it now ...
 	{2, 0x3e, 0, 0, 2, 3},	-- norfair lower return from gold chozo loop
+	{2, 0x45, 1, 0, 2, 4},	-- norfair room after acid raise run room, upper right blocks room to the right
 	{2, 0x48, 0, 0, 1, 2},	-- norfair lower escape last room
 	{2, 0x4b, 0, 1, 1, 5},	-- norfair lower escape first room
 	{3, 0x00, 0, 0, 2, 1},	-- wrecked ship bowling chozo room
@@ -2495,6 +2567,7 @@ local mapDrawExcludeMapBlocks = {
 	{3, 0x04, 0, 0, 4, 5},	-- wrecked ship main shaft
 	{3, 0x04, 5, 0, 1, 6},	-- "
 	{4, 0x03, 1, 1, 3, 1},	-- maridia fly and yellow blob room at the bottom
+	{4, 0x04, 2, 7, 1, 1},	-- maridia big climb upper left room, block over its door right to crabs 
 	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
 }
 
@@ -2604,9 +2677,10 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							local flipy = bit.band(d2, 8) ~= 0
 							
 							local tileSet = m.roomStates[1].tileSet
+							local tileData = tileSet.tileData
 							if tileSet
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
-							and tileIndex < tileSet.tileGfxCount
+							and tileIndex < tileData.tileGfxCount
 							then
 								for pj=0,blockSizeInPixels-1 do
 									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
@@ -2615,14 +2689,24 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 										if x >= 0 and x < ctx.mapTexImage.width
 										and y >= 0 and y < ctx.mapTexImage.height 
 										then
-											local srcIndex 
 											local spi = flipx and blockSizeInPixels - 1 - pi or pi
 											local spj = flipy and blockSizeInPixels - 1 - pj or pj
-											srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local paletteIndex = tileData.tileGfxBmp[srcIndex]
 											local dstIndex = x + ctx.mapTexImage.width * y
-											ctx.mapTexImage.buffer[0 + 3 * dstIndex] = tileSet.tileGfxBmp[0 + 3 * srcIndex]
-											ctx.mapTexImage.buffer[1 + 3 * dstIndex] = tileSet.tileGfxBmp[1 + 3 * srcIndex]
-											ctx.mapTexImage.buffer[2 + 3 * dstIndex] = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
+											-- now which determines transparency?
+											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
+											--if paletteIndex < 0x80 then			-- this causes the background to turn blue in tileSet $9 ... and in kraid's room
+												local src = tileSet.palette + 4 * paletteIndex
+												dst[0] = math.floor(src[0]/31*255)
+												dst[1] = math.floor(src[1]/31*255)
+												dst[2] = math.floor(src[2]/31*255)
+											else 
+												dst[0] = 0
+												dst[1] = 0
+												dst[2] = 0
+											end
 										end
 									end
 								end
@@ -3060,20 +3144,21 @@ function SMMap:mapSaveImage(filenamePrefix)
 	-- for now only write out tile graphics for the non-randomized version
 	if filenamePrefix == 'map' then
 		for _,tileSet in ipairs(self.tileSets) do
+			local tileData = tileSet.tileData
 			local tileSetIndex = tileSet.index
-			if tileSet.mode7TileSet then
+			if tileData.mode7TileSet then
 				-- TODO this only in the mapSaveImage function
 				local mode7image = Image(8*mode7sizeIn8PixelTiles, 8*mode7sizeIn8PixelTiles, 3, 'unsigned char')
 				local maxdestx = 0
 				local maxdesty = 0	
 				for i=0,mode7sizeIn8PixelTiles-1 do
 					for j=0,mode7sizeIn8PixelTiles-1 do
-						local mode7tileIndex = tileSet.mode7tiles[i + mode7sizeIn8PixelTiles * j]
+						local mode7tileIndex = tileData.mode7tiles[i + mode7sizeIn8PixelTiles * j]
 						for y=0,7 do
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.palette + 4 * tileSet.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)]
+								local src = tileSet.palette + 4 * tileData.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)]
 								
 								-- TODO what about pixel/palette mask/alpha?
 								if src[0] > 0 or src[1] > 0 or src[2] > 0 then
@@ -3092,26 +3177,31 @@ function SMMap:mapSaveImage(filenamePrefix)
 				mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
 				mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' mode7.png')
 			end
-			if tileSet.tileGfxBmp then
+			if tileData.tileGfxBmp then
 				local rowWidth = 32
-				local img = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-				local imgused = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-				for tileIndex=0,tileSet.tileGfxCount-1 do
+				local img = Image(16*rowWidth, 16*math.ceil(tileData.tileGfxCount/rowWidth), 3, 'unsigned char')
+				local imgused = Image(16*rowWidth, 16*math.ceil(tileData.tileGfxCount/rowWidth), 3, 'unsigned char')
+				for tileIndex=0,tileData.tileGfxCount-1 do
 					local xofs = tileIndex%rowWidth
 					local yofs = math.floor(tileIndex/rowWidth)
 					for i=0,15 do
 						for j=0,15 do
 							local dstIndex = i + 16 * xofs + img.width * (j + 16 * yofs)
 							local srcIndex = i + 16 * (j + 16 * tileIndex)
-							local r = tileSet.tileGfxBmp[0 + 3 * srcIndex]
-							local g = tileSet.tileGfxBmp[1 + 3 * srcIndex]
-							local b = tileSet.tileGfxBmp[2 + 3 * srcIndex]
+							local paletteIndex = tileData.tileGfxBmp[srcIndex]
+							local r,g,b = 0,0,0
+							if bit.band(paletteIndex, 0xf) > 0 then
+								local src = tileSet.palette + 4 * paletteIndex
+								r = math.floor(src[0]*255/31)
+								g = math.floor(src[1]*255/31)
+								b = math.floor(src[2]*255/31)
+							end
 							img.buffer[0 + 3 * dstIndex] = r
 							img.buffer[1 + 3 * dstIndex] = g
 							img.buffer[2 + 3 * dstIndex] = b
 							
 							-- draw some diagonal green lines over the used tiles
-							if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
+							if tileData.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
 								r = math.floor(.5 * 0 + .5 * r)
 								g = math.floor(.5 * 255 + .5 * g)
 								b = math.floor(.5 * 0 + .5 * b)
@@ -3148,6 +3238,7 @@ function SMMap:mapPrintRoomBlocks()
 			end
 			print()
 		end
+		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
 
 		printblock(roomBlockData.head, 2) 
 		printblock(roomBlockData.blocks, 3*w) 
@@ -3163,7 +3254,7 @@ function SMMap:mapPrintRoomBlocks()
 				printblock(tableToByteArray(rs.scrollData), w/16)
 			end
 		end
-		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
+		print()
 	end
 end
 
@@ -3616,20 +3707,27 @@ function SMMap:mapPrint()
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
 		print(': '..tileSet.obj)
-		print('  tileAddr: '..('$%06x'):format(tileSet.tileAddr))
-		print('  subtileAddr: '..('$%06x'):format(tileSet.subtileAddr))
-		print('  paletteAddr: '..('$%06x'):format(tileSet.paletteAddr))
-		print('  palette: {'..range(0,tileSet.paletteSize-1):mapi(function(i)
+		print('  paletteSize='..('$%x'):format(tileSet.paletteSize))
+		print('  paletteAddr='..('$%06x'):format(tileSet.paletteAddr))
+		print('  palette={'..range(0,tileSet.paletteSize-1):mapi(function(i)
 				return '{'..range(0,3):mapi(function(j)
 					return ('%02x'):format(tileSet.palette[j + 4 * i])
 				end):concat','..'}' end
 			):concat', '..'}')
-		print('  rooms used: '..tileSet.roomStates:mapi(function(rs)
+		print('  rooms used = '..tileSet.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat', ')
-		print('  tileIndexes used: '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
+	end
+	
+	print()
+	print"all tileData's:"
+	for _,tileData in ipairs(self.tileDatas) do
+		print('  tileAddr='..('$%06x'):format(tileData.tileAddr))
+		print('  subtileAddr='..('$%06x'):format(tileData.subtileAddr))
+		print('  tileIndexes used = '..table.keys(tileData.tileIndexesUsed):sort():mapi(function(s)
 				return ('$%03x'):format(s)
 			end):concat', ')
+		print()
 	end
 --]]
 end
@@ -3741,15 +3839,20 @@ function SMMap:mapBuildMemoryMap(mem)
 			'tileSet_t',
 			room
 		)
+	end
+
+	for _,tileData in ipairs(self.tileDatas) do
+		local tileSet = tileData.tileSets[1]
+		local room = #tileSet.roomStates > 0 and tileSet.roomStates[1].room or nil
 		mem:add(
-			tileSet.subtileAddr,
-			tileSet.subtileCompressedSize,
+			tileData.subtileAddr,
+			tileData.subtileCompressedSize,
 			'tileSet mode7 lz data',
 			room
 		)	
 		mem:add(
-			tileSet.tileAddr,
-			tileSet.tileCompressedSize,
+			tileData.tileAddr,
+			tileData.tileCompressedSize,
 			'tileSet subtile lz data',
 			room
 		)

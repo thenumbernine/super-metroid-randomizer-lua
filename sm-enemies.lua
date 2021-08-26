@@ -860,7 +860,7 @@ function SMEnemies:enemiesPrint()
 	-- do the printing
 
 
-	print"enemyClass_t's:"
+	print"all enemyClass_t's:"
 	for i,enemy in ipairs(self.enemies) do
 		print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
 
