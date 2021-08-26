@@ -2998,7 +2998,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $1a7380..$1a7493 (itemDrop_t x46) ... 6 bytes of padding ...
      : $1a749a..$1a74b7 (itemDrop_t x5) ... 133960 bytes of padding ...
 --------------
-     : $1c8000..$1ca633 (common room tile lz data x2)
+     : $1c8000..$1ca09c (common room subtile lz data)
+     : $1ca09d..$1ca633 (common room tile lz data)
 02/05: $1ca634..$1ca713 (bg lz data)
 02/04: $1ca714..$1ca75d (bg lz data) ... 220 bytes of padding ...
 02/3c: $1ca83a..$1cac82 (bg lz data)
@@ -3054,8 +3055,27 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 05/11: $1d39a3..$1d3dd8 (bg lz data)
 05/0a: $1d3dd9..$1d4229 (bg lz data)
 06/01: $1d422a..$1d44bb (bg lz data)
-00/33: $1d44bc..$1d461f (bg lz data) ... 203786 bytes of padding ...
+00/33: $1d44bc..$1d461f (bg lz data) ... 9 bytes of padding ...
+00/00: $1d4629..$1d7910 (tileSet mode7 lz data)
+00/18: $1d7911..$1dae9d (tileSet mode7 lz data)
 --------------
+03/01: $1dae9e..$1de6af (tileSet mode7 lz data)
+01/00: $1de6b0..$1e25a9 (tileSet mode7 lz data)
+--------------
+01/20: $1e25aa..$1e5fef (tileSet mode7 lz data)
+01/2f: $1e5ff0..$1ec3f8 (tileSet mode7 lz data)
+--------------
+02/05: $1ec3f9..$1efe29 (tileSet mode7 lz data)
+02/0a: $1efe2a..$1f312f (tileSet mode7 lz data)
+--------------
+04/13: $1f3130..$1f678c (tileSet mode7 lz data)
+04/19: $1f678d..$1f9de9 (tileSet mode7 lz data)
+--------------
+04/37: $1f9dea..$1fd413 (tileSet mode7 lz data)
+05/11: $1fd414..$20060a (tileSet mode7 lz data)
+--------------
+01/05: $20060b..$203003 (tileSet mode7 lz data)
+06/01: $203004..$206229 (tileSet mode7 lz data)
 06/00: $20622a..$208da8 (tileSet mode7 lz data)
 --------------
 06/05: $208da9..$20b6f5 (tileSet mode7 lz data)
