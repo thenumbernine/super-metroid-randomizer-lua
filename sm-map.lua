@@ -1886,16 +1886,16 @@ function SMMap:mapInit()
 		local data, compressedSize = lz.decompress(rom, paletteOffset, 0x200)
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
-		tileSet.palette = table()
-		local p = ffi.cast('uint16_t*', data)
-		for i=0,len,2 do
-			tileSet.palette:insert{
-				bit.band(p[0], 0x1f),
-				bit.band(bit.rshift(p[0], 5), 0x1f),
-				bit.band(bit.rshift(p[0], 10), 0x1f),
-				-- isn't the 15th bit the alpha mask?
-			}
-			p=p+1
+		tileSet.paletteSize = bit.rshift(len,1)
+		tileSet.palette = ffi.new('uint8_t[?]', 3 * tileSet.paletteSize)
+		local src = ffi.cast('uint16_t*', data)
+		for paletteIndex=0,tileSet.paletteSize-1 do
+			local dst = tileSet.palette + 3 * paletteIndex
+			dst[0] = bit.band(src[0], 0x1f)
+			dst[1] = bit.band(bit.rshift(src[0], 5), 0x1f)
+			dst[2] = bit.band(bit.rshift(src[0], 10), 0x1f)
+			-- isn't the 15th bit the alpha mask?
+			src = src + 1
 		end
 
 
@@ -1942,14 +1942,10 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 			for mode7tileIndex=0,numMode7Tiles-1 do
 				for x=0,halfBlockSizeInPixels-1 do
 					for y=0,halfBlockSizeInPixels-1 do
-						local rgb = tileSet.palette[
-							1 + subtileVec.v[
-								1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
-							]
-						]
-						tileSet.mode7TileSet[0 + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))] = rgb[1]
-						tileSet.mode7TileSet[1 + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))] = rgb[2]
-						tileSet.mode7TileSet[2 + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))] = rgb[3]
+						local paletteIndex = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
+						local src = tileSet.palette + 3 * paletteIndex
+						local dst = tileSet.mode7TileSet + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
+						ffi.copy(dst, src, 3)
 					end
 				end
 			end
@@ -2061,10 +2057,10 @@ print('tileVec.size', ('$%x'):format(tileVec.size))
 							local dstIndex = x + tx + blockSizeInPixels * (y + ty)
 							if lo > 0 then
 								local paletteIndex = bit.bor(hi, lo)
-								local rgb = assert(tileSet.palette[1 + paletteIndex])
-								dstp[0 + 3 * dstIndex] = math.floor(rgb[1]/31*255)
-								dstp[1 + 3 * dstIndex] = math.floor(rgb[2]/31*255)
-								dstp[2 + 3 * dstIndex] = math.floor(rgb[3]/31*255)
+								local src = tileSet.palette + 3 * paletteIndex
+								dstp[0 + 3 * dstIndex] = math.floor(src[0]/31*255)
+								dstp[1 + 3 * dstIndex] = math.floor(src[1]/31*255)
+								dstp[2 + 3 * dstIndex] = math.floor(src[2]/31*255)
 							else 
 								dstp[0 + 3 * dstIndex] = 0
 								dstp[1 + 3 * dstIndex] = 0
@@ -3062,14 +3058,17 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local rgb = tileSet.mode7TileSet + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
-								if rgb[0] > 0 or rgb[1] > 0 or rgb[2] > 0 then
+								local src = tileSet.mode7TileSet + 3 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))
+								
+								-- TODO what about pixel/palette mask/alpha?
+								if src[0] > 0 or src[1] > 0 or src[2] > 0 then
+									
 									maxdestx = math.max(maxdestx, destx)
 									maxdesty = math.max(maxdestx, desty)
-									local pixelIndex = destx + mode7image.width * desty
-									mode7image.buffer[0 + 3 * pixelIndex] = math.floor(rgb[0]/31*255)
-									mode7image.buffer[1 + 3 * pixelIndex] = math.floor(rgb[1]/31*255)
-									mode7image.buffer[2 + 3 * pixelIndex] = math.floor(rgb[2]/31*255)
+									local dst = mode7image.buffer + 3 * (destx + mode7image.width * desty)
+									dst[0] = math.floor(src[0]/31*255)
+									dst[1] = math.floor(src[1]/31*255)
+									dst[2] = math.floor(src[2]/31*255)
 								end
 							end
 						end				
@@ -3096,6 +3095,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 							img.buffer[1 + 3 * dstIndex] = g
 							img.buffer[2 + 3 * dstIndex] = b
 							
+							-- draw some diagonal green lines over the used tiles
 							if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
 								r = math.floor(.5 * 0 + .5 * r)
 								g = math.floor(.5 * 255 + .5 * g)
@@ -3528,9 +3528,9 @@ function SMMap:mapPrint()
 			for _,bg in ipairs(rs.bgs) do
 				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
 			end
-			print('   palette: {'..rs.tileSet.palette:mapi(function(rgb) 
-					return '{'..table.mapi(rgb,function(ch) 
-						return ('%02x'):format(ch) 
+			print('   palette: {'..range(rs.tileSet.paletteSize):mapi(function(i)
+					return '{'..range(3):mapi(function(j)
+						return ('%02x'):format(rs.tileSet.palette[j + 3 * i])
 					end):concat','..'}' end
 				):concat', '..'}')
 		end
@@ -3606,9 +3606,9 @@ function SMMap:mapPrint()
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
 		print(': '..tileSet.obj)
-		print('  palette: {'..tileSet.palette:mapi(function(rgb) 
-				return '{'..table.mapi(rgb,function(ch) 
-					return ('%02x'):format(ch) 
+		print('  palette: {'..range(tileSet.paletteSize):mapi(function(i)
+				return '{'..range(3):mapi(function(j)
+					return ('%02x'):format(tileSet.palette[j + 3 * i])
 				end):concat','..'}' end
 			):concat', '..'}')
 		print('  rooms used: '..tileSet.roomStates:mapi(function(rs) return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index) end):concat', ')
