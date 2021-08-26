@@ -45,8 +45,7 @@ SMMap.enemyGFXBank = 0xb4
 local commonRoomSubtileAddr = 0x1c8000
 local commonRoomTileAddr = 0x1ca09d
 
-local mode7tileWidth = 128
-local mode7tileHeight = 128
+local mode7sizeIn8PixelTiles = 128
 
 local blocksPerRoom = 16
 local blockSizeInPixels = 16	-- TODO 'blockSizeInPixels' ? 'tile' becomes ambiguous
@@ -1953,10 +1952,10 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 
 			-- who uses this?
 			-- just a few rooms in Ceres space station -- the rotating room, and the rotating image of Ridley flying away
-			tileSet.mode7tiles = ffi.new('uint8_t[?]', mode7tileWidth * mode7tileHeight)
-			for i=0,mode7tileWidth-1 do
-				for j=0,mode7tileHeight-1 do
-					tileSet.mode7tiles[i + mode7tileWidth * j] = subtileVec.v[0 + 2 * (i + mode7tileWidth * j)]
+			tileSet.mode7tiles = ffi.new('uint8_t[?]', mode7sizeIn8PixelTiles * mode7sizeIn8PixelTiles)
+			for i=0,mode7sizeIn8PixelTiles-1 do
+				for j=0,mode7sizeIn8PixelTiles-1 do
+					tileSet.mode7tiles[i + mode7sizeIn8PixelTiles * j] = subtileVec.v[0 + 2 * (i + mode7sizeIn8PixelTiles * j)]
 				end
 			end
 			
@@ -3048,12 +3047,12 @@ function SMMap:mapSaveImage(filenamePrefix)
 			local tileSetIndex = tileSet.index
 			if tileSet.mode7TileSet then
 				-- TODO this only in the mapSaveImage function
-				local mode7image = Image(8*mode7tileWidth, 8*mode7tileHeight, 3, 'unsigned char')
+				local mode7image = Image(8*mode7sizeIn8PixelTiles, 8*mode7sizeIn8PixelTiles, 3, 'unsigned char')
 				local maxdestx = 0
 				local maxdesty = 0	
-				for i=0,mode7tileWidth-1 do
-					for j=0,mode7tileHeight-1 do
-						local mode7tileIndex = tileSet.mode7tiles[i + mode7tileWidth * j]
+				for i=0,mode7sizeIn8PixelTiles-1 do
+					for j=0,mode7sizeIn8PixelTiles-1 do
+						local mode7tileIndex = tileSet.mode7tiles[i + mode7sizeIn8PixelTiles * j]
 						for y=0,7 do
 							for x=0,7 do
 								local destx = x + 8 * i
@@ -3071,7 +3070,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 									dst[2] = math.floor(src[2]/31*255)
 								end
 							end
-						end				
+						end
 					end
 				end
 				mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}

@@ -2,6 +2,8 @@
 -- http://pikensoft.com/docs/Zelda_LTTP_compression_(Piken).txt
 
 local ffi = require 'ffi'
+local vector = require 'ffi.cpp.vector'
+
 ffi.cdef[[
 typedef union {
 	uint8_t v;
@@ -27,7 +29,7 @@ assert(ffi.new('lzcmd_t', 32+64+128).cmd == 7)
 -- decompresses from 'rom' to a lua table of numbers
 local function decompress(rom, addr, maxlen)
 	local startaddr = addr
-	local result = table()
+	local result = vector'uint8_t'
 
 	local function readbyte()
 		assert(addr >= 0 and addr < #romstr)
@@ -45,18 +47,16 @@ local function decompress(rom, addr, maxlen)
 			from = bit.bor(from, bit.lshift(readbyte(), 8))
 		end
 		if not absolute then
-			from = #result - from
+			from = result.size - from
 		end
-		if from >= 0 and from < #result then
+		if from >= 0 and from < result.size then
 			for i=0,len-1 do
-				local ofsi = from+i+1
-				assert(ofsi >= 1 and ofsi <= #result)
-				result:insert(
-					bit.bxor(result[ofsi], mask)
-				)
+				local ofsi = from+i
+				assert(ofsi >= 0 and ofsi < result.size)
+				result:push_back(bit.bxor(result.v[ofsi], mask))
 			end
 		else
-			error('got a bad lz decompression offset: '..from..' vs current size '..#result)
+			error('got a bad lz decompression offset: '..from..' vs current size '..result.size)
 		end
 	end
 
@@ -77,27 +77,27 @@ local function decompress(rom, addr, maxlen)
 		len=len+1
 		if cmd == 0 then	-- 000b: direct copy
 			for i=0,len-1 do
-				result:insert(readbyte())
+				result:push_back(readbyte())
 			end
 		elseif cmd == 1 then	-- 001b: byte fill
 			local v = readbyte()
 			for i=0,len-1 do
-				result:insert(v)
+				result:push_back(v)
 			end
 		elseif cmd == 2 then	-- 010b: word fill
 			local v1 = readbyte()
 			local v2 = readbyte()
 			for i=0,len-1 do
 				if bit.band(i,1)==0 then
-					result:insert(v1)
+					result:push_back(v1)
 				else
-					result:insert(v2)
+					result:push_back(v2)
 				end
 			end
 		elseif cmd == 3 then	-- 011b: incremental fill
 			local v = readbyte()
 			for i=0,len-1 do
-				result:insert(v)
+				result:push_back(v)
 				v = bit.band(0xff, v+1)
 			end
 		elseif cmd == 4 then	-- 100b: 
@@ -111,11 +111,11 @@ local function decompress(rom, addr, maxlen)
 		end
 	end
 
-for _,v in ipairs(result) do 
-	assert(type(v) == 'number')
-end
-
-	return tableToByteArray(result), addr - startaddr
+	-- resize so ffi.sizeof() gives the buffer's size
+	-- TODO instead just return the vector
+	local newresult = ffi.new('uint8_t[?]', result.size)
+	ffi.copy(newresult, result.v, result.size)
+	return newresult, addr - startaddr
 end
 
 -- compresses from a lua table of numbers to another lua table of numbers
