@@ -3383,6 +3383,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 			if tileData.mode7TileSet then
 				-- TODO this only in the mapSaveImage function
 				local mode7image = Image(8*mode7sizeIn8PixelTiles, 8*mode7sizeIn8PixelTiles, 3, 'unsigned char')
+				mode7image:clear()
 				local maxdestx = 0
 				local maxdesty = 0	
 				for i=0,mode7sizeIn8PixelTiles-1 do
@@ -3401,10 +3402,6 @@ function SMMap:mapSaveImage(filenamePrefix)
 									dst[0] = math.floor(src.r*255/31)
 									dst[1] = math.floor(src.g*255/31)
 									dst[2] = math.floor(src.b*255/31)
-								else
-									dst[0] = 0
-									dst[1] = 0
-									dst[2] = 0
 								end
 							end
 						end

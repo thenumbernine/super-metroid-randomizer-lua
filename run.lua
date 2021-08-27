@@ -92,26 +92,18 @@ local rom = ffi.cast('uint8_t*', romstr)
 
 ffi.cdef[[
 typedef uint8_t uint24_t[3];
-
-typedef union {
-	uint16_t v;
-	struct {
-		uint16_t r : 5;
-		uint16_t g : 5;
-		uint16_t b : 5;
-		uint16_t a : 1;
-	};
-} rgb_t;
 ]]
-ffi.metatype('rgb_t', {
-	__tostring = function(self)
-		return '{'
-			..'r='..('%02x'):format(self.r)
-			..', g='..('%02x'):format(self.g)
-			..', b='..('%02x'):format(self.b)
-		..'}'
-	end,
-})
+
+local struct = require 'struct'
+local rgb_t = struct{
+	name = 'rgb_t',
+	fields = {
+		{r = 'uint16_t:5'},
+		{g = 'uint16_t:5'},
+		{b = 'uint16_t:5'},
+		{a = 'uint16_t:1'},
+	},
+}
 assert(ffi.sizeof'rgb_t' == 2)
 
 function pickRandom(t)
