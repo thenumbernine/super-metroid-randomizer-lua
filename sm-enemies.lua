@@ -19,7 +19,10 @@ local itemDrop_t_fields = table{
 	{superMissile = 'uint8_t'},
 	{powerBomb = 'uint8_t'},
 }
-struct'itemDrop_t'(itemDrop_t_fields)
+local itemDrop_t = struct{
+	name = 'itemDrop_t',
+	fields = itemDrop_t_fields,
+}
 
 --[[
 here's possible values:    
@@ -57,7 +60,10 @@ local weakness_t_fields = table{
 	{pseudo_screwattack = 'uint8_t'},
 	{unknown = 'uint8_t'},
 }
-struct'weakness_t'(weakness_t_fields)
+local weakness_t = struct{
+	name = 'weakness_t',
+	fields = weakness_t_fields,
+}
 
 
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
@@ -103,27 +109,33 @@ enemyClass_t_fields = table{
 	{weakness = 'uint16_t'},	-- pointer 
 	{name = 'uint16_t'},		-- pointer
 }
-struct'enemyClass_t'(enemyClass_t_fields)
+local enemyClass_t = struct{
+	name = 'enemyClass_t',
+	fields = enemyClass_t_fields,
+}
 
 
-struct'enemyShot_t'{
-	{initAI = 'uint16_t'},
-	{firstAI = 'uint16_t'},
-	{graphicsAI = 'uint16_t'},
-	{halfWidth = 'uint8_t'},
-	{halfHeight = 'uint8_t'},
-	
-	{damageAndFlags = 'uint16_t'},
---[[ flags:
-0x8000 = can be shot by samus
-0x4000 = shot doesn't die when it hits samus
-0x2000 = don't collide with samus
-0x1000 = invisible
-0x0fff = damage
---]]
+local enemyShot_t = struct{
+	name = 'enemyShot_t',
+	fields = {
+		{initAI = 'uint16_t'},
+		{firstAI = 'uint16_t'},
+		{graphicsAI = 'uint16_t'},
+		{halfWidth = 'uint8_t'},
+		{halfHeight = 'uint8_t'},
+		
+		{damageAndFlags = 'uint16_t'},
+	--[[ flags:
+	0x8000 = can be shot by samus
+	0x4000 = shot doesn't die when it hits samus
+	0x2000 = don't collide with samus
+	0x1000 = invisible
+	0x0fff = damage
+	--]]
 
-	{touchAI = 'uint16_t'},	-- AI to run when samus gets hit
-	{shootAI = 'uint16_t'},	-- AI to run if samus shoots the shot
+		{touchAI = 'uint16_t'},	-- AI to run when samus gets hit
+		{shootAI = 'uint16_t'},	-- AI to run if samus shoots the shot
+	},
 }
 
 local Enemy = class()

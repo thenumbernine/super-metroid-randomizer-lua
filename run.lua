@@ -103,8 +103,16 @@ typedef union {
 	};
 } rgb_t;
 ]]
-
-
+ffi.metatype('rgb_t', {
+	__tostring = function(self)
+		return '{'
+			..'r='..('%02x'):format(self.r)
+			..', g='..('%02x'):format(self.g)
+			..', b='..('%02x'):format(self.b)
+		..'}'
+	end,
+})
+assert(ffi.sizeof'rgb_t' == 2)
 
 function pickRandom(t)
 	return t[math.random(#t)]

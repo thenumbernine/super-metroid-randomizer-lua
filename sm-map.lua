@@ -56,148 +56,177 @@ local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
-local room_t = struct'room_t'{	-- aka mdb, aka mdb_header
-	{index = 'uint8_t'},
-	{region = 'uint8_t'},
-	{x = 'uint8_t'},
-	{y = 'uint8_t'},
-	{width = 'uint8_t'},
-	{height = 'uint8_t'},
-	{upScroller = 'uint8_t'},
-	{downScroller = 'uint8_t'},
-	{gfxFlags = 'uint8_t'},
-	{doors = 'uint16_t'},
+local room_t = struct{
+	name = 'room_t',
+	fields = {	-- aka mdb, aka mdb_header
+		{index = 'uint8_t'},
+		{region = 'uint8_t'},
+		{x = 'uint8_t'},
+		{y = 'uint8_t'},
+		{width = 'uint8_t'},
+		{height = 'uint8_t'},
+		{upScroller = 'uint8_t'},
+		{downScroller = 'uint8_t'},
+		{gfxFlags = 'uint8_t'},
+		{doors = 'uint16_t'},
+	},
 }
-
 
 -- roomselect testCodeAddr is stored from $e5e6 to $e689 (inclusive)
 
-local roomselect1_t = struct'roomselect1_t'{
-	{testCodeAddr = 'uint16_t'},
+local roomselect1_t = struct{
+	name = 'roomselect1_t',
+	fields = {
+		{testCodeAddr = 'uint16_t'},
+	},
 }
 
-local roomselect2_t = struct'roomselect2_t'{
-	{testCodeAddr = 'uint16_t'},
-	{roomStateAddr = 'uint16_t'},
+local roomselect2_t = struct{
+	name = 'roomselect2_t',
+	fields = {
+		{testCodeAddr = 'uint16_t'},
+		{roomStateAddr = 'uint16_t'},
+	},
 }
 
 -- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
-local roomselect3_t = struct'roomselect3_t'{
-	{testCodeAddr = 'uint16_t'},		-- ptr to test code in bank $8f
-	{testvalue = 'uint8_t'},
-	{roomStateAddr = 'uint16_t'},		-- ptr to roomstate in bank $8f
+local roomselect3_t = struct{
+	name = 'roomselect3_t',
+	fields = {
+		{testCodeAddr = 'uint16_t'},		-- ptr to test code in bank $8f
+		{testvalue = 'uint8_t'},
+		{roomStateAddr = 'uint16_t'},		-- ptr to roomstate in bank $8f
+	},
 }
 
-local addr24_t = struct'addr24_t'{
-	{ofs = 'uint16_t'},
-	{bank = 'uint8_t'},
+local addr24_t = struct{
+	name = 'addr24_t',
+	fields = {
+		{ofs = 'uint16_t'},
+		{bank = 'uint8_t'},
+	},
 }
 
-local roomstate_t = struct'roomstate_t'{
-	{roomBlockAddr24 = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
-	{tileSet = 'uint8_t'},				-- tile graphics data
-	{musicTrack = 'uint8_t'},
-	{musicControl = 'uint8_t'},
-	{fx1Addr = 'uint16_t'},				-- $83
-	{enemySpawnAddr = 'uint16_t'},
-	{enemyGFXAddr = 'uint16_t'},
+local roomstate_t = struct{
+	name = 'roomstate_t',
+	fields = {
+		{roomBlockAddr24 = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
+		{tileSet = 'uint8_t'},				-- tile graphics data
+		{musicTrack = 'uint8_t'},
+		{musicControl = 'uint8_t'},
+		{fx1Addr = 'uint16_t'},				-- $83
+		{enemySpawnAddr = 'uint16_t'},		-- TODO "enemySpawnSetAddr". points to an array of enemySpawn_t
+		{enemyGFXAddr = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of palettes + enemyClass_t's
 	
-	--[[
-	From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
-			
-		The layer 2 scroll X/Y is a value that determines whether or not custom layer 2 is used, and how fast layer 2 scrolls compared to layer 1 (parallax effect)
-			In binary, let layer 2 scroll X/Y = sssssssb
-			If b = 1, then the library background is used, otherwise custom layer 2 (defined in level data) is used
-			s = 0 is a special case that depends on b
-				If b = 0 (custom layer 2), then layer 2 and layer 1 scroll together at the same speed (like an extension of layer 1)
-				If b = 1 (library background), then layer 2 does not scroll at all (static image background)
-			Otherwise (if s != 0), layer 2 scroll speed = (layer 1 scroll speed) * (s / 0x80)
-	
-	... I'm really not sure what this means.  Not sure if the 'sssb' means 'b' is bit0 or bit7 ... or bit15 since it's referering to a uint16_t .... smh 
-	--]]
-	{layer2scrollXY = 'uint16_t'},	-- TODO
-	
-	--[[
-	scroll is either a constant, or an offset in bank $8f to 1 byte per map block
-	if scroll is 0 or 1 then it is a constant -- to fill all map blocks with that scroll value
-	otherwise it is a ptr to an array of scroll values for each map block.
-	0 = don't scroll up/down, or past the scroll==0 boundaries at all
-	1 = scroll anywhere, but clip the top & bottom 2 blocks (which will hide vertical exits)
-	2 = scroll anywhere at all ... but keeps samus in the middle, which makes it bad for hallways
-	--]]
-	{scrollAddr = 'uint16_t'},
-	
-	--[[
-	this is only used by the grey torizo room, and points to the extra data after room_t
-	--]]
-	{roomvarAddr = 'uint16_t'},				
-	{fx2Addr = 'uint16_t'},					-- TODO - aka 'main asm ptr'
-	{plmAddr = 'uint16_t'},
-	{bgAddr = 'uint16_t'},				-- offset to bg_t's
-	{layerHandlingAddr = 'uint16_t'},
+		--[[
+		From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
+				
+			The layer 2 scroll X/Y is a value that determines whether or not custom layer 2 is used, and how fast layer 2 scrolls compared to layer 1 (parallax effect)
+				In binary, let layer 2 scroll X/Y = sssssssb
+				If b = 1, then the library background is used, otherwise custom layer 2 (defined in level data) is used
+				s = 0 is a special case that depends on b
+					If b = 0 (custom layer 2), then layer 2 and layer 1 scroll together at the same speed (like an extension of layer 1)
+					If b = 1 (library background), then layer 2 does not scroll at all (static image background)
+				Otherwise (if s != 0), layer 2 scroll speed = (layer 1 scroll speed) * (s / 0x80)
+		
+		... I'm really not sure what this means.  Not sure if the 'sssb' means 'b' is bit0 or bit7 ... or bit15 since it's referering to a uint16_t .... smh 
+		--]]
+		{layer2scrollXY = 'uint16_t'},	-- TODO
+		
+		--[[
+		scroll is either a constant, or an offset in bank $8f to 1 byte per map block
+		if scroll is 0 or 1 then it is a constant -- to fill all map blocks with that scroll value
+		otherwise it is a ptr to an array of scroll values for each map block.
+		0 = don't scroll up/down, or past the scroll==0 boundaries at all
+		1 = scroll anywhere, but clip the top & bottom 2 blocks (which will hide vertical exits)
+		2 = scroll anywhere at all ... but keeps samus in the middle, which makes it bad for hallways
+		--]]
+		{scrollAddr = 'uint16_t'},
+		
+		--[[
+		this is only used by the grey torizo room, and points to the extra data after room_t
+		--]]
+		{roomvarAddr = 'uint16_t'},				
+		{fx2Addr = 'uint16_t'},					-- TODO - aka 'main asm ptr'
+		{plmAddr = 'uint16_t'},
+		{bgAddr = 'uint16_t'},				-- offset to bg_t's
+		{layerHandlingAddr = 'uint16_t'},
+	},
 }
 
 -- plm = 'post-load modification'
 -- this is a non-enemy object in a map.
-local plm_t = struct'plm_t'{
-	{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemyClass_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
-	{x = 'uint8_t'},
-	{y = 'uint8_t'},
-	{args = 'uint16_t'},
+local plm_t = struct{
+	name = 'plm_t',
+	fields = {
+		{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemyClass_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
+		{x = 'uint8_t'},
+		{y = 'uint8_t'},
+		{args = 'uint16_t'},
+	},
 }
 
 -- this is a single spawn location of an enemy.
-local enemySpawn_t = struct'enemySpawn_t'{
-	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
-	{x = 'uint16_t'},
-	{y = 'uint16_t'},
-	{initGFX = 'uint16_t'},	-- init param / tilemaps / orientation
-	{prop1 = 'uint16_t'},	-- special
-	{prop2 = 'uint16_t'},	-- graphics
-	{roomArg1 = 'uint16_t'},-- speed
-	{roomArg2 = 'uint16_t'},-- speed2
+local enemySpawn_t = struct{
+	name = 'enemySpawn_t',
+	fields = {
+		{enemyAddr = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
+		{x = 'uint16_t'},
+		{y = 'uint16_t'},
+		{initGFX = 'uint16_t'},	-- init param / tilemaps / orientation
+		{prop1 = 'uint16_t'},	-- special
+		{prop2 = 'uint16_t'},	-- graphics
+		{roomArg1 = 'uint16_t'},-- speed
+		{roomArg2 = 'uint16_t'},-- speed2
+	},
 }
 
 -- enemy sets have a list of entries
 -- each entry points to an enemy and a palette
-local enemyGFX_t = struct'enemyGFX_t'{
-	{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
-	{palette = 'uint16_t'},
+local enemyGFX_t = struct{
+	name = 'enemyGFX_t',
+	fields = {
+		{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
+		{palette = 'uint16_t'},
+	},
 }
 
 -- http://metroidconstruction.com/SMMM/fx_values.txt
-local fx1_t = struct'fx1_t'{
-	-- bank $83, ptr to door data.  0 means no door-specific fx
-	{doorSelect = 'uint16_t'},				-- 0
-	-- starting height of water/lava/acid
-	{liquidSurfaceStart = 'uint16_t'},		-- 2
-	-- ending height of water
-	{liquidSurfaceNew = 'uint16_t'},		-- 4
+local fx1_t = struct{
+	name = 'fx1_t',
+	fields = {
+		-- bank $83, ptr to door data.  0 means no door-specific fx
+		{doorSelect = 'uint16_t'},				-- 0
+		-- starting height of water/lava/acid
+		{liquidSurfaceStart = 'uint16_t'},		-- 2
+		-- ending height of water
+		{liquidSurfaceNew = 'uint16_t'},		-- 4
 
-	--[[ from metroidconstruction.com/SMMM:
-	how long until the water/lava/acid starts to rise or lower. For rooms with liquid, you must use a value between 01 (instantly) and FF (a few seconds). For rooms with no liquid, use 00.
-	For liquids moving up, use a surface speed value between FE00-FFFF. Examples: FFFE (absolute slowest), FFD0 (slow), FFD0 (decent speed), and FE00 (very fast).
-	For liquids moving down, use a surface speed value between 0001-0100. Examples: 0001 (absolute slowest), 0020 (slow), 0040 (decent speed), 0100 (very fast). 
-	--]]
-	{liquidSurfaceDelay = 'uint8_t'},		-- 6
+		--[[ from metroidconstruction.com/SMMM:
+		how long until the water/lava/acid starts to rise or lower. For rooms with liquid, you must use a value between 01 (instantly) and FF (a few seconds). For rooms with no liquid, use 00.
+		For liquids moving up, use a surface speed value between FE00-FFFF. Examples: FFFE (absolute slowest), FFD0 (slow), FFD0 (decent speed), and FE00 (very fast).
+		For liquids moving down, use a surface speed value between 0001-0100. Examples: 0001 (absolute slowest), 0020 (slow), 0040 (decent speed), 0100 (very fast). 
+		--]]
+		{liquidSurfaceDelay = 'uint8_t'},		-- 6
 
-	-- liquid, fog, spores, rain, etc
-	{fxType = 'uint8_t'},					-- 7
-	
-	-- lighting options: 02 = normal, 28 = dark visor room, 2a = darker yellow-visor room
-	{a = 'uint8_t'},						-- 8
-	
-	-- prioritize/color layers
-	{b = 'uint8_t'},						-- 9
-	
-	-- liquid options
-	{c = 'uint8_t'},						-- 0xa
-	
-	{paletteFXFlags = 'uint8_t'},			-- 0xb
-	{tileAnimateFlags = 'uint8_t'},			-- 0xc
-	{paletteBlend = 'uint8_t'},				-- 0xd
-	
-	{last = 'uint16_t'},					-- 0xe
+		-- liquid, fog, spores, rain, etc
+		{fxType = 'uint8_t'},					-- 7
+		
+		-- lighting options: 02 = normal, 28 = dark visor room, 2a = darker yellow-visor room
+		{a = 'uint8_t'},						-- 8
+		
+		-- prioritize/color layers
+		{b = 'uint8_t'},						-- 9
+		
+		-- liquid options
+		{c = 'uint8_t'},						-- 0xa
+		
+		{paletteFXFlags = 'uint8_t'},			-- 0xb
+		{tileAnimateFlags = 'uint8_t'},			-- 0xc
+		{paletteBlend = 'uint8_t'},				-- 0xd
+		
+		{last = 'uint16_t'},					-- 0xe
+	},
 }
 
 
@@ -219,22 +248,25 @@ here's the header==0x000e instances:
 size==0x44 for ofs[5] = 0xc1, ofs[0x16]=0x0e, size==0x18 for ofs[5] = 0xd9, ofs[0x16]=0x00
 
 --]]
-local bg_t = struct'bg_t'{		-- this is bg04_t <=> bg_t where bg.header==4
-	{header = 'uint16_t'},
-	{addr24 = 'addr24_t'},		-- address to ... what? 
-	-- skip the next 14 bytes
-	{unknown1 = 'uint16_t'},
-	{unknown2 = 'uint16_t'},
-	{unknown3 = 'uint16_t'},
--- sometimes bg_t's break here before the next bg_t
-	{unknown4 = 'uint16_t'},
-	{unknown5 = 'uint16_t'},
-	{unknown6 = 'uint16_t'},
-	{unknown7 = 'uint16_t'},
-	{unknown8 = 'uint16_t'},
-	{unknown9 = 'uint16_t'},
-	{unknowna = 'uint16_t'},
-	{unknownb = 'uint16_t'},
+local bg_t = struct{		-- this is bg04_t <=> bg_t where bg.header==4
+	name = 'bg_t',
+	fields = {
+		{header = 'uint16_t'},
+		{addr24 = 'addr24_t'},		-- address to ... what? 
+		-- skip the next 14 bytes
+		{unknown1 = 'uint16_t'},
+		{unknown2 = 'uint16_t'},
+		{unknown3 = 'uint16_t'},
+	-- sometimes bg_t's break here before the next bg_t
+		{unknown4 = 'uint16_t'},
+		{unknown5 = 'uint16_t'},
+		{unknown6 = 'uint16_t'},
+		{unknown7 = 'uint16_t'},
+		{unknown8 = 'uint16_t'},
+		{unknown9 = 'uint16_t'},
+		{unknowna = 'uint16_t'},
+		{unknownb = 'uint16_t'},
+	},
 }
 assert(ffi.sizeof'bg_t' == 0x1b)
 
@@ -252,12 +284,15 @@ header=0x0002 => sizeof=11 always (5 instances)
   rooms: 04/37	(draygon's room)
 --]]
 -- struct of bg_t when header==0x0002
-local bg02_t = struct'bg02_t'{
-	{header = 'uint16_t'},
-	{addr24 = 'addr24_t'},	-- this isn't compressed data.
-	{unknown1 = 'uint16_t'},
-	{unknown2 = 'uint16_t'},
-	{unknown3 = 'uint16_t'},
+local bg02_t = struct{
+	name = 'bg02_t',
+	fields = {
+		{header = 'uint16_t'},
+		{addr24 = 'addr24_t'},	-- this isn't compressed data.
+		{unknown1 = 'uint16_t'},
+		{unknown2 = 'uint16_t'},
+		{unknown3 = 'uint16_t'},
+	},
 }
 assert(ffi.sizeof'bg02_t' == 11)
 
@@ -270,8 +305,13 @@ header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 
   rooms: 01/2f	(kraid's room)
 	... 13 from head to next bg_t
 --]]
---local bg08_t = struct'bg08_t'{
---}
+--[[
+local bg08_t = struct{
+	name = 'bg08_t',
+	fields = {
+	},
+}
+--]]
 
 --[[
 header=0x000a => 2 instances, both have sizeof=4
@@ -282,9 +322,12 @@ header=0x000a => 2 instances, both have sizeof=4
   room 06/00	(ceres station first room ... with its mode7 graphics)
 --]]
 -- struct of bg_t when header==0x000a
-local bg0a_t = struct'bg0a_t'{
-	{header = 'uint16_t'},		-- always 0x000a
-	{zero = 'uint16_t'},		-- always 0x0000
+local bg0a_t = struct{
+	name = 'bg0a_t',
+	fields = {
+		{header = 'uint16_t'},		-- always 0x000a
+		{zero = 'uint16_t'},		-- always 0x0000
+	},
 }
 assert(ffi.sizeof'bg0a_t' == 4)
 
@@ -294,62 +337,74 @@ assert(ffi.sizeof'bg0a_t' == 4)
 -- This isn't the door so much as the information associated with its destination.
 -- This doesn't reference the in-room door object so much as vice-versa.
 -- I'm tempted to call this 'exit_t' ... since you don't need a door
-local door_t = struct'door_t'{
-	{destRoomAddr = 'uint16_t'},				-- 0: points to the room_t to transition into
-	
---[[
-0x40 = change regions
-0x80 = elevator
---]]
-	{flags = 'uint8_t'},				-- 2
+local door_t = struct{
+	name = 'door_t',
+	fields = {
+		{destRoomAddr = 'uint16_t'},				-- 0: points to the room_t to transition into
+		
+	--[[
+	0x40 = change regions
+	0x80 = elevator
+	--]]
+		{flags = 'uint8_t'},				-- 2
 
---[[
-0 = right
-1 = left
-2 = down
-3 = up
-| 0x04 flag = door closes behind samus
---]]
-	{direction = 'uint8_t'},			-- 3
-	
-	{capX = 'uint8_t'},					-- 4	target room x offset lo to place you at
-	{capY = 'uint8_t'},					-- 5	target room y offset lo
-	{screenX = 'uint8_t'},				-- 6	target room x offset hi
-	{screenY = 'uint8_t'},				-- 7	target room y offset hi
-	{distToSpawnSamus = 'uint16_t'},	-- 9	distance from door to spawn samus
-	{code = 'uint16_t'},				-- A	custom asm for the door
+	--[[
+	0 = right
+	1 = left
+	2 = down
+	3 = up
+	| 0x04 flag = door closes behind samus
+	--]]
+		{direction = 'uint8_t'},			-- 3
+		
+		{capX = 'uint8_t'},					-- 4	target room x offset lo to place you at
+		{capY = 'uint8_t'},					-- 5	target room y offset lo
+		{screenX = 'uint8_t'},				-- 6	target room x offset hi
+		{screenY = 'uint8_t'},				-- 7	target room y offset hi
+		{distToSpawnSamus = 'uint16_t'},	-- 9	distance from door to spawn samus
+		{code = 'uint16_t'},				-- A	custom asm for the door
+	},
 }
 
 -- this is what the metroid ROM map says ... "Elevator thing"
 -- two dooraddrs point to a uint16_t of zero, at $0188fc and $01a18a, and they point to structs that only take up 2 bytes
 -- you find it trailing the door_t corresponding with the lift
-local lift_t = struct'lift_t'{
-	{zero = 'uint16_t'},
+local lift_t = struct{
+	name = 'lift_t',
+	fields = {
+		{zero = 'uint16_t'},
+	},
 }
 
 
 -- http://patrickjohnston.org/bank/80
-local loadStation_t = struct'loadStation_t'{
-	{roomAddr = 'uint16_t'},
-	{doorAddr = 'uint16_t'},
-	{doorBTS = 'uint16_t'},
-	{screenX = 'uint16_t'},
-	{screenY = 'uint16_t'},
-	{offsetX = 'uint16_t'},
-	{offsetY = 'uint16_t'},
+local loadStation_t = struct{
+	name = 'loadStation_t',
+	fields = {
+		{roomAddr = 'uint16_t'},
+		{doorAddr = 'uint16_t'},
+		{doorBTS = 'uint16_t'},
+		{screenX = 'uint16_t'},
+		{screenY = 'uint16_t'},
+		{offsetX = 'uint16_t'},
+		{offsetY = 'uint16_t'},
+	},
 }
 
 -- http://patrickjohnston.org/bank/82
-local demoRoom_t = struct'demoRoom_t'{
-	{roomAddr = 'uint16_t'},
-	{doorAddr = 'uint16_t'},
-	{doorSlot = 'uint16_t'},
-	{screenX = 'uint16_t'},
-	{screenY = 'uint16_t'},
-	{offsetX = 'uint16_t'},
-	{offsetY = 'uint16_t'},
-	{demoLength = 'uint16_t'},
-	{codeAddr = 'uint16_t'},
+local demoRoom_t = struct{
+	name = 'demoRoom_t',
+	fields = {
+		{roomAddr = 'uint16_t'},
+		{doorAddr = 'uint16_t'},
+		{doorSlot = 'uint16_t'},
+		{screenX = 'uint16_t'},
+		{screenY = 'uint16_t'},
+		{offsetX = 'uint16_t'},
+		{offsetY = 'uint16_t'},
+		{demoLength = 'uint16_t'},
+		{codeAddr = 'uint16_t'},
+	},
 }
 
 local tileSetCount = 29	-- this is the # that are used in metroid.
@@ -365,10 +420,13 @@ so if i wanted to optimize this then i should keep track of what tiles are used 
 and that means i should try to decompress each into 16x16 bmps separately
 and store separately sets of which are being referenced, for optimizations sake
 --]]
-local tileSet_t = struct'tileSet_t'{
-	{tileAddr24 = 'addr24_t'},
-	{subtileAddr24 = 'addr24_t'},
-	{paletteAddr24 = 'addr24_t'},
+local tileSet_t = struct{
+	name = 'tileSet_t',
+	fields = {
+		{tileAddr24 = 'addr24_t'},
+		{subtileAddr24 = 'addr24_t'},
+		{paletteAddr24 = 'addr24_t'},
+	},
 }
 assert(ffi.sizeof'tileSet_t' == 9)
 
@@ -1949,6 +2007,13 @@ function SMMap:mapAddLayerHandling(addr)
 end
 
 --[[
+alright naming
+TODO renaming ...
+subtileInfo => graphicTile_t = 8x8 rendered block
+subtile => tilemapElement_t = info in subtileXMax x subtileYMax that references the 8x8 graphics tiles 
+--]]
+
+--[[
 dst should be the destination indexed bitmap
 src should be tileData.tileVec.v, or whatever else
 subtiles should be tileData.subtileVec.v
@@ -2433,6 +2498,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 
 	--]] --------------------------------------------------------------------------------
 
+	-- TODO switch to subtile indexes used, per 8x8 block
 	-- collect all unique indexes of each roomblockdata	
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		roomBlockData.tileIndexesUsed = roomBlockData.tileIndexesUsed or {}
@@ -2452,13 +2518,14 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 						local d3 = blocks[2 + 3 * di]	
 						local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
 						roomBlockData.tileIndexesUsed[tonumber(tileIndex)] = true
+						-- TODO convert tileIndexes into its 4 subtile indexes and mark those
 					end
 				end
 			end
 		end
 	end
 
--- [[ now do the same for tilesets 
+	-- now do the same for tilesets 
 	for _,tileData in ipairs(self.tileDatas) do
 		tileData.tileIndexesUsed = {}
 	end
@@ -2469,7 +2536,19 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 			end
 		end
 	end
---]]
+
+	--[[
+	for _,bg in ipairs(self.bgs) do
+		local ptr = ffi.cast('uint16_t*', bg.data)
+		local count = bg.dataSize/2
+		for i=0,count-1 do
+			get index from ptr[0] and find its location in the tilemap and flag it
+			ptr[0]
+		end
+	end
+	--]]
+
+
 
 	-- load stations
 	-- http://patrickjohnston.org/bank/82

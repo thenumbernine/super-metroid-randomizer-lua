@@ -12,9 +12,10 @@ local typeToString = {
 	uint16_t = hextostr(4),
 }
 
-local function defineFields(name)
-	return function(fields)
-		local code = template([[
+local function struct(args)
+	local name = assert(args.name)
+	local fields = assert(args.fields)
+	local code = template([[
 typedef union {
 	struct {
 <? 
@@ -30,8 +31,13 @@ end
 	uint8_t ptr[<?=size?>];
 } <?=name?>;
 ]], {name=name, fields=fields})
-		ffi.cdef(code)
+	
+	local metatype 
+	xpcall(function()
+		print(code)
 
+		ffi.cdef(code)
+	
 		-- also in common with my hydro-cl project
 		-- consider merging
 		local metatable = {
@@ -47,12 +53,12 @@ end
 				end
 				return result
 			end,
-			__tostring = function(ptr)
+			__tostring = function(self)
 				local t = table()
 				for _,field in ipairs(fields) do
 					local name, ctype = next(field)
 					
-					local s = (typeToString[ctype] or tostring)(ptr[name])
+					local s = (typeToString[ctype] or tostring)(self[name])
 					
 					t:insert(name..'='..s)
 				end
@@ -68,9 +74,14 @@ end
 				end
 				return true
 			end,
+			code = code,
+			fields = fields,
 		}
 		metatable.__index = metatable
-		local metatype = ffi.metatype(name, metatable)
+		if args.metatable then
+			args.metatable(metatable)
+		end
+		metatype = ffi.metatype(name, metatable)
 
 		local sizeOfFields = table.map(fields, function(kv)
 			local name,ctype = next(kv)
@@ -78,8 +89,12 @@ end
 		end):sum()
 		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
 
-		return metatype
-	end
+	end, function (err)
+		io.stderr:write(require 'template.showcode'(code),'\n')
+		io.stderr:write(err,'\n',debug.traceback(),'\n')
+		os.exit(1)
+	end)
+	return metatype, code
 end
 
-return defineFields
+return struct
