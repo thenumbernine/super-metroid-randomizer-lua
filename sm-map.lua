@@ -2290,19 +2290,13 @@ print('tileVec.size', ('$%x'):format(tileVec.size))
 		assert(bit.band(len, 1) == 0)
 		tileSet.paletteSize = bit.rshift(len,1)
 		assert(tileSet.paletteSize == 128)	-- always true
-		tileSet.palette = ffi.new('uint8_t[?]', 4 * tileSet.paletteSize)
-		local src = ffi.cast('uint16_t*', data)
-		local dst = tileSet.palette
-		for paletteIndex=0,tileSet.paletteSize-1 do
-			dst[0] = bit.band(src[0], 0x1f)
-			dst[1] = bit.band(bit.rshift(src[0], 5), 0x1f)
-			dst[2] = bit.band(bit.rshift(src[0], 10), 0x1f)
-			dst[3] = bit.band(bit.rshift(src[0], 15), 0x01)	-- seems this is never set in any palettes...
-			-- isn't the 15th bit the alpha mask?
-			src = src + 1
-			dst = dst + 4
-		end
-
+--[[ this seems to free the original data once it leaves scope
+		tileSet.palette = ffi.cast('uint16_t*', data)
+--]]
+-- [[
+		tileSet.palette = ffi.new('rgb_t[?]', tileSet.paletteSize)
+		ffi.copy(tileSet.palette, data, len)
+--]]
 
 		--[[
 		region 6 tilesets used:
@@ -2924,10 +2918,10 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 												local bgh = subtileSizeInPixels * bgBmp.subtilesHigh
 												local bgx = x % bgw
 												local bgy = y % bgh
-												local src = tileSet.palette + 4 * bgBmp.dataBmp[bgx + bgw * bgy]
-												dst[0] = math.floor(src[0]/31*255)
-												dst[1] = math.floor(src[1]/31*255)
-												dst[2] = math.floor(src[2]/31*255)
+												local src = tileSet.palette[bgBmp.dataBmp[bgx + bgw * bgy]]
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
 											else
 												dst[0] = 0
 												dst[1] = 0
@@ -2942,10 +2936,10 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 											-- now which determines transparency?
 											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
 											--if paletteIndex < 0x80 then			-- this causes the background to turn blue in tileSet $9 ... and in kraid's room
-												local src = tileSet.palette + 4 * paletteIndex
-												dst[0] = math.floor(src[0]/31*255)
-												dst[1] = math.floor(src[1]/31*255)
-												dst[2] = math.floor(src[2]/31*255)
+												local src = tileSet.palette[paletteIndex]
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
 											end
 										end
 									end
@@ -3398,17 +3392,19 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.palette + 4 * tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)]
-								
+								local src = tileSet.palette[tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)]]
 								-- TODO what about pixel/palette mask/alpha?
-								if src[0] > 0 or src[1] > 0 or src[2] > 0 then
-									
+								if src.r > 0 or src.g > 0 or src.b > 0 then
 									maxdestx = math.max(maxdestx, destx)
 									maxdesty = math.max(maxdestx, desty)
 									local dst = mode7image.buffer + 3 * (destx + mode7image.width * desty)
-									dst[0] = math.floor(src[0]/31*255)
-									dst[1] = math.floor(src[1]/31*255)
-									dst[2] = math.floor(src[2]/31*255)
+									dst[0] = math.floor(src.r*255/31)
+									dst[1] = math.floor(src.g*255/31)
+									dst[2] = math.floor(src.b*255/31)
+								else
+									dst[0] = 0
+									dst[1] = 0
+									dst[2] = 0
 								end
 							end
 						end
@@ -3431,10 +3427,10 @@ function SMMap:mapSaveImage(filenamePrefix)
 							local paletteIndex = tileData.tileGfxBmp[srcIndex]
 							local r,g,b = 0,0,0
 							if bit.band(paletteIndex, 0xf) > 0 then
-								local src = tileSet.palette + 4 * paletteIndex
-								r = math.floor(src[0]*255/31)
-								g = math.floor(src[1]*255/31)
-								b = math.floor(src[2]*255/31)
+								local src = tileSet.palette[paletteIndex]
+								r = math.floor(src.r*255/31)
+								g = math.floor(src.g*255/31)
+								b = math.floor(src.b*255/31)
 							end
 							img.buffer[0 + 3 * dstIndex] = r
 							img.buffer[1 + 3 * dstIndex] = g
@@ -3474,10 +3470,10 @@ function SMMap:mapSaveImage(filenamePrefix)
 							local offset = x + img.width * y
 							local dst = img.buffer + 3 * offset
 							local paletteIndex = bgBmp.dataBmp[offset]
-							local rgb = rs.tileSet.palette + 4 * paletteIndex
-							dst[0] = math.floor(rgb[0]*255/31)
-							dst[1] = math.floor(rgb[1]*255/31)
-							dst[2] = math.floor(rgb[2]*255/31)
+							local rgb = rs.tileSet.palette[paletteIndex]
+							dst[0] = math.floor(rgb.r*255/31)
+							dst[1] = math.floor(rgb.g*255/31)
+							dst[2] = math.floor(rgb.b*255/31)
 						end
 					end
 					img:save(fn)
@@ -3984,10 +3980,8 @@ function SMMap:mapPrint()
 		print('  paletteSize='..('$%x'):format(tileSet.paletteSize))
 		print('  paletteAddr='..('$%06x'):format(tileSet.paletteAddr))
 		print('  palette={'..range(0,tileSet.paletteSize-1):mapi(function(i)
-				return '{'..range(0,3):mapi(function(j)
-					return ('%02x'):format(tileSet.palette[j + 4 * i])
-				end):concat','..'}' end
-			):concat', '..'}')
+					return tostring(tileSet.palette[i])
+			end):concat', '..'}')
 		print('  rooms used = '..tileSet.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat', ')

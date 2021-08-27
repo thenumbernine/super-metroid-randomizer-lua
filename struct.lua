@@ -83,11 +83,12 @@ end
 		end
 		metatype = ffi.metatype(name, metatable)
 
+		local null = ffi.cast(name..'*', nil)
 		local sizeOfFields = table.map(fields, function(kv)
-			local name,ctype = next(kv)
-			return ffi.sizeof(ctype)
+			local fieldName,fieldType = next(kv)
+			return ffi.sizeof(null[fieldName])
 		end):sum()
-		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
+		assert(ffi.sizeof(name) == sizeOfFields, "struct "..fieldName.." isn't packed!")
 
 	end, function (err)
 		io.stderr:write(require 'template.showcode'(code),'\n')
