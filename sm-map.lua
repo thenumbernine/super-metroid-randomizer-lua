@@ -49,7 +49,7 @@ local mode7sizeIn8PixelTiles = 128
 
 local blocksPerRoom = 16
 local blockSizeInPixels = 16	-- TODO 'blockSizeInPixels' ? 'tile' becomes ambiguous
-local halfBlockSizeInPixels = bit.rshift(blockSizeInPixels, 1)
+local subtileSizeInPixels = bit.rshift(blockSizeInPixels, 1)
 local numMode7Tiles = 256
 local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
@@ -209,14 +209,17 @@ header=0x0004 => sizeof=27 (overwhelmingly) ... except for $07e248 and $07e25a w
 
 header=0x000e => 3 instances: sizeof is 68, 68, 24. ofs[15]=0x80 always.  maybe this is sizeof=24 and there is an extra 17 bytes after the first two?
 here's the header==0x000e instances:
- $07b76a: {header=000e, addr24={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089} rooms: 00/00 00/00 00/00 00/00
- $07b7ae: {header=000e, addr24={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1} rooms: 00/05
- $07b7f2: {header=000e, addr24={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000} rooms: 00/09
+ $07b76a: {header=000e, addr24={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089}
+  rooms: 00/00	(crateria first room - with scrolling cloud background)
+ $07b7ae: {header=000e, addr24={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1}
+  rooms: 00/05	(crateria big room before wrecked ship - with scrolling cloud background)
+ $07b7f2: {header=000e, addr24={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000}
+  rooms: 00/09	(crateria room right of wrecked ship - with scrolling cloud background)
 
 size==0x44 for ofs[5] = 0xc1, ofs[0x16]=0x0e, size==0x18 for ofs[5] = 0xd9, ofs[0x16]=0x00
 
 --]]
-local bg_t = struct'bg_t'{
+local bg_t = struct'bg_t'{		-- this is bg04_t <=> bg_t where bg.header==4
 	{header = 'uint16_t'},
 	{addr24 = 'addr24_t'},		-- address to ... what? 
 	-- skip the next 14 bytes
@@ -237,16 +240,21 @@ assert(ffi.sizeof'bg_t' == 0x1b)
 
 --[[
 header=0x0002 => sizeof=11 always (5 instances)
- $07b80a: {header=0002, addr24={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000} rooms: 00/11
- $07b84d: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
- $07b858: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 02/0a
- $07e0fd: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 03/0a
- $07e108: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000} rooms: 04/37
+ $07b80a: {header=0002, addr24={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000}
+  rooms: 00/11	(glass tube from crateria caves into wrecked ship)
+ $07b84d: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
+  rooms: 02/0a	(crocomire's room)
+ $07b858: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
+  rooms: 02/0a	(crocomire's room)
+ $07e0fd: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
+  rooms: 03/0a	(phantoon's room)
+ $07e108: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
+  rooms: 04/37	(draygon's room)
 --]]
 -- struct of bg_t when header==0x0002
 local bg02_t = struct'bg02_t'{
 	{header = 'uint16_t'},
-	{addr24 = 'addr24_t'},
+	{addr24 = 'addr24_t'},	-- this isn't compressed data.
 	{unknown1 = 'uint16_t'},
 	{unknown2 = 'uint16_t'},
 	{unknown3 = 'uint16_t'},
@@ -255,9 +263,11 @@ assert(ffi.sizeof'bg02_t' == 11)
 
 --[[
 header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 13 (ofs[15]=0x00)
- $07b815: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004} rooms: 01/2f
+ $07b815: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004}
+  rooms: 01/2f	(kraid's room)
  	... 43 from head to next bg_t
- $07b840: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000} rooms: 01/2f
+ $07b840: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000}
+  rooms: 01/2f	(kraid's room)
 	... 13 from head to next bg_t
 --]]
 --local bg08_t = struct'bg08_t'{
@@ -265,8 +275,11 @@ header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 
 
 --[[
 header=0x000a => 2 instances, both have sizeof=4
- $07e113: {header=000a, zero=0000} rooms: 04/37 03/0a
- $07e1d4: {header=000a, zero=0000} rooms: 06/00 06/00
+ $07e113: {header=000a, zero=0000}
+  room 04/37 	(draygon's room)
+  room 03/0a	(phantoon's room)
+ $07e1d4: {header=000a, zero=0000}
+  room 06/00	(ceres station first room ... with its mode7 graphics)
 --]]
 -- struct of bg_t when header==0x000a
 local bg0a_t = struct'bg0a_t'{
@@ -1030,6 +1043,58 @@ if done then break end
 
 
 -- [=[
+	--[[
+	background bitmaps are generated from combining the bgData subtile indexes with a roomstate's tileSet's subtiles
+	stored as 8-bit indexed bitmaps ... use the tileset's palette to get the rgb colors
+	--]]
+	-- group these by unique bgData + tileData to cache unique indexed bitmaps
+	-- or group by unique bgData + tileSet to cache unique rgb bitmaps
+	self.bgBmps = self.bgBmps or table()
+	local function makeBackgroundBitmapForBGDataAndTileSet(rs, bg)
+		assert(bg.obj.header == 4)
+		local tileData = rs.tileSet.tileData
+		for _,bgBmp in ipairs(self.bgBmps) do
+			-- tileData matches
+			if bgBmp.tileData == rs.tileSet.tileData
+			-- bgData matches
+			-- (put bgData in its own lua obj? instead of it being merged with bg?)
+			and bgBmp.bg == bg
+			then
+				return bgBmp
+			end
+		end
+		local bgBmp = {}
+		bgBmp.tileData = tileData
+		bgBmp.bg = bg
+	
+
+			
+		--[[
+		bg dataSize is 0x800 / 2048 or 0x1000 / 4096
+		with 2 bytes per subtile, that means
+		most are dataSize==0x800 <=> uint16_t subtileInfo[height=32][width=32]
+		some are dataSize==0x1000 <=> uint16_t subtileInfo[height=64][width=32]
+		--]]
+		local numSubtiles = bg.dataSize / 2
+		bgBmp.subtilesWide = 32
+		bgBmp.subtilesHigh = numSubtiles / bgBmp.subtilesWide
+		assert(bgBmp.subtilesWide * bgBmp.subtilesHigh * 2 == bg.dataSize)
+		
+		bgBmp.dataBmp = ffi.new('uint8_t[?]', subtileSizeInPixels * subtileSizeInPixels * numSubtiles)
+
+		self:decodeSubtileBmp(
+			bgBmp.dataBmp,
+			bg.data,
+			tileData.subtileVec.v,
+			bgBmp.subtilesWide,
+			bgBmp.subtilesHigh,
+			1
+		)
+
+		self.bgBmps:insert(bgBmp)
+		return bgBmp
+	end
+	
 	-- now that tileSet is loaded, decode the bgdata
 	-- TODO how about grouping by unique bg_t + tileSet pairs?
 	-- to reduce redundant outputs
@@ -1050,24 +1115,12 @@ if done then break end
 		if so then it is probably more like:
 		data[16][16][8], with each 8 bytes = 4 uint16's of the 4 subtile corners
 		--]]
+		rs.bgBmps = table()
 		for _,bg in ipairs(rs.bgs) do
 			if bg.obj.header == 4 then
 				assert(rs.tileSet.tileData.subtileVec)
-				-- most are dataSize==0x800 <=> 16x16x8
-				-- some are dataSize==0x1000 <=> 32x16x8 or something
-				local numTiles = bg.dataSize / 8
-				bg.dataBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * numTiles)
-				self:decodeSubtileBmp(
-					bg.dataBmp,
-					bg.data,
-					rs.tileSet.tileData.subtileVec.v
-						-- skip common subtile stuff?
-						-- but it seems the common stuff is at the end of the subtileVec already ... hmm
-						--+ 0x3000	
-						-- also this causes segfaults
-					,
-					numTiles
-				)
+				assert(rs.tileSet.palette)
+				rs.bgBmps:insert(makeBackgroundBitmapForBGDataAndTileSet(rs, bg))
 			end
 		end
 	end
@@ -1901,38 +1954,40 @@ src should be tileData.tileVec.v, or whatever else
 subtiles should be tileData.subtileVec.v
 count should be tileData.tileVec.size/8 or whatever else
 
-dst = destination, in uint8_t[count][16][16]
-src = source tile data, in uint16_t[count][4] ... for each 4 subtile corners
+dst = destination, in uint8_t[count][subtileXMax*8][subtileYMax*8]
+src = source tile data, in uint16_t[count][subtileYMax][subtileXMax] ... for each subtile reference
 subtiles = source subtile data ... idk how big this should be ... usu 0x4800 or 0x8000 incl common data
-count = count
+subtileXMax = 8x8 subtiles wide
+subtileYMax = 8x8 subtiles high
+count = number of 8 x 8 x subtileXMax x subtileYMax tiles ... honestly this coule be multiplied into subtileYMax
 --]]
-function SMMap:decodeSubtileBmp(dst, src, subtiles, count)
+function SMMap:decodeSubtileBmp(dst, src, subtiles, subtileXMax, subtileYMax, count)
+	local subtileInfo = ffi.cast('uint16_t*', src)
 	for tileIndex=0,count-1 do
-		for xofs=0,1 do
-			for yofs=0,1 do
-				local x = bit.lshift(xofs, 3)
-				local y = bit.lshift(yofs, 3)
+		for dstSubtileY=0,subtileYMax-1 do
+			for dstSubtileX=0,subtileXMax-1 do
+				local x = bit.lshift(dstSubtileX, 3)
+				local y = bit.lshift(dstSubtileY, 3)
 				
-				local tileInfo = ffi.cast('uint16_t*', src)[bit.bor(xofs, bit.lshift(yofs, 1))]
-				
-				local xMask = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
-				local yMask = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
-				local hi = bit.rshift(bit.band(tileInfo, 0x1C00), 6)
+				local xMask = bit.band(subtileInfo[0], 0x4000) ~= 0 and 7 or 0
+				local yMask = bit.band(subtileInfo[0], 0x8000) ~= 0 and 7 or 0
+				local hi = bit.rshift(bit.band(subtileInfo[0], 0x1c00), 6)
 				for ty=0,7 do
 					for tx=0,7 do
-						local subtileIndex = bit.bor(bit.bxor(tx, xMask), bit.lshift(bit.bxor(ty, yMask), 3), bit.lshift(bit.band(tileInfo, 0x3ff), 6))
+						local subtileIndex = bit.bor(
+							bit.bxor(tx, xMask),
+							bit.lshift(bit.bxor(ty, yMask), 3),
+							bit.lshift(bit.band(subtileInfo[0], 0x3ff), 6)
+						)
 						local lo = subtiles[bit.rshift(subtileIndex, 1)]
 						lo = bit.band(bit.rshift(lo, bit.lshift(bit.band(subtileIndex,1),2)), 0xf)
-						local dstIndex = x + tx + blockSizeInPixels * (y + ty)
-						local paletteIndex = bit.bor(hi, lo)
-						dst[dstIndex] = paletteIndex
+						dst[x + tx + subtileSizeInPixels * subtileXMax * ty] = bit.bor(hi, lo)
 					end
 				end
+				subtileInfo = subtileInfo + 1
 			end
+			dst = dst + subtileSizeInPixels * subtileSizeInPixels * subtileXMax
 		end
-
-		src = src + 8
-		dst = dst + blockSizeInPixels * blockSizeInPixels
 	end
 end
 
@@ -2023,11 +2078,11 @@ tileData.subtileBufferSize = ffi.sizeof(buffer)
 		-- for these rooms, the tileData.tileAddr points to the mode7 data
 		if loadMode7 then
 print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
-			tileData.mode7TileSet = ffi.new('uint8_t[?]', halfBlockSizeInPixels * halfBlockSizeInPixels * numMode7Tiles)
+			tileData.mode7TileSet = ffi.new('uint8_t[?]', subtileSizeInPixels * subtileSizeInPixels * numMode7Tiles)
 			for mode7tileIndex=0,numMode7Tiles-1 do
-				for x=0,halfBlockSizeInPixels-1 do
-					for y=0,halfBlockSizeInPixels-1 do
-						tileData.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex))]
+				for x=0,subtileSizeInPixels-1 do
+					for y=0,subtileSizeInPixels-1 do
+						tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex))]
 					end
 				end
 			end
@@ -2139,6 +2194,8 @@ print('tileVec.size', ('$%x'):format(tileVec.size))
 			tileData.tileGfxBmp,
 			tileVec.v,
 			subtileVec.v,
+			2,
+			2,
 			tileData.tileGfxCount
 		)
 
@@ -2763,9 +2820,11 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
 							local flipx = bit.band(d2, 4) ~= 0
 							local flipy = bit.band(d2, 8) ~= 0
-							
-							local tileSet = m.roomStates[1].tileSet
+						
+							local rs = m.roomStates[1]
+							local tileSet = rs.tileSet
 							local tileData = tileSet.tileData
+							local bgBmp = rs.bgBmps[1]
 							if tileSet
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
 							and tileIndex < tileData.tileGfxCount
@@ -2777,12 +2836,30 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 										if x >= 0 and x < ctx.mapTexImage.width
 										and y >= 0 and y < ctx.mapTexImage.height 
 										then
+											local dstIndex = x + ctx.mapTexImage.width * y
+											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
+
+-- [[ draw background?
+											if bgBmp then
+												local bgw = subtileSizeInPixels * bgBmp.subtilesWide
+												local bgh = subtileSizeInPixels * bgBmp.subtilesHigh
+												local bgx = x % bgw
+												local bgy = y % bgh
+												local src = tileSet.palette + 4 * bgBmp.dataBmp[bgx + bgw * bgy]
+												dst[0] = math.floor(src[0]/31*255)
+												dst[1] = math.floor(src[1]/31*255)
+												dst[2] = math.floor(src[2]/31*255)
+											else
+												dst[0] = 0
+												dst[1] = 0
+												dst[2] = 0
+											end
+--]]
+
 											local spi = flipx and blockSizeInPixels - 1 - pi or pi
 											local spj = flipy and blockSizeInPixels - 1 - pj or pj
 											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
 											local paletteIndex = tileData.tileGfxBmp[srcIndex]
-											local dstIndex = x + ctx.mapTexImage.width * y
-											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
 											-- now which determines transparency?
 											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
 											--if paletteIndex < 0x80 then			-- this causes the background to turn blue in tileSet $9 ... and in kraid's room
@@ -2790,10 +2867,6 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 												dst[0] = math.floor(src[0]/31*255)
 												dst[1] = math.floor(src[1]/31*255)
 												dst[2] = math.floor(src[2]/31*255)
-											else 
-												dst[0] = 0
-												dst[1] = 0
-												dst[2] = 0
 											end
 										end
 									end
@@ -3246,7 +3319,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.palette + 4 * tileData.mode7TileSet[x + halfBlockSizeInPixels * (y + halfBlockSizeInPixels * mode7tileIndex)]
+								local src = tileSet.palette + 4 * tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)]
 								
 								-- TODO what about pixel/palette mask/alpha?
 								if src[0] > 0 or src[1] > 0 or src[2] > 0 then
@@ -3304,52 +3377,31 @@ function SMMap:mapSaveImage(filenamePrefix)
 				imgused:save('tilegfx used/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
 			end
 		end
+		
 		for _,m in ipairs(self.rooms) do
 			for _,rs in ipairs(m.roomStates) do
-				if rs.tileSet then
-					for _,bg in ipairs(rs.bgs) do
-						if bg.dataBmp then
-							local fn = ('bgs/%02x-%02x-%x.png'):format(
-								m.obj.region,
-								m.obj.index,
-								ffi.cast('uint8_t*', rs.ptr) - self.rom
-							)
-							local numTiles = bg.dataSize / 8
-							local tw = 16
-							local th = numTiles / tw
-							assert(tw * th == numTiles)
-							local dataIndexedBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * numTiles)
-							self:decodeSubtileBmp(
-								dataIndexedBmp,
-								bg.data,
-								rs.tileSet.tileData.subtileVec.v,
-								numTiles
-							)
-						
-							local img = Image(blockSizeInPixels * tw, blockSizeInPixels * th, 3, 'unsigned char')
-							for j=0,th-1 do
-								for i=0,tw-1 do
-									for y=0,blockSizeInPixels-1 do
-										for x=0,blockSizeInPixels-1 do
-											local dst = img.buffer + 3 * (
-												x + blockSizeInPixels * i
-												+ img.width * (y + blockSizeInPixels * j)
-											)
-											local paletteIndex = dataIndexedBmp[ 
-												x + blockSizeInPixels * y
-												+ blockSizeInPixels * blockSizeInPixels * (i + tw * j)
-											]
-											local rgb = rs.tileSet.palette + 4 * paletteIndex
-											dst[0] = math.floor(rgb[0]*255/31)
-											dst[1] = math.floor(rgb[1]*255/31)
-											dst[2] = math.floor(rgb[2]*255/31)
-										end
-									end
-								end
-							end
-							img:save(fn)
+				-- for now i just have at most 1 per roomstate
+				assert(#rs.bgBmps <= 1)
+				for _,bgBmp in ipairs(rs.bgBmps) do
+					local fn = ('bgs/%02x-%02x-%x.png'):format(
+						m.obj.region,
+						m.obj.index,
+						ffi.cast('uint8_t*', rs.ptr) - self.rom
+					)
+				
+					local img = Image(subtileSizeInPixels * bgBmp.subtilesWide, subtileSizeInPixels * bgBmp.subtilesHigh, 3, 'unsigned char')
+					for y=0,subtileSizeInPixels*bgBmp.subtilesHigh-1 do
+						for x=0,subtileSizeInPixels*bgBmp.subtilesWide-1 do
+							local offset = x + img.width * y
+							local dst = img.buffer + 3 * offset
+							local paletteIndex = bgBmp.dataBmp[offset]
+							local rgb = rs.tileSet.palette + 4 * paletteIndex
+							dst[0] = math.floor(rgb[0]*255/31)
+							dst[1] = math.floor(rgb[1]*255/31)
+							dst[2] = math.floor(rgb[2]*255/31)
 						end
 					end
+					img:save(fn)
 				end
 			end
 		end
