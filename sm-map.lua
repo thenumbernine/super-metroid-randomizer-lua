@@ -2017,10 +2017,7 @@ local subtileInfo_t = struct{
 	name = 'subtileInfo_t',
 	fields = {
 		{lo = 'uint16_t:10'},
-		{hi = 'uint16_t:3'},
-		-- what is this used for?  it has both values 0 and 1 ...  
-		-- it could be hi's channel, since that will go to bit 1<<7 of the paletteIndex , and all palettes are 128 entries so that bit shouldn't be needed
-		{unused = 'uint16_t:1'},		
+		{hi = 'uint16_t:4'},
 		{xMask = 'uint16_t:1'},
 		{yMask = 'uint16_t:1'},
 	},
@@ -2041,43 +2038,52 @@ subtileYMax = 8x8 subtiles high
 count = number of 8 x 8 x subtileXMax x subtileYMax tiles ... honestly this coule be multiplied into subtileYMax
 --]]
 function SMMap:decodeSubtileBmp(dst, src, subtiles, subtileXMax, subtileYMax, count)
+	local dstbase = dst
 	local subtileInfo = ffi.cast('subtileInfo_t*', src)
 	for tileIndex=0,count-1 do
 		for dstSubtileY=0,subtileYMax-1 do
+			local col = dst
 			for dstSubtileX=0,subtileXMax-1 do
-				local x = bit.lshift(dstSubtileX, 3)
-				local y = bit.lshift(dstSubtileY, 3)
-				
 				local xMask = subtileInfo.xMask * 7
 				local yMask = subtileInfo.yMask * 7
 				local hi = bit.lshift(subtileInfo.hi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
-				for ty=0,7 do
-					for tx=0,7 do
+				for y=0,7 do
+					for x=0,7 do
 						-- subtileIndex = cccc cccc:ccbb baaa
-						-- a = tx or ~tx depending on xMask
-						-- b = ty or ~ty depending on yMask
+						-- a = x or ~x depending on xMask
+						-- b = y or ~y depending on yMask
 						-- c = subtileInfo.lo
 						local subtileIndex = bit.bor(
-							bit.bxor(tx, xMask),
-							bit.lshift(bit.bxor(ty, yMask), 3),
+							bit.bxor(x, xMask),
+							bit.lshift(bit.bxor(y, yMask), 3),
 							bit.lshift(subtileInfo.lo, 6)		-- 03ffh == 0000 0011:1111 1111 b, 03ffh << 6 == 0000 1111:1111 1100 0000 b
 						)
 						-- subtileIndex is a nibble index
 						-- so the real byte index into the subtiles is ... 0ccc cccc:cccb bbaa
-						-- and that last 0'th bit of a == (tx or ~tx depending on xMask) determines which nibble to use
+						-- and that last 0'th bit of a == (x or ~x depending on xMask) determines which nibble to use
 						local lo = subtiles[bit.rshift(subtileIndex, 1)]
 						-- so if subtileIndex & 1 == 1 (i.e. if subtileInfo.x & 1 == 1) then we <<= 2
 						lo = bit.rshift(lo, bit.lshift(bit.band(subtileIndex, 1), 2))
 						lo = bit.band(lo, 0xf)
 						
-						dst[x + tx + subtileSizeInPixels * subtileXMax * ty] = bit.bor(hi, lo)
+						col[x + subtileSizeInPixels * subtileXMax * y] = bit.bor(hi, lo)
 					end
 				end
+				
+				col = col + subtileSizeInPixels
 				subtileInfo = subtileInfo + 1
 			end
 			dst = dst + subtileSizeInPixels * subtileSizeInPixels * subtileXMax
 		end
 	end
+	-- [[
+	-- what is this used for?  
+	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
+	-- and all palettes are 128 entries so that bit shouldn't be needed
+	for i=0,subtileXMax*subtileYMax*subtileSizeInPixels*subtileSizeInPixels*count-1 do
+		dstbase[i] = bit.band(dstbase[i], 0x7f)
+	end
+	--]]
 end
 
 
@@ -2231,7 +2237,8 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 		
 		local copy = ffi.new('uint8_t[?]', 32)
 		local line = ffi.new('uint8_t[?]', 4)
-		local word = ffi.new('uint32_t[1]')
+		local uint32 = ffi.new('uint32_t[1]')
+		local uint8 = ffi.cast('uint8_t*', uint32)
 		for i=0,subtileVec.size-1,32 do
 			ffi.copy(copy, subtileVec.v + i, 32)
 			-- in place convert, row by row ... why are we converting ?
@@ -2241,10 +2248,10 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
 				for x=0,7 do
 					local shift = bit.lshift(7 - x, 2)
-					word[0] = 0	-- uint32_t
+					uint32[0] = 0
 					for j=0,3 do
-						word[0] = bit.bor(
-							word[0],
+						uint32[0] = bit.bor(
+							uint32[0],
 							bit.lshift(
 								bit.band(bit.rshift(line[j], x), 1),
 								bit.bor(shift, j)
@@ -2254,7 +2261,7 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 					for j=0,3 do
 						subtileVec.v[j + 4*y + i] = bit.bor(
 							subtileVec.v[j + 4*y + i],
-							bit.rshift(word[0], bit.band(bit.lshift(j, 3), 0xff))
+							uint8[j]
 						)
 					end
 				end
@@ -2959,7 +2966,6 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 											local paletteIndex = tileData.tileGfxBmp[srcIndex]
 											-- now which determines transparency?
 											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
-											--if paletteIndex < 0x80 then			-- this causes the background to turn blue in tileSet $9 ... and in kraid's room
 												local src = tileSet.palette[paletteIndex]
 												dst[0] = math.floor(src.r*255/31)
 												dst[1] = math.floor(src.g*255/31)
