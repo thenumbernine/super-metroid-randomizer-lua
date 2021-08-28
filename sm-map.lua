@@ -49,7 +49,7 @@ local mode7sizeIn8PixelTiles = 128
 
 local blocksPerRoom = 16
 local blockSizeInPixels = 16
-local graphcsTileSizeInPixels = 8
+local graphicTileSizeInPixels = 8
 local numMode7Tiles = 256
 local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
@@ -983,7 +983,7 @@ if done then break end
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.bgAddr > 0x8000 then
+		do	--if rs.obj.bgAddr > 0x8000 then
 			local addr = topc(self.bgBank, rs.obj.bgAddr)
 			while true do
 				local ptr = ffi.cast('bg_t*', rom+addr)
@@ -1037,7 +1037,7 @@ if done then break end
 			--]]
 		end
 	end
-		
+
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.layerHandlingAddr > 0x8000 then
 			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingAddr)
@@ -1139,7 +1139,7 @@ if done then break end
 		bgBmp.subtilesHigh = numSubtiles / bgBmp.subtilesWide
 		assert(bgBmp.subtilesWide * bgBmp.subtilesHigh * 2 == bg.dataSize)
 		
-		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphcsTileSizeInPixels * graphcsTileSizeInPixels * numSubtiles)
+		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicTileSizeInPixels * graphicTileSizeInPixels * numSubtiles)
 
 		self:convertTilemapToBitmap(
 			bgBmp.dataBmp,
@@ -1826,8 +1826,8 @@ function SMMap:mapAddRoomBlocks(addr, m)
 		-- rooms can come from separate room_t's
 		-- which means they can have separate widths & heights
 		-- so here, assert that their width & height matches
-		assert(16 * roomBlockData.rooms[1].obj.width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..m.obj.width)
-		assert(16 * roomBlockData.rooms[1].obj.height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m.obj.height)
+		assert(16 * m.obj.width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..m.obj.width)
+		assert(16 * m.obj.height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m.obj.height)
 		return roomBlockData 
 	end
 	
@@ -1978,7 +1978,6 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 		doors = doors,
 		blocksForExit = blocksForExit,
 	}
-	roomBlockData.rooms:insert(m)
 	self.roomblocks:insert(roomBlockData)
 	return roomBlockData
 end
@@ -2029,7 +2028,7 @@ assert(ffi.sizeof'graphicsTileOffset_t' == 2)
 --[[
 convert a 2D array of tilemap elements, plus a list of graphics tiles, into a bitmap
 
-dst = destination, in uint8_t[count][tilemapElemSizeX*graphcsTileSizeInPixels][tilemapElemSizeY*graphcsTileSizeInPixels]
+dst = destination, in uint8_t[count][tilemapElemSizeY*graphicTileSizeInPixels][tilemapElemSizeX*graphicTileSizeInPixels]
 tilemapElem = source tilemap element array, tilemapElem_t[count][tilemapElemSizeY][tilemapElemSizeX] ... for each subtile reference
 subtiles = source subtile data ... idk how big this should be ... usu 0x4800 or 0x8000 incl common data
 tilemapElemSizeX = 8*8 subtiles wide
@@ -2096,21 +2095,21 @@ function SMMap:convertTilemapToBitmap(
 						colorIndexLo = bit.rshift(colorIndexLo, bit.lshift(bit.band(graphicsTileOffset.ptr[0], 1), 2))
 						colorIndexLo = bit.band(colorIndexLo, 0xf)
 						
-						col[x + graphcsTileSizeInPixels * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
+						col[x + graphicTileSizeInPixels * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
 					end
 				end
 				
-				col = col + graphcsTileSizeInPixels
+				col = col + graphicTileSizeInPixels
 				tilemapElem = tilemapElem + 1
 			end
-			dst = dst + graphcsTileSizeInPixels * graphcsTileSizeInPixels * tilemapElemSizeX
+			dst = dst + graphicTileSizeInPixels * graphicTileSizeInPixels * tilemapElemSizeX
 		end
 	end
 	-- [[
 	-- what is this used for?  
 	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
 	-- and all palettes are 128 entries so that bit shouldn't be needed
-	for i=0,tilemapElemSizeX*tilemapElemSizeY*graphcsTileSizeInPixels*graphcsTileSizeInPixels*count-1 do
+	for i=0,tilemapElemSizeX*tilemapElemSizeY*graphicTileSizeInPixels*graphicTileSizeInPixels*count-1 do
 		dstbase[i] = bit.band(dstbase[i], 0x7f)
 	end
 	--]]
@@ -2204,11 +2203,11 @@ tileData.subtileBufferSize = ffi.sizeof(buffer)
 		-- for these rooms, the tileData.tileAddr points to the mode7 data
 		if loadMode7 then
 print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
-			tileData.mode7TileSet = ffi.new('uint8_t[?]', graphcsTileSizeInPixels * graphcsTileSizeInPixels * numMode7Tiles)
+			tileData.mode7TileSet = ffi.new('uint8_t[?]', graphicTileSizeInPixels * graphicTileSizeInPixels * numMode7Tiles)
 			for mode7tileIndex=0,numMode7Tiles-1 do
-				for x=0,graphcsTileSizeInPixels-1 do
-					for y=0,graphcsTileSizeInPixels-1 do
-						tileData.mode7TileSet[x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex))]
+				for x=0,graphicTileSizeInPixels-1 do
+					for y=0,graphicTileSizeInPixels-1 do
+						tileData.mode7TileSet[x + graphicTileSizeInPixels * (y + graphicTileSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + graphicTileSizeInPixels * (y + graphicTileSizeInPixels * mode7tileIndex))]
 					end
 				end
 			end
@@ -3000,8 +2999,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 
 -- [[ draw background?
 											if bgBmp then
-												local bgw = graphcsTileSizeInPixels * bgBmp.subtilesWide
-												local bgh = graphcsTileSizeInPixels * bgBmp.subtilesHigh
+												local bgw = graphicTileSizeInPixels * bgBmp.subtilesWide
+												local bgh = graphicTileSizeInPixels * bgBmp.subtilesHigh
 												local bgx = x % bgw
 												local bgy = y % bgh
 												local src = tileSet.palette[bgBmp.dataBmp[bgx + bgw * bgy]]
@@ -3316,7 +3315,8 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
 	-- then, cycle through exits, and draw lines from each block to the exit destination
 
-	for _,srcRoom in ipairs(roomBlockData.rooms) do
+	for _,rs in ipairs(roomBlockData.roomStates) do
+		local srcRoom = rs.room
 		local srcRoom_ofsx, srcRoom_ofsy = ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
 		local srcRoom_xofs = debugImageRoomSizeInPixels * srcRoom_ofsx
 		local srcRoom_yofs = debugImageRoomSizeInPixels * srcRoom_ofsy
@@ -3441,8 +3441,8 @@ function SMMap:mapSaveImage(filenamePrefix)
 	}
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.rooms) do
-			drawRoomBlocks(ctx, roomBlockData, m)
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			drawRoomBlocks(ctx, roomBlockData, rs.room)
 		end
 	end
 
@@ -3478,7 +3478,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.palette[tileData.mode7TileSet[x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex)]]
+								local src = tileSet.palette[tileData.mode7TileSet[x + graphicTileSizeInPixels * (y + graphicTileSizeInPixels * mode7tileIndex)]]
 								-- TODO what about pixel/palette mask/alpha?
 								if src.r > 0 or src.g > 0 or src.b > 0 then
 									maxdestx = math.max(maxdestx, destx)
@@ -3532,6 +3532,45 @@ function SMMap:mapSaveImage(filenamePrefix)
 				end
 				img:save('tilegfx/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
 				imgused:save('tilegfx used/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
+			
+				do
+					local numGraphicTiles = tileData.subtileVec.size/32	-- 32 bytes per graphicTile8x8
+					local tilemapElemSizeX = 16
+					local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
+					assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
+					local tilemapElems = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
+print('writing tilemapElems')					
+					for i=0,numGraphicTiles-1 do
+						tilemapElems[i].graphicsTileIndex = i
+						tilemapElems[i].colorIndexHi = 0
+						tilemapElems[i].xNot = 0
+						tilemapElems[i].yNot = 0
+					end
+					local imgwidth = graphicTileSizeInPixels * tilemapElemSizeX
+					local imgheight = graphicTileSizeInPixels * tilemapElemSizeY
+					local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
+print('converting to indexed bmp')					
+					self:convertTilemapToBitmap(
+						tilemapElemIndexedBmp,	-- dst uint8_t[graphicTileSizeInPixels][numGraphicTiles * graphicTileSizeInPixels]
+						tilemapElems,			-- tilemapElems = tilemapElem_t[numGraphicTiles * graphicTileSizeInPixels]
+						tileData.subtileVec.v,	-- subtiles = 
+						tilemapElemSizeX,		-- tilemapElemSizeX
+						tilemapElemSizeY,		-- tilemapElemSizeY
+						1)						-- count
+					local subtileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
+print('converting to rgb bmp')
+					for y=0,imgheight-1 do
+						for x=0,imgwidth-1 do
+							local i = x + imgwidth * y
+							local rgb = tileSet.palette[tilemapElemIndexedBmp[i]]
+							subtileimg.buffer[0 + 3 * i] = math.floor(rgb.r*255/31)
+							subtileimg.buffer[1 + 3 * i] = math.floor(rgb.g*255/31)
+							subtileimg.buffer[2 + 3 * i] = math.floor(rgb.b*255/31)
+						end
+					end
+print('saving')
+					subtileimg:save('graphictiles/graphictile='..('%02x'):format(tileSetIndex)..'.png')
+				end
 			end
 		end
 		
@@ -3546,9 +3585,9 @@ function SMMap:mapSaveImage(filenamePrefix)
 						ffi.cast('uint8_t*', rs.ptr) - self.rom
 					)
 				
-					local img = Image(graphcsTileSizeInPixels * bgBmp.subtilesWide, graphcsTileSizeInPixels * bgBmp.subtilesHigh, 3, 'unsigned char')
-					for y=0,graphcsTileSizeInPixels*bgBmp.subtilesHigh-1 do
-						for x=0,graphcsTileSizeInPixels*bgBmp.subtilesWide-1 do
+					local img = Image(graphicTileSizeInPixels * bgBmp.subtilesWide, graphicTileSizeInPixels * bgBmp.subtilesHigh, 3, 'unsigned char')
+					for y=0,graphicTileSizeInPixels*bgBmp.subtilesHigh-1 do
+						for x=0,graphicTileSizeInPixels*bgBmp.subtilesWide-1 do
 							local offset = x + img.width * y
 							local dst = img.buffer + 3 * offset
 							local paletteIndex = bgBmp.dataBmp[offset]
@@ -3572,13 +3611,14 @@ function SMMap:mapPrintRoomBlocks()
 	print'all rooms'
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		local w,h = roomBlockData.width, roomBlockData.height
-		for _,m in ipairs(roomBlockData.rooms) do
-			io.write(' '..('%02x/%02x'):format(m.obj.region, m.obj.index))
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			print(('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index))
 		end
 		print()
 
 		local function printblock(data, width)
 			for i=1,ffi.sizeof(data) do
+				if i % 3 == 0 then io.write' ' end
 				io.write((('%02x'):format(tonumber(data[i-1])):gsub('0','.')))
 				if i % width == 0 then print() end 
 			end
@@ -3638,7 +3678,8 @@ function SMMap:mapWriteGraphDot()
 	local edges = table()
 	--for _,m in ipairs(self.rooms) do
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.rooms) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			local m = rs.room
 			local roomName = getRoomName(m)
 			
 			if showRoomStates then
@@ -3932,6 +3973,18 @@ function SMMap:mapPrint()
 		)
 	end
 
+	print()
+	print"all layerHandling's:"
+	for _,layerHandling in ipairs(self.layerHandlings) do
+		print(('%04x'):format(layerHandling.addr))
+		print(' code: '..layerHandling.code:mapi(function(cmd)
+			return ('%02x'):format(cmd)
+		end):concat' ')
+		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
+				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
+			end):concat' ')
+	end
+
 	-- print bg info
 	print()
 	print("all bg_t's:")
@@ -3992,7 +4045,7 @@ function SMMap:mapPrint()
 				..('$83:%04x'):format(door.addr)
 				..' '..door.ptr[0])
 			if door.doorCode then
-				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat())
+				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat' ')
 			end
 		end
 	end
@@ -4156,7 +4209,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 	
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks lz data', roomBlockData.rooms[1])
+		mem:add(roomBlockData.addr, roomBlockData.compressedSize, 'roomblocks lz data', roomBlockData.roomStates[1].room)
 	end
 
 	for _,bg in ipairs(self.bgs) do
@@ -4647,16 +4700,6 @@ end
 
 function SMMap:mapWriteRooms(roomBankWriteRanges)
 	local rom = self.rom
-	
-	for _,m in ipairs(self.rooms) do
-		assert(m.obj.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
-	end
-	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.rooms) do
-			assert(m.obj.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
-		end
-	end
-
 
 	local roomWriteRanges = WriteRange({
 		 {0x791f8, 0x7b769},     -- rooms of regions 0-2
@@ -4826,7 +4869,8 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	end
 	-- if you remove rooms but forget to remove them from rooms then you could end up here ... 
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,m in ipairs(roomBlockData.rooms) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			local m = rs.room
 			assert(m.ptr.region == m.obj.region, "regions dont match for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 		end
 	end

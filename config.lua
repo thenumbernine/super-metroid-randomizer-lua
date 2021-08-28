@@ -9,7 +9,7 @@ return {
 
 	-- wake zebes when you go through the room to the right of the first blue brinstar room.
 	-- notice that even if zebes is asleep, you can still get the two items in the room above the first missile... but you can't get the powerbomb behind the powerbomb walls behind morph ball.
-	wakeZebesEarly = true,
+	wakeZebesEarly = false,--true,
 
 	-- skip item fanfare
 	skipItemFanfare = true,
@@ -27,7 +27,7 @@ return {
 
 
 	-- this just randomizes enemy stats, not their placement
-	randomizeEnemies = true,
+	randomizeEnemies = false,--true,
 
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
@@ -44,13 +44,13 @@ return {
 	-- Set this to remove all items and just spread them everywhere in the world randomly.
 	-- NOTICE This is exclusive with randomizeItems
 	-- I predict the items are accessible 91.9999repeating% of the time
-	randomizeItemsScavengerHunt = true,
+	randomizeItemsScavengerHunt = false,--true,
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
-	randomizeDoors = true,
+	randomizeDoors = false,--true,
 
 	-- randomize weapon damages
-	randomizeWeapons = true, 
+	randomizeWeapons = false,--true, 
 
 
 	---------------------------------------------------------

@@ -462,6 +462,18 @@ do
 	assert(plm.cmd == sm.plmCmdValueForName.door_grey_left)
 end
 
+
+-- debugging -- remove the savestation from the plm used by room 00/04
+do
+	local m = sm:mapFindRoom(0, 0x04)
+	local rs = m.roomStates[1]
+	local plmset = rs.plmset
+	assert(#plmset.plms == 1)
+	local plm = plmset.plms:remove()	-- remove the lone save point
+	assert(plm.cmd == sm.plmCmdValueForName.save_station)
+end
+
+
 -- also while I'm here, lets remove the unfinished/unused rooms
 -- notice, when using recursive room building, this skips them anyways
 -- [[
