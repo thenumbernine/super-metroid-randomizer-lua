@@ -2009,9 +2009,23 @@ end
 --[[
 alright naming
 TODO renaming ...
-subtileInfo => graphicTile_t = 8x8 rendered block
-subtile => tilemapElement_t = info in subtileXMax x subtileYMax that references the 8x8 graphics tiles 
+subtile => graphicTile_t = 8x8 rendered block
+subtileInfo  => tilemapElement_t = uint16_t info in subtileXMax x subtileYMax that references the 8x8 graphics tiles 
 --]]
+
+local subtileInfo_t = struct{
+	name = 'subtileInfo_t',
+	fields = {
+		{lo = 'uint16_t:10'},
+		{hi = 'uint16_t:3'},
+		-- what is this used for?  it has both values 0 and 1 ...  
+		-- it could be hi's channel, since that will go to bit 1<<7 of the paletteIndex , and all palettes are 128 entries so that bit shouldn't be needed
+		{unused = 'uint16_t:1'},		
+		{xMask = 'uint16_t:1'},
+		{yMask = 'uint16_t:1'},
+	},
+}
+assert(ffi.sizeof'subtileInfo_t' == 2)
 
 --[[
 dst should be the destination indexed bitmap
@@ -2027,25 +2041,35 @@ subtileYMax = 8x8 subtiles high
 count = number of 8 x 8 x subtileXMax x subtileYMax tiles ... honestly this coule be multiplied into subtileYMax
 --]]
 function SMMap:decodeSubtileBmp(dst, src, subtiles, subtileXMax, subtileYMax, count)
-	local subtileInfo = ffi.cast('uint16_t*', src)
+	local subtileInfo = ffi.cast('subtileInfo_t*', src)
 	for tileIndex=0,count-1 do
 		for dstSubtileY=0,subtileYMax-1 do
 			for dstSubtileX=0,subtileXMax-1 do
 				local x = bit.lshift(dstSubtileX, 3)
 				local y = bit.lshift(dstSubtileY, 3)
 				
-				local xMask = bit.band(subtileInfo[0], 0x4000) ~= 0 and 7 or 0
-				local yMask = bit.band(subtileInfo[0], 0x8000) ~= 0 and 7 or 0
-				local hi = bit.rshift(bit.band(subtileInfo[0], 0x1c00), 6)
+				local xMask = subtileInfo.xMask * 7
+				local yMask = subtileInfo.yMask * 7
+				local hi = bit.lshift(subtileInfo.hi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
 				for ty=0,7 do
 					for tx=0,7 do
+						-- subtileIndex = cccc cccc:ccbb baaa
+						-- a = tx or ~tx depending on xMask
+						-- b = ty or ~ty depending on yMask
+						-- c = subtileInfo.lo
 						local subtileIndex = bit.bor(
 							bit.bxor(tx, xMask),
 							bit.lshift(bit.bxor(ty, yMask), 3),
-							bit.lshift(bit.band(subtileInfo[0], 0x3ff), 6)
+							bit.lshift(subtileInfo.lo, 6)		-- 03ffh == 0000 0011:1111 1111 b, 03ffh << 6 == 0000 1111:1111 1100 0000 b
 						)
+						-- subtileIndex is a nibble index
+						-- so the real byte index into the subtiles is ... 0ccc cccc:cccb bbaa
+						-- and that last 0'th bit of a == (tx or ~tx depending on xMask) determines which nibble to use
 						local lo = subtiles[bit.rshift(subtileIndex, 1)]
-						lo = bit.band(bit.rshift(lo, bit.lshift(bit.band(subtileIndex,1),2)), 0xf)
+						-- so if subtileIndex & 1 == 1 (i.e. if subtileInfo.x & 1 == 1) then we <<= 2
+						lo = bit.rshift(lo, bit.lshift(bit.band(subtileIndex, 1), 2))
+						lo = bit.band(lo, 0xf)
+						
 						dst[x + tx + subtileSizeInPixels * subtileXMax * ty] = bit.bor(hi, lo)
 					end
 				end
