@@ -874,7 +874,9 @@ function SMEnemies:enemiesPrint()
 
 	print"all enemyClass_t's:"
 	for i,enemy in ipairs(self.enemies) do
-		print(('0x%04x'):format(enemy.addr)..': '..enemy.name)
+		print(tolua(enemy.name))
+		print((' addr24=$%02x:%04x'):format(enemyBank, enemy.addr))
+		print((' address=$%06x'):format(topc(enemyBank, enemy.addr)))
 
 		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
 	
@@ -905,7 +907,7 @@ function SMEnemies:enemiesPrint()
 			local addr = topc(0xb4, enemy.ptr.name)
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
-			io.write(': '..betaname)
+			io.write(': '..tolua(betaname))
 			--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
 		end
 		print()

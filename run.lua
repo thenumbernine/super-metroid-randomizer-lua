@@ -9,6 +9,8 @@ https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
 http://deanyd.net/sm/index.php?title=List_of_rooms
 --]]
 
+local startTime = os.time()
+
 require 'ext'
 function I(...) return ... end
 local ffi = require 'ffi'
@@ -654,3 +656,6 @@ print('banks requested: '..banksRequested:keys():sort():map(function(bank) retur
 --[[ last result:
 banks requested: $80, $83, $86, $88, $8f, $91, $93, $9f, $a1, $b4, $b9, $ba, $c2, $c3, $c4, $c5, $c6, $c7, $c8, $c9, $ca, $cb, $cc, $cd, $ce, 
 --]]
+
+local endTime = os.time()
+print('took '..(endTime-startTime)..' seconds')

@@ -43,13 +43,13 @@ SMMap.enemyGFXBank = 0xb4
 
 
 local commonRoomSubtileAddr = 0x1c8000
-local commonRoomTileAddr = 0x1ca09d
+local commonRoomTilemapAddr = 0x1ca09d
 
 local mode7sizeIn8PixelTiles = 128
 
 local blocksPerRoom = 16
-local blockSizeInPixels = 16	-- TODO 'blockSizeInPixels' ? 'tile' becomes ambiguous
-local subtileSizeInPixels = bit.rshift(blockSizeInPixels, 1)
+local blockSizeInPixels = 16
+local graphcsTileSizeInPixels = 8
 local numMode7Tiles = 256
 local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
@@ -1010,6 +1010,7 @@ if done then break end
 				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
 				-- but it looks like any other has an address, except for header==0xa
 				-- though who knows what it points to  ... decompressing all other header types fails
+				-- header==4 coincides with tilemapElem_t[] of 0x800 or 0x1000 bytes
 				if ptr.header == 4 then
 					local bgDataAddr = topc(ptr.addr24.bank, ptr.addr24.ofs)
 					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
@@ -1130,17 +1131,17 @@ if done then break end
 		--[[
 		bg dataSize is 0x800 / 2048 or 0x1000 / 4096
 		with 2 bytes per subtile, that means
-		most are dataSize==0x800 <=> uint16_t subtileInfo[height=32][width=32]
-		some are dataSize==0x1000 <=> uint16_t subtileInfo[height=64][width=32]
+		most are dataSize==0x800 <=> uint16_t tilemapElem[height=32][width=32]
+		some are dataSize==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
 		--]]
 		local numSubtiles = bg.dataSize / 2
 		bgBmp.subtilesWide = 32
 		bgBmp.subtilesHigh = numSubtiles / bgBmp.subtilesWide
 		assert(bgBmp.subtilesWide * bgBmp.subtilesHigh * 2 == bg.dataSize)
 		
-		bgBmp.dataBmp = ffi.new('uint8_t[?]', subtileSizeInPixels * subtileSizeInPixels * numSubtiles)
+		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphcsTileSizeInPixels * graphcsTileSizeInPixels * numSubtiles)
 
-		self:decodeSubtileBmp(
+		self:convertTilemapToBitmap(
 			bgBmp.dataBmp,
 			bg.data,
 			tileData.subtileVec.v,
@@ -1160,18 +1161,9 @@ if done then break end
 	-- so do it upon decode
 	for _,rs in ipairs(m.roomStates) do
 		--[[
-		ok so what is bg.data?
 		i'm guessing it represents tileIndex's somehow, since the background seems to be stored in the tileData 
-		for example, in room 0-0a and 0-0c (0-0c is the far right down-lift to maridia, 0-0a is the vertical hallway that leads to the crab room that leads to it)
-		the bgAddr is b87e, the header is 0004
-		the tileSet of these rooms is 00
-		the bg dataAddr is 0x1cd715
-		the bg dataSize is 0x800 / 2048 bytes
 		the bg data looks like it is uint16_t's, in rows of 0x20 uint16_t's, so 0x40 bytes per row, and 0x20 rows of that makes 0x800 bytes
 		so it is data[32][32][2] 
-		... this is mode7 data, right?
-		if so then it is probably more like:
-		data[16][16][8], with each 8 bytes = 4 uint16's of the 4 subtile corners
 		--]]
 		rs.bgBmps = table()
 		for _,bg in ipairs(rs.bgs) do
@@ -2008,82 +2000,121 @@ end
 
 --[[
 alright naming
-TODO renaming ...
 subtile => graphicTile_t = 8x8 rendered block
-subtileInfo  => tilemapElement_t = uint16_t info in subtileXMax x subtileYMax that references the 8x8 graphics tiles 
+tilemapElem_t = uint16_t element of the tilemap that references which 8*8 graphics tile to use
 --]]
 
-local subtileInfo_t = struct{
-	name = 'subtileInfo_t',
+local tilemapElem_t = struct{
+	name = 'tilemapElem_t',
 	fields = {
-		{lo = 'uint16_t:10'},
-		{hi = 'uint16_t:4'},
-		{xMask = 'uint16_t:1'},
-		{yMask = 'uint16_t:1'},
+		{graphicsTileIndex = 'uint16_t:10'},		-- subtile index
+		{colorIndexHi = 'uint16_t:4'},		-- high nibble color index to write throughout the graphics tile
+		{xNot = 'uint16_t:1'},		-- whether to 'not'/flip x 
+		{yNot = 'uint16_t:1'},		-- whether to 'not'/flip y
 	},
 }
-assert(ffi.sizeof'subtileInfo_t' == 2)
+assert(ffi.sizeof'tilemapElem_t' == 2)
+
+-- index into the subtile buffer shl 1 (to include the nibble address as the lsb)
+local graphicsTileOffset_t = struct{
+	name = 'graphicsTileOffset_t',
+	fields = {
+		{x = 'uint16_t:3'},
+		{y = 'uint16_t:3'},
+		{graphicsTileIndex = 'uint16_t:10'},
+	},
+}
+assert(ffi.sizeof'graphicsTileOffset_t' == 2)
 
 --[[
-dst should be the destination indexed bitmap
-src should be tileData.tileVec.v, or whatever else
-subtiles should be tileData.subtileVec.v
-count should be tileData.tileVec.size/8 or whatever else
+convert a 2D array of tilemap elements, plus a list of graphics tiles, into a bitmap
 
-dst = destination, in uint8_t[count][subtileXMax*8][subtileYMax*8]
-src = source tile data, in uint16_t[count][subtileYMax][subtileXMax] ... for each subtile reference
+dst = destination, in uint8_t[count][tilemapElemSizeX*graphcsTileSizeInPixels][tilemapElemSizeY*graphcsTileSizeInPixels]
+tilemapElem = source tilemap element array, tilemapElem_t[count][tilemapElemSizeY][tilemapElemSizeX] ... for each subtile reference
 subtiles = source subtile data ... idk how big this should be ... usu 0x4800 or 0x8000 incl common data
-subtileXMax = 8x8 subtiles wide
-subtileYMax = 8x8 subtiles high
-count = number of 8 x 8 x subtileXMax x subtileYMax tiles ... honestly this coule be multiplied into subtileYMax
+tilemapElemSizeX = 8*8 subtiles wide
+tilemapElemSizeY = 8*8 subtiles high
+count = number of 8 * 8 * tilemapElemSizeX * tilemapElemSizeY tiles ... honestly this coule be multiplied into tilemapElemSizeY
+buildInverseMap = build a map from graphicsTileIndex to array of tileIndex's
+
+dst should be the destination indexed bitmap
+tilemapElem is read from tileData.tilemapByteVec.v (sets of 2x2), bg.data (sets of 32x32), or whatever else
+subtiles should be tileData.subtileVec.v
+count should be tileData.tilemapByteVec.size/8 for tiles (4 corner subtiles x 2 bytes per subtile lookup), or 1 for bg_t's, or whatever else
+
+
 --]]
-function SMMap:decodeSubtileBmp(dst, src, subtiles, subtileXMax, subtileYMax, count)
+function SMMap:convertTilemapToBitmap(
+	dst,
+	tilemapElems,
+	subtiles,
+	tilemapElemSizeX,
+	tilemapElemSizeY,
+	count,
+	buildInverseMap
+)
 	local dstbase = dst
-	local subtileInfo = ffi.cast('subtileInfo_t*', src)
+	local tilemapElem = ffi.cast('tilemapElem_t*', tilemapElems)
+	local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
+	
+	-- build an inverse map
+	-- map from subtileOffset (0-based multiple of 32 ... 32 bytes per 8x8 graphics tile)
+	-- ... to a list of tileIndexes (0-based integer)
+	local tilemapElemIndexForGraphicsTileIndex		-- naming: tileIndex => tilemapElemIndex, graphicsTileOffset => graphicsTileIndex
+	if buildInverseMap then
+		tilemapElemIndexForGraphicsTileIndex = {}	-- table-of-tables, key is the 0-based tilemapElem.graphicsTileIndex
+	end
+	
 	for tileIndex=0,count-1 do
-		for dstSubtileY=0,subtileYMax-1 do
+		for dstSubtileY=0,tilemapElemSizeY-1 do
 			local col = dst
-			for dstSubtileX=0,subtileXMax-1 do
-				local xMask = subtileInfo.xMask * 7
-				local yMask = subtileInfo.yMask * 7
-				local hi = bit.lshift(subtileInfo.hi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
+			for dstSubtileX=0,tilemapElemSizeX-1 do
+				local xNot = tilemapElem.xNot * 7
+				local yNot = tilemapElem.yNot * 7
+				local colorIndexHi = bit.lshift(tilemapElem.colorIndexHi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
+				if buildInverseMap then
+					tilemapElemIndexForGraphicsTileIndex[tilemapElem.graphicsTileIndex] 
+						= tilemapElemIndexForGraphicsTileIndex[tilemapElem.graphicsTileIndex]
+						or table()
+					tilemapElemIndexForGraphicsTileIndex[tilemapElem.graphicsTileIndex]:insert(tileIndex)
+				end
 				for y=0,7 do
 					for x=0,7 do
-						-- subtileIndex = cccc cccc:ccbb baaa
-						-- a = x or ~x depending on xMask
-						-- b = y or ~y depending on yMask
-						-- c = subtileInfo.lo
-						local subtileIndex = bit.bor(
-							bit.bxor(x, xMask),
-							bit.lshift(bit.bxor(y, yMask), 3),
-							bit.lshift(subtileInfo.lo, 6)		-- 03ffh == 0000 0011:1111 1111 b, 03ffh << 6 == 0000 1111:1111 1100 0000 b
-						)
-						-- subtileIndex is a nibble index
+						-- graphicsTileOffset = cccc cccc:ccbb baaa
+						-- a = x or ~x depending on xNot
+						-- b = y or ~y depending on yNot
+						-- c = tilemapElem.graphicsTileIndex
+						graphicsTileOffset.x = bit.bxor(x, xNot)
+						graphicsTileOffset.y = bit.bxor(y, xNot)
+						graphicsTileOffset.graphicsTileIndex = tilemapElem.graphicsTileIndex
+						-- graphicsTileOffset is a nibble index
 						-- so the real byte index into the subtiles is ... 0ccc cccc:cccb bbaa
-						-- and that last 0'th bit of a == (x or ~x depending on xMask) determines which nibble to use
-						local lo = subtiles[bit.rshift(subtileIndex, 1)]
-						-- so if subtileIndex & 1 == 1 (i.e. if subtileInfo.x & 1 == 1) then we <<= 2
-						lo = bit.rshift(lo, bit.lshift(bit.band(subtileIndex, 1), 2))
-						lo = bit.band(lo, 0xf)
+						-- and that means the subtiles are 32 bytes each ... 8 * 8 * 4bpp / 8 bits/byte = 32 bytes
+						-- and that last 0'th bit of a == (x or ~x depending on xNot) determines which nibble to use
+						local colorIndexLo = subtiles[bit.rshift(ffi.cast('uint16_t*', graphicsTileOffset.ptr)[0], 1)]
+						-- so if graphicsTileOffset & 1 == 1 (i.e. if tilemapElem.x & 1 == 1) then we <<= 2
+						colorIndexLo = bit.rshift(colorIndexLo, bit.lshift(bit.band(graphicsTileOffset.ptr[0], 1), 2))
+						colorIndexLo = bit.band(colorIndexLo, 0xf)
 						
-						col[x + subtileSizeInPixels * subtileXMax * y] = bit.bor(hi, lo)
+						col[x + graphcsTileSizeInPixels * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
 					end
 				end
 				
-				col = col + subtileSizeInPixels
-				subtileInfo = subtileInfo + 1
+				col = col + graphcsTileSizeInPixels
+				tilemapElem = tilemapElem + 1
 			end
-			dst = dst + subtileSizeInPixels * subtileSizeInPixels * subtileXMax
+			dst = dst + graphcsTileSizeInPixels * graphcsTileSizeInPixels * tilemapElemSizeX
 		end
 	end
 	-- [[
 	-- what is this used for?  
 	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
 	-- and all palettes are 128 entries so that bit shouldn't be needed
-	for i=0,subtileXMax*subtileYMax*subtileSizeInPixels*subtileSizeInPixels*count-1 do
+	for i=0,tilemapElemSizeX*tilemapElemSizeY*graphcsTileSizeInPixels*graphcsTileSizeInPixels*count-1 do
 		dstbase[i] = bit.band(dstbase[i], 0x7f)
 	end
 	--]]
+	return tilemapElemIndexForGraphicsTileIndex
 end
 
 
@@ -2107,12 +2138,12 @@ print('self.commonRoomSubtileVec size', ('$%x'):format(self.commonRoomSubtileVec
 
 	do
 		local buffer
-		buffer, self.commonRoomTileCompressedSize = lz.decompress(rom, commonRoomTileAddr, 0x10000) --common room elements
-		self.commonRoomTileVec = vector'uint8_t'
-		self.commonRoomTileVec:insert(self.commonRoomTileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+		buffer, self.commonRoomTilemapCompressedSize = lz.decompress(rom, commonRoomTilemapAddr, 0x10000) --common room elements
+		self.commonRoomTilemapByteVec = vector'uint8_t'
+		self.commonRoomTilemapByteVec:insert(self.commonRoomTilemapByteVec:iend(), buffer, buffer + ffi.sizeof(buffer))
 		-- size is 0x800 ... so 256 8bit tile infos
 		-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTileVec size', ('$%x'):format(self.commonRoomTileVec.size))
+print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilemapByteVec.size))
 	end
 
 	-- key by address, keep track of decompressed data, so that we don't have to re-decompress them
@@ -2173,11 +2204,11 @@ tileData.subtileBufferSize = ffi.sizeof(buffer)
 		-- for these rooms, the tileData.tileAddr points to the mode7 data
 		if loadMode7 then
 print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))			
-			tileData.mode7TileSet = ffi.new('uint8_t[?]', subtileSizeInPixels * subtileSizeInPixels * numMode7Tiles)
+			tileData.mode7TileSet = ffi.new('uint8_t[?]', graphcsTileSizeInPixels * graphcsTileSizeInPixels * numMode7Tiles)
 			for mode7tileIndex=0,numMode7Tiles-1 do
-				for x=0,subtileSizeInPixels-1 do
-					for y=0,subtileSizeInPixels-1 do
-						tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex))]
+				for x=0,graphcsTileSizeInPixels-1 do
+					for y=0,graphcsTileSizeInPixels-1 do
+						tileData.mode7TileSet[x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex)] = subtileVec.v[1 + 2 * (x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex))]
 					end
 				end
 			end
@@ -2221,7 +2252,7 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 			-- all (except for $11-$14 above) tileSets are 0x4800 in size, except Kraid's room that alone uses tileSet $0a, which is 0x8000 in size
 			-- so the rest have to be sized up the extra 0x200 bytes ... how many 16x16 blocks is that?
 			--[[
-			TODO if this does go here then there should be an equivalent resizing of the tileVec
+			TODO if this does go here then there should be an equivalent resizing of the tilemapByteVec
 			... however I'm not seeing it
 			... and as a result of the mismatch, you see the commonRoomElements get lost
 			but on the flip side, with the mismatch and garbled tileset texture,
@@ -2269,35 +2300,43 @@ print('mode7 subtileVec.size '..('%x'):format(subtileVec.size))
 		end
 
 
-		local tileVec = vector'uint8_t'
+		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
-			tileVec:insert(tileVec:iend(), self.commonRoomTileVec:begin(), self.commonRoomTileVec:iend())
+			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemapByteVec:begin(), self.commonRoomTilemapByteVec:iend())
 		end
 		do
 			local buffer
 			buffer, tileData.tileCompressedSize = lz.decompress(rom, tileData.tileAddr, 0x10000)
 -- stored for debugging only
 tileData.tileBufferSize = ffi.sizeof(buffer)
-			tileVec:insert(tileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
+			tilemapByteVec:insert(tilemapByteVec:iend(), buffer, buffer + ffi.sizeof(buffer))
 		end
 -- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
-print('tileVec.size', ('$%x'):format(tileVec.size))
-		tileData.tileGfxCount = bit.rshift(tileVec.size, 3)
+print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
+		tileData.tileGfxCount = bit.rshift(tilemapByteVec.size, 3)
 		-- store as 16 x 16 x index rgb
 		tileData.tileGfxBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * tileData.tileGfxCount)
 
-		self:decodeSubtileBmp(
-			tileData.tileGfxBmp,
-			tileVec.v,
-			subtileVec.v,
-			2,
-			2,
-			tileData.tileGfxCount
-		)
+		tileData.tilemapElemIndexForGraphicsTileIndex = 
+			self:convertTilemapToBitmap(
+				tileData.tileGfxBmp,
+				tilemapByteVec.v,	-- tilemapElem_t[tileGfxCount][2][2]
+				subtileVec.v,		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
+				2,
+				2,
+				tileData.tileGfxCount,
+				true				-- build inverse map
+			)	
 
 		-- bg_t's need this
 		-- ... will they need this, or just the non-common portion of it?
 		tileData.subtileVec = subtileVec
+
+		-- TODO here - map from the subtile address (should be 32-byte-aligned) to the tileIndex
+		-- this way, if a background uses a subtile, then we can flag all tileIndexes that are also used
+		-- (it will have to map to multiple tileIndexes)
+		-- used for tileIndex removal/optimization
+
 
 		self.tileDatas:insert(tileData)
 		return tileData
@@ -2556,23 +2595,39 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 	end
 	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
-			for k,v in pairs(rs.roomBlockData.tileIndexesUsed) do
-				rs.tileSet.tileData.tileIndexesUsed[k] = true
+			for tileIndex,_ in pairs(rs.roomBlockData.tileIndexesUsed) do
+				rs.tileSet.tileData.tileIndexesUsed[tileIndex] = true
 			end
 		end
 	end
 
-	--[[
-	for _,bg in ipairs(self.bgs) do
-		local ptr = ffi.cast('uint16_t*', bg.data)
-		local count = bg.dataSize/2
-		for i=0,count-1 do
-			get index from ptr[0] and find its location in the tilemap and flag it
-			ptr[0]
+	-- [[ now, for each background, flag its tile indexes used
+	for _,m in ipairs(self.rooms) do
+		for _,rs in ipairs(m.roomStates) do
+			for _,bgBmp in ipairs(rs.bgBmps) do
+				local tileData = bgBmp.tileData
+				local bg = bgBmp.bg
+				-- for each background subtileOffset, find the associated rs.tileSet tileIndex, and flag it
+				--rs.tileSet ...
+				-- TODO shouldn't I be saving these as tilemapElem_t[] / tilemapElemCount ?
+				local ptr = ffi.cast('tilemapElem_t*', bg.data)
+				local count = bg.dataSize/2
+				for i=0,count-1 do
+					--get index from ptr[0] and find its location in the tilemap and flag it
+					-- here's the byte offset of our subtile
+					local tileIndexes = tileData.tilemapElemIndexForGraphicsTileIndex[ptr[0].graphicsTileIndex]
+					if tileIndexes then
+						for _,tileIndex in ipairs(tileIndexes) do
+							tileData.tileIndexesUsed[tileIndex] = true
+						end
+					end
+					-- now we need to find which tiles use this subtile ...
+					ptr = ptr + 1
+				end
+			end
 		end
 	end
 	--]]
-
 
 
 	-- load stations
@@ -2945,8 +3000,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 
 -- [[ draw background?
 											if bgBmp then
-												local bgw = subtileSizeInPixels * bgBmp.subtilesWide
-												local bgh = subtileSizeInPixels * bgBmp.subtilesHigh
+												local bgw = graphcsTileSizeInPixels * bgBmp.subtilesWide
+												local bgh = graphcsTileSizeInPixels * bgBmp.subtilesHigh
 												local bgx = x % bgw
 												local bgy = y % bgh
 												local src = tileSet.palette[bgBmp.dataBmp[bgx + bgw * bgy]]
@@ -3423,7 +3478,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 							for x=0,7 do
 								local destx = x + 8 * i
 								local desty = y + 8 * j
-								local src = tileSet.palette[tileData.mode7TileSet[x + subtileSizeInPixels * (y + subtileSizeInPixels * mode7tileIndex)]]
+								local src = tileSet.palette[tileData.mode7TileSet[x + graphcsTileSizeInPixels * (y + graphcsTileSizeInPixels * mode7tileIndex)]]
 								-- TODO what about pixel/palette mask/alpha?
 								if src.r > 0 or src.g > 0 or src.b > 0 then
 									maxdestx = math.max(maxdestx, destx)
@@ -3491,9 +3546,9 @@ function SMMap:mapSaveImage(filenamePrefix)
 						ffi.cast('uint8_t*', rs.ptr) - self.rom
 					)
 				
-					local img = Image(subtileSizeInPixels * bgBmp.subtilesWide, subtileSizeInPixels * bgBmp.subtilesHigh, 3, 'unsigned char')
-					for y=0,subtileSizeInPixels*bgBmp.subtilesHigh-1 do
-						for x=0,subtileSizeInPixels*bgBmp.subtilesWide-1 do
+					local img = Image(graphcsTileSizeInPixels * bgBmp.subtilesWide, graphcsTileSizeInPixels * bgBmp.subtilesHigh, 3, 'unsigned char')
+					for y=0,graphcsTileSizeInPixels*bgBmp.subtilesHigh-1 do
+						for x=0,graphcsTileSizeInPixels*bgBmp.subtilesWide-1 do
 							local offset = x + img.width * y
 							local dst = img.buffer + 3 * offset
 							local paletteIndex = bgBmp.dataBmp[offset]
@@ -4121,8 +4176,8 @@ function SMMap:mapBuildMemoryMap(mem)
 		self.commonRoomSubtileCompressedSize,
 		'common room subtile lz data')
 	mem:add(
-		commonRoomTileAddr,
-		self.commonRoomTileCompressedSize,
+		commonRoomTilemapAddr,
+		self.commonRoomTilemapCompressedSize,
 		'common room tile lz data')
 
 -- [[
