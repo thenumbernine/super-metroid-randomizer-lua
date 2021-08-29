@@ -154,7 +154,7 @@ local function noCompress(source, offset, length, result)
 	end
 end
 
-local function rleCompress(source, offset, op)
+local function rleCompress(source, offset, op, len)
 	local bytes = 1
 	local gradient = 0
 	if op == 1 then
@@ -167,7 +167,7 @@ local function rleCompress(source, offset, op)
 	end
 	local length = 1
 	local i = 1
-	while offset + i < ffi.sizeof(source) and length < maxBlockLen(op) do
+	while offset + i < len and length < maxBlockLen(op) do
 		if source[offset+i] == (source[offset + i % bytes] + gradient * i) % 0x100 then 
 			length = length + 1 
 		else 
@@ -189,12 +189,14 @@ local function rleCompress(source, offset, op)
 end
 
 local LZCompress = class()
-function LZCompress:init(source)
+
+function LZCompress:init(source, len)
 	self.source = source
+	self.len = len
 	self.offsets = range(0,255):map(function(i) 
 		return table(), i
 	end)
-	for i=0,ffi.sizeof(source)-1 do
+	for i=0,len-1 do
 		local v = source[i]
 		assert(type(v) == 'number')
 		self.offsets[v]:insert(i)
@@ -237,7 +239,7 @@ function LZCompress:compress(offset, op)
 	end
 	--build Knuth–Morris–Pratt table
 	local tabl = {}
-	local wordLength = math.min(maxBlockLen(op), ffi.sizeof(source) - offset)
+	local wordLength = math.min(maxBlockLen(op), self.len - offset)
 	tabl[1] = -1
 	tabl[2] = 0
 	local i = 2
@@ -268,7 +270,7 @@ function LZCompress:compress(offset, op)
 		return {op=op, result=table(), srclen=0}
 	end
 	j = 0 --offset into string being searched for
-	while i + j < highest or (j ~=0 and i < offset and i + j < highest + maxBlockLen(op) and i + j < ffi.sizeof(source)) do
+	while i + j < highest or (j ~=0 and i < offset and i + j < highest + maxBlockLen(op) and i + j < self.len) do
 		if source[offset+j] == bit.bxor(source[i+j],mask) then
 			j=j+1
 			if j > bestLength then
@@ -316,21 +318,23 @@ function LZCompress:compress(offset, op)
 end
 
 local function compress(source)
+	-- assume it's a luajit cdata array
 	local len = ffi.sizeof(source)
+	source = ffi.cast('uint8_t*', source)
 --print('compress source size '..len)	
 	local result = table()	
 	local i = 0
 	local noCompressionLength = 0
-	local lzc = LZCompress(source)
+	local lzc = LZCompress(source, len)
 	while i < len do
 		local options = {
-			rleCompress(source, i, 1),
-			rleCompress(source, i, 2),
-			rleCompress(source, i, 3),
-			lzc:compress(i, 4),
-			lzc:compress(i, 5),
-			lzc:compress(i, 6),
-			lzc:compress(i, 7),
+			rleCompress(source, i, 1, len),
+			rleCompress(source, i, 2, len),
+			rleCompress(source, i, 3, len),
+			lzc:compress(i, 4, len),
+			lzc:compress(i, 5, len),
+			lzc:compress(i, 6, len),
+			lzc:compress(i, 7, len),
 		}
 		local bestOption
 		local bestSourceLength = 1

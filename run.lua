@@ -108,6 +108,9 @@ addr24_t = struct{
 		function m:topc()
 			return topc(self.bank, self.ofs)
 		end
+		function m:frompc(addr)
+			self.bank, self.ofs = frompc(addr)
+		end
 	end,
 }
 
@@ -238,20 +241,27 @@ function mergeByteArrays(...)
 	return dest
 end
 
--- http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
--- http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
--- why is it that some banks need a subtract of 0x8000?
--- it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
--- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
--- I don't like this function.
--- This one looks better
--- https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.cpp
--- and seems to match with http://patrickjohnston.org/banks better
--- how is this different than the other() ?  some banks are 0x8000 off, some are equal
+--[[
+http://www.metroidconstruction.com/SMMM/index.php?css=black#door-editor
+http://www.dkc-atlas.com/forum/viewtopic.php?t=1009
+why is it that some banks need a subtract of 0x8000?
+it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
+the enemy data is really at 0x198000, which would be bank b3 ... what gives?
+I don't like this function.
+This one looks better
+https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.cpp
+and seems to match with http://patrickjohnston.org/banks better
+how is this different than the other() ?  some banks are 0x8000 off, some are equal
+--]]
 --local banksRequested = table()
 function topc(bank, offset)
 --	banksRequested[bank] = true 
 	return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
+end
+function frompc(addr)
+	local bank = bit.bor(bit.band(bit.rshift(addr, 15), 0x7f), 0x80)
+	local ofs = bit.bor(bit.band(addr, 0x7fff), 0x8000)
+	return bank, ofs
 end
 
 if config.skipIntro then 
