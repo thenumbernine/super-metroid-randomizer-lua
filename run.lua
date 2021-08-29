@@ -105,9 +105,6 @@ addr24_t = struct{
 		{bank = 'uint8_t'},
 	},
 	metatable = function(m)
-		function m:topc()
-			return topc(self.bank, self.ofs)
-		end
 		function m:loRomToOffset()
 			return loRomToOffset(self.bank, self.ofs)
 		end
@@ -247,50 +244,36 @@ end
 -- it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
 -- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
 -- I don't like this function.
-local banksRequested = table()
-function topc(bank, offset)
-	assert(offset >= 0 and offset < 0x10000, "got a bad offset for addr $"..('%02x'):format(bank)..':'..('%04x'):format(offset))
-
---	assert(bit.band(0x8000, offset) ~= 0)
-
-banksRequested[bank] = true 
-	-- why only these banks? maybe I should be removing the top bit from the addr?
-	if bank == 0x80	
-	or bank == 0x83		-- for doors.
-	or bank == 0x88
---	or bank == 0x8e 	-- 
-	or bank == 0x8f		-- scroll and plm
-	or bank == 0x91
-	or bank == 0xa1
-	or bank == 0xb4 
-	or bank == 0xb9 or bank == 0xba	-- both for bg_t
-	or (bank >= 0xc2 and bank <= 0xce)	-- room block data
-	-- it's not all even banks ...
-	--if bit.band(bank, 1) == 0 
-	then 
-		offset = offset + 0x8000 
-	end
-	offset = bit.band(offset, 0xffff)
-	return bit.lshift(bit.band(bank,0x7f), 15) + offset
-end
-
--- how is this different from topc() ?  some banks are 0x8000 off, some are equal
+-- This one looks better
+-- https://github.com/dansgithubuser/dansSuperMetroidLibrary/blob/master/sm.cpp
+-- and seems to match with http://patrickjohnston.org/banks better
+-- how is this different than the other() ?  some banks are 0x8000 off, some are equal
+--local banksRequested = table()
 function loRomToOffset(bank, offset)
+--	banksRequested[bank] = true 
 	return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
 end
 
 
---[[
+-- [[
+-- for bank 80 the functions != for 0000-7fff, == for 8000-ffff
+-- for bank 83 the functions != for 0000-7fff, == for 8000-ffff
+-- for bank 8f the functions != for 0000-7fff, == for 8000-ffff
 -- for bank b4 the functions != for 0000-7fff, == for 8000-ffff
 -- for bank b6 the functions == for 0000-7fff, != for 8000-ffff
+-- for bank 88 the functions != for 0000-7fff, == for 8000-ffff
 -- for bank 8f the functions != for 0000-7fff, == for 8000-ffff
+-- for bank 91 the functions != for 0000-7fff, == for 8000-ffff
+-- for bank 93 the functions == for 0000-7fff, != for 8000-ffff
 -- for bank 9f the functions == for 0000-7fff, != for 8000-ffff
 -- for bank a0 the functions == for 0000-7fff, != for 8000-ffff
+-- for bank a1 the functions != for 0000-7fff, == for 8000-ffff
+-- for bank c2-ce the functions != for 0000-7fff, == for 8000-ffff
 -- these two methods match for 15th bit clear
-print(('%x'):format(loRomToOffset(0xb4,0x0000)))	-- 
-print(('%x'):format(topc(0xb4, 0x0000)))			-- 
-print(('%x'):format(loRomToOffset(0xb4,0x8000)))	-- 
-print(('%x'):format(topc(0xb4, 0x8000)))			-- 
+print(('%x'):format(loRomToOffset(0x91,0x0000)))	-- 
+print(('%x'):format(topc(0x91, 0x0000)))			-- 
+print(('%x'):format(loRomToOffset(0x91,0x8000)))	-- 
+print(('%x'):format(topc(0x91, 0x8000)))			-- 
 os.exit()
 --]]
 
@@ -304,7 +287,7 @@ end
 
 if config.beefUpXRay then
 	local function write(bank, pageofs, newValue, oldValue)
-		local addr = topc(bank, pageofs)
+		local addr = loRomToOffset(bank, pageofs)
 		if oldValue ~= nil then
 			assert(rom[addr] == oldValue)
 		end
@@ -704,7 +687,7 @@ if not config.randomizeItems and not config.randomizeItemsScavengerHunt then
 end
 print()
 
-print('banks requested: '..banksRequested:keys():sort():map(function(bank) return ('$%02x'):format(bank) end):concat', ')
+--print('banks requested: '..banksRequested:keys():sort():map(function(bank) return ('$%02x'):format(bank) end):concat', ')
 --[[ last result:
 banks requested: $80, $83, $86, $88, $8f, $91, $93, $9f, $a1, $b4, $b9, $ba, $c2, $c3, $c4, $c5, $c6, $c7, $c8, $c9, $ca, $cb, $cc, $cd, $ce, 
 --]]

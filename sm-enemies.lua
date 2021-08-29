@@ -79,12 +79,14 @@ local weakness_t = struct{
 }
 
 
+-- TODO use this instead of manually specifying all enemy addresses
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
 local enemyStart = loRomToOffset(enemyBank, 0xcebf)
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
 local enemy2Start = loRomToOffset(enemyBank, 0xf153)
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
+
 
 -- TODO is still a global...
 enemyClass_t_fields = table{
@@ -685,7 +687,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xf07f, name="Shaktool"},
 		{addr=0xf0bf, name="Shattering Glass (Maridian tube)"},
 		{addr=0xf0ff, name="Walking Chozo Statue"},
-		-- ... 20 bytes of padding ...
+		-- ... value 02 repeated for 20 bytes of padding ...
 		{addr=0xf153, name="??? (wierd spining orb)"},
 		{addr=0xf193, name="Zeb"},
 		{addr=0xf1d3, name="Zebbo"},
@@ -919,8 +921,7 @@ function SMEnemies:enemiesPrint()
 		print(' graphicsAddr24_t='..enemy.ptr.graphicsAddr24)
 		print(' graphicsAddr_t='..enemy.graphicsAddr)
 
-		print(' debug name: '
-			..('0x%04x'):format(enemy.ptr.name))
+		io.write(' debug name: '..('0x%04x'):format(enemy.ptr.name))
 		if enemy.ptr.name ~= 0 then
 			local addr = loRomToOffset(enemyAuxTableBank, enemy.ptr.name)
 			local len = 10

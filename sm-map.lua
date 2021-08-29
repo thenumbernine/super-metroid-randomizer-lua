@@ -34,7 +34,7 @@ SMMap.doorCodeBank = 0x8f
 -- then comes a group o fplms, and then comes a group of layer handling
 SMMap.layerHandlingBank = 0x8f
 -- TODO use a bank? isn't it the same as the roomBank?  0x8f.
-SMMap.plmOffset = 0x70000
+SMMap.plmBaseAddress = 0x70000
 -- and then we go back to some more rooms
 
 SMMap.enemySpawnBank = 0xa1
@@ -797,7 +797,7 @@ function Door:init(args)
 	local rom = sm.rom
 
 	-- derived fields:
-	local addr = topc(sm.doorBank, self.addr)
+	local addr = loRomToOffset(sm.doorBank, self.addr)
 	local data = rom + addr 
 	local destRoomAddr = ffi.cast('uint16_t*', data)[0]
 	-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
@@ -807,7 +807,7 @@ function Door:init(args)
 	if doorType == 'door_t' 
 	and self.ptr.code > 0x8000 
 	then
-		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
+		self.doorCodeAddr = loRomToOffset(sm.doorCodeBank, self.ptr.code)
 		self.doorCode = readCode(rom, self.doorCodeAddr, 0x100)
 	end
 end
@@ -881,7 +881,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	for _,rs in ipairs(m.roomStates) do
 		if rs.select_ctype ~= 'roomselect1_t' then
 			assert(not rs.ptr)
-			local addr = topc(self.roomStateBank, rs.select.roomStateAddr)
+			local addr = loRomToOffset(self.roomStateBank, rs.select.roomStateAddr)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
 			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 		end
@@ -901,7 +901,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.scrollAddr > 0x0001 and rs.obj.scrollAddr ~= 0x8000 then
-			local addr = topc(self.scrollBank, rs.obj.scrollAddr)
+			local addr = loRomToOffset(self.scrollBank, rs.obj.scrollAddr)
 			local size = m.obj.width * m.obj.height
 			rs.scrollData = range(size):map(function(i)
 				return rom[addr+i-1]
@@ -915,7 +915,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	for i=#m.roomStates,1,-1 do
 		local rs = m.roomStates[i]
 		if rs.obj.plmAddr ~= 0 then
-			local addr = topc(self.plmBank, rs.obj.plmAddr)
+			local addr = loRomToOffset(self.plmBank, rs.obj.plmAddr)
 			local plmset = self:mapAddPLMSetFromAddr(addr, m)
 			rs:setPLMSet(plmset)
 		end
@@ -924,12 +924,12 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	-- enemySpawnSet
 	-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
 	for _,rs in ipairs(m.roomStates) do
-		local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.obj.enemySpawnAddr))
+		local enemySpawnSet = self:mapAddEnemySpawnSet(loRomToOffset(self.enemySpawnBank, rs.obj.enemySpawnAddr))
 		rs:setEnemySpawnSet(enemySpawnSet)
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		local enemyGFXSet = self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXAddr))
+		local enemyGFXSet = self:mapAddEnemyGFXSet(loRomToOffset(self.enemyGFXBank, rs.obj.enemyGFXAddr))
 		rs:setEnemyGFXSet(enemyGFXSet)
 	end
 
@@ -940,7 +940,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	-- then make one set and just put the subset's at the end
 	-- (unless the order matters...)
 	for _,rs in ipairs(m.roomStates) do
-		local startaddr = topc(self.fx1Bank, rs.obj.fx1Addr)
+		local startaddr = loRomToOffset(self.fx1Bank, rs.obj.fx1Addr)
 		local addr = startaddr
 		local retry
 		while true do
@@ -977,7 +977,7 @@ if done then break end
 	
 	for _,rs in ipairs(m.roomStates) do
 		do	--if rs.obj.bgAddr > 0x8000 then
-			local addr = topc(self.bgBank, rs.obj.bgAddr)
+			local addr = loRomToOffset(self.bgBank, rs.obj.bgAddr)
 			while true do
 				local ptr = ffi.cast('bg_t*', rom+addr)
 				
@@ -1005,7 +1005,7 @@ if done then break end
 				-- though who knows what it points to  ... decompressing all other header types fails
 				-- header==4 coincides with tilemapElem_t[] of 0x800 or 0x1000 bytes
 				if ptr.header == 4 then
-					local bgDataAddr = ptr.addr24:topc()
+					local bgDataAddr = ptr.addr24:loRomToOffset()
 					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
 					bg.data = bgData
 					bg.dataSize = ffi.sizeof(bgData)
@@ -1022,7 +1022,7 @@ if done then break end
 			--[[ load data
 			-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
 			for _,bg in ipairs(rs.bgs) do
-				local addr = bg.ptr.addr:topc()
+				local addr = bg.ptr.addr:loRomToOffset()
 				local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
 				bg.data = decompressed
 				mem:add(addr, compressedSize, 'bg data', m)
@@ -1033,17 +1033,17 @@ if done then break end
 
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.layerHandlingAddr > 0x8000 then
-			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingAddr)
+			local addr = loRomToOffset(self.layerHandlingBank, rs.obj.layerHandlingAddr)
 			rs.layerHandlingAddr = self:mapAddLayerHandling(addr)
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
 		
-		local addr = rs.obj.roomBlockAddr24:topc()
+		local addr = rs.obj.roomBlockAddr24:loRomToOffset()
 		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
 	end
 
 	-- door addrs
-	local startaddr = topc(self.doorAddrBank, m.obj.doors)
+	local startaddr = loRomToOffset(self.doorAddrBank, m.obj.doors)
 	local addr = startaddr
 	local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
 	addr = addr + 2
@@ -1068,7 +1068,7 @@ if done then break end
 	--if roomAddr == 0x79804 then
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.roomvarAddr ~= 0 then
-			local d = rom + self.plmOffset + rs.obj.roomvarAddr
+			local d = rom + self.plmBaseAddress + rs.obj.roomvarAddr
 			local roomvar = table()
 			repeat
 				roomvar:insert(d[0])	-- x
@@ -1291,7 +1291,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
 		if plm.cmd == self.plmCmdValueForName.scrollmod then
-			local startaddr = self.plmOffset + plm.args
+			local startaddr = self.plmBaseAddress + plm.args
 			local addr = startaddr
 			local data = table()
 			while true do
@@ -2356,7 +2356,7 @@ print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
 		-- have each room write keys here coinciding blocks
 		tileSet.roomStates = table()	-- which roomStates use this tileset
 		-- what do I call this?  abs-addr (as opposed to 24-bit addrs)?  file-offset?
-		tileSet.paletteAddr = tileSet.obj.paletteAddr24:topc()
+		tileSet.paletteAddr = tileSet.obj.paletteAddr24:loRomToOffset()
 		local data, compressedSize = lz.decompress(rom, tileSet.paletteAddr, 0x200)
 		local len = ffi.sizeof(data)
 		assert(bit.band(len, 1) == 0)
@@ -2422,8 +2422,9 @@ function SMMap:mapInit()
 
 	-- check where the PLM bank is
 	-- TODO this will affect the items.lua addresses
+	-- default is 0x8f
 	self.plmBank = rom[0x204ac]
-	
+
 	self.rooms = table()
 	self.roomblocks = table()
 	self.bgs = table()
@@ -2540,7 +2541,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 --]]			
 			d = d + 26
 		end
-		local dooraddr = topc(self.doorAddrBank, m.obj.doors)
+		local dooraddr = loRomToOffset(self.doorAddrBank, m.obj.doors)
 		assert(d == rom + dooraddr)
 		d = d + 2 * #m.doors
 		
@@ -2555,7 +2556,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 		-- room_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
 		-- so... shouldn't this assertion fail?
 		for _,scroll in ipairs(scrolls) do
-			local addr = topc(self.scrollBank, scroll)
+			local addr = loRomToOffset(self.scrollBank, scroll)
 			assert(d == rom + addr)
 			d = d + m.obj.width * m.obj.height
 		end
@@ -2637,7 +2638,7 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 	-- load stations
 	-- http://patrickjohnston.org/bank/82
 	self.loadStations = table()
-	local ptr = rom + topc(0x80, 0xc4c5)
+	local ptr = rom + loRomToOffset(0x80, 0xc4c5)
 	local loadStationCountr = 151
 	for i=0,loadStationCountr-1 do
 		local ls = {}
@@ -4018,7 +4019,7 @@ function SMMap:mapPrint()
 					local plmName = plm:getName()
 					if plmName then io.write(plmName..': ') end
 					print(plm)
-					--print('    plm scrollmod: '..('$%06x'):format(plm.args + self.plmOffset)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+					--print('    plm scrollmod: '..('$%06x'):format(plm.args + self.plmBaseAddress)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 				end
 			end
 			--]]
@@ -4065,7 +4066,7 @@ function SMMap:mapPrint()
 			if plmName then io.write(plmName..': ') end
 			print(plm)
 			if plm.scrollmod then
-				print('  plm scrollmod: '..('$%06x'):format(self.plmOffset + plm.args)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+				print('  plm scrollmod: '..('$%06x'):format(self.plmBaseAddress + plm.args)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 			end
 		end
 	end
@@ -4148,19 +4149,19 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized room width x height
-				local addr = topc(self.scrollBank, rs.obj.scrollAddr)
+				local addr = loRomToOffset(self.scrollBank, rs.obj.scrollAddr)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 			
-			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
-			mem:add(topc(self.bgBank, rs.obj.bgAddr), #rs.bgs * ffi.sizeof'bg_t', 'bg_t', m)
+			mem:add(loRomToOffset(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(loRomToOffset(self.bgBank, rs.obj.bgAddr), #rs.bgs * ffi.sizeof'bg_t', 'bg_t', m)
 
 			local addr = loRomToOffset(self.roomBank, rs.select.testCodeAddr)
 			local code = readCode(rom, addr, 100)
 			mem:add(addr, #code, 'room select code', m)
 		end
 		
-		mem:add(topc(self.doorAddrBank, m.obj.doors), #m.doors * 2, 'dooraddrs', m)
+		mem:add(loRomToOffset(self.doorAddrBank, m.obj.doors), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
 			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
 			if door.doorCode then
@@ -4203,7 +4204,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		--]]
 		for _,plm in ipairs(plmset.plms) do
 			if plm.scrollmod then
-				mem:add(self.plmOffset + plm.args, #plm.scrollmod, 'plm scrollmod', m)
+				mem:add(self.plmBaseAddress + plm.args, #plm.scrollmod, 'plm scrollmod', m)
 			end
 		end
 	end
