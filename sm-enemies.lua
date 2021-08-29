@@ -8,7 +8,20 @@ local config = require 'config'
 local randomizeEnemyProps = config.randomizeEnemyProps
 
 local enemyShotBank = 0x86
-local enemyBank = 0x9f
+
+--[[
+i don't know who called this bank 0x9f, 
+whoever i got that 'topc' function from, but it seems to be off 
+patrickjohnson lists this as bank 0xa0 
+and for offsets 0-7fff these two functions resolve the same for banks 9f, and the same for banks a0
+but for offsets 8000-ffff, loRomToOffset is 8000 less than topc, so a bank of a0 makes sense for loRomToOffset
+not to mention its implementation is much simpler
+so as long as i'm using offsets 8000-ffff for bank a0 then i am good.
+... something tells me I should be using loRomToOffset instead that topc 
+... where did I even get topc() from anyways?
+--]]
+local enemyBank = 0xa0
+
 local enemyAuxTableBank = 0xb4
 
 local itemDrop_t_fields = table{
@@ -67,10 +80,10 @@ local weakness_t = struct{
 
 
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
-local enemyStart = topc(enemyBank, 0xcebf)
+local enemyStart = loRomToOffset(enemyBank, 0xcebf)
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
-local enemy2Start = topc(enemyBank, 0xf153)
+local enemy2Start = loRomToOffset(enemyBank, 0xf153)
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
 
 -- TODO is still a global...
@@ -103,7 +116,7 @@ enemyClass_t_fields = table{
 	{touchAI = 'uint16_t'},
 	{shotAI = 'uint16_t'},
 	{unused_extraAI_7 = 'uint16_t'},
-	{graphicsPtr = 'uint24_t'},	-- aka tile data
+	{graphicsAddr24 = 'addr24_t'},	-- aka tile data
 	{layerPriority = 'uint8_t'},
 	{itemdrop = 'uint16_t'},	-- pointer 
 	{weakness = 'uint16_t'},	-- pointer 
@@ -123,7 +136,6 @@ local enemyShot_t = struct{
 		{graphicsAI = 'uint16_t'},
 		{halfWidth = 'uint8_t'},
 		{halfHeight = 'uint8_t'},
-		
 		{damageAndFlags = 'uint16_t'},
 	--[[ flags:
 	0x8000 = can be shot by samus
@@ -132,7 +144,6 @@ local enemyShot_t = struct{
 	0x1000 = invisible
 	0x0fff = damage
 	--]]
-
 		{touchAI = 'uint16_t'},	-- AI to run when samus gets hit
 		{shootAI = 'uint16_t'},	-- AI to run if samus shoots the shot
 	},
@@ -147,7 +158,7 @@ local Enemy = class()
 function Enemy:getWeakness()
 	local addr = self.ptr.weakness
 	if addr == 0 then return end
-	local ptr = self.rom + topc(enemyAuxTableBank, addr)
+	local ptr = self.rom + loRomToOffset(enemyAuxTableBank, addr)
 	return ffi.cast('weakness_t*', ptr)
 end
 
@@ -192,7 +203,7 @@ function EnemyAuxTable:randomize()
 				assert(#values == #self.fields)
 			end
 
-			local pcaddr = topc(self.bank, addr)
+			local pcaddr = loRomToOffset(self.bank, addr)
 			local entry = ffi.cast(ptrtype, sm.rom + pcaddr)
 
 			for i,field in ipairs(self.fields) do
@@ -213,7 +224,7 @@ end
 function EnemyAuxTable:buildMemoryMap(mem)
 	for _,addr in ipairs(self.addrs) do
 		if addr ~= 0 then
-			mem:add(topc(self.bank, addr), ffi.sizeof(self.structName), self.structName)
+			mem:add(loRomToOffset(self.bank, addr), ffi.sizeof(self.structName), self.structName)
 		end
 	end
 end
@@ -245,7 +256,7 @@ function EnemyAuxTable:print()
 			return enemy.name
 		end):concat', ')
 		if addr ~= 0 then
-			local pcaddr = topc(self.bank, addr)
+			local pcaddr = loRomToOffset(self.bank, addr)
 			local entry = ffi.cast(ptrtype, rom + pcaddr)
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
@@ -289,7 +300,7 @@ function EnemyAuxTable:printEnemy(enemy)
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
-		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + topc(self.bank, addr))))
+		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + loRomToOffset(self.bank, addr))))
 	end
 	print()
 end
@@ -674,6 +685,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xf07f, name="Shaktool"},
 		{addr=0xf0bf, name="Shattering Glass (Maridian tube)"},
 		{addr=0xf0ff, name="Walking Chozo Statue"},
+		-- ... 20 bytes of padding ...
 		{addr=0xf153, name="??? (wierd spining orb)"},
 		{addr=0xf193, name="Zeb"},
 		{addr=0xf1d3, name="Zebbo"},
@@ -716,10 +728,13 @@ function SMEnemies:enemiesInit()
 	end)
 
 	for _,enemy in ipairs(self.enemies) do
-		local addr = topc(enemyBank, enemy.addr)
+		local addr = loRomToOffset(enemyBank, enemy.addr)
 		enemy.ptr = ffi.cast('enemyClass_t*', rom + addr)
-	end
 
+		enemy.graphicsAddr = enemy.ptr.graphicsAddr24:loRomToOffset()
+	
+		-- what is the format here?
+	end
 
 	self.enemyItemDropTable = EnemyItemDropTable(self)
 	self.enemyWeaknessTable = EnemyWeaknessTable(self)
@@ -813,7 +828,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xec95, name="Unknown/varies. Runs when rooms with acid are loaded."},
 	}
 	for _,shot in ipairs(self.enemyShots) do
-		local addr = topc(enemyShotBank, shot.addr)
+		local addr = loRomToOffset(enemyShotBank, shot.addr)
 		shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
 	end
 
@@ -876,7 +891,7 @@ function SMEnemies:enemiesPrint()
 	for i,enemy in ipairs(self.enemies) do
 		print(tolua(enemy.name))
 		print((' addr24=$%02x:%04x'):format(enemyBank, enemy.addr))
-		print((' address=$%06x'):format(topc(enemyBank, enemy.addr)))
+		print((' address=$%06x'):format(loRomToOffset(enemyBank, enemy.addr)))
 
 		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
 	
@@ -884,7 +899,7 @@ function SMEnemies:enemiesPrint()
 		print(' palette='
 			..('$%02x'):format(enemy.ptr.aiBank)
 			..(':%04x'):format(enemy.ptr.palette))
-	--	local ptr = rom + topc(enemy.ptr.aiBank, enemy.ptr.palette)
+	--	local ptr = rom + loRomToOffset(enemy.ptr.aiBank, enemy.ptr.palette)
 	--	local str = ffi.string(ptr, 32)
 	--	print('  '..str:gsub('.', function(c) return ('%02x '):format(c:byte()) end))
 
@@ -901,10 +916,13 @@ function SMEnemies:enemiesPrint()
 		self.enemyWeaknessTable:printEnemy(enemy)
 		self.enemyItemDropTable:printEnemy(enemy)
 		
-		io.write(' debug name: '
+		print(' graphicsAddr24_t='..enemy.ptr.graphicsAddr24)
+		print(' graphicsAddr_t='..enemy.graphicsAddr)
+
+		print(' debug name: '
 			..('0x%04x'):format(enemy.ptr.name))
 		if enemy.ptr.name ~= 0 then
-			local addr = topc(0xb4, enemy.ptr.name)
+			local addr = loRomToOffset(enemyAuxTableBank, enemy.ptr.name)
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
 			io.write(': '..tolua(betaname))
@@ -914,19 +932,19 @@ function SMEnemies:enemiesPrint()
 
 	end
 
-	print'enemy shot table:'
+	print"all enemyShot_t's:"
 	for _,shot in ipairs(self.enemyShots) do
-		print(shot.addr, shot.ptr[0])
+		print(('%04x'):format(shot.addr), shot.ptr[0])
 	end
 end
 
 
 function SMEnemies:enemiesBuildMemoryMap(mem)
 	for _,enemy in ipairs(self.enemies) do
-		local addr = topc(enemyBank, enemy.addr)
+		local addr = loRomToOffset(enemyBank, enemy.addr)
 		mem:add(addr, ffi.sizeof'enemyClass_t', 'enemyClass_t')
 		if enemy.ptr.name ~= 0 then
-			mem:add(topc(0xb4, enemy.ptr.name), 14, 'debug name')
+			mem:add(loRomToOffset(enemyAuxTableBank, enemy.ptr.name), 14, 'debug name')
 		end
 	end
 		
@@ -934,7 +952,7 @@ function SMEnemies:enemiesBuildMemoryMap(mem)
 	self.enemyItemDropTable:buildMemoryMap(mem)
 
 	for _,shot in ipairs(self.enemyShots) do
-		local addr = topc(enemyShotBank, shot.addr)
+		local addr = loRomToOffset(enemyShotBank, shot.addr)
 		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 	end	
 end

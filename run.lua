@@ -92,11 +92,30 @@ local rom = ffi.cast('uint8_t*', romstr)
 
 -- global stuff
 
+local struct = require 'struct'
+
 ffi.cdef[[
 typedef uint8_t uint24_t[3];
 ]]
 
-local struct = require 'struct'
+addr24_t = struct{
+	name = 'addr24_t',
+	fields = {
+		{ofs = 'uint16_t'},
+		{bank = 'uint8_t'},
+	},
+	metatable = function(m)
+		function m:topc()
+			return topc(self.bank, self.ofs)
+		end
+		function m:loRomToOffset()
+			return loRomToOffset(self.bank, self.ofs)
+		end
+	end,
+}
+
+
+
 local rgb_t = struct{
 	name = 'rgb_t',
 	fields = {
@@ -227,6 +246,7 @@ end
 -- why is it that some banks need a subtract of 0x8000?
 -- it says b4:0000 => 0x1A0000, but the offset doesn't include the 15th bit ... why?
 -- the enemy data is really at 0x198000, which would be bank b3 ... what gives?
+-- I don't like this function.
 local banksRequested = table()
 function topc(bank, offset)
 	assert(offset >= 0 and offset < 0x10000, "got a bad offset for addr $"..('%02x'):format(bank)..':'..('%04x'):format(offset))
@@ -253,6 +273,26 @@ banksRequested[bank] = true
 	offset = bit.band(offset, 0xffff)
 	return bit.lshift(bit.band(bank,0x7f), 15) + offset
 end
+
+-- how is this different from topc() ?  some banks are 0x8000 off, some are equal
+function loRomToOffset(bank, offset)
+	return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
+end
+
+
+--[[
+-- for bank b4 the functions != for 0000-7fff, == for 8000-ffff
+-- for bank b6 the functions == for 0000-7fff, != for 8000-ffff
+-- for bank 8f the functions != for 0000-7fff, == for 8000-ffff
+-- for bank 9f the functions == for 0000-7fff, != for 8000-ffff
+-- for bank a0 the functions == for 0000-7fff, != for 8000-ffff
+-- these two methods match for 15th bit clear
+print(('%x'):format(loRomToOffset(0xb4,0x0000)))	-- 
+print(('%x'):format(topc(0xb4, 0x0000)))			-- 
+print(('%x'):format(loRomToOffset(0xb4,0x8000)))	-- 
+print(('%x'):format(topc(0xb4, 0x8000)))			-- 
+os.exit()
+--]]
 
 if config.skipIntro then 
 	--applyPatch'introskip_doorflags.ips' 
