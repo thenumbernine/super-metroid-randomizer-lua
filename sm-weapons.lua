@@ -94,10 +94,10 @@ hyper				1000
 pseudo_screwattack	200
 --]]
 
-	{addr=loRomToOffset(0x93, 0x85a7), name="ice_sba"},			-- 90?
-	{addr=loRomToOffset(0x93, 0x8685), name="plasma_sba"},		-- 300?
-	{addr=loRomToOffset(0x93, 0x8689), name="wave_sba"},			-- 300?
-	{addr=loRomToOffset(0x93, 0x86ab), name="spazer_sba"},		-- 300?
+	{addr=topc(0x93, 0x85a7), name="ice_sba"},			-- 90?
+	{addr=topc(0x93, 0x8685), name="plasma_sba"},		-- 300?
+	{addr=topc(0x93, 0x8689), name="wave_sba"},			-- 300?
+	{addr=topc(0x93, 0x86ab), name="spazer_sba"},		-- 300?
 }
 SMWeapons.weaponDamageForName = SMWeapons.weaponDamages:mapi(function(v) return v, v.name end)
 SMWeapons.weaponDamageForAddr = SMWeapons.weaponDamages:mapi(function(v) return v, v.addr end)

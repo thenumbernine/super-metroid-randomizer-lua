@@ -105,8 +105,8 @@ addr24_t = struct{
 		{bank = 'uint8_t'},
 	},
 	metatable = function(m)
-		function m:loRomToOffset()
-			return loRomToOffset(self.bank, self.ofs)
+		function m:topc()
+			return topc(self.bank, self.ofs)
 		end
 	end,
 }
@@ -249,33 +249,10 @@ end
 -- and seems to match with http://patrickjohnston.org/banks better
 -- how is this different than the other() ?  some banks are 0x8000 off, some are equal
 --local banksRequested = table()
-function loRomToOffset(bank, offset)
+function topc(bank, offset)
 --	banksRequested[bank] = true 
 	return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
 end
-
-
--- [[
--- for bank 80 the functions != for 0000-7fff, == for 8000-ffff
--- for bank 83 the functions != for 0000-7fff, == for 8000-ffff
--- for bank 8f the functions != for 0000-7fff, == for 8000-ffff
--- for bank b4 the functions != for 0000-7fff, == for 8000-ffff
--- for bank b6 the functions == for 0000-7fff, != for 8000-ffff
--- for bank 88 the functions != for 0000-7fff, == for 8000-ffff
--- for bank 8f the functions != for 0000-7fff, == for 8000-ffff
--- for bank 91 the functions != for 0000-7fff, == for 8000-ffff
--- for bank 93 the functions == for 0000-7fff, != for 8000-ffff
--- for bank 9f the functions == for 0000-7fff, != for 8000-ffff
--- for bank a0 the functions == for 0000-7fff, != for 8000-ffff
--- for bank a1 the functions != for 0000-7fff, == for 8000-ffff
--- for bank c2-ce the functions != for 0000-7fff, == for 8000-ffff
--- these two methods match for 15th bit clear
-print(('%x'):format(loRomToOffset(0x91,0x0000)))	-- 
-print(('%x'):format(topc(0x91, 0x0000)))			-- 
-print(('%x'):format(loRomToOffset(0x91,0x8000)))	-- 
-print(('%x'):format(topc(0x91, 0x8000)))			-- 
-os.exit()
---]]
 
 if config.skipIntro then 
 	--applyPatch'introskip_doorflags.ips' 
@@ -287,7 +264,7 @@ end
 
 if config.beefUpXRay then
 	local function write(bank, pageofs, newValue, oldValue)
-		local addr = loRomToOffset(bank, pageofs)
+		local addr = topc(bank, pageofs)
 		if oldValue ~= nil then
 			assert(rom[addr] == oldValue)
 		end

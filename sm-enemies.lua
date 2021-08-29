@@ -9,17 +9,6 @@ local randomizeEnemyProps = config.randomizeEnemyProps
 
 local enemyShotBank = 0x86
 
---[[
-i don't know who called this bank 0x9f, 
-whoever i got that 'topc' function from, but it seems to be off 
-patrickjohnson lists this as bank 0xa0 
-and for offsets 0-7fff these two functions resolve the same for banks 9f, and the same for banks a0
-but for offsets 8000-ffff, loRomToOffset is 8000 less than topc, so a bank of a0 makes sense for loRomToOffset
-not to mention its implementation is much simpler
-so as long as i'm using offsets 8000-ffff for bank a0 then i am good.
-... something tells me I should be using loRomToOffset instead that topc 
-... where did I even get topc() from anyways?
---]]
 local enemyBank = 0xa0
 
 local enemyAuxTableBank = 0xb4
@@ -81,10 +70,10 @@ local weakness_t = struct{
 
 -- TODO use this instead of manually specifying all enemy addresses
 -- one array is from 0xf8000 +0xcebf to +0xf0ff
-local enemyStart = loRomToOffset(enemyBank, 0xcebf)
+local enemyStart = topc(enemyBank, 0xcebf)
 local enemyCount = (0xf0ff - 0xcebf) / 0x40 + 1
 -- another is from +0xf153 to +0xf793 (TODO)
-local enemy2Start = loRomToOffset(enemyBank, 0xf153)
+local enemy2Start = topc(enemyBank, 0xf153)
 local enemy2Count = (0xf793 - 0xf153) / 0x40 + 1
 
 
@@ -160,7 +149,7 @@ local Enemy = class()
 function Enemy:getWeakness()
 	local addr = self.ptr.weakness
 	if addr == 0 then return end
-	local ptr = self.rom + loRomToOffset(enemyAuxTableBank, addr)
+	local ptr = self.rom + topc(enemyAuxTableBank, addr)
 	return ffi.cast('weakness_t*', ptr)
 end
 
@@ -205,7 +194,7 @@ function EnemyAuxTable:randomize()
 				assert(#values == #self.fields)
 			end
 
-			local pcaddr = loRomToOffset(self.bank, addr)
+			local pcaddr = topc(self.bank, addr)
 			local entry = ffi.cast(ptrtype, sm.rom + pcaddr)
 
 			for i,field in ipairs(self.fields) do
@@ -226,7 +215,7 @@ end
 function EnemyAuxTable:buildMemoryMap(mem)
 	for _,addr in ipairs(self.addrs) do
 		if addr ~= 0 then
-			mem:add(loRomToOffset(self.bank, addr), ffi.sizeof(self.structName), self.structName)
+			mem:add(topc(self.bank, addr), ffi.sizeof(self.structName), self.structName)
 		end
 	end
 end
@@ -258,7 +247,7 @@ function EnemyAuxTable:print()
 			return enemy.name
 		end):concat', ')
 		if addr ~= 0 then
-			local pcaddr = loRomToOffset(self.bank, addr)
+			local pcaddr = topc(self.bank, addr)
 			local entry = ffi.cast(ptrtype, rom + pcaddr)
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
@@ -302,7 +291,7 @@ function EnemyAuxTable:printEnemy(enemy)
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
-		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + loRomToOffset(self.bank, addr))))
+		io.write(' ',tostring(ffi.cast(self.structName..'*', rom + topc(self.bank, addr))))
 	end
 	print()
 end
@@ -730,10 +719,10 @@ function SMEnemies:enemiesInit()
 	end)
 
 	for _,enemy in ipairs(self.enemies) do
-		local addr = loRomToOffset(enemyBank, enemy.addr)
+		local addr = topc(enemyBank, enemy.addr)
 		enemy.ptr = ffi.cast('enemyClass_t*', rom + addr)
 
-		enemy.graphicsAddr = enemy.ptr.graphicsAddr24:loRomToOffset()
+		enemy.graphicsAddr = enemy.ptr.graphicsAddr24:topc()
 	
 		-- what is the format here?
 	end
@@ -830,7 +819,7 @@ function SMEnemies:enemiesInit()
 		{addr=0xec95, name="Unknown/varies. Runs when rooms with acid are loaded."},
 	}
 	for _,shot in ipairs(self.enemyShots) do
-		local addr = loRomToOffset(enemyShotBank, shot.addr)
+		local addr = topc(enemyShotBank, shot.addr)
 		shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
 	end
 
@@ -893,7 +882,7 @@ function SMEnemies:enemiesPrint()
 	for i,enemy in ipairs(self.enemies) do
 		print(tolua(enemy.name))
 		print((' addr24=$%02x:%04x'):format(enemyBank, enemy.addr))
-		print((' address=$%06x'):format(loRomToOffset(enemyBank, enemy.addr)))
+		print((' address=$%06x'):format(topc(enemyBank, enemy.addr)))
 
 		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
 	
@@ -901,7 +890,7 @@ function SMEnemies:enemiesPrint()
 		print(' palette='
 			..('$%02x'):format(enemy.ptr.aiBank)
 			..(':%04x'):format(enemy.ptr.palette))
-	--	local ptr = rom + loRomToOffset(enemy.ptr.aiBank, enemy.ptr.palette)
+	--	local ptr = rom + topc(enemy.ptr.aiBank, enemy.ptr.palette)
 	--	local str = ffi.string(ptr, 32)
 	--	print('  '..str:gsub('.', function(c) return ('%02x '):format(c:byte()) end))
 
@@ -923,7 +912,7 @@ function SMEnemies:enemiesPrint()
 
 		io.write(' debug name: '..('0x%04x'):format(enemy.ptr.name))
 		if enemy.ptr.name ~= 0 then
-			local addr = loRomToOffset(enemyAuxTableBank, enemy.ptr.name)
+			local addr = topc(enemyAuxTableBank, enemy.ptr.name)
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
 			io.write(': '..tolua(betaname))
@@ -942,10 +931,10 @@ end
 
 function SMEnemies:enemiesBuildMemoryMap(mem)
 	for _,enemy in ipairs(self.enemies) do
-		local addr = loRomToOffset(enemyBank, enemy.addr)
+		local addr = topc(enemyBank, enemy.addr)
 		mem:add(addr, ffi.sizeof'enemyClass_t', 'enemyClass_t')
 		if enemy.ptr.name ~= 0 then
-			mem:add(loRomToOffset(enemyAuxTableBank, enemy.ptr.name), 14, 'debug name')
+			mem:add(topc(enemyAuxTableBank, enemy.ptr.name), 14, 'debug name')
 		end
 	end
 		
@@ -953,7 +942,7 @@ function SMEnemies:enemiesBuildMemoryMap(mem)
 	self.enemyItemDropTable:buildMemoryMap(mem)
 
 	for _,shot in ipairs(self.enemyShots) do
-		local addr = loRomToOffset(enemyShotBank, shot.addr)
+		local addr = topc(enemyShotBank, shot.addr)
 		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 	end	
 end
