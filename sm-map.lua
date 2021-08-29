@@ -2169,17 +2169,26 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	-- tileSet.graphicsTileVec starts with this, pads it, appends the commonRoomGraphicsTileVec, 
 	-- and even right now does some in-place stuff to it
 	-- SO if you modify that, don't forget to update this buffer as well (somehow)
-	local buffer, compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
-	graphicsTileSet.compressedSize = compressedSize
-	graphicsTileSet.buffer = buffer
-	graphicsTileSet.bufferSize = ffi.sizeof(buffer)
-	-- stored for debugging only
-	graphicsTileSet.bufferSize = ffi.sizeof(buffer)
+	graphicsTileSet.buffer, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
+	graphicsTileSet.bufferSize = ffi.sizeof(graphicsTileSet.buffer)	-- stored for debugging only
 	
 	return graphicsTileSet
 end
 
 function SMMap:mapAddTileSetTilemapElemSet(addr)
+	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
+		if tilemapElemSet.addr == addr then return tilemapElemSet end
+	end
+	
+	local tilemapElemSet = {}
+	tilemapElemSet.addr = addr
+	tilemapElemSet.tileSets = table()
+	self.tileSetTilemapElemSets:insert(tilemapElemSet)
+			
+	tilemapElemSet.buffer, tilemapElemSet.compressedSize = lz.decompress(self.rom, tilemapElemSet.addr, 0x10000)
+	tilemapElemSet.bufferSize = ffi.sizeof(tilemapElemSet.buffer)	-- stored for debugging only
+
+	return tilemapElemSet
 end
 
 local TileSet = class()
@@ -2209,6 +2218,15 @@ function TileSet:setGraphicsTileSet(graphicsTileSet)
 	self.graphicsTileSet = graphicsTileSet
 	if self.graphicsTileSet then
 		self.graphicsTileSet.tileSets:insert(self)
+	end
+end
+function TileSet:setTilemapElemSet(tilemapElemSet)
+	if self.tilemapElemSet then
+		self.tilemapElemSet.tileSets:removeObject(self)
+	end
+	self.tilemapElemSet = tilemapElemSet
+	if self.tilemapElemSet then
+		self.tilemapElemSet.tileSets:insert(self)
 	end
 end
 
@@ -2277,7 +2295,6 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 		local loadMode7 = tileSetIndex >= 0x11 and tileSetIndex <= 0x14		-- ceres rooms 6-00 and 6-05
 		local loadCommonRoomElements = not isCeres
 			
-		tileSet.tileAddr = tileSet.obj.tileAddr24:topc()
 
 		tileSet:setGraphicsTileSet(self:mapAddTileSetGraphicsTileSet(tileSet.obj.graphicsTileAddr24:topc()))
 
@@ -2313,7 +2330,7 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 		-- for tileSet 0x11-0x14
 		-- tileSet 0x11, 0x12 = room 06/00
 		-- tileSet 0x13, 0x14 = room 06/05
-		-- for these rooms, the tileSet.tileAddr points to the mode7 data
+		-- for these rooms, the tileSet.tilemapElemSet.addr points to the mode7 data
 		if loadMode7 then
 			print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
 			-- uint8_t mode7tileSet[256][8][8], values are 0-255 palette index
@@ -2415,17 +2432,14 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 			end
 		end
 
+		tileSet:setTilemapElemSet(self:mapAddTileSetTilemapElemSet(tileSet.obj.tileAddr24:topc()))
 
 		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
 			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemapByteVec:begin(), self.commonRoomTilemapByteVec:iend())
 		end
-		do
-			local buffer
-			buffer, tileSet.tileCompressedSize = lz.decompress(rom, tileSet.tileAddr, 0x10000)
-			tileSet.tileBufferSize = ffi.sizeof(buffer)	-- stored for debugging only
-			tilemapByteVec:insert(tilemapByteVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		end
+		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemapElemSet.buffer, tileSet.tilemapElemSet.buffer + tileSet.tilemapElemSet.bufferSize)
+		
 		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
 		tileSet.tileGfxCount = bit.rshift(tilemapByteVec.size, 3)
@@ -2475,6 +2489,7 @@ function SMMap:mapInit()
 	self.tileSets = table()
 	self.tileSetPalettes = table()
 	self.tileSetGraphicsTileSets = table()
+	self.tileSetTilemapElemSets = table()
 
 	self:mapReadTileSets()
 
@@ -4132,8 +4147,6 @@ function SMMap:mapPrint()
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
 		print(': '..tileSet.obj)
-		print('  tileAddr='..('$%06x'):format(tileSet.tileAddr))
-		print('  tileBufferSize='..('$%x'):format(tileSet.tileBufferSize))
 		print('  tileIndexes used = '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
 				return ('$%03x'):format(s)
 			end):concat', ')
@@ -4151,6 +4164,14 @@ function SMMap:mapPrint()
 				return tostring(palette.colors[i])
 			end):concat', '..'}')
 		print('  used by tileSets: '..palette.tileSets:mapi(function(tileSet) return ('%02x'):format(tileSet.index) end):concat' ')
+	end
+
+	print()
+	print"all tileSet tilemapElemSets:"
+	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
+		print(' '..('$%06x'):format(tilemapElemSet.addr))
+		print('  bufferSize='..('$%06x'):format(tilemapElemSet.bufferSize))
+		print('  compressedSize='..('$%06x'):format(tilemapElemSet.compressedSize))
 	end
 
 	print()
@@ -4269,14 +4290,6 @@ function SMMap:mapBuildMemoryMap(mem)
 			'tileSet_t',
 			room
 		)
-	
-		mem:add(
-			tileSet.tileAddr,
-			tileSet.tileCompressedSize,
-			'tileSet tilemapElem_t lz data',
-			room
-		)
-
 	end
 
 	for _,palette in ipairs(self.tileSetPalettes) do
@@ -4290,6 +4303,20 @@ function SMMap:mapBuildMemoryMap(mem)
 			palette.compressedSize,
 			'tileSet palette rgb_t lz data',
 			rs and rs.room or nil
+		)
+	end
+
+	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
+		local rs
+		for _,tileSet in ipairs(tilemapElemSet.tileSets) do
+			rs = tileSet.roomStates[1]
+			if rs then break end
+		end	
+		mem:add(
+			tilemapElemSet.addr,
+			tilemapElemSet.compressedSize,
+			'tileSet tilemapElem_t lz data',
+			room
 		)
 	end
 
@@ -4728,7 +4755,7 @@ function SMMap:mapWriteEnemyGFXSets()
 		addr = addr + 2
 
 		assert(addr == endaddr)
-		local newofs = bit.band(0x7fff, enemyGFXSet.addr) + 0x8000
+		local newofs = bit.bor(bit.band(0x7fff, enemyGFXSet.addr), 0x8000)
 		for _,rs in ipairs(enemyGFXSet.roomStates) do
 			if newofs ~= rs.obj.enemyGFXAddr then
 				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.obj.enemyGFXAddr)..' to '..('%04x'):format(newofs))
@@ -4741,7 +4768,7 @@ function SMMap:mapWriteEnemyGFXSets()
 	--]]
 end
 
-function SMMap:mapWriteTileSets()
+function SMMap:mapWriteTileSets(tileSetAndRoomBlockWriteRange)
 	local rom = self.rom
 
 	-- looks like there are no equal palettes
@@ -4767,6 +4794,28 @@ print("palettes "..('%04x'):format(pj.addr)..' and '..('%04x'):format(pi.addr)..
 		end
 	end
 
+	for i=#self.tileSetTilemapElemSets,2,-1 do
+		local ti = self.tileSetTilemapElemSets[i]
+		for j=1,i-1 do
+			local tj = self.tileSetTilemapElemSets[j]
+			assert(ti.addr ~= tj.addr)
+			if byteArraysAreEqual(ti.buffer, tj.buffer) then
+print("tilemapElemSets "..('%04x'):format(tj.addr)..' and '..('%04x'):format(ti.addr)..' are matching -- removing '..('%04x'):format(ti.addr))
+				
+				for _,tileSet in ipairs(self.tileSets) do
+					if tileSet.tilemapElemSet == ti then
+						tileSet:setTilemapElemSet(tj)
+						-- tileSet.obj and tileSet.ptr's tileAddr24 are dangling here, but rewritten after the recompress
+					end
+				end
+
+				self.tileSetTilemapElemSets:remove(i)
+				break
+			end
+		end
+	end
+
+
 	for i=#self.tileSetGraphicsTileSets,2,-1 do
 		local gi = self.tileSetGraphicsTileSets[i]
 		for j=1,i-1 do
@@ -4790,14 +4839,40 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 
 	-- how should I deal with the tilemapElem_t's or the graphicsTile_t's?
 	-- I'm lumping them together but maybe I shouldn't
-
+--[=[
 	local tileSetWriteRanges = WriteRange({
+--[[
+	tileWriteRanges:
 		{0x1d4629, 0x20b6f6}, 		-- tileSet graphicsTile_t lz data
+		{0x20b6f6, 0x212d7c}, 	-- tileSet tilemapElem_t lz data
 		-- tileSet tilemapElem_t's go here
 		{0x212d7c, 0x2142bb},		-- tileSet palette rgb_t lz data
-	}, 'tileSet graphicsTileSet+palette lz data')
+--]]
+		{0x1d4629, 0x2142bb},		-- the end of this is the beginning of a roomblock lz data range, soo ... combine?
+	}, 'tileSet tilemapElemSet+graphicsTileSet+palette lz data')
+--]=]	
 	local totalOriginalCompressedSize = 0
 	local totalRecompressedSize = 0
+
+	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
+		local data = tilemapElemSet.buffer
+		local recompressed = lz.compress(data)
+		totalOriginalCompressedSize = totalOriginalCompressedSize + tilemapElemSet.compressedSize
+		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		data = recompressed
+		tilemapElemSet.compressedSize = ffi.sizeof(recompressed)
+		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
+		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
+		tilemapElemSet.addr = fromaddr
+		-- update anything dependent on this tilemapElemSet
+		for _,tileSet in ipairs(tilemapElemSet.tileSets) do
+			tileSet.obj.tileAddr24:frompc(fromaddr)
+
+			-- TODO don't do this here, do this on write later
+			tileSet.ptr.tileAddr24.bank = tileSet.obj.tileAddr24.bank
+			tileSet.ptr.tileAddr24.ofs = tileSet.obj.tileAddr24.ofs
+		end
+	end
 
 	for _,graphicsTileSet in ipairs(self.tileSetGraphicsTileSets) do
 		local data = graphicsTileSet.buffer
@@ -4806,7 +4881,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 		data = recompressed
 		graphicsTileSet.compressedSize = ffi.sizeof(recompressed)
-		local fromaddr, toaddr = tileSetWriteRanges:get(ffi.sizeof(data))
+		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
 		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
 		graphicsTileSet.addr = fromaddr
 		-- update anything dependent on this graphicsTileSet
@@ -4817,7 +4892,6 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 			tileSet.ptr.graphicsTileAddr24.bank = tileSet.obj.graphicsTileAddr24.bank
 			tileSet.ptr.graphicsTileAddr24.ofs = tileSet.obj.graphicsTileAddr24.ofs
 		end
-
 	end
 
 	for _,palette in ipairs(self.tileSetPalettes) do
@@ -4827,7 +4901,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 		data = recompressed
 		palette.compressedSize = ffi.sizeof(recompressed)
-		local fromaddr, toaddr = tileSetWriteRanges:get(ffi.sizeof(data))
+		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
 		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
 		palette.addr = fromaddr
 		-- update anything dependent on this palette
@@ -4841,54 +4915,18 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	print()
-	print('tileSet graphicsTileSet + palettes recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+	print('tileSet tilemapElemSet + graphicsTileSet + palettes recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
 		', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
 		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
-	-- output memory ranges
-	tileSetWriteRanges:print()
-
-
---[=[
-	-- remove duplicate tileVec's or graphicsTileVec's?
-	-- TODO do this in mapWrite
+	-- remove duplicate tileSet_t's 
 	for i=#self.tileSets,2,-1 do
 		local ti = self.tileSets[i]
-		local tid = ti.tileData
 		for j=1,#self.tileSets-1 do
 			local tj = self.tileSets[j]
-			local tjd = tj.tileData
-			
-			if tid.graphicsTileSet.addr ~= tjd.graphicsTileSet.addr 
-			and byteArraysAreEqual(
-				tid.tileData.graphicsTileVec.v,
-				tjd.tileData.graphicsTileVec.v
-			) then
-				print('tileSet '..i..' and '..j..' graphicsTile buffers matched -- merging')
-				tid.graphicsTileSet.addr = tjd.graphicsTileSet.addr
-				-- which one is definitive?  
-				ti.obj.graphicsTileAddr24 = tj.obj.graphicsTileAddr24
-				ti.ptr.graphicsTileAddr24 = ti.obj.graphicsTileAddr24
-			end
-			
-			if tid.tileAddr ~= tjd.tileAddr 
-			and byteArraysAreEqual(
-				tid.tileData.tileVec.v,
-				tjd.tileData.tileVec.v
-			) then
-				print('tileSet '..i..' and '..j..' tile buffers matched -- merging')
-				tid.tileAddr = tjd.tileAddr
-				ti.obj.tileAddr24 = tj.obj.tileAddr24
-				ti.ptr.tileAddr24 = ti.obj.tileAddr24
-			end
-
-			if ti.paletteAddr ~= tj.paletteAddr 
-			and byteArraysAreEqual(ti.palette, tj.palette) 
-			then
-				print('tileSet '..i..' and '..j..' palette buffers matched -- merging')
-				ti.paletteAddr = tj.paletteAddr
-				ti.obj.paletteAddr24 = tj.obj.paletteAddr24
-				ti.ptr.paletteAddr24 = tj.obj.paletteAddr24
+			if ti.obj == tj.obj then
+print("tileSet_t "..('%02x'):format(tj.index)..' and '..('%02x'):format(ti.index)..' are matching -- removing '..('%02x'):format(ti.index))
+				-- TODO
 			end
 		end
 	end
@@ -4901,14 +4939,8 @@ tileSet memory ranges [incl,excl)
 [0x1c8000, 0x1ca09d) = common room graphicsTile_t lz data
 [0x1ca09d, 0x1ca634) = common room tilemapElem_t lz data
 
-[0x1ca634, 0x1d4629) is mostly bg tilemapElem_t lz data, but has some pockets here and there
-
-[0x1d4629, 0x20b6f6) = tileSet graphicsTile_t lz data
-[0x20b6f6, 0x212d7c) = tileSet tilemapElem_t lz data
-
-
+and then don't forget the bg tilemapElem_t's, which has some pockets in the data
 --]]
---]=]
 end
 
 
@@ -5092,7 +5124,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	roomWriteRanges:print()
 end
 
-function SMMap:mapWriteRoomBlocks()
+function SMMap:mapWriteRoomBlocks(writeRange)
 	local rom = self.rom
 	
 	-- remove any roomblocks that no one is using
@@ -5104,6 +5136,7 @@ function SMMap:mapWriteRoomBlocks()
 		end
 	end
 
+--[==[	
 	-- [[ write back compressed data
 	local roomBlockWriteRanges = WriteRange({
 		--[=[ there are some bytes outside compressed regions but between a few roomdatas
@@ -5118,6 +5151,7 @@ function SMMap:mapWriteRoomBlocks()
 		{0x2142bb, 0x278000},
 		--]=]
 	}, 'roomblocks')
+--]==]	
 	-- ... reduces to 56% of the original compressed data
 	-- but goes slow
 	local totalOriginalCompressedSize = 0
@@ -5140,7 +5174,7 @@ function SMMap:mapWriteRoomBlocks()
 		-- [=[ write back at a contiguous location
 		-- (don't forget to update all roomstate_t's roomBlockAddr24.bank:roomBlockAddr24.ofs's to point to this
 		-- TODO this currently messes up the scroll change in wrecked ship, when you go to the left to get the missile in the spike room
-		local fromaddr, toaddr = roomBlockWriteRanges:get(ffi.sizeof(data))
+		local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
 
 		-- do the write
 		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
@@ -5148,8 +5182,7 @@ function SMMap:mapWriteRoomBlocks()
 		roomBlockData.addr = fromaddr
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			rs.obj.roomBlockAddr24.bank = bit.rshift(roomBlockData.addr, 15) + 0x80 
-			rs.obj.roomBlockAddr24.ofs = bit.band(roomBlockData.addr, 0x7fff) + 0x8000
+			rs.obj.roomBlockAddr24:frompc(roomBlockData.addr)
 			rs.ptr.roomBlockAddr24.bank = rs.obj.roomBlockAddr24.bank
 			rs.ptr.roomBlockAddr24.ofs = rs.obj.roomBlockAddr24.ofs
 		end
@@ -5169,8 +5202,6 @@ function SMMap:mapWriteRoomBlocks()
 		', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
 		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
-	-- output memory ranges
-	roomBlockWriteRanges:print()
 	--]]
 end
 
@@ -5207,18 +5238,28 @@ function SMMap:mapWrite()
 	})
 	
 	-- write these before writing roomstates
-	
-	self:mapWriteRoomBlocks()
-	
+	do
+		-- this is how the data is ordered in the rom:
+		local tileSetAndRoomBlockWriteRange = WriteRange({
+			-- NOTICE from 0x1c8000 to 1ca633 is common room compressed graphicsTile_t then tilemapElem_t
+			-- then comes the bg tilemapElem_t's, but they have random padding in there,
+			-- and immediately after comes this:
+			-- so I'm a step away from just writing everything from 0x1c8000 to 0x278000
+			{0x1d4629, 0x278000},
+		}, 'tileSet tilemapElemSet+graphicsTileSet+palette lz data, and roomblocks lz data')
+		self:mapWriteTileSets(tileSetAndRoomBlockWriteRange)		-- tileSet_t's...
+		self:mapWriteRoomBlocks(tileSetAndRoomBlockWriteRange)		-- roomBlockData ...
+		
+		-- output memory ranges
+		tileSetAndRoomBlockWriteRange:print()
+	end
+
 	roomBankWriteRanges.name = 'plm_t'
 	self:mapWritePLMs(roomBankWriteRanges)
 
 	-- do this before writing anything that uses enemy spawn sets
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
-
-	-- do this before writing anything that uses tileSet
-	self:mapWriteTileSets()
 
 	-- TODO recompress and write bg_t's
 	-- but first I need to decode them all
