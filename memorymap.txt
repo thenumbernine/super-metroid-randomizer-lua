@@ -587,9 +587,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $037337..$037352 (enemyShot_t x2) ... 325 bytes of padding ...
      : $037498..$0374a5 (enemyShot_t) ... 265050 bytes of padding ...
 --------------
-00/00: $078000..$078025 (plm_t) ... -38 bytes of padding ...
-00/19: $078000..$07801a (bg_t) ... 11 bytes of padding ...
-00/00: $078026..$078057 (plm_t)
+00/19: $078000..$07801a (bg_t) ... -27 bytes of padding ...
+00/00: $078000..$078057 (plm_t x2)
 00/01: $078058..$078059 (plm_t)
 00/02: $07805a..$0781cb (plm_t x2)
 00/03: $0781cc..$0781d3 (plm_t)
@@ -3074,8 +3073,21 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/00: $20622a..$208da8 (tileSet graphicsTile_t lz data)
 --------------
 06/05: $208da9..$20b6f5 (tileSet graphicsTile_t lz data)
-     : $20b6f6..$212d7b (tileSet tilemapElem_t lz data x14)
+00/00: $20b6f6..$20beed (tileSet tilemapElem_t lz data)
+00/18: $20beee..$20c5ce (tileSet tilemapElem_t lz data)
+03/01: $20c5cf..$20cfa5 (tileSet tilemapElem_t lz data)
+01/00: $20cfa6..$20d8db (tileSet tilemapElem_t lz data)
+01/20: $20d8dc..$20e188 (tileSet tilemapElem_t lz data)
+01/2f: $20e189..$20e360 (tileSet tilemapElem_t lz data)
+02/05: $20e361..$20f3ae (tileSet tilemapElem_t lz data)
+02/0a: $20f3af..$20f4b0 (tileSet tilemapElem_t lz data)
+04/13: $20f4b1..$21055e (tileSet tilemapElem_t lz data)
 --------------
+04/19: $21055f..$21160c (tileSet tilemapElem_t lz data)
+04/37: $21160d..$211b00 (tileSet tilemapElem_t lz data)
+05/11: $211b01..$21227a (tileSet tilemapElem_t lz data)
+01/05: $21227b..$21275d (tileSet tilemapElem_t lz data)
+06/01: $21275e..$212d7b (tileSet tilemapElem_t lz data)
 00/00: $212d7c..$212e5c (tileSet palette rgb_t lz data)
      : $212e5d..$212f42 (tileSet palette rgb_t lz data)
 00/18: $212f43..$213014 (tileSet palette rgb_t lz data)

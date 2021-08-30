@@ -224,6 +224,55 @@ local fx1_t = struct{
 
 
 --[[
+now using http://patrickjohnston.org/bank/8F#fB76A
+bg headers:
+0000 = terminator
+0004 = 7 bytes
+0002 & 0008 = 9 bytes
+000c = 2 bytes
+000e = 11 bytes
+--]]
+--[[
+
+-- terminator
+local bg_0_t = struct{
+	name = 'bg_0_t',
+	fields = {
+		{header = 'uint16_t'},
+	},
+}
+
+local bg_2_8_t = struct{
+	name = 'bg_2_8_t',
+	fields = {
+		{header = 'uint16_t'},
+		{addr24 = 'addr24_t'},
+		{b = 'uint16_t'},
+		{c = 'uint16_t'},
+	},
+}
+
+local bg_c_t = struct{
+	name = 'bg_c_t',
+	fields = {
+		{header = 'uint16_t'},
+	},
+}
+
+local bg_e_t = struct{
+	name = 'bg_e_t',
+	fields = {
+		{header = 'uint16_t'},
+		{a = 'uint16_t'},
+		{addr24 = 'addr24_t'},
+		{c = 'uint16_t'},
+		{d = 'uint16_t'},
+	},
+}
+--]]
+
+
+--[[
 based on header vs spacing between bg_t's:
 header=0x0004 => sizeof=27 (overwhelmingly) ... except for $07e248 and $07e25a which have sizeof=18
 	on those two, sizeof=18, and ofs[17:16:15]=00:00:10
@@ -820,6 +869,37 @@ function Door:setDestRoom(room)
 	self.destRoom = room
 end
 
+-- TODO make common with mapAddTileSetTilemap
+function SMMap:mapAddBGTilemap(addr)
+	for _,tilemap in ipairs(self.bgTilemaps) do
+		if tilemap.addr == addr then return tilemap end
+	end
+	
+	local tilemap = {}
+	tilemap.addr = addr
+	self.bgTilemaps:insert(tilemap)
+
+	--[[
+	bg tilemap.size is 0x800 / 2048 or 0x1000 / 4096
+	with 2 bytes per tilemapElem_t's, that means
+	most are tilemap.size==0x800 <=> uint16_t tilemapElem[height=32][width=32]
+	some are tilemap.size==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
+	--]]
+	
+	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr, 0x10000)
+	-- TODO ambiguous ... how about sizeInBytes?
+	-- or about just using 'count' or 'len'
+	tilemap.size = ffi.sizeof(tilemap.data)	
+
+	local sizeofElem = ffi.sizeof'tilemapElem_t'
+	assert(tilemap.size % sizeofElem == 0)
+	local count = tilemap.size / sizeofElem		-- number of tilemaps
+	tilemap.width = 32
+	tilemap.height = count / tilemap.width
+	assert(tilemap.width * tilemap.height * sizeofElem == tilemap.size)
+
+	return tilemap
+end
 
 function SMMap:mapAddRoom(pageofs, buildRecursively)
 	local _,m = self.rooms:find(nil, function(m) return m.addr == pageofs end)
@@ -1000,7 +1080,7 @@ if done then break end
 -- it also means we have paddings of -6 or 2 between bg_t's
 -- hinting further that the bg_t should be of size 0x13 or 0x1b depending on some condition that i'm not finding
 				local bg = self:mapAddBG(addr)
-				bg.rooms:insert(m)
+				bg.roomStates:insert(rs)
 				rs.bgs:insert(bg)
 
 				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
@@ -1008,12 +1088,8 @@ if done then break end
 				-- though who knows what it points to  ... decompressing all other header types fails
 				-- header==4 coincides with tilemapElem_t[] of 0x800 or 0x1000 bytes
 				if ptr.header == 4 then
-					local bgDataAddr = ptr.addr24:topc()
-					local bgData, compressedSize = lz.decompress(rom, bgDataAddr, 0x10000)
-					bg.data = bgData
-					bg.dataSize = ffi.sizeof(bgData)
-					bg.dataAddr = bgDataAddr
-					bg.dataCompressedSize = compressedSize 
+					bg.tilemap = self:mapAddBGTilemap(ptr.addr24:topc())
+					bg.tilemap.bg = bg	-- is this 1:1?
 				end
 				
 				addr = addr + ffi.sizeof'bg_t'
@@ -1027,7 +1103,7 @@ if done then break end
 			for _,bg in ipairs(rs.bgs) do
 				local addr = bg.ptr.addr:topc()
 				local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
-				bg.data = decompressed
+				bg.tilemap.data = decompressed
 				mem:add(addr, compressedSize, 'bg data', m)
 			end
 			--]]
@@ -1096,84 +1172,6 @@ if done then break end
 		rs:setTileSet(tileSet)
 	end
 
-
--- [=[
-	--[[
-	background bitmaps are generated from combining the bgData graphicsTile indexes with a roomstate's tileSet's graphicsTiles
-	stored as 8-bit indexed bitmaps ... use the tileset's palette to get the rgb colors
-	--]]
-	-- group these by unique bgData + tileData to cache unique indexed bitmaps
-	-- or group by unique bgData + tileSet to cache unique rgb bitmaps
-	self.bgBmps = self.bgBmps or table()
-	local function makeBackgroundBitmapForBGDataAndTileSet(rs, bg)
-		assert(bg.obj.header == 4)
-		for _,bgBmp in ipairs(self.bgBmps) do
-			-- tileSet matches
-			if bgBmp.tileSet == rs.tileSet
-			-- bgData matches
-			-- (put bgData in its own lua obj? instead of it being merged with bg?)
-			and bgBmp.bg == bg
-			then
-				return bgBmp
-			end
-		end
-		local bgBmp = {}
-		local tileSet = rs.tileSet
-		bgBmp.tileSet = tileSet
-		bgBmp.bg = bg
-	
-
-			
-		--[[
-		bg dataSize is 0x800 / 2048 or 0x1000 / 4096
-		with 2 bytes per tilemapElem_t's, that means
-		most are dataSize==0x800 <=> uint16_t tilemapElem[height=32][width=32]
-		some are dataSize==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
-		--]]
-		local tilemapElemCount = bg.dataSize / 2
-		bgBmp.tilemapElemsWide = 32
-		bgBmp.tilemapElemsHigh = tilemapElemCount / bgBmp.tilemapElemsWide
-		assert(bgBmp.tilemapElemsWide * bgBmp.tilemapElemsHigh * 2 == bg.dataSize)
-		
-		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapElemCount)
-
-		self:convertTilemapToBitmap(
-			bgBmp.dataBmp,
-			bg.data,
-			tileSet.graphicsTileVec.v,
-			bgBmp.tilemapElemsWide,
-			bgBmp.tilemapElemsHigh,
-			1
-		)
-
-		self.bgBmps:insert(bgBmp)
-		return bgBmp
-	end
-	
-	-- now that tileSet is loaded, decode the bgdata
-	-- TODO how about grouping by unique bg_t + tileSet pairs?
-	-- to reduce redundant outputs
-	-- actually we can't do this for bgs that have multiple rs's / varying tileSet's
-	-- so do it upon decode
-	for _,rs in ipairs(m.roomStates) do
-		--[[
-		i'm guessing it represents tileIndex's somehow, since the background seems to be stored in the tileSet 
-		the bg data looks like it is uint16_t's, in rows of 0x20 uint16_t's, so 0x40 bytes per row, and 0x20 rows of that makes 0x800 bytes
-		so it is data[32][32][2] 
-		--]]
-		rs.bgBmps = table()
-		for _,bg in ipairs(rs.bgs) do
-			if bg.obj.header == 4 then
-				assert(rs.tileSet.graphicsTileVec)
-				assert(rs.tileSet.palette)
-				assert(rs.tileSet.palette.colors)
-				rs.bgBmps:insert(makeBackgroundBitmapForBGDataAndTileSet(rs, bg))
-			end
-		end
-	end
---]=]
-
-
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
 			if door.ctype == 'door_t' then
@@ -1191,7 +1189,7 @@ function SMMap:mapRemoveRoom(m)
 	local i = self.rooms:find(m)
 	assert(i, "tried to remove a room that I couldn't find")
 	
-	-- TODO in theory a room state could be pointed to by more than one room (if its roomselect's point to the same one)
+	-- TODO in theory a room state could be pointed to by more than one room (if its roomselect's point to the same one), but in practice this is not true so I don't need to consider it
 	for _,rs in ipairs(m.roomStates) do
 		rs:setPLMSet(nil)
 		-- technically these should never be nil, so only do this if we're getting rid of the roomstate
@@ -1202,8 +1200,10 @@ function SMMap:mapRemoveRoom(m)
 	-- TODO do the occluding in mapWrite, and just clear the pointers here?
 	for j=#self.bgs,1,-1 do
 		local bg = self.bgs[j]
-		bg.rooms:removeObject(m)
-		if #bg.rooms == 0 then
+		for _,rs in ipairs(m.roomStates) do
+			bg.roomStates:removeObject(rs)
+		end
+		if #bg.roomStates == 0 then
 			self.bgs:remove(j)
 		end
 	end
@@ -1394,7 +1394,7 @@ function SMMap:mapAddBG(addr)
 		addr = addr,
 		ptr = ffi.cast('bg_t*', self.rom + addr),
 		-- list of all m's that use this bg
-		rooms = table(),
+		roomStates = table(),
 	}
 	bg.obj = ffi.new('bg_t', bg.ptr[0])
 	self.bgs:insert(bg)
@@ -2033,7 +2033,7 @@ tilemapElemSizeY = 8*8 graphicsTiles high
 count = number of 8 * 8 * tilemapElemSizeX * tilemapElemSizeY tiles ... honestly this coule be multiplied into tilemapElemSizeY
 
 dst should be the destination indexed bitmap
-tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.data (sets of 32x32), or whatever else
+tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.data (sets of 32x32), or whatever else
 graphicsTiles should be tileSet.graphicsTileVec.v
 count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles x 2 bytes per graphicsTile lookup), or 1 for bg_t's, or whatever else
 
@@ -2143,7 +2143,7 @@ function SMMap:mapAddTileSetPalette(addr)
 	palette.compressedSize = compressedSize 
 	local len = ffi.sizeof(data)
 	assert(len % ffi.sizeof'rgb_t' == 0)
-	palette.size = len / ffi.sizeof'rgb_t'
+	palette.size = len / ffi.sizeof'rgb_t'	-- TODO "count" or "len" to not be ambiguous?
 	assert(palette.size == 128)	-- always true
 --[[ this seems to free the original data once it leaves scope
 	palette.colors = ffi.cast('uint16_t*', data)
@@ -2169,26 +2169,27 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	-- tileSet.graphicsTileVec starts with this, pads it, appends the commonRoomGraphicsTileVec, 
 	-- and even right now does some in-place stuff to it
 	-- SO if you modify that, don't forget to update this buffer as well (somehow)
-	graphicsTileSet.buffer, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
-	graphicsTileSet.bufferSize = ffi.sizeof(graphicsTileSet.buffer)	-- stored for debugging only
+	graphicsTileSet.data, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
+	graphicsTileSet.size = ffi.sizeof(graphicsTileSet.data)	-- stored for debugging only
 	
 	return graphicsTileSet
 end
 
-function SMMap:mapAddTileSetTilemapElemSet(addr)
-	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
-		if tilemapElemSet.addr == addr then return tilemapElemSet end
+-- TODO make this a class and common with mapAddBGTilemap
+function SMMap:mapAddTileSetTilemap(addr)
+	for _,tilemap in ipairs(self.tileSetTilemaps) do
+		if tilemap.addr == addr then return tilemap end
 	end
 	
-	local tilemapElemSet = {}
-	tilemapElemSet.addr = addr
-	tilemapElemSet.tileSets = table()
-	self.tileSetTilemapElemSets:insert(tilemapElemSet)
+	local tilemap = {}
+	tilemap.addr = addr
+	tilemap.tileSets = table()
+	self.tileSetTilemaps:insert(tilemap)
 			
-	tilemapElemSet.buffer, tilemapElemSet.compressedSize = lz.decompress(self.rom, tilemapElemSet.addr, 0x10000)
-	tilemapElemSet.bufferSize = ffi.sizeof(tilemapElemSet.buffer)	-- stored for debugging only
+	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr, 0x10000)
+	tilemap.size = ffi.sizeof(tilemap.data)	-- stored for debugging only
 
-	return tilemapElemSet
+	return tilemap
 end
 
 local TileSet = class()
@@ -2220,13 +2221,13 @@ function TileSet:setGraphicsTileSet(graphicsTileSet)
 		self.graphicsTileSet.tileSets:insert(self)
 	end
 end
-function TileSet:setTilemapElemSet(tilemapElemSet)
-	if self.tilemapElemSet then
-		self.tilemapElemSet.tileSets:removeObject(self)
+function TileSet:setTilemap(tilemap)
+	if self.tilemap then
+		self.tilemap.tileSets:removeObject(self)
 	end
-	self.tilemapElemSet = tilemapElemSet
-	if self.tilemapElemSet then
-		self.tilemapElemSet.tileSets:insert(self)
+	self.tilemap = tilemap
+	if self.tilemap then
+		self.tilemap.tileSets:insert(self)
 	end
 end
 
@@ -2325,12 +2326,12 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 		so I wonder if that mode7 tileSetIndex if condition is even needed
 		--]]
 		local graphicsTileVec = vector'uint8_t'
-		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.buffer, tileSet.graphicsTileSet.buffer + tileSet.graphicsTileSet.bufferSize)
+		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet.data + tileSet.graphicsTileSet.size)
 
 		-- for tileSet 0x11-0x14
 		-- tileSet 0x11, 0x12 = room 06/00
 		-- tileSet 0x13, 0x14 = room 06/05
-		-- for these rooms, the tileSet.tilemapElemSet.addr points to the mode7 data
+		-- for these rooms, the tileSet.tilemap.addr points to the mode7 data
 		if loadMode7 then
 			print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
 			-- uint8_t mode7tileSet[256][8][8], values are 0-255 palette index
@@ -2432,13 +2433,13 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 			end
 		end
 
-		tileSet:setTilemapElemSet(self:mapAddTileSetTilemapElemSet(tileSet.obj.tileAddr24:topc()))
+		tileSet:setTilemap(self:mapAddTileSetTilemap(tileSet.obj.tileAddr24:topc()))
 
 		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
 			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemapByteVec:begin(), self.commonRoomTilemapByteVec:iend())
 		end
-		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemapElemSet.buffer, tileSet.tilemapElemSet.buffer + tileSet.tilemapElemSet.bufferSize)
+		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap.data + tileSet.tilemap.size)
 		
 		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
@@ -2479,6 +2480,7 @@ function SMMap:mapInit()
 	self.rooms = table()
 	self.roomblocks = table()
 	self.bgs = table()
+	self.bgTilemaps = table()
 	self.fx1s = table()
 	self.layerHandlings = table()
 	
@@ -2489,7 +2491,7 @@ function SMMap:mapInit()
 	self.tileSets = table()
 	self.tileSetPalettes = table()
 	self.tileSetGraphicsTileSets = table()
-	self.tileSetTilemapElemSets = table()
+	self.tileSetTilemaps = table()
 
 	self:mapReadTileSets()
 
@@ -2543,6 +2545,22 @@ function SMMap:mapInit()
 	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
 	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
 	--]]
+
+--[[ these are not first bg tilemaps of rooms..  where are they stored? 
+	self:mapAddBGTilemap(topc(0xb9, 0xa75e))
+	self:mapAddBGTilemap(topc(0xb9, 0xd56a))
+	self:mapAddBGTilemap(topc(0xb9, 0xd5a1))
+	self:mapAddBGTilemap(topc(0xb9, 0xd99c))
+	self:mapAddBGTilemap(topc(0xb9, 0xde11))
+	self:mapAddBGTilemap(topc(0xb9, 0xe94f))
+	self:mapAddBGTilemap(topc(0xb9, 0xf11d))
+	self:mapAddBGTilemap(topc(0xb9, 0xf70d))
+	self:mapAddBGTilemap(topc(0xb9, 0xf72e))
+	self:mapAddBGTilemap(topc(0xb9, 0xff4e))
+	self:mapAddBGTilemap(topc(0xba, 0x9023))
+	self:mapAddBGTilemap(topc(0xba, 0xc620))
+--]]
+
 
 	--[[ get a table of doors based on their plm arg low byte
 	self.doorPLMForID = table()
@@ -3024,7 +3042,10 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 						
 							local rs = m.roomStates[1]
 							local tileSet = rs.tileSet
-							local bgBmp = rs.bgBmps[1]
+						
+							-- TODO first bg with a tileset ... but for now there's only 1 anyways
+							local bgBmp = ctx.sm.getBitmapForRSAndBG(rs, rs.bgs[1])
+							
 							if tileSet
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
 							and tileIndex < tileSet.tileGfxCount
@@ -3041,8 +3062,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 
 -- [[ draw background?
 											if bgBmp then
-												local bgw = graphicsTileSizeInPixels * bgBmp.tilemapElemsWide
-												local bgh = graphicsTileSizeInPixels * bgBmp.tilemapElemsHigh
+												local bgw = graphicsTileSizeInPixels * bgBmp.bg.tilemap.width
+												local bgh = graphicsTileSizeInPixels * bgBmp.bg.tilemap.height
 												local bgx = x % bgw
 												local bgy = y % bgh
 												local src = tileSet.palette.colors[bgBmp.dataBmp[bgx + bgw * bgy]]
@@ -3450,7 +3471,56 @@ end
 
 function SMMap:mapSaveImage(filenamePrefix)
 	local Image = require 'image'
-	
+
+
+	--[[
+	now that tileSet is loaded, decode the bgdata
+	TODO how about grouping by unique bg_t + tileSet pairs?
+	to reduce redundant outputs
+	actually we can't do this for bgs that have multiple rs's / varying tileSet's
+	so do it upon decode
+
+	background bitmaps are generated from combining the bgData graphicsTile indexes with a roomstate's tileSet's graphicsTiles
+	stored as 8-bit indexed bitmaps ... use the tileset's palette to get the rgb colors
+
+	group these by unique bgData + tileData to cache unique indexed bitmaps
+	or group by unique bgData + tileSet to cache unique rgb bitmaps
+		
+	cache these as we build them
+	--]]
+	self.bitmapForRSAndBG = {}
+	self.getBitmapForRSAndBG = function(rs, bg)
+		if not bg.tilemap then return end
+
+		-- TODO why not do this with bg.addr too?
+		local rsaddr = ffi.cast('uint8_t*',rs.ptr) - self.rom
+
+		self.bitmapForRSAndBG[rsaddr] = self.bitmapForRSAndBG[rsaddr] or {}
+		local bgBmp = self.bitmapForRSAndBG[rsaddr][bg.addr]
+		if bgBmp then return bgBmp end
+
+		bgBmp = {}
+
+print('generating bitmap for rs '..('%06x'):format(rsaddr)..' bg '..('%06x'):format(bg.addr))		
+		bgBmp.rs = rs
+		bgBmp.bg = bg
+		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * bg.tilemap.width * bg.tilemap.height)
+
+		self:convertTilemapToBitmap(
+			bgBmp.dataBmp,
+			bg.tilemap.data,
+			rs.tileSet.graphicsTileVec.v,
+			bg.tilemap.width,
+			bg.tilemap.height,
+			1
+		)
+		
+		self.bitmapForRSAndBG[rsaddr][bg.addr] = bgBmp
+
+		return bgBmp
+	end
+
+
 	filenamePrefix = filenamePrefix or 'map'
 
 	local fullMapWidthInBlocks = 68
@@ -3474,6 +3544,7 @@ function SMMap:mapSaveImage(filenamePrefix)
 	local dumpworldTileBgImg = Image(dumpw, dumph, 3, 'unsigned char')
 	
 	local ctx = {
+		sm = self,
 		debugMapImage = debugMapImage,
 		debugMapMaskImage = debugMapMaskImage,
 		mapTexImage = mapTexImage,
@@ -3609,32 +3680,39 @@ function SMMap:mapSaveImage(filenamePrefix)
 				end
 			end
 		end
-		
-		for _,m in ipairs(self.rooms) do
-			for _,rs in ipairs(m.roomStates) do
-				-- for now i just have at most 1 per roomstate
-				assert(#rs.bgBmps <= 1)
-				for _,bgBmp in ipairs(rs.bgBmps) do
-					local fn = ('bgs/%02x-%02x-%x.png'):format(
-						m.obj.region,
-						m.obj.index,
-						ffi.cast('uint8_t*', rs.ptr) - self.rom
-					)
+
+		for _,tilemap in ipairs(self.bgTilemaps) do
+			local fn = ('bgs/%06x.png'):format(tilemap.addr)
+
+			local rs
+			local bg = tilemap.bg
+			if not bg then
+				-- if we don't have an associated bg then 
+			else
+				rs = bg.roomStates[1]
+			
+				local bgBmp = self.getBitmapForRSAndBG(rs, bg)
 				
-					local img = Image(graphicsTileSizeInPixels * bgBmp.tilemapElemsWide, graphicsTileSizeInPixels * bgBmp.tilemapElemsHigh, 3, 'unsigned char')
-					for y=0,graphicsTileSizeInPixels*bgBmp.tilemapElemsHigh-1 do
-						for x=0,graphicsTileSizeInPixels*bgBmp.tilemapElemsWide-1 do
-							local offset = x + img.width * y
-							local dst = img.buffer + 3 * offset
-							local paletteIndex = bgBmp.dataBmp[offset]
-							local rgb = rs.tileSet.palette.colors[paletteIndex]
-							dst[0] = math.floor(rgb.r*255/31)
-							dst[1] = math.floor(rgb.g*255/31)
-							dst[2] = math.floor(rgb.b*255/31)
-						end
+				local tileSet = rs and rs.tileSet
+				-- if we don't have a tileset ... then how do we know which one to use?
+				tileSet = tileSet or self.tileSets[1]
+
+				-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
+				-- just for the sake of getting palette info
+
+				local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
+				for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
+					for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
+						local offset = x + img.width * y
+						local dst = img.buffer + 3 * offset
+						local paletteIndex = bgBmp.dataBmp[offset]
+						local rgb = tileSet.palette.colors[paletteIndex]
+						dst[0] = math.floor(rgb.r*255/31)
+						dst[1] = math.floor(rgb.g*255/31)
+						dst[2] = math.floor(rgb.b*255/31)
 					end
-					img:save(fn)
 				end
+				img:save(fn)
 			end
 		end
 	end
@@ -4027,15 +4105,12 @@ function SMMap:mapPrint()
 	self.bgs:sort(function(a,b) return a.addr < b.addr end)
 	for _,bg in ipairs(self.bgs) do
 		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0])
-		print('  rooms: '..bg.rooms:map(function(m)
-				return ('%02x/%02x'):format(m.obj.region, m.obj.index)
+		print('  rooms: '..bg.roomStates:mapi(function(rs)
+				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
-		if bg.data then
-			print('  dataSize: '..('$%x'):format(bg.dataSize))
-			print('  dataAddr: '..('$%x'):format(bg.dataAddr))
-			print('  data: '..range(0,bg.dataSize-1):mapi(function(i)
-					return ('%02x'):format(bg.data[i])
-				end):concat' ')
+		if bg.tilemap then
+			print('  tilemap.size: '..('$%x'):format(bg.tilemap.size))
+			print('  tilemap.addr: '..('$%x'):format(bg.tilemap.addr))
 		end
 	end
 
@@ -4167,18 +4242,18 @@ function SMMap:mapPrint()
 	end
 
 	print()
-	print"all tileSet tilemapElemSets:"
-	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
-		print(' '..('$%06x'):format(tilemapElemSet.addr))
-		print('  bufferSize='..('$%06x'):format(tilemapElemSet.bufferSize))
-		print('  compressedSize='..('$%06x'):format(tilemapElemSet.compressedSize))
+	print"all tileSet tilemaps:"
+	for _,tilemap in ipairs(self.tileSetTilemaps) do
+		print(' '..('$%06x'):format(tilemap.addr))
+		print('  size='..('$%06x'):format(tilemap.size))
+		print('  compressedSize='..('$%06x'):format(tilemap.compressedSize))
 	end
 
 	print()
 	print"all tileSet graphicsTileSets:"
 	for _,graphicsTileSet in ipairs(self.tileSetGraphicsTileSets) do
 		print(' '..('$%06x'):format(graphicsTileSet.addr))
-		print('  bufferSize='..('$%06x'):format(graphicsTileSet.bufferSize))
+		print('  size='..('$%06x'):format(graphicsTileSet.size))
 		print('  compressedSize='..('$%06x'):format(graphicsTileSet.compressedSize))
 	end
 end
@@ -4199,8 +4274,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			end
 			
 			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
-			mem:add(topc(self.bgBank, rs.obj.bgAddr), #rs.bgs * ffi.sizeof'bg_t', 'bg_t', m)
-
+			
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
 			local code = readCode(rom, addr, 100)
 			mem:add(addr, #code, 'room select code', m)
@@ -4259,15 +4333,19 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	for _,bg in ipairs(self.bgs) do
-		local room = #bg.rooms > 0 and bg.rooms[1] or nil
-		if bg.data then
-			mem:add(
-				bg.dataAddr,
-				bg.dataCompressedSize,
-				'bg tilemapElem_t lz data',
-				room
-			)
-		end
+		local m = bg.roomStates[1].room
+		mem:add(bg.addr, ffi.sizeof'bg_t', 'bg_t', m)
+	end
+
+	for _,tilemap in ipairs(self.bgTilemaps) do
+		local bg = tilemap.bg
+		local rs = bg and bg.roomStates[1]
+		mem:add(
+			tilemap.addr,
+			tilemap.compressedSize,
+			'bg tilemapElem_t lz data',
+			rs and rs.room or nil
+		)
 	end
 
 	mem:add(
@@ -4306,17 +4384,17 @@ function SMMap:mapBuildMemoryMap(mem)
 		)
 	end
 
-	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
+	for _,tilemap in ipairs(self.tileSetTilemaps) do
 		local rs
-		for _,tileSet in ipairs(tilemapElemSet.tileSets) do
+		for _,tileSet in ipairs(tilemap.tileSets) do
 			rs = tileSet.roomStates[1]
 			if rs then break end
 		end	
 		mem:add(
-			tilemapElemSet.addr,
-			tilemapElemSet.compressedSize,
+			tilemap.addr,
+			tilemap.compressedSize,
 			'tileSet tilemapElem_t lz data',
-			room
+			rs and rs.room or nil
 		)
 	end
 
@@ -4794,24 +4872,43 @@ print("palettes "..('%04x'):format(pj.addr)..' and '..('%04x'):format(pi.addr)..
 		end
 	end
 
-	for i=#self.tileSetTilemapElemSets,2,-1 do
-		local ti = self.tileSetTilemapElemSets[i]
+	-- none removed 
+	for i=#self.tileSetPalettes,1,-1 do
+		local palette = self.tileSetPalettes[i]
+		if #palette.tileSets == 0 then
+			print('!!! removing tileSet palette that is never referenced !!! '..('%06x'):format(palette.addr))
+			self.tileSetPalettes:remove(i)
+		end
+	end
+	
+
+	for i=#self.tileSetTilemaps,2,-1 do
+		local ti = self.tileSetTilemaps[i]
 		for j=1,i-1 do
-			local tj = self.tileSetTilemapElemSets[j]
+			local tj = self.tileSetTilemaps[j]
 			assert(ti.addr ~= tj.addr)
-			if byteArraysAreEqual(ti.buffer, tj.buffer) then
-print("tilemapElemSets "..('%04x'):format(tj.addr)..' and '..('%04x'):format(ti.addr)..' are matching -- removing '..('%04x'):format(ti.addr))
+			if byteArraysAreEqual(ti.data, tj.data) then
+print("tilemaps "..('%04x'):format(tj.addr)..' and '..('%04x'):format(ti.addr)..' are matching -- removing '..('%04x'):format(ti.addr))
 				
 				for _,tileSet in ipairs(self.tileSets) do
-					if tileSet.tilemapElemSet == ti then
-						tileSet:setTilemapElemSet(tj)
+					if tileSet.tilemap == ti then
+						tileSet:setTilemap(tj)
 						-- tileSet.obj and tileSet.ptr's tileAddr24 are dangling here, but rewritten after the recompress
 					end
 				end
 
-				self.tileSetTilemapElemSets:remove(i)
+				self.tileSetTilemaps:remove(i)
 				break
 			end
+		end
+	end
+
+	-- none removed 
+	for i=#self.tileSetTilemaps,1,-1 do
+		local tilemap = self.tileSetTilemaps[i]
+		if #tilemap.tileSets == 0 then
+			print('!!! removing tileSet tilemap that is never referenced !!! '..('%06x'):format(tilemap.addr))
+			self.tileSetTilemaps:remove(i)
 		end
 	end
 
@@ -4821,7 +4918,7 @@ print("tilemapElemSets "..('%04x'):format(tj.addr)..' and '..('%04x'):format(ti.
 		for j=1,i-1 do
 			local gj = self.tileSetGraphicsTileSets[j]
 			assert(gi.addr ~= gj.addr)
-			if byteArraysAreEqual(gi.buffer, gj.buffer) then
+			if byteArraysAreEqual(gi.data, gj.data) then
 print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi.addr)..' are matching -- removing '..('%04x'):format(gi.addr))
 				
 				for _,tileSet in ipairs(self.tileSets) do
@@ -4837,6 +4934,16 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		end
 	end
 
+	-- none removed 
+	for i=#self.tileSetGraphicsTileSets,1,-1 do
+		local graphicsTileSet = self.tileSetGraphicsTileSets[i]
+		if #graphicsTileSet.tileSets == 0 then
+			print('!!! removing tileSet graphicsTileSet that is never referenced !!! '..('%06x'):format(graphicsTileSet.addr))
+			self.tileSetGraphicsTileSets:remove(i)
+		end
+	end
+
+
 	-- how should I deal with the tilemapElem_t's or the graphicsTile_t's?
 	-- I'm lumping them together but maybe I shouldn't
 --[=[
@@ -4849,23 +4956,23 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		{0x212d7c, 0x2142bb},		-- tileSet palette rgb_t lz data
 --]]
 		{0x1d4629, 0x2142bb},		-- the end of this is the beginning of a roomblock lz data range, soo ... combine?
-	}, 'tileSet tilemapElemSet+graphicsTileSet+palette lz data')
+	}, 'tileSet tilemap+graphicsTileSet+palette lz data')
 --]=]	
 	local totalOriginalCompressedSize = 0
 	local totalRecompressedSize = 0
 
-	for _,tilemapElemSet in ipairs(self.tileSetTilemapElemSets) do
-		local data = tilemapElemSet.buffer
+	for _,tilemap in ipairs(self.tileSetTilemaps) do
+		local data = tilemap.data
 		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + tilemapElemSet.compressedSize
+		totalOriginalCompressedSize = totalOriginalCompressedSize + tilemap.compressedSize
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
 		data = recompressed
-		tilemapElemSet.compressedSize = ffi.sizeof(recompressed)
+		tilemap.compressedSize = ffi.sizeof(recompressed)
 		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
 		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
-		tilemapElemSet.addr = fromaddr
-		-- update anything dependent on this tilemapElemSet
-		for _,tileSet in ipairs(tilemapElemSet.tileSets) do
+		tilemap.addr = fromaddr
+		-- update anything dependent on this tilemap
+		for _,tileSet in ipairs(tilemap.tileSets) do
 			tileSet.obj.tileAddr24:frompc(fromaddr)
 
 			-- TODO don't do this here, do this on write later
@@ -4875,7 +4982,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	for _,graphicsTileSet in ipairs(self.tileSetGraphicsTileSets) do
-		local data = graphicsTileSet.buffer
+		local data = graphicsTileSet.data
 		local recompressed = lz.compress(data)
 		totalOriginalCompressedSize = totalOriginalCompressedSize + graphicsTileSet.compressedSize
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
@@ -4915,7 +5022,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	print()
-	print('tileSet tilemapElemSet + graphicsTileSet + palettes recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+	print('tileSet tilemap + graphicsTileSet + palettes recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
 		', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
 		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
 
@@ -4924,7 +5031,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		local ti = self.tileSets[i]
 		for j=1,#self.tileSets-1 do
 			local tj = self.tileSets[j]
-			if ti.obj == tj.obj then
+			if byteArraysAreEqual(ti.obj.ptr, tj.obj.ptr) then
 print("tileSet_t "..('%02x'):format(tj.index)..' and '..('%02x'):format(ti.index)..' are matching -- removing '..('%02x'):format(ti.index))
 				-- TODO
 			end
@@ -5246,7 +5353,7 @@ function SMMap:mapWrite()
 			-- and immediately after comes this:
 			-- so I'm a step away from just writing everything from 0x1c8000 to 0x278000
 			{0x1d4629, 0x278000},
-		}, 'tileSet tilemapElemSet+graphicsTileSet+palette lz data, and roomblocks lz data')
+		}, 'tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
 		self:mapWriteTileSets(tileSetAndRoomBlockWriteRange)		-- tileSet_t's...
 		self:mapWriteRoomBlocks(tileSetAndRoomBlockWriteRange)		-- roomBlockData ...
 		
