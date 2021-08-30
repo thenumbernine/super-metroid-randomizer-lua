@@ -587,7 +587,6 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $037337..$037352 (enemyShot_t x2) ... 325 bytes of padding ...
      : $037498..$0374a5 (enemyShot_t) ... 265050 bytes of padding ...
 --------------
-00/19: $078000..$07801a (bg_t) ... -27 bytes of padding ...
 00/00: $078000..$078057 (plm_t x2)
 00/01: $078058..$078059 (plm_t)
 00/02: $07805a..$0781cb (plm_t x2)
@@ -1563,23 +1562,21 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/4c: $07b74c..$07b74d (roomselect)
 02/4c: $07b74e..$07b767 (roomstate_t)
 02/4c: $07b768..$07b769 (dooraddrs)
-00/00: $07b76a..$07b784 (bg_t) ... 41 bytes of padding ...
-00/05: $07b7ae..$07b7c8 (bg_t) ... 41 bytes of padding ...
-00/09: $07b7f2..$07b80c (bg_t) ... -3 bytes of padding ...
-00/11: $07b80a..$07b824 (bg_t) ... -16 bytes of padding ...
-01/2f: $07b815..$07b82f (bg_t) ... 16 bytes of padding ...
-01/2f: $07b840..$07b85a (bg_t) ... -14 bytes of padding ...
-02/0a: $07b84d..$07b867 (bg_t) ... -16 bytes of padding ...
-02/0a: $07b858..$07b872 (bg_t) ... 11 bytes of padding ...
-00/0a: $07b87e..$07b898 (bg_t)
-00/06: $07b899..$07b8b3 (bg_t)
-00/02: $07b8b4..$07b8ce (bg_t)
-00/18: $07b8cf..$07b8e9 (bg_t)
-00/16: $07b8ea..$07b904 (bg_t)
-00/13: $07b905..$07b91f (bg_t)
-00/17: $07b920..$07b93a (bg_t)
-00/0f: $07b93b..$07b955 (bg_t)
-00/1c: $07b956..$07b970 (bg_t)
+00/00: $07b76a..$07b7ad (bg_t x7)
+00/05: $07b7ae..$07b7f1 (bg_t x7)
+00/09: $07b7f2..$07b809 (bg_t x3)
+00/11: $07b80a..$07b814 (bg_t x2)
+01/2f: $07b815..$07b84c (bg_t x9)
+02/0a: $07b84d..$07b862 (bg_t x4) ... 27 bytes of padding ...
+00/0a: $07b87e..$07b898 (bg_t x4)
+00/06: $07b899..$07b8b3 (bg_t x4)
+00/02: $07b8b4..$07b8ce (bg_t x4)
+00/18: $07b8cf..$07b8e9 (bg_t x4)
+00/16: $07b8ea..$07b904 (bg_t x4)
+00/13: $07b905..$07b91f (bg_t x4)
+00/17: $07b920..$07b93a (bg_t x4)
+00/0f: $07b93b..$07b955 (bg_t x4)
+00/1c: $07b956..$07b970 (bg_t x4)
 00/05: $07b971..$07b980 (door code)
 00/12: $07b981..$07b98b (door code)
 00/18: $07b98c..$07b996 (door code)
@@ -1592,25 +1589,25 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/1c: $07ba16..$07ba20 (door code)
 00/0f: $07ba21..$07ba2b (door code)
 00/10: $07ba2c..$07ba36 (door code)
-01/00: $07ba37..$07ba51 (bg_t)
-01/12: $07ba52..$07ba6c (bg_t)
-01/04: $07ba6d..$07ba87 (bg_t)
-01/02: $07ba88..$07baa2 (bg_t)
-01/03: $07baa3..$07babd (bg_t)
-01/01: $07babe..$07bad8 (bg_t)
-01/0d: $07bad9..$07baf3 (bg_t)
-01/0e: $07baf4..$07bb0e (bg_t) ... 54 bytes of padding ...
-01/09: $07bb45..$07bb5f (bg_t)
-00/33: $07bb60..$07bb7a (bg_t)
-01/20: $07bb7b..$07bb95 (bg_t) ... 54 bytes of padding ...
-01/23: $07bbcc..$07bbe6 (bg_t)
-01/25: $07bbe7..$07bc01 (bg_t)
-01/28: $07bc02..$07bc1c (bg_t) ... 27 bytes of padding ...
-01/22: $07bc38..$07bc52 (bg_t)
-01/34: $07bc53..$07bc6d (bg_t)
-01/2d: $07bc6e..$07bc88 (bg_t) ... 27 bytes of padding ...
-00/30: $07bca4..$07bcbe (bg_t) ... 45 bytes of padding ...
-01/26: $07bcec..$07bd06 (bg_t)
+01/00: $07ba37..$07ba51 (bg_t x4)
+01/12: $07ba52..$07ba6c (bg_t x4)
+01/04: $07ba6d..$07ba87 (bg_t x4)
+01/02: $07ba88..$07baa2 (bg_t x4)
+01/03: $07baa3..$07babd (bg_t x4)
+01/01: $07babe..$07bad8 (bg_t x4)
+01/0d: $07bad9..$07baf3 (bg_t x4)
+01/0e: $07baf4..$07bb0e (bg_t x4) ... 54 bytes of padding ...
+01/09: $07bb45..$07bb5f (bg_t x4)
+00/33: $07bb60..$07bb7a (bg_t x4)
+01/20: $07bb7b..$07bb95 (bg_t x4) ... 54 bytes of padding ...
+01/23: $07bbcc..$07bbe6 (bg_t x4)
+01/25: $07bbe7..$07bc01 (bg_t x4)
+01/28: $07bc02..$07bc1c (bg_t x4) ... 27 bytes of padding ...
+01/22: $07bc38..$07bc52 (bg_t x4)
+01/34: $07bc53..$07bc6d (bg_t x4)
+01/2d: $07bc6e..$07bc88 (bg_t x4) ... 27 bytes of padding ...
+00/30: $07bca4..$07bcb5 (bg_t x3) ... 54 bytes of padding ...
+01/26: $07bcec..$07bd06 (bg_t x4)
 01/00: $07bd07..$07bd24 (door code x2)
 00/19: $07bd25..$07bd2f (door code)
 01/09: $07bd30..$07bd3e (door code)
@@ -1632,17 +1629,17 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 01/23: $07be1a..$07be24 (door code)
 01/18: $07be25..$07be35 (door code)
 01/00: $07be36..$07be3e (door code)
-02/05: $07be3f..$07be59 (bg_t)
-02/04: $07be5a..$07be74 (bg_t) ... 54 bytes of padding ...
-02/3c: $07beab..$07bec5 (bg_t)
-02/29: $07bec6..$07bee0 (bg_t)
-02/03: $07bee1..$07befb (bg_t)
-02/41: $07befc..$07bf16 (bg_t)
-02/36: $07bf17..$07bf31 (bg_t)
-02/44: $07bf32..$07bf4c (bg_t)
-02/47: $07bf4d..$07bf67 (bg_t)
-02/24: $07bf68..$07bf82 (bg_t)
-02/1a: $07bf83..$07bf9d (bg_t)
+02/05: $07be3f..$07be59 (bg_t x4)
+02/04: $07be5a..$07be74 (bg_t x4) ... 54 bytes of padding ...
+02/3c: $07beab..$07bec5 (bg_t x4)
+02/29: $07bec6..$07bee0 (bg_t x4)
+02/03: $07bee1..$07befb (bg_t x4)
+02/41: $07befc..$07bf16 (bg_t x4)
+02/36: $07bf17..$07bf31 (bg_t x4)
+02/44: $07bf32..$07bf4c (bg_t x4)
+02/47: $07bf4d..$07bf67 (bg_t x4)
+02/24: $07bf68..$07bf82 (bg_t x4)
+02/1a: $07bf83..$07bf9d (bg_t x4)
 02/37: $07bf9e..$07bfba (door code)
 02/44: $07bfbb..$07bfd9 (door code)
 02/0e: $07bfda..$07bfe8 (door code)
@@ -2272,16 +2269,15 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/05: $07e0c0..$07e0c6 (roomselect x2)
 06/05: $07e0c7..$07e0fa (roomstate_t x2)
 06/05: $07e0fb..$07e0fc (dooraddrs)
-03/0a: $07e0fd..$07e117 (bg_t) ... -16 bytes of padding ...
-04/37: $07e108..$07e122 (bg_t) ... -16 bytes of padding ...
-04/37: $07e113..$07e12d (bg_t) ... -23 bytes of padding ...
-03/01: $07e117..$07e131 (bg_t) ... 27 bytes of padding ...
-03/05: $07e14d..$07e167 (bg_t)
-03/02: $07e168..$07e182 (bg_t)
-03/0b: $07e183..$07e19d (bg_t)
-03/04: $07e19e..$07e1b8 (bg_t)
-03/03: $07e1b9..$07e1d3 (bg_t)
-06/00: $07e1d4..$07e1ee (bg_t) ... -23 bytes of padding ...
+03/0a: $07e0fd..$07e107 (bg_t x2)
+04/37: $07e108..$07e116 (bg_t x4)
+03/01: $07e117..$07e131 (bg_t x4) ... 27 bytes of padding ...
+03/05: $07e14d..$07e167 (bg_t x4)
+03/02: $07e168..$07e182 (bg_t x4)
+03/0b: $07e183..$07e19d (bg_t x4)
+03/04: $07e19e..$07e1b8 (bg_t x4)
+03/03: $07e1b9..$07e1d3 (bg_t x4)
+06/00: $07e1d4..$07e1d7 (bg_t x2)
 03/04: $07e1d8..$07e1e7 (door code)
 03/05: $07e1e8..$07e1f2 (door code)
 03/07: $07e1f3..$07e1fd (door code)
@@ -2289,8 +2285,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 03/0d: $07e20f..$07e219 (door code)
 03/08: $07e21a..$07e228 (door code)
 03/0e: $07e229..$07e247 (door code)
-04/07: $07e248..$07e262 (bg_t) ... -9 bytes of padding ...
-04/1a: $07e25a..$07e274 (bg_t) ... -9 bytes of padding ...
+04/07: $07e248..$07e259 (bg_t x3)
+04/1a: $07e25a..$07e26b (bg_t x3)
 04/1b: $07e26c..$07e290 (door code)
 04/14: $07e291..$07e2b5 (door code) ... 75 bytes of padding ...
 04/18: $07e301..$07e317 (door code x2)
@@ -2305,14 +2301,14 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 04/24: $07e3b9..$07e3c7 (door code)
 04/30: $07e3c8..$07e3d8 (door code)
 04/37: $07e3d9..$07e3e7 (door code)
-05/04: $07e3e8..$07e402 (bg_t)
-05/03: $07e403..$07e41d (bg_t)
-05/0b: $07e41e..$07e438 (bg_t)
-05/0e: $07e439..$07e453 (bg_t)
-05/0f: $07e454..$07e46e (bg_t)
-05/11: $07e46f..$07e489 (bg_t)
-05/0a: $07e48a..$07e4a4 (bg_t)
-06/01: $07e4a5..$07e4bf (bg_t)
+05/04: $07e3e8..$07e402 (bg_t x4)
+05/03: $07e403..$07e41d (bg_t x4)
+05/0b: $07e41e..$07e438 (bg_t x4)
+05/0e: $07e439..$07e453 (bg_t x4)
+05/0f: $07e454..$07e46e (bg_t x4)
+05/11: $07e46f..$07e489 (bg_t x4)
+05/0a: $07e48a..$07e4a4 (bg_t x4)
+06/01: $07e4a5..$07e4bf (bg_t x4)
 05/00: $07e4c0..$07e4ce (door code)
 05/11: $07e4cf..$07e4df (door code)
 06/01: $07e4e0..$07e512 (door code)
@@ -3022,7 +3018,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 01/34: $1cebc7..$1cee51 (bg tilemapElem_t lz data)
 01/2d: $1cee52..$1cf11c (bg tilemapElem_t lz data) ... 171 bytes of padding ...
 00/30: $1cf1c8..$1cf70c (bg tilemapElem_t lz data) ... 578 bytes of padding ...
-01/26: $1cf94f..$1cfa37 (bg tilemapElem_t lz data) ... 1606 bytes of padding ...
+01/26: $1cf94f..$1cfa37 (bg tilemapElem_t lz data)
+01/2f: $1cfa38..$1cff4d (bg tilemapElem_t lz data x2) ... 304 bytes of padding ...
 --------------
 00/0a: $1d007e..$1d02c3 (bg tilemapElem_t lz data)
 00/06: $1d02c4..$1d0436 (bg tilemapElem_t lz data)

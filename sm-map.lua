@@ -226,17 +226,18 @@ local fx1_t = struct{
 --[[
 now using http://patrickjohnston.org/bank/8F#fB76A
 bg headers:
-0000 = terminator
+0000 = 2 bytes = terminator
+0002 = 9 bytes
 0004 = 7 bytes
-0002 & 0008 = 9 bytes
-000c = 2 bytes
+0008 = 9 bytes
+000a = 2 bytes
+000c = 2 bytes (only used once)
 000e = 11 bytes
 --]]
---[[
 
--- terminator
-local bg_0_t = struct{
-	name = 'bg_0_t',
+-- terminator, used by 0, a, c
+local bg_header_t = struct{
+	name = 'bg_header_t',
 	fields = {
 		{header = 'uint16_t'},
 	},
@@ -247,15 +248,17 @@ local bg_2_8_t = struct{
 	fields = {
 		{header = 'uint16_t'},
 		{addr24 = 'addr24_t'},
+		{a = 'uint16_t'},
 		{b = 'uint16_t'},
-		{c = 'uint16_t'},
 	},
 }
 
-local bg_c_t = struct{
-	name = 'bg_c_t',
+local bg_4_t = struct{
+	name = 'bg_4_t',
 	fields = {
 		{header = 'uint16_t'},
+		{addr24 = 'addr24_t'},
+		{a = 'uint16_t'},
 	},
 }
 
@@ -265,114 +268,10 @@ local bg_e_t = struct{
 		{header = 'uint16_t'},
 		{a = 'uint16_t'},
 		{addr24 = 'addr24_t'},
+		{b = 'uint16_t'},
 		{c = 'uint16_t'},
-		{d = 'uint16_t'},
 	},
 }
---]]
-
-
---[[
-based on header vs spacing between bg_t's:
-header=0x0004 => sizeof=27 (overwhelmingly) ... except for $07e248 and $07e25a which have sizeof=18
-	on those two, sizeof=18, and ofs[17:16:15]=00:00:10
-	on the rest, ofs[15]=
-
-header=0x000e => 3 instances: sizeof is 68, 68, 24. ofs[15]=0x80 always.  maybe this is sizeof=24 and there is an extra 17 bytes after the first two?
-here's the header==0x000e instances:
- $07b76a: {header=000e, addr24={ofs=8946, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=896a, unknown6=d180, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=b200, unknownb=8089}
-  rooms: 00/00	(crateria first room - with scrolling cloud background)
- $07b7ae: {header=000e, addr24={ofs=8a12, bank=80}, unknown1=8ac1, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=8aea, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0e08, unknowna=8c00, unknownb=80a1}
-  rooms: 00/05	(crateria big room before wrecked ship - with scrolling cloud background)
- $07b7f2: {header=000e, addr24={ofs=8a7e, bank=80}, unknown1=8ad9, unknown2=4800, unknown3=0800, unknown4=000e, unknown5=a264, unknown6=d980, unknown7=008a, unknown8=0048, unknown9=0008, unknowna=0200, unknownb=8000}
-  rooms: 00/09	(crateria room right of wrecked ship - with scrolling cloud background)
-
-size==0x44 for ofs[5] = 0xc1, ofs[0x16]=0x0e, size==0x18 for ofs[5] = 0xd9, ofs[0x16]=0x00
-
---]]
-local bg_t = struct{		-- this is bg04_t <=> bg_t where bg.header==4
-	name = 'bg_t',
-	fields = {
-		{header = 'uint16_t'},
-		{addr24 = 'addr24_t'},		-- address to ... what? 
-		-- skip the next 14 bytes
-		{unknown1 = 'uint16_t'},
-		{unknown2 = 'uint16_t'},
-		{unknown3 = 'uint16_t'},
-	-- sometimes bg_t's break here before the next bg_t
-		{unknown4 = 'uint16_t'},
-		{unknown5 = 'uint16_t'},
-		{unknown6 = 'uint16_t'},
-		{unknown7 = 'uint16_t'},
-		{unknown8 = 'uint16_t'},
-		{unknown9 = 'uint16_t'},
-		{unknowna = 'uint16_t'},
-		{unknownb = 'uint16_t'},
-	},
-}
-assert(ffi.sizeof'bg_t' == 0x1b)
-
---[[
-header=0x0002 => sizeof=11 always (5 instances)
- $07b80a: {header=0002, addr24={ofs=c180, bank=8a}, unknown1=4800, unknown2=0800, unknown3=0000}
-  rooms: 00/11	(glass tube from crateria caves into wrecked ship)
- $07b84d: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
-  rooms: 02/0a	(crocomire's room)
- $07b858: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
-  rooms: 02/0a	(crocomire's room)
- $07e0fd: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
-  rooms: 03/0a	(phantoon's room)
- $07e108: {header=0002, addr24={ofs=2000, bank=7e}, unknown1=4800, unknown2=1000, unknown3=0000}
-  rooms: 04/37	(draygon's room)
---]]
--- struct of bg_t when header==0x0002
-local bg02_t = struct{
-	name = 'bg02_t',
-	fields = {
-		{header = 'uint16_t'},
-		{addr24 = 'addr24_t'},	-- this isn't compressed data.
-		{unknown1 = 'uint16_t'},
-		{unknown2 = 'uint16_t'},
-		{unknown3 = 'uint16_t'},
-	},
-}
-assert(ffi.sizeof'bg02_t' == 11)
-
---[[
-header=0x0008 => only 2 instances, one has padding 43 (ofs[15]=0x40), the other 13 (ofs[15]=0x00)
- $07b815: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=0004, unknown4=fa38, unknown5=00b9, unknown6=0240, unknown7=0000, unknown8=7e40, unknown9=4000, unknowna=1000, unknownb=0004}
-  rooms: 01/2f	(kraid's room)
- 	... 43 from head to next bg_t
- $07b840: {header=0008, addr24={ofs=b200, bank=9a}, unknown1=2000, unknown2=1000, unknown3=000c, unknown4=0000}
-  rooms: 01/2f	(kraid's room)
-	... 13 from head to next bg_t
---]]
---[[
-local bg08_t = struct{
-	name = 'bg08_t',
-	fields = {
-	},
-}
---]]
-
---[[
-header=0x000a => 2 instances, both have sizeof=4
- $07e113: {header=000a, zero=0000}
-  room 04/37 	(draygon's room)
-  room 03/0a	(phantoon's room)
- $07e1d4: {header=000a, zero=0000}
-  room 06/00	(ceres station first room ... with its mode7 graphics)
---]]
--- struct of bg_t when header==0x000a
-local bg0a_t = struct{
-	name = 'bg0a_t',
-	fields = {
-		{header = 'uint16_t'},		-- always 0x000a
-		{zero = 'uint16_t'},		-- always 0x0000
-	},
-}
-assert(ffi.sizeof'bg0a_t' == 4)
-
 
 -- described in section 12 of metroidconstruction.com/SMMM
 -- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
@@ -1057,56 +956,17 @@ if done then break end
 			end
 		end
 	end
-	
+
 	for _,rs in ipairs(m.roomStates) do
-		do	--if rs.obj.bgAddr > 0x8000 then
+		if rs.obj.bgAddr > 0x8000 then
 			local addr = topc(self.bgBank, rs.obj.bgAddr)
 			while true do
-				local ptr = ffi.cast('bg_t*', rom+addr)
-				
--- this is a bad test of validity
--- this says so: http://metroidconstruction.com/SMMM/ready-made_backgrounds.txt
--- in fact, I never read more than 1 bg, and sometimes I read 0
---[[
-				if ptr.header ~= 0x04 then
-					break
-				end
---]]
--- so intsead I just added the extra 8 bytes to the struct
--- so bgs[i].addr is the address where bgs[i].ptr was found
--- and bgs[i].ptr.addr24.bank:ofs points to where bgs[i].data was found
--- a little confusing
--- sure enough, using header~=0x04, using sizeof(bg_t)==0x19 as per tewtal/SMLib as condition means we will load either 0 or 1 bg_t
--- it also means we have paddings of -6 or 2 between bg_t's
--- hinting further that the bg_t should be of size 0x13 or 0x1b depending on some condition that i'm not finding
-				local bg = self:mapAddBG(addr)
+				local bg = self:mapAddBG(addr, rom)
 				bg.roomStates:insert(rs)
 				rs.bgs:insert(bg)
-
-				-- coinciding with SMLib, I'll only decompress the bgdata for header==0x0004
-				-- but it looks like any other has an address, except for header==0xa
-				-- though who knows what it points to  ... decompressing all other header types fails
-				-- header==4 coincides with tilemapElem_t[] of 0x800 or 0x1000 bytes
-				if ptr.header == 4 then
-					bg.tilemap = self:mapAddBGTilemap(ptr.addr24:topc())
-					bg.tilemap.bg = bg	-- is this 1:1?
-				end
-				
-				addr = addr + ffi.sizeof'bg_t'
-				
-				do break end
+				addr = addr + ffi.sizeof(bg.ctype.name)
+				if bg.obj.header == 0 then break end
 			end
-
-			-- decode bg data this after setting roomstate_t's tileSet objects
-			--[[ load data
-			-- this worked fine when I was discounting zero-length bg_ts, but once I started requiring bgdata to point to at least one, this is now getting bad values
-			for _,bg in ipairs(rs.bgs) do
-				local addr = bg.ptr.addr:topc()
-				local decompressed, compressedSize = lz.decompress(rom, addr, 0x10000)
-				bg.tilemap.data = decompressed
-				mem:add(addr, compressedSize, 'bg data', m)
-			end
-			--]]
 		end
 	end
 
@@ -1380,6 +1240,16 @@ function SMMap:mapAddEnemyGFXSet(addr)
 end
 
 
+local bgCTypeForHeader = {
+	[0x0] = bg_header_t,
+	[0x2] = bg_2_8_t,
+	[0x4] = bg_4_t,
+	[0x8] = bg_2_8_t,
+	[0xa] = bg_header_t,
+	[0xc] = bg_header_t,
+	[0xe] = bg_e_t,
+}
+
 --[[
 table of all unique bgs.
 each entry has .addr and .ptr = (bg_t*)(rom+addr)
@@ -1387,17 +1257,35 @@ doesn't create duplicates -- returns a previous copy if it exists
 
 b9:a634 -> $1ca634
 --]]
-function SMMap:mapAddBG(addr)
+function SMMap:mapAddBG(addr, rom)
 	local _,bg = self.bgs:find(nil, function(bg) return bg.addr == addr end)
 	if bg then return bg end
+	
+	local header = ffi.cast('uint16_t*', rom + addr)[0]
+	local ctype = bgCTypeForHeader[header]
+	if not ctype then
+		error("failed to find ctype for bg_t header "..('%x'):format(header)..' addr '..('%06x'):format(addr))
+	end
+	local ptr = ffi.cast(ctype.name..'*', rom + addr)
+
 	bg = {
 		addr = addr,
-		ptr = ffi.cast('bg_t*', self.rom + addr),
+		ctype = ctype,
+		ptr = ptr,
 		-- list of all m's that use this bg
 		roomStates = table(),
 	}
-	bg.obj = ffi.new('bg_t', bg.ptr[0])
+	bg.obj = ffi.new(ctype.name, bg.ptr[0])
+	
 	self.bgs:insert(bg)
+
+	if header == 4 then
+		local tilesetAddr = ptr.addr24:topc()
+print('decoding bg addr '..('%06x'):format(addr)..' tileset '..('%06x'):format(tilesetAddr))
+		bg.tilemap = self:mapAddBGTilemap(tilesetAddr)
+		bg.tilemap.bg = bg	-- is this 1:1?
+	end
+
 	return bg
 end
 
@@ -3044,7 +2932,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 							local tileSet = rs.tileSet
 						
 							-- TODO first bg with a tileset ... but for now there's only 1 anyways
-							local bgBmp = ctx.sm.getBitmapForRSAndBG(rs, rs.bgs[1])
+							local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
+							local bgBmp = bg and ctx.sm.getBitmapForTileSetAndBG(rs.tileSet, bg)
 							
 							if tileSet
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
@@ -3488,35 +3377,29 @@ function SMMap:mapSaveImage(filenamePrefix)
 		
 	cache these as we build them
 	--]]
-	self.bitmapForRSAndBG = {}
-	self.getBitmapForRSAndBG = function(rs, bg)
+	self.bitmapForTileSetAndBG = {}
+	self.getBitmapForTileSetAndBG = function(tileSet, bg)
 		if not bg.tilemap then return end
-
-		-- TODO why not do this with bg.addr too?
-		local rsaddr = ffi.cast('uint8_t*',rs.ptr) - self.rom
-
-		self.bitmapForRSAndBG[rsaddr] = self.bitmapForRSAndBG[rsaddr] or {}
-		local bgBmp = self.bitmapForRSAndBG[rsaddr][bg.addr]
+		self.bitmapForTileSetAndBG[tileSet.index] = self.bitmapForTileSetAndBG[tileSet.index] or {}
+		local bgBmp = self.bitmapForTileSetAndBG[tileSet.index][bg.addr]
 		if bgBmp then return bgBmp end
 
 		bgBmp = {}
 
-print('generating bitmap for rs '..('%06x'):format(rsaddr)..' bg '..('%06x'):format(bg.addr))		
-		bgBmp.rs = rs
+print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..('%06x'):format(bg.addr))		
 		bgBmp.bg = bg
 		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * bg.tilemap.width * bg.tilemap.height)
 
 		self:convertTilemapToBitmap(
 			bgBmp.dataBmp,
 			bg.tilemap.data,
-			rs.tileSet.graphicsTileVec.v,
+			tileSet.graphicsTileVec.v,
 			bg.tilemap.width,
 			bg.tilemap.height,
 			1
 		)
 		
-		self.bitmapForRSAndBG[rsaddr][bg.addr] = bgBmp
-
+		self.bitmapForTileSetAndBG[tileSet.index][bg.addr] = bgBmp
 		return bgBmp
 	end
 
@@ -3684,36 +3567,36 @@ print('generating bitmap for rs '..('%06x'):format(rsaddr)..' bg '..('%06x'):for
 		for _,tilemap in ipairs(self.bgTilemaps) do
 			local fn = ('bgs/%06x.png'):format(tilemap.addr)
 
-			local rs
+			local tileSet
 			local bg = tilemap.bg
 			if not bg then
+				error("bg tilemap "..('%06x'):format(tilemap.addr)..' has no bg')
 				-- if we don't have an associated bg then 
 			else
-				rs = bg.roomStates[1]
-			
-				local bgBmp = self.getBitmapForRSAndBG(rs, bg)
-				
-				local tileSet = rs and rs.tileSet
-				-- if we don't have a tileset ... then how do we know which one to use?
-				tileSet = tileSet or self.tileSets[1]
-
-				-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
-				-- just for the sake of getting palette info
-
-				local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
-				for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
-					for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
-						local offset = x + img.width * y
-						local dst = img.buffer + 3 * offset
-						local paletteIndex = bgBmp.dataBmp[offset]
-						local rgb = tileSet.palette.colors[paletteIndex]
-						dst[0] = math.floor(rgb.r*255/31)
-						dst[1] = math.floor(rgb.g*255/31)
-						dst[2] = math.floor(rgb.b*255/31)
-					end
-				end
-				img:save(fn)
+				local rs = bg.roomStates[1]
+				tileSet = rs and rs.tileSet
 			end
+			local bgBmp = self.getBitmapForTileSetAndBG(tileSet, bg)
+
+			-- if we don't have a tileset ... then how do we know which one to use?
+			tileSet = tileSet or self.tileSets[1]
+
+			-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
+			-- just for the sake of getting palette info
+
+			local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
+			for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
+				for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
+					local offset = x + img.width * y
+					local dst = img.buffer + 3 * offset
+					local paletteIndex = bgBmp.dataBmp[offset]
+					local rgb = tileSet.palette.colors[paletteIndex]
+					dst[0] = math.floor(rgb.r*255/31)
+					dst[1] = math.floor(rgb.g*255/31)
+					dst[2] = math.floor(rgb.b*255/31)
+				end
+			end
+			img:save(fn)
 		end
 	end
 end
@@ -4334,7 +4217,7 @@ function SMMap:mapBuildMemoryMap(mem)
 
 	for _,bg in ipairs(self.bgs) do
 		local m = bg.roomStates[1].room
-		mem:add(bg.addr, ffi.sizeof'bg_t', 'bg_t', m)
+		mem:add(bg.addr, ffi.sizeof(bg.ctype.name), 'bg_t', m)
 	end
 
 	for _,tilemap in ipairs(self.bgTilemaps) do

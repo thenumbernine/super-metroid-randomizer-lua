@@ -71,6 +71,8 @@ end
 		-- also in common with my hydro-cl project
 		-- consider merging
 		local metatable = {
+			name = name,
+			fields = fields,
 			toLua = function(self)
 				local result = {}
 				for _,field in ipairs(fields) do
