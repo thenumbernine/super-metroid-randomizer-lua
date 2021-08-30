@@ -51,6 +51,7 @@ local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
 -- 128x128 tile indexes (0-255), each tile is [256][8][8]
 local graphicsTileSizeInPixels = 8
+local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel
 local numMode7Tiles = 256
 local mode7sizeInGraphicTiles = 128
 assert(mode7sizeInGraphicTiles * mode7sizeInGraphicTiles == numMode7Tiles * graphicsTileSizeInPixels * graphicsTileSizeInPixels)
@@ -978,7 +979,18 @@ if done then break end
 		end
 		
 		local addr = rs.obj.roomBlockAddr24:topc()
-		rs:setRoomBlockData(self:mapAddRoomBlocks(addr, m))
+		rs:setRoomBlockData(self:mapAddRoomBlockData(addr, m))
+
+-- [[
+		local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
+		if bg 
+		and bg.tilemap 
+		and rs.roomBlockData
+		and rs.roomBlockData.layer2blocks 
+		then
+			print("NOTICE - roomstate_t "..('%06x'):format(ffi.cast('uint8_t*', rs.ptr) - rom).." has bgAddr and layer2blocks")
+		end
+--]]	
 	end
 
 	-- door addrs
@@ -1328,12 +1340,10 @@ function RoomBlocks:getData()
 		end
 	end
 
-	return mergeByteArrays(
-		self.head,
-		ch12,
-		ch3,
-		self.tail
-	)
+	local tomerge = table{self.head, ch12, ch3}
+	tomerge:insert(self.layer2blocks)
+	tomerge:insert(self.tail)
+	return mergeByteArrays(tomerge:unpack())
 end
 
 function RoomBlocks:refreshRooms()
@@ -1703,7 +1713,7 @@ end
 
 
 -- this is the block data of the rooms
-function SMMap:mapAddRoomBlocks(addr, m)
+function SMMap:mapAddRoomBlockData(addr, m)
 	local _,roomBlockData = self.roomblocks:find(nil, function(roomBlockData) 
 		return roomBlockData.addr == addr 
 	end)
@@ -1740,8 +1750,22 @@ function SMMap:mapAddRoomBlocks(addr, m)
 			k = k + 1
 		end
 	end
-	local tail = byteArraySubset(data, ofs, ffi.sizeof(data) - ofs)
-	assert(ofs <= ffi.sizeof(data), "didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..ffi.sizeof(data))
+	local dataSize = ffi.sizeof(data)
+	if ofs > dataSize then
+		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+	end
+	local layer2blocks
+	local tail
+	-- if there's still more to read...
+	if ofs < dataSize then
+		layer2blocks = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
+		if ofs > dataSize then
+			error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+		end
+		-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
+		-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
+		tail = byteArraySubset(data, ofs, dataSize - ofs)
+	end
 
 	-- keep track of doors
 	
@@ -1858,7 +1882,8 @@ so how does the map know when to distinguish those tiles from ordinary 00,01,etc
 		-- decompressed data (in order):
 		head = head,	-- first 2 bytes of data
 		blocks = blocks,	-- interleaved 2-byte and 1-byte bts into 3-byte room block data
-		tail = tail,	-- last bytes after blocks 
+		layer2blocks = layer2blocks,	-- layer2 background if present
+		tail = tail,					-- last bytes after blocks 
 		-- extra stuff I'm trying to keep track of
 		doors = doors,
 		blocksForExit = blocksForExit,
@@ -1929,14 +1954,14 @@ count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles 
 --]]
 function SMMap:convertTilemapToBitmap(
 	dst,
-	tilemapElems,
+	tilemap,
 	graphicsTiles,
 	tilemapElemSizeX,
 	tilemapElemSizeY,
 	count
 )
 	local dstbase = dst
-	local tilemapElem = ffi.cast('tilemapElem_t*', tilemapElems)
+	local tilemapElem = ffi.cast('tilemapElem_t*', tilemap)
 	local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
 	
 	for tileIndex=0,count-1 do
@@ -2287,15 +2312,15 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTileVec:begin(), self.commonRoomGraphicsTileVec:iend())
 		end
 		
-		-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemapElems => bitmap using the original format?
-		local copy = ffi.new('uint8_t[?]', 32)
+		-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
+		local copy = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
 		local line = ffi.new('uint8_t[?]', 4)
 		local uint32 = ffi.new('uint32_t[1]')
 		local uint8 = ffi.cast('uint8_t*', uint32)
-		for i=0,graphicsTileVec.size-1,32 do
-			ffi.copy(copy, graphicsTileVec.v + i, 32)
+		for i=0,graphicsTileVec.size-1,graphicsTileSizeInBytes do
+			ffi.copy(copy, graphicsTileVec.v + i, graphicsTileSizeInBytes)
 			-- in place convert, row by row ... why are we converting ?
-			ffi.fill(graphicsTileVec.v + i, 32, 0)
+			ffi.fill(graphicsTileVec.v + i, graphicsTileSizeInBytes, 0)
 			for y=0,7 do
 				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
 				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
@@ -2435,6 +2460,7 @@ function SMMap:mapInit()
 	--]]
 
 --[[ these are not first bg tilemaps of rooms..  where are they stored? 
+-- some are garbage
 	self:mapAddBGTilemap(topc(0xb9, 0xa75e))
 	self:mapAddBGTilemap(topc(0xb9, 0xd56a))
 	self:mapAddBGTilemap(topc(0xb9, 0xd5a1))
@@ -2857,7 +2883,8 @@ local dumpworldTileTypes = {
 	fallbreak_regen = 30,
 }
 
-local function drawRoomBlocks(ctx, roomBlockData, m)
+local function drawRoomBlocks(ctx, roomBlockData, rs)
+	local m = rs.room
 	local debugMapImage = ctx.debugMapImage
 	local debugMapMaskImage = ctx.debugMapMaskImage
 	local blocks = roomBlockData.blocks
@@ -2866,6 +2893,8 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	local firstcoord
+						
+	local tileSet = rs.tileSet
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -2923,22 +2952,17 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 								end
 							end
 						end
-						do
-							local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
-							local flipx = bit.band(d2, 4) ~= 0
-							local flipy = bit.band(d2, 8) ~= 0
 						
-							local rs = m.roomStates[1]
-							local tileSet = rs.tileSet
-						
+						if tileSet then				
 							-- TODO first bg with a tileset ... but for now there's only 1 anyways
 							local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
-							local bgBmp = bg and ctx.sm.getBitmapForTileSetAndBG(rs.tileSet, bg)
+							local bgTilemap = bg and bg.tilemap
+							local bgBmp = bgTilemap and ctx.sm.getBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 							
-							if tileSet
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
-							and tileIndex < tileSet.tileGfxCount
-							then
+							--and tileIndex < tileSet.tileGfxCount
+-- [[ draw background?
+							if bgBmp then
 								for pj=0,blockSizeInPixels-1 do
 									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
 									for pi=0,blockSizeInPixels-1 do
@@ -2948,23 +2972,65 @@ local function drawRoomBlocks(ctx, roomBlockData, m)
 										then
 											local dstIndex = x + ctx.mapTexImage.width * y
 											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-
--- [[ draw background?
-											if bgBmp then
-												local bgw = graphicsTileSizeInPixels * bgBmp.bg.tilemap.width
-												local bgh = graphicsTileSizeInPixels * bgBmp.bg.tilemap.height
-												local bgx = x % bgw
-												local bgy = y % bgh
-												local src = tileSet.palette.colors[bgBmp.dataBmp[bgx + bgw * bgy]]
-												dst[0] = math.floor(src.r*255/31)
-												dst[1] = math.floor(src.g*255/31)
-												dst[2] = math.floor(src.b*255/31)
-											else
-												dst[0] = 0
-												dst[1] = 0
-												dst[2] = 0
-											end
+											local bgw = graphicsTileSizeInPixels * bgTilemap.width
+											local bgh = graphicsTileSizeInPixels * bgTilemap.height
+											local bgx = x % bgw
+											local bgy = y % bgh
+											local src = tileSet.palette.colors[bgBmp.dataBmp[bgx + bgw * bgy]]
+											dst[0] = math.floor(src.r*255/31)
+											dst[1] = math.floor(src.g*255/31)
+											dst[2] = math.floor(src.b*255/31)
+										end
+									end
+								end
+							end
 --]]
+-- [[ layer 2 tilemap
+							if roomBlockData.layer2blocks then
+								local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
+								local flipx = bit.band(tileIndex, 0x400) ~= 0
+								local flipy = bit.band(tileIndex, 0x800) ~= 0
+								tileIndex = bit.band(tileIndex, 0x3ff)
+								
+								for pj=0,blockSizeInPixels-1 do
+									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										if x >= 0 and x < ctx.mapTexImage.width
+										and y >= 0 and y < ctx.mapTexImage.height 
+										then
+											local dstIndex = x + ctx.mapTexImage.width * y
+											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
+											
+											-- for loop here
+											--local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
+											local spi = flipx and blockSizeInPixels - 1 - pi or pi
+											local spj = flipy and blockSizeInPixels - 1 - pj or pj
+											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+											local src = tileSet.palette.colors[paletteIndex]
+											dst[0] = math.floor(src.r*255/31)
+											dst[1] = math.floor(src.g*255/31)
+											dst[2] = math.floor(src.b*255/31)
+										end
+									end
+								end
+							end
+--]]
+							do
+								local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
+								local flipx = bit.band(d2, 4) ~= 0
+								local flipy = bit.band(d2, 8) ~= 0
+								
+								for pj=0,blockSizeInPixels-1 do
+									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										if x >= 0 and x < ctx.mapTexImage.width
+										and y >= 0 and y < ctx.mapTexImage.height 
+										then
+											local dstIndex = x + ctx.mapTexImage.width * y
+											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
 
 											local spi = flipx and blockSizeInPixels - 1 - pi or pi
 											local spj = flipy and blockSizeInPixels - 1 - pj or pj
@@ -3377,29 +3443,28 @@ function SMMap:mapSaveImage(filenamePrefix)
 		
 	cache these as we build them
 	--]]
-	self.bitmapForTileSetAndBG = {}
-	self.getBitmapForTileSetAndBG = function(tileSet, bg)
-		if not bg.tilemap then return end
-		self.bitmapForTileSetAndBG[tileSet.index] = self.bitmapForTileSetAndBG[tileSet.index] or {}
-		local bgBmp = self.bitmapForTileSetAndBG[tileSet.index][bg.addr]
+	self.bitmapForTileSetAndTileMap = {}
+	self.getBitmapForTileSetAndTileMap = function(tileSet, tilemap)
+		self.bitmapForTileSetAndTileMap[tileSet.index] = self.bitmapForTileSetAndTileMap[tileSet.index] or {}
+		local bgBmp = self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr]
 		if bgBmp then return bgBmp end
 
 		bgBmp = {}
 
-print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..('%06x'):format(bg.addr))		
-		bgBmp.bg = bg
-		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * bg.tilemap.width * bg.tilemap.height)
+print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilemap '..('%06x'):format(tilemap.addr))		
+		bgBmp.tilemap = tilemap
+		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemap.width * tilemap.height)
 
 		self:convertTilemapToBitmap(
 			bgBmp.dataBmp,
-			bg.tilemap.data,
+			tilemap.data,
 			tileSet.graphicsTileVec.v,
-			bg.tilemap.width,
-			bg.tilemap.height,
+			tilemap.width,
+			tilemap.height,
 			1
 		)
 		
-		self.bitmapForTileSetAndBG[tileSet.index][bg.addr] = bgBmp
+		self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
 		return bgBmp
 	end
 
@@ -3418,6 +3483,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..
 		blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
 		blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
 		3, 'unsigned char')
+	mapTexImage:clear()
 
 	-- 1 pixel : 1 block for dumpworld
 	local dumpw = blocksPerRoom * fullMapWidthInBlocks
@@ -3438,7 +3504,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			drawRoomBlocks(ctx, roomBlockData, rs.room)
+			drawRoomBlocks(ctx, roomBlockData, rs)
 		end
 	end
 
@@ -3459,7 +3525,6 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..
 	-- for now only write out tile graphics for the non-randomized version
 	if filenamePrefix == 'map' then
 		for _,tileSet in ipairs(self.tileSets) do
-			local tileSetIndex = tileSet.index
 			if tileSet.mode7TileSet then
 				-- TODO this only in the mapSaveImage function
 				local mode7image = Image(
@@ -3494,20 +3559,21 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..
 					end
 				end
 				mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
-				mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSetIndex)..' mode7.png')
+				mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSet.index)..' mode7.png')
 			end
+			
 			-- TODO how about a wrap row?  grid x, grid y, result x, result y 
 			if tileSet.tileGfxBmp then
 				local rowWidth = 32
-				local img = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-				local imgused = Image(16*rowWidth, 16*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+				local img = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+				local imgused = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
 				for tileIndex=0,tileSet.tileGfxCount-1 do
-					local xofs = tileIndex%rowWidth
-					local yofs = math.floor(tileIndex/rowWidth)
-					for i=0,15 do
-						for j=0,15 do
-							local dstIndex = i + 16 * xofs + img.width * (j + 16 * yofs)
-							local srcIndex = i + 16 * (j + 16 * tileIndex)
+					local xofs = tileIndex % rowWidth
+					local yofs = math.floor(tileIndex / rowWidth)
+					for i=0,blockSizeInPixels-1 do
+						for j=0,blockSizeInPixels-1 do
+							local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
+							local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
 							local paletteIndex = tileSet.tileGfxBmp[srcIndex]
 							local r,g,b = 0,0,0
 							if bit.band(paletteIndex, 0xf) > 0 then
@@ -3532,54 +3598,89 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' bg '..
 						end
 					end
 				end
-				img:save('tileset/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx.png')
-				imgused:save('tileset used/tileSet='..('%02x'):format(tileSetIndex)..' tilegfx used.png')
+				img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
+				imgused:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
 			
 				do
-					local numGraphicTiles = tileSet.graphicsTileVec.size/32	-- 32 bytes per graphicsTile8x8
+					local numGraphicTiles = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
 					local tilemapElemSizeX = 16
 					local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
 					assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
-					local tilemapElems = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
+					local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
 					for i=0,numGraphicTiles-1 do
-						tilemapElems[i].graphicsTileIndex = i
-						tilemapElems[i].colorIndexHi = 0
-						tilemapElems[i].xNot = 0
-						tilemapElems[i].yNot = 0
+						tilemap[i].graphicsTileIndex = i
+						tilemap[i].colorIndexHi = 0
+						tilemap[i].xNot = 0
+						tilemap[i].yNot = 0
 					end
 					local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
 					local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
 					local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
 					self:convertTilemapToBitmap(
 						tilemapElemIndexedBmp,	-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
-						tilemapElems,			-- tilemapElems = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
+						tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
 						tileSet.graphicsTileVec.v,	-- graphicsTiles = 
 						tilemapElemSizeX,		-- tilemapElemSizeX
 						tilemapElemSizeY,		-- tilemapElemSizeY
 						1)						-- count
 					local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
 					self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet)
-					graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSetIndex)..'.png')
+					graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
 				end
 			end
 		end
+
+		for _,roomBlockData in ipairs(self.roomblocks) do
+			if roomBlockData.layer2blocks then
+				local _, rs = roomBlockData.roomStates:find(nil, function(rs) return rs.tileSet end)
+				local tileSet = rs and rs.tileSet or self.tileSets[1]
+
+				local pixw = blockSizeInPixels * roomBlockData.width
+				local pixh = blockSizeInPixels * roomBlockData.height
+				local img = Image(pixw, pixh, 3, 'unsigned char')
+				local w = roomBlockData.width
+				local h = roomBlockData.height
+				for y=0,h-1 do
+					for x=0,w-1 do
+						local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks)[x + w * y]
+						local flipx = bit.band(tileIndex, 0x400) ~= 0
+						local flipy = bit.band(tileIndex, 0x800) ~= 0
+						tileIndex = bit.band(tileIndex, 0x3ff)
+						for pj=0,blockSizeInPixels-1 do
+							for pi=0,blockSizeInPixels-1 do
+								local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
+								local spi = flipx and blockSizeInPixels - 1 - pi or pi
+								local spj = flipy and blockSizeInPixels - 1 - pj or pj
+								local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+								local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+								local src = tileSet.palette.colors[paletteIndex]
+								dst[0] = src.r*255/31
+								dst[1] = src.g*255/31
+								dst[2] = src.b*255/31
+							end
+						end
+					end
+				end
+
+				img:save('layer2bgs/'..('%06x'):format(roomBlockData.addr)..'.png')
+			end
+		end
+
 
 		for _,tilemap in ipairs(self.bgTilemaps) do
 			local fn = ('bgs/%06x.png'):format(tilemap.addr)
 
 			local tileSet
 			local bg = tilemap.bg
-			if not bg then
-				error("bg tilemap "..('%06x'):format(tilemap.addr)..' has no bg')
-				-- if we don't have an associated bg then 
-			else
+			if bg then
 				local rs = bg.roomStates[1]
 				tileSet = rs and rs.tileSet
 			end
-			local bgBmp = self.getBitmapForTileSetAndBG(tileSet, bg)
 
 			-- if we don't have a tileset ... then how do we know which one to use?
 			tileSet = tileSet or self.tileSets[1]
+			
+			local bgBmp = self.getBitmapForTileSetAndTileMap(tileSet, tilemap)
 
 			-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
 			-- just for the sake of getting palette info
@@ -3605,17 +3706,17 @@ end
 function SMMap:mapPrintRoomBlocks()
 	-- print/draw rooms
 	print()
-	print'all rooms'
+	print'all roomBlockData'
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		local w,h = roomBlockData.width, roomBlockData.height
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			print(('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index))
 		end
-		print()
+		print(' size: '..w..','..h)
 
-		local function printblock(data, width)
+		local function printblock(data, width, col)
 			for i=1,ffi.sizeof(data) do
-				if i % 3 == 0 then io.write' ' end
+				if col and i % col == 0 then io.write' ' end
 				io.write((('%02x'):format(tonumber(data[i-1])):gsub('0','.')))
 				if i % width == 0 then print() end 
 			end
@@ -3623,20 +3724,33 @@ function SMMap:mapPrintRoomBlocks()
 		end
 		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
 
-		printblock(roomBlockData.head, 2) 
-		printblock(roomBlockData.blocks, 3*w) 
-		print('found '..#roomBlockData.doors..' door references in the blocks')
-		for _,door in ipairs(roomBlockData.doors) do
-			print(' '..tolua(door))
+		print' head:'
+		printblock(roomBlockData.head, 2, 1)
+		print' blocks:'
+		printblock(roomBlockData.blocks, 3*w, 3) 
+		if roomBlockData.layer2blocks then
+			print(' layer 2 blocks:')
+			printblock(roomBlockData.layer2blocks, 2*w, 2)
 		end
-		print('blocksForExit'..tolua(roomBlockData.blocksForExit))	-- exit information
+		if roomBlockData.tail then
+			print(' tail ('..('$%x'):format(ffi.sizeof(roomBlockData.tail))..' bytes) =')
+			print('\t\t'..range(0,ffi.sizeof(roomBlockData.tail)-1):mapi(function(ch)
+					return ('%02x'):format(ch)
+				end):concat' ')
+		end
 		print' roomstate scrolldata:'
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			if rs.scrollData then
 				print(('  $%06x'):format(ffi.cast('uint8_t*',rs.ptr)-sm.rom))
-				printblock(tableToByteArray(rs.scrollData), w/16)
+				printblock(tableToByteArray(rs.scrollData), w/blocksPerRoom, 1)
 			end
 		end
+		
+		print('found '..#roomBlockData.doors..' door references in the blocks')
+		for _,door in ipairs(roomBlockData.doors) do
+			print(' '..tolua(door))
+		end	
+		print('blocksForExit'..tolua(roomBlockData.blocksForExit))	-- exit information
 		print()
 	end
 end
