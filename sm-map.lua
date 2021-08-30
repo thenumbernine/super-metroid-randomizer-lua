@@ -1764,7 +1764,9 @@ function SMMap:mapAddRoomBlockData(addr, m)
 		end
 		-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
 		-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
-		tail = byteArraySubset(data, ofs, dataSize - ofs)
+		if ofs < dataSize then
+			tail = byteArraySubset(data, ofs, dataSize - ofs)
+		end	
 	end
 
 	-- keep track of doors
@@ -2820,6 +2822,9 @@ end
 -- but for the solid tile output, I still want to see those types, so that's why I added this code 
 -- what regions on the map to exclude
 local mapDrawExcludeMapBlocks = {
+	{0, 0x00, 0, 0, 1, 2},	-- crateria intro, out of bounds backgrounds
+	{0, 0x00, 0, 3, 1, 1},	-- "
+	{0, 0x12, 2, 8, 1, 1},	-- crateria down hall to mother brain overlapping mother brain 1st room
 	{1, 0x08, 0, 1, 4, 5},	-- brinstar pink speed fall room
 	{1, 0x09, 0, 0, 1, 1},	-- brinstar pink big room
 	{1, 0x09, 0, 1, 2, 2},	-- "
@@ -2970,13 +2975,13 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 										if x >= 0 and x < ctx.mapTexImage.width
 										and y >= 0 and y < ctx.mapTexImage.height 
 										then
-											local dstIndex = x + ctx.mapTexImage.width * y
-											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
 											local bgw = graphicsTileSizeInPixels * bgTilemap.width
 											local bgh = graphicsTileSizeInPixels * bgTilemap.height
 											local bgx = x % bgw
 											local bgy = y % bgh
 											local src = tileSet.palette.colors[bgBmp.dataBmp[bgx + bgw * bgy]]
+											local dstIndex = x + ctx.mapTexImage.width * y
+											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
 											dst[0] = math.floor(src.r*255/31)
 											dst[1] = math.floor(src.g*255/31)
 											dst[2] = math.floor(src.b*255/31)
@@ -2999,19 +3004,20 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 										if x >= 0 and x < ctx.mapTexImage.width
 										and y >= 0 and y < ctx.mapTexImage.height 
 										then
-											local dstIndex = x + ctx.mapTexImage.width * y
-											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-											
 											-- for loop here
 											--local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
 											local spi = flipx and blockSizeInPixels - 1 - pi or pi
 											local spj = flipy and blockSizeInPixels - 1 - pj or pj
 											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
 											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-											local src = tileSet.palette.colors[paletteIndex]
-											dst[0] = math.floor(src.r*255/31)
-											dst[1] = math.floor(src.g*255/31)
-											dst[2] = math.floor(src.b*255/31)
+											if bit.band(paletteIndex, 0xf) > 0 then
+												local src = tileSet.palette.colors[paletteIndex]
+												local dstIndex = x + ctx.mapTexImage.width * y
+												local dst = ctx.mapTexImage.buffer + 3 * dstIndex
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
+											end
 										end
 									end
 								end
@@ -3029,9 +3035,6 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 										if x >= 0 and x < ctx.mapTexImage.width
 										and y >= 0 and y < ctx.mapTexImage.height 
 										then
-											local dstIndex = x + ctx.mapTexImage.width * y
-											local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-
 											local spi = flipx and blockSizeInPixels - 1 - pi or pi
 											local spj = flipy and blockSizeInPixels - 1 - pj or pj
 											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
@@ -3039,6 +3042,8 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 											-- now which determines transparency?
 											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
 												local src = tileSet.palette.colors[paletteIndex]
+												local dstIndex = x + ctx.mapTexImage.width * y
+												local dst = ctx.mapTexImage.buffer + 3 * dstIndex
 												dst[0] = math.floor(src.r*255/31)
 												dst[1] = math.floor(src.g*255/31)
 												dst[2] = math.floor(src.b*255/31)
@@ -3715,10 +3720,10 @@ function SMMap:mapPrintRoomBlocks()
 		print(' size: '..w..','..h)
 
 		local function printblock(data, width, col)
-			for i=1,ffi.sizeof(data) do
+			for i=0,ffi.sizeof(data)-1 do
 				if col and i % col == 0 then io.write' ' end
-				io.write((('%02x'):format(tonumber(data[i-1])):gsub('0','.')))
-				if i % width == 0 then print() end 
+				io.write((('%02x'):format(tonumber(data[i])):gsub('0','.')))
+				if i % width == width-1 then print() end 
 			end
 			print()
 		end
