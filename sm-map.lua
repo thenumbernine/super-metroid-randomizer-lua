@@ -687,18 +687,6 @@ end
 SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v end)
 
 
-local function readCode(rom, addr, maxlen)
-	local code = table()
-	for i=0,maxlen-1 do
-		local r = rom[addr] addr=addr+1
-		code:insert(r)
-		if r == 0x60 then break end
-		if i == maxlen-1 then error("code read overflow") end
-	end
-	return code
-end
-
-
 local Room = class()
 function Room:init(args)
 	self.roomStates = table()
@@ -871,7 +859,7 @@ function Door:init(args)
 	and self.ptr.code > 0x8000 
 	then
 		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
-		self.doorCode = readCode(rom, self.doorCodeAddr, 0x100)
+		self.doorCode = disasm.readCode(rom, self.doorCodeAddr, 0x100)
 	end
 end
 
@@ -1991,7 +1979,7 @@ function SMMap:mapAddLayerHandling(addr)
 	if layerHandling then return layerHandling end
 	local layerHandling = {
 		addr = addr,
-		code = readCode(self.rom, addr, 0x100),
+		code = disasm.readCode(self.rom, addr, 0x100),
 		roomStates = table(),
 	}
 	self.layerHandlings:insert(layerHandling)
@@ -4211,7 +4199,7 @@ function SMMap:mapPrint()
 		print(' code: '..layerHandling.code:mapi(function(cmd)
 			return ('%02x'):format(cmd)
 		end):concat' ')
-		print(disasm(layerHandling.code, layerHandling.addr))
+		print(disasm.disasm(layerHandling.code, layerHandling.addr))
 		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
@@ -4271,7 +4259,7 @@ function SMMap:mapPrint()
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
 			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodeAddr)
-			print(disasm(readCode(rom, roomSelectCodeAddr, 0x100), roomSelectCodeAddr))
+			print(disasm.disasm(disasm.readCode(rom, roomSelectCodeAddr, 0x100), roomSelectCodeAddr))
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
@@ -4279,7 +4267,7 @@ function SMMap:mapPrint()
 				..' '..door.ptr[0])
 			if door.doorCode then
 				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat' ')
-				print(disasm(door.doorCode, door.doorCodeAddr))
+				print(disasm.disasm(door.doorCode, door.doorCodeAddr))
 			end
 		end
 	end
@@ -4400,7 +4388,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 			-- TODO store for printing?  possibly relocation?
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
-			local code = readCode(rom, addr, 100)
+			local code = disasm.readCode(rom, addr, 100)
 			
 			mem:add(addr, #code, 'room select code', m)
 		end

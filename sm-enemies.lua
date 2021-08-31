@@ -140,8 +140,8 @@ local enemyShot_t = struct{
 	},
 }
 
-local spriteEntry_t = struct{
-	name = 'spriteEntry_t',
+local spritemap_t = struct{
+	name = 'spritemap_t',
 	fields = {
 		{xofs = 'uint16_t:9'},
 		{unused1 = 'uint16_t:1'},
@@ -160,7 +160,7 @@ local spriteEntry_t = struct{
 		{yflip = 'uint8_t:1'},
 	},
 }
-assert(ffi.sizeof'spriteEntry_t' == 5)
+assert(ffi.sizeof'spritemap_t' == 5)
 
 
 local Enemy = class()
@@ -846,31 +846,36 @@ function SMEnemies:enemiesInit()
 		shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
 	end
 
+
 	do
-		self.enemySpriteSets = table()
-		local addr = topc(0xb4, 0xc630)
+		-- [bda8, be24) = sprite objects = uint16_t[126] pageoffset into sprite object instructions below
+		-- [be24, c630) = sprite object instruction lists ... should be uint16_t numFramesToWait; uint16_t spriteMapPageOfs;
+	end
+	do
+		-- [c630, dd89) = sprite object spritemaps
+		self.enemySpritemaps = table()
+		local addr = topc(enemyAuxTableBank, 0xc630)
 		local ptr = rom + addr
-		local endAddr = topc(0xb4, 0xdd89)
+		local endAddr = topc(enemyAuxTableBank, 0xdd89)
 		local endPtr = rom + endAddr
 		while ptr < endPtr do
 			local count = ffi.cast('uint16_t*', ptr)[0]
-			local spriteSet = table{
+			local spritemap = table{
 				addr = ptr - rom,
 			}
 			ptr = ptr + ffi.sizeof'uint16_t'
 			for i=1,count do
-				local spriteEntryPtr = ffi.cast('spriteEntry_t*',ptr)
-				spriteSet:insert{
+				local spriteEntryPtr = ffi.cast('spritemap_t*',ptr)
+				spritemap:insert{
 					addr = ptr - rom,
 					ptr = spriteEntryPtr,
-					obj = ffi.new('spriteEntry_t', spriteEntryPtr[0]),
+					obj = ffi.new('spritemap_t', spriteEntryPtr[0]),
 				}
-				ptr = ptr + ffi.sizeof'spriteEntry_t'
+				ptr = ptr + ffi.sizeof'spritemap_t'
 			end
-			self.enemySpriteSets:insert(spriteSet)
+			self.enemySpritemaps:insert(spritemap)
 		end
-	end
-
+	end	
 
 	self.allEnemyFieldValues = {}
 	for _,field in ipairs{
@@ -979,10 +984,10 @@ function SMEnemies:enemiesPrint()
 		print(('%04x'):format(shot.addr), shot.ptr[0])
 	end
 
-	print"all enemySpriteSets"
-	for _,spriteSet in ipairs(self.enemySpriteSets) do
-		print((' $%06x'):format(spriteSet.addr))
-		for _,spriteEntry in ipairs(spriteSet) do
+	print"all enemySpritemaps"
+	for _,spritemap in ipairs(self.enemySpritemaps) do
+		print((' $%06x'):format(spritemap.addr))
+		for _,spriteEntry in ipairs(spritemap) do
 			print('  '..spriteEntry.obj)
 		end
 	end
@@ -1005,11 +1010,8 @@ function SMEnemies:enemiesBuildMemoryMap(mem)
 		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 	end	
 
-	for _,spriteSet in ipairs(self.enemySpriteSets) do
-		mem:add(spriteSet.addr, 2, 'spriteSet header')
-		for _,spriteEntry in ipairs(spriteSet) do
-			mem:add(spriteEntry.addr, ffi.sizeof'spriteEntry_t', 'spriteEntry_t')
-		end
+	for _,spritemap in ipairs(self.enemySpritemaps) do
+		mem:add(spritemap.addr, 2 + #spritemap * ffi.sizeof'spritemap_t', 'enemy sprites set')
 	end
 end
 

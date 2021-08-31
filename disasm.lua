@@ -2,6 +2,8 @@
 65816 disasm based on https://github.com/pelrun/Dispel/blob/master/65816.c
 --]]
 
+local ffi = require 'ffi'
+
 local instrsForNames = {
 	ADC = {0x69, 0x6D, 0x6F, 0x65, 0x72, 0x67, 0x7D, 0x7F, 0x79, 0x75, 0x61, 0x71, 0x77, 0x63, 0x73},
 	AND = {0x29, 0x2D, 0x2F, 0x25, 0x32, 0x27, 0x3D, 0x3F, 0x39, 0x35, 0x21, 0x31, 0x37, 0x23, 0x33},
@@ -272,12 +274,14 @@ for _,info in ipairs(formatsAndSizesInfo) do
 	end
 end
 
+local flag = ffi.new('uint8_t[1]', 0)
+
 -- code is lua table, 1-based
 local function disasm(code, addr)
-	local flag = {[0]=0}
+	flag[0] = 0
 	local ss = table()
 	local ofs = 1
-	while code[ofs] do
+	while ofs <= #code do
 		local instr = instrInfo[code[ofs]]
 		local instrstr, n = instr.eat(
 			{
@@ -285,7 +289,7 @@ local function disasm(code, addr)
 				code[ofs+2] or 0xff,
 				code[ofs+3] or 0xff
 			},	-- TODO just use ptrs
-			addr,
+			addr+ofs-1,
 			flag
 		)
 		local bank, instrofs = frompc(addr+ofs-1)	-- -1 because 'ofs' is the 1-based index into 'code'
@@ -304,4 +308,37 @@ local function disasm(code, addr)
 	return ss:concat'\n'
 end
 
-return disasm
+--[[
+reads instructions, stops at RET, returns contents in a Lua table
+(TODO return a uint8_t[] instead?)
+(TODO generate the disasm string as you go?)
+--]]
+local function readCode(rom, addr, maxlen)
+	flag[0] = 0
+	ptr = rom + addr
+	local ofs = 0
+	while ofs < maxlen do
+		local instr = instrInfo[ptr[ofs]]
+		local _ , n = instr.eat(
+			{
+				ptr[ofs+1] or 0xff,
+				ptr[ofs+2] or 0xff,
+				ptr[ofs+3] or 0xff
+			},	-- TODO just use ptrs
+			addr+ofs,
+			flag
+		)
+		ofs = ofs + n
+		if instr.name == 'RET' then break end
+	end
+	-- can't do this, because it uses sizeof(ptr), and rom is just a uint8_t*, not uint8_t[]
+	--local code = byteArraySubset(rom, addr, ofs)	-- TODO (rom+addr, ofs)
+	local code = ffi.new('uint8_t[?]', ofs)
+	ffi.copy(code, rom + addr, ofs)
+	return byteArrayToTable(code)
+end
+
+return {
+	disasm = disasm,
+	readCode = readCode,
+}

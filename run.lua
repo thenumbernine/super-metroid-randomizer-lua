@@ -195,7 +195,14 @@ function byteArrayToTable(src)
 end
 
 function byteArraySubset(src, ofs, len)
-	assert(ofs + len <= ffi.sizeof(src))
+	if ofs + len > ffi.sizeof(src) then
+		error('tried to copy past end '..tolua{
+			src = src,
+			ofs = ofs,
+			len = len,
+			sizeof_src = ffi.sizeof(src),
+		})
+	end
 	local dest = ffi.new('uint8_t[?]', len)
 	src = ffi.cast('uint8_t*', src)
 	ffi.copy(dest, src + ofs, len)
