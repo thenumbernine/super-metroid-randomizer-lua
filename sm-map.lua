@@ -191,44 +191,115 @@ local enemyGFX_t = struct{
 	},
 }
 
+--[[
+https://wiki.metroidconstruction.com/doku.php?id=super%3Atechnical_information%3Adata_structures
+values used: 
+00: lots
+02: lots
+04: lots
+06: lots
+08: 01/01 01/08 01/09 01/16
+0a: 00/00
+0c: 00/12 00/13 00/30
+24: 01/06 01/21 02/4b
+26: 00/33
+28: 06/05
+2a: 06/00
+--]]
+local fx1Types = {
+	none = 0,
+	lava = 2,
+	acid = 4,
+	water = 6,
+	spores = 8,
+	rain = 0xa,
+	fog = 0xc,
+	scrollingSky = 0x20,
+	--unused = 0x22,	-- a lot more values than just 0x22 are unused ...
+	fireflea = 0x24,
+	tourianEntranceStatue = 0x26,
+	ceresRidley = 0x28,
+	ceresElevator = 0x2a,
+	haze = 0x2c,
+}
+
+--[[
+fx1 a b values:
+https://wiki.metroidconstruction.com/doku.php?id=super%3Atechnical_information%3Adata_structures
+2/Eh/20h	Normal. BG1/BG2/sprites are drawn with BG3 added on top	
+4	Normal, but BG2 is disabled	Used by Phantoon
+6	Normal, but sprites aren't affected by BG3 and sprites are added to BG1/BG2 (instead of hidden)	Unused
+8	Normal, but BG1/sprites aren't affected by BG3 and sprites are added to BG2 (instead of hidden)	Used in some power off Wrecked Ship rooms
+Ah	Normal, but BG1 isn't affected by BG3	Used with FX layer 3 type = spores
+Ch	Normal, but BG3 is disabled and colour math is subtractive	Used with FX layer 3 type = fireflea
+10h/12h	Normal, but BG3 is disabled inside window 1	Used by morph ball eye and varia/gravity suit pickup
+14h/22h	Normal, but BG1 isn't affected by BG3 and colour math is subtractive	Sometimes use with FX layer 3 type = water
+16h	BG1/sprites are drawn after the result of drawing BG2/BG3 is subtracted	Sometimes use with FX layer 3 type = water
+18h/1Eh/30h	BG3 is drawn with the result of drawing BG1/BG2/sprites added on top	Used with FX layer 3 type = lava / acid / fog / Tourian entrance statue, sometimes use with FX layer 3 type = water
+1Ah	Normal, but BG2 and BG3 have reversed roles	Used by Phantoon
+1Ch	Normal, but BG2 and BG3 have reversed roles, colour addition is halved and backdrop is disabled	Unused
+24h	BG1/BG2/sprites are drawn the backdrop is added on top inside window 1	Used by Mother Brain
+26h	Normal, but colour addition is halved	Unused
+28h	Normal, but BG3 is disabled, colour math is subtractive, and the backdrop subtracts red if there is no power bomb explosion	Used in some default state Crateria rooms, some power off Wrecked Ship rooms, pre plasma beam rooms
+2Ah	Normal, but BG3 is disabled, colour math is subtractive, and the backdrop subtracts orange if there is no power bomb explosion	Used in blue Brinstar rooms, Kraid's lair entrance, n00b tube side rooms, plasma beam room, some sand falls rooms
+2Ch	Normal, but BG3 is disabled	Used by FX layer 3 type = haze and torizos
+2Eh	Normal, but colour math is subtractive	Unused
+32h	Normal, but BG1 isn't affected by BG3 and colour math is subtractive	Unused
+34h	Normal, but power bombs don't affect BG2	Unused
+--]]
+
 -- http://metroidconstruction.com/SMMM/fx_values.txt
 local fx1_t = struct{
 	name = 'fx1_t',
 	fields = {
 		-- bank $83, ptr to door data.  0 means no door-specific fx
-		{doorSelect = 'uint16_t'},				-- 0
+		{doorAddr = 'uint16_t'},				-- 0
 		-- starting height of water/lava/acid
-		{liquidSurfaceStart = 'uint16_t'},		-- 2
+		-- aka "base y position"
+		{liquidStarHeight = 'uint16_t'},		-- 2
 		-- ending height of water
-		{liquidSurfaceNew = 'uint16_t'},		-- 4
+		-- aka "target y position"
+		{liquidEndHeight = 'uint16_t'},			-- 4
 
 		--[[ from metroidconstruction.com/SMMM:
 		how long until the water/lava/acid starts to rise or lower. For rooms with liquid, you must use a value between 01 (instantly) and FF (a few seconds). For rooms with no liquid, use 00.
 		For liquids moving up, use a surface speed value between FE00-FFFF. Examples: FFFE (absolute slowest), FFD0 (slow), FFD0 (decent speed), and FE00 (very fast).
 		For liquids moving down, use a surface speed value between 0001-0100. Examples: 0001 (absolute slowest), 0020 (slow), 0040 (decent speed), 0100 (very fast). 
 		--]]
-		{liquidSurfaceDelay = 'uint8_t'},		-- 6
+		-- aka "y velocity"
+		{liquidYVel = 'uint16_t'},				-- 6
+		
+		{timer = 'uint8_t'},					-- 8
 
 		-- liquid, fog, spores, rain, etc
-		{fxType = 'uint8_t'},					-- 7
+		{fxType = 'uint8_t'},					-- 9
 		
 		-- lighting options: 02 = normal, 28 = dark visor room, 2a = darker yellow-visor room
-		{a = 'uint8_t'},						-- 8
+		-- "default layer blending configuration"
+		{a = 'uint8_t'},						-- 0xa
 		
 		-- prioritize/color layers
-		{b = 'uint8_t'},						-- 9
+		-- "fx layer 3 blending configuration"
+		{b = 'uint8_t'},						-- 0xb
 		
 		-- liquid options
-		{c = 'uint8_t'},						-- 0xa
+		--[[
+		https://wiki.metroidconstruction.com/doku.php?id=super%3Atechnical_information%3Adata_structures
+		1	Liquid flows (leftwards)
+		2	Layer 2 is wavy
+		4	Liquid physics are disabled (used in n00b tube room)
+		40h	Big tide (liquid fluctuates up and down, a la the gauntlet)
+		80h	Small tide (liquid fluctuates up and down)		
+		--]]
+		{c = 'uint8_t'},						-- 0xc
 		
-		{paletteFXFlags = 'uint8_t'},			-- 0xb
-		{tileAnimateFlags = 'uint8_t'},			-- 0xc
-		{paletteBlend = 'uint8_t'},				-- 0xd
+		{paletteFXFlags = 'uint8_t'},			-- 0xd
 		
-		{last = 'uint16_t'},					-- 0xe
-	},
+		{tileAnimateFlags = 'uint8_t'},			-- 0xe
+		
+		{paletteBlend = 'uint8_t'},				-- 0xf
+	},											-- 0x10
 }
-
 
 --[[
 now using http://patrickjohnston.org/bank/8F#fB76A
@@ -236,23 +307,22 @@ bg headers:
 0000 = 2 bytes = terminator
 0002 = 9 bytes
 0004 = 7 bytes
+0006 = 2 bytes (not used?)
 0008 = 9 bytes
 000a = 2 bytes
 000c = 2 bytes (only used once)
 000e = 11 bytes
 
 explanation here: https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures
-Type	Parameters	Description
-2		ssssss dddd nnnn	Transfer n bytes from s to d in VRAM
-4		ssssss dddd	Decompress s to d in bank $7E
-6		Clear layer 3
-8		ssssss dddd nnnn	Transfer n bytes from s to d in VRAM and set BG3 tiles base address = $2000
-Ah		Clear layer 2
-Ch		Clear Kraid's layer 2
-Eh		DDDD ssssss dddd nnnn	Transfer n bytes from s to d in VRAM if the current door pointer = D
 --]]
 
--- terminator, used by 0, a, c
+--[[
+used by 0, a, c
+header==0x0 => terminator
+header==0x6 => clear layer 3 (is this used?)
+header==0xa => clear layer 2
+header==0xc => clear kraid's layer 2
+--]]
 local bg_header_t = struct{
 	name = 'bg_header_t',
 	fields = {
@@ -260,35 +330,57 @@ local bg_header_t = struct{
 	},
 }
 
+--[[
+header==0x2 => copy len bytes from .addr24 to VRAM:.dstOfs
+header==0x8 => copy len bytes from .addr24 to VRAM:.dstOfs ... and set bg3 tile base addr to $2000
+--]]
 local bg_2_8_t = struct{
 	name = 'bg_2_8_t',
 	fields = {
 		{header = 'uint16_t'},
 		{addr24 = 'addr24_t'},
-		{a = 'uint16_t'},
-		{b = 'uint16_t'},
+		{dstOfs = 'uint16_t'},
+		{len = 'uint16_t'},
 	},
 }
 
+--[[
+header==0x4 => decompress from .addr24 to $7e:.dstOfs
+--]]
 local bg_4_t = struct{
 	name = 'bg_4_t',
 	fields = {
 		{header = 'uint16_t'},
 		{addr24 = 'addr24_t'},
-		{a = 'uint16_t'},
+		{dstOfs = 'uint16_t'},
 	},
 }
 
+--[[
+header==0xe => copy len bytes from .addr24 to VRAM:.dstOfs if the current doorAddr == .doorAddr
+--]]
 local bg_e_t = struct{
 	name = 'bg_e_t',
 	fields = {
 		{header = 'uint16_t'},
-		{a = 'uint16_t'},
+		{doorAddr = 'uint16_t'},
 		{addr24 = 'addr24_t'},
-		{b = 'uint16_t'},
-		{c = 'uint16_t'},
+		{dstOfs = 'uint16_t'},
+		{len = 'uint16_t'},
 	},
 }
+
+local bgCTypeForHeader = {
+	[0x0] = bg_header_t,
+	[0x2] = bg_2_8_t,
+	[0x4] = bg_4_t,
+	[0x8] = bg_2_8_t,
+	[0xa] = bg_header_t,
+	[0xc] = bg_header_t,
+	[0xe] = bg_e_t,
+}
+
+
 
 -- described in section 12 of metroidconstruction.com/SMMM
 -- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
@@ -962,7 +1054,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 			if true then
 				local fx1 = self:mapAddFX1(addr)
 -- this misses 5 fx1_t's
-local done = fx1.ptr.doorSelect == 0 
+local done = fx1.ptr.doorAddr == 0 
 				fx1.rooms:insert(m)
 				rs.fx1s:insert(fx1)
 				
@@ -1256,16 +1348,6 @@ function SMMap:mapAddEnemyGFXSet(addr)
 	return enemyGFXSet
 end
 
-
-local bgCTypeForHeader = {
-	[0x0] = bg_header_t,
-	[0x2] = bg_2_8_t,
-	[0x4] = bg_4_t,
-	[0x8] = bg_2_8_t,
-	[0xa] = bg_header_t,
-	[0xc] = bg_header_t,
-	[0xe] = bg_e_t,
-}
 
 --[[
 table of all unique bgs.
@@ -1957,7 +2039,6 @@ tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.data
 graphicsTiles should be tileSet.graphicsTileVec.v
 count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles x 2 bytes per graphicsTile lookup), or 1 for bg_t's, or whatever else
 
-
 --]]
 function SMMap:convertTilemapToBitmap(
 	dst,
@@ -1987,7 +2068,11 @@ function SMMap:convertTilemapToBitmap(
 						-- a = x or ~x depending on xNot
 						-- b = y or ~y depending on yNot
 						-- c = tilemapElem.graphicsTileIndex
-						local graphicsTileOffset = bit.bxor(x, xNot) + 8 * bit.bxor(y, yNot) + 64 * bit.band(tileInfo, 0x3ff)
+						local graphicsTileOffset = bit.bor(
+							bit.bxor(x, xNot),
+							bit.lshift(bit.bxor(y, yNot), 3),
+							bit.lshift(bit.band(tileInfo, 0x3ff), 6)
+						)
 						--graphicsTileOffset.x = bit.bxor(x, xNot)
 						--graphicsTileOffset.y = bit.bxor(y, xNot)
 						--graphicsTileOffset.graphicsTileIndex = tilemapElem.graphicsTileIndex
@@ -2377,9 +2462,7 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 			graphicsTileVec.v,		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
 			2,
 			2,
-			tileSet.tileGfxCount,
-			true				-- build inverse map
-		)	
+			tileSet.tileGfxCount)	
 
 		-- bg_t's need this
 		-- ... will they need this, or just the non-common portion of it?
@@ -2909,6 +2992,10 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local firstcoord
 						
 	local tileSet = rs.tileSet
+	-- TODO first bg with a tileset ... but for now there's only 1 anyways
+	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
+	local bgTilemap = bg and bg.tilemap
+	local bgBmp = bgTilemap and ctx.sm.getBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -2968,10 +3055,6 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 						end
 						
 						if tileSet then				
-							-- TODO first bg with a tileset ... but for now there's only 1 anyways
-							local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
-							local bgTilemap = bg and bg.tilemap
-							local bgBmp = bgTilemap and ctx.sm.getBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 							
 							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
 							--and tileIndex < tileSet.tileGfxCount
@@ -3004,7 +3087,7 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 --]]
 -- [[ layer 2 tilemap
 							if roomBlockData.layer2blocks then
-								local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks + 2 * (ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)))[0]
+								local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
 								local pimask = bit.band(tileIndex, 0x400) ~= 0 and 15 or 0
 								local pjmask = bit.band(tileIndex, 0x800) ~= 0 and 15 or 0
 								tileIndex = bit.band(tileIndex, 0x3ff)
@@ -3064,8 +3147,8 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 									end
 								end
 							end
---[[ want to see what tileIndex each block is?							
-							drawstr(ctx.mapTexImage, 
+--[[ want to see what tileIndex each block is?
+							drawstr(ctx.mapTexImage,
 								2 + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX)),
 								8 + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY)),
 								('%02x'):format(tileIndex))
@@ -3477,8 +3560,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 			tileSet.graphicsTileVec.v,
 			tilemap.width,
 			tilemap.height,
-			1
-		)
+			1)
 		
 		self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
 		return bgBmp
@@ -3642,12 +3724,12 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 						local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
 						local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
 						self:convertTilemapToBitmap(
-							tilemapElemIndexedBmp,	-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
-							tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
+							tilemapElemIndexedBmp,		-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
+							tilemap,					-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
 							tileSet.graphicsTileVec.v,	-- graphicsTiles = 
-							tilemapElemSizeX,		-- tilemapElemSizeX
-							tilemapElemSizeY,		-- tilemapElemSizeY
-							1)						-- count
+							tilemapElemSizeX,			-- tilemapElemSizeX
+							tilemapElemSizeY,			-- tilemapElemSizeY
+							1)							-- count
 						local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
 						self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet)
 						graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
@@ -3665,6 +3747,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 					local pixw = blockSizeInPixels * roomBlockData.width
 					local pixh = blockSizeInPixels * roomBlockData.height
 					local img = Image(pixw, pixh, 3, 'unsigned char')
+					img:clear()
 					local w = roomBlockData.width
 					local h = roomBlockData.height
 					for y=0,h-1 do
@@ -3675,15 +3758,17 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 							tileIndex = bit.band(tileIndex, 0x3ff)
 							for pj=0,blockSizeInPixels-1 do
 								for pi=0,blockSizeInPixels-1 do
-									local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
 									local spi = bit.bxor(pi, pimask)
 									local spj = bit.bxor(pj, pjmask)
 									local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
 									local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-									local src = tileSet.palette.colors[paletteIndex]
-									dst[0] = src.r*255/31
-									dst[1] = src.g*255/31
-									dst[2] = src.b*255/31
+									if bit.band(paletteIndex, 0xf) > 0 then
+										local src = tileSet.palette.colors[paletteIndex]
+										local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
+										dst[0] = src.r*255/31
+										dst[1] = src.g*255/31
+										dst[2] = src.b*255/31
+									end
 								end
 							end
 						end
