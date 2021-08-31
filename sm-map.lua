@@ -15,6 +15,7 @@ local struct = require 'struct'
 local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
+local disasm = require 'disasm'
 
 
 local mapSaveMode7TileSets = true
@@ -374,6 +375,7 @@ local bgCTypeForHeader = {
 	[0x0] = bg_header_t,
 	[0x2] = bg_2_8_t,
 	[0x4] = bg_4_t,
+	[0x6] = bg_header_t,
 	[0x8] = bg_2_8_t,
 	[0xa] = bg_header_t,
 	[0xc] = bg_header_t,
@@ -4205,10 +4207,11 @@ function SMMap:mapPrint()
 	print()
 	print"all layerHandling's:"
 	for _,layerHandling in ipairs(self.layerHandlings) do
-		print(('%04x'):format(layerHandling.addr))
+		print(('%06x'):format(layerHandling.addr))
 		print(' code: '..layerHandling.code:mapi(function(cmd)
 			return ('%02x'):format(cmd)
 		end):concat' ')
+		print(disasm(layerHandling.code, layerHandling.addr))
 		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
@@ -4265,6 +4268,10 @@ function SMMap:mapPrint()
 			for _,bg in ipairs(rs.bgs) do
 				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
 			end
+			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
+			print('   room select code:')
+			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodeAddr)
+			print(disasm(readCode(rom, roomSelectCodeAddr, 0x100), roomSelectCodeAddr))
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
@@ -4272,6 +4279,7 @@ function SMMap:mapPrint()
 				..' '..door.ptr[0])
 			if door.doorCode then
 				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat' ')
+				print(disasm(door.doorCode, door.doorCodeAddr))
 			end
 		end
 	end
@@ -4389,9 +4397,11 @@ function SMMap:mapBuildMemoryMap(mem)
 			end
 			
 			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
-			
+		
+			-- TODO store for printing?  possibly relocation?
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
 			local code = readCode(rom, addr, 100)
+			
 			mem:add(addr, #code, 'room select code', m)
 		end
 		
@@ -5170,15 +5180,40 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	local rom = self.rom
 
 	local roomWriteRanges = WriteRange({
-		 {0x791f8, 0x7b76a},     -- rooms of regions 0-2
-		 -- then comes bg_t's
-		 -- then comes door codes 0x7b971 to end of 0x7c0fa routine
-		 -- then comes plm_t's
-		 {0x7c98e, 0x7e0fd},     -- rooms of regions 3-6
+		 {0x0791f8, 0x07b76a},     -- rooms of regions 0-2
+		 
+		 -- {0x07b76a, 0x07b971}, 	-- bg_t's (all padding in here isn't used)
+		 -- {0x07b971, 0x07ba37},	-- door codes
+		 -- {0x07ba37, 0x07bd07},	-- bg_t's (all padding in here isn't used)
+		 -- {0x07bd07, 0x07be3f},	-- door code
+		 -- {0x07be3f, 0x07bf9e}	-- bg_t's.  within this is a 54 bytes padding, 27 of these bytes is a set of bg_t's that points from room 02/3d, which is unfinished
+		 -- {0x07bf9e, 0x07c116},	-- door code
+		 -- {0x07c116, 0x07c215},	-- 255 bytes of main asm routines
+		 -- {0x07c215, 0x07c8c7},	-- plm_t's
+		 -- {0x07c8c7, 0x07c8f6},	-- layer handling code
+		 
+		 -- these two functions are not pointed to by any rooms
+		 --  but their functions are referenced by the code at c8dd, 
+		 -- so this is reserved, can't be moved (without updating the code of c8dd as well)
+		 --  which is the layerHandlingAddr of room 04/37, draygon's room
+		 -- in other words, without some deep code introspection (and maybe some sentience)
+		 --  this can't be automatically moved around and updated
+		 -- {0x07c8f6, 0x07c8fc},	-- 6 bytes of draygon's room pausing code
+		 -- {0x07c8fc, 0x07c90a,	-- 14 bytes of draygon's room unpausing code 
+		 
+		 -- {0x07c90a, 0x07c98e},	-- layer handling code
+		 	{0x07c98e, 0x07e0fd},   -- rooms of regions 3-6
 -- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
-		 -- then comes db_t's
-		 -- then comes door codes 0x7e1d8 to end of 0x7e513 routine
-		 {0x7e82c, 0x7e85a},     -- single mdb of region 7
+		 -- {0x07e0fd, 0x07e1d8},	-- bg_t's TODO verifying padding at 0x07e132 isn't used
+		 -- {0x07e1d8, 0x07e248},	-- door code
+		 -- {0x07e248, 0x07e26c},	-- bg_t
+		 -- {0x07e26c, 0x07e3e8},	-- door code (with padding at a few places)
+		 -- {0x07e3e8, 0x07e4c0},	-- bg_t
+		 -- {0x07e4c0, 0x07e51f},	-- door code
+		 -- {0x07e51f, 0x07e5e6},	-- 199 bytes of padding
+		 -- {0x07e5e6, 0x07e6a2},	-- room select code (with some padding)
+		 -- {0x07e6a2, 0x07e7a7},	-- tileSet_t's
+		 {0x07e82c, 0x07e85a},     -- single mdb of region 7
 		 -- then comes door code
 	}, 'room_t')
 
