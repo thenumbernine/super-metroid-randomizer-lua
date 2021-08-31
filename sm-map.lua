@@ -117,7 +117,7 @@ local roomstate_t = struct{
 		{musicControl = 'uint8_t'},
 		{fx1Addr = 'uint16_t'},				-- $83
 		{enemySpawnAddr = 'uint16_t'},		-- TODO "enemySpawnSetAddr". points to an array of enemySpawn_t
-		{enemyGFXAddr = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of palettes + enemyClass_t's
+		{enemyGFXAddr = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of enemyClass_t's + palettes
 	
 		--[[
 		From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
@@ -168,17 +168,18 @@ local plm_t = struct{
 }
 
 -- this is a single spawn location of an enemy.
+-- also called "enemy population" in some notes
 local enemySpawn_t = struct{
 	name = 'enemySpawn_t',
 	fields = {
 		{enemyAddr = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
 		{x = 'uint16_t'},			-- fixed_t pixel:subpixel
 		{y = 'uint16_t'},			-- fixed_t
-		{initGFX = 'uint16_t'},	-- init param / tilemaps / orientation
-		{prop1 = 'uint16_t'},	-- special
-		{prop2 = 'uint16_t'},	-- graphics
-		{roomArg1 = 'uint16_t'},-- speed
-		{roomArg2 = 'uint16_t'},-- speed2
+		{initGFX = 'uint16_t'},		-- init param / tilemaps / orientation
+		{prop1 = 'uint16_t'},		-- special
+		{prop2 = 'uint16_t'},		-- graphics
+		{roomArg1 = 'uint16_t'},	-- speed
+		{roomArg2 = 'uint16_t'},	-- speed2
 	},
 }
 
@@ -1022,8 +1023,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		local enemyGFXSet = self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXAddr))
-		rs:setEnemyGFXSet(enemyGFXSet)
+		rs:setEnemyGFXSet(self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXAddr)))
 	end
 
 	-- some rooms use the same fx1 ptr
@@ -2009,8 +2009,8 @@ local tilemapElem_t = struct{
 	fields = {
 		{graphicsTileIndex = 'uint16_t:10'},	-- graphics tile index
 		{colorIndexHi = 'uint16_t:4'},			-- high nibble color index to write throughout the graphics tile
-		{xNot = 'uint16_t:1'},					-- whether to 'not'/flip x 
-		{yNot = 'uint16_t:1'},					-- whether to 'not'/flip y
+		{xflip = 'uint16_t:1'},					-- whether to 'not'/flip x 
+		{yflip = 'uint16_t:1'},					-- whether to 'not'/flip y
 	},
 }
 assert(ffi.sizeof'tilemapElem_t' == 2)
@@ -2061,27 +2061,27 @@ function SMMap:convertTilemapToBitmap(
 			--local col = dst
 			for dstSubtileX=0,tilemapElemSizeX-1 do
 				local tileInfo = tilemapElem[dstSubtileX + tilemapElemSizeX * dstSubtileY + tilemapElemSizeX * tilemapElemSizeY * tileIndex]
-				local xNot = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
-				local yNot = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
+				local xflip = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
+				local yflip = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
 				local colorIndexHi = bit.rshift(bit.band(tileInfo, 0x1c00), 6)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
 				for y=0,7 do
 					for x=0,7 do
 						-- graphicsTileOffset = cccc cccc:ccbb baaa
-						-- a = x or ~x depending on xNot
-						-- b = y or ~y depending on yNot
+						-- a = x or ~x depending on xflip
+						-- b = y or ~y depending on yflip
 						-- c = tilemapElem.graphicsTileIndex
 						local graphicsTileOffset = bit.bor(
-							bit.bxor(x, xNot),
-							bit.lshift(bit.bxor(y, yNot), 3),
+							bit.bxor(x, xflip),
+							bit.lshift(bit.bxor(y, yflip), 3),
 							bit.lshift(bit.band(tileInfo, 0x3ff), 6)
 						)
-						--graphicsTileOffset.x = bit.bxor(x, xNot)
-						--graphicsTileOffset.y = bit.bxor(y, xNot)
+						--graphicsTileOffset.x = bit.bxor(x, xflip)
+						--graphicsTileOffset.y = bit.bxor(y, xflip)
 						--graphicsTileOffset.graphicsTileIndex = tilemapElem.graphicsTileIndex
 						-- graphicsTileOffset is a nibble index
 						-- so the real byte index into the graphicsTiles is ... 0ccc cccc:cccb bbaa
 						-- and that means the graphicsTiles are 32 bytes each ... 8 * 8 * 4bpp / 8 bits/byte = 32 bytes
-						-- and that last 0'th bit of a == (x or ~x depending on xNot) determines which nibble to use
+						-- and that last 0'th bit of a == (x or ~x depending on xflip) determines which nibble to use
 						local colorIndexLo = graphicsTiles[bit.rshift(graphicsTileOffset, 1)]
 						if bit.band(graphicsTileOffset, 1) ~= 0 then colorIndexLo = bit.rshift(colorIndexLo, 4) end
 						colorIndexLo = bit.band(colorIndexLo, 0xf)
@@ -3719,8 +3719,8 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 						for i=0,numGraphicTiles-1 do
 							tilemap[i].graphicsTileIndex = i
 							tilemap[i].colorIndexHi = 0
-							tilemap[i].xNot = 0
-							tilemap[i].yNot = 0
+							tilemap[i].xflip = 0
+							tilemap[i].yflip = 0
 						end
 						local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
 						local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
@@ -4875,7 +4875,7 @@ function SMMap:mapWriteEnemySpawnSets()
 
 	-- [[ update enemy spawn
 	local enemySpawnWriteRanges = WriteRange({
-		-- original spawns goes up to $10ebd0, but the super metroid ROM map says the end of the bank is free
+		-- original spawns goes up to $10ebd0, but patrickjohnston's super metroid ROM map says the end of the bank is free
 		{0x108000, 0x110000},
 	}, 'enemySpawn_t')
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do

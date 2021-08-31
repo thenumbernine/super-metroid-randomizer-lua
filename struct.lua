@@ -131,7 +131,6 @@ end
 				return true
 			end,
 			code = code,
-			fields = fields,
 		}
 		metatable.__index = metatable
 		if args.metatable then
@@ -150,7 +149,14 @@ end
 				return ffi.sizeof(fieldType)
 			end
 		end):sum()
-		assert(ffi.sizeof(name) == sizeOfFields, "struct "..name.." isn't packed!")
+		local sizeof = ffi.sizeof(name)
+		if sizeof ~= sizeOfFields then
+			error(
+				"sizeof("..name..") = "..sizeof.."\n"
+				.."sizeof fields = "..sizeOfFields.."\n"
+				.."struct "..name.." isn't packed!"
+			)
+		end
 --[[
 		local null = ffi.cast(name..'*', nil)
 		local sizeOfFields = table.map(fields, function(kv)

@@ -140,6 +140,29 @@ local enemyShot_t = struct{
 	},
 }
 
+local spriteEntry_t = struct{
+	name = 'spriteEntry_t',
+	fields = {
+		{xofs = 'uint16_t:9'},
+		{unused1 = 'uint16_t:1'},
+		{size = 'uint16_t:1'},
+		{unused2 = 'uint16_t:5'},
+		
+		{yofs = 'uint8_t'},
+	
+		-- I would do uint16_t:9, but I get a NYI error
+		{tileIndex = 'uint8_t'},
+		{tileIndexHi = 'uint8_t:1'},
+		
+		{palette = 'uint8_t:3'},
+		{priority = 'uint8_t:2'},
+		{xflip = 'uint8_t:1'},
+		{yflip = 'uint8_t:1'},
+	},
+}
+assert(ffi.sizeof'spriteEntry_t' == 5)
+
+
 local Enemy = class()
 
 -- get the pointer to the weakness_t
@@ -215,7 +238,7 @@ end
 function EnemyAuxTable:buildMemoryMap(mem)
 	for _,addr in ipairs(self.addrs) do
 		if addr ~= 0 then
-			mem:add(topc(self.bank, addr), ffi.sizeof(self.structName), self.structName)
+			mem:add(topc(self.bank, addr), ffi.sizeof(self.structName), 'enemy '..self.structName)
 		end
 	end
 end
@@ -823,6 +846,32 @@ function SMEnemies:enemiesInit()
 		shot.ptr = ffi.cast('enemyShot_t*', rom + addr)
 	end
 
+	do
+		self.enemySpriteSets = table()
+		local addr = topc(0xb4, 0xc630)
+		local ptr = rom + addr
+		local endAddr = topc(0xb4, 0xdd89)
+		local endPtr = rom + endAddr
+		while ptr < endPtr do
+			local count = ffi.cast('uint16_t*', ptr)[0]
+			local spriteSet = table{
+				addr = ptr - rom,
+			}
+			ptr = ptr + ffi.sizeof'uint16_t'
+			for i=1,count do
+				local spriteEntryPtr = ffi.cast('spriteEntry_t*',ptr)
+				spriteSet:insert{
+					addr = ptr - rom,
+					ptr = spriteEntryPtr,
+					obj = ffi.new('spriteEntry_t', spriteEntryPtr[0]),
+				}
+				ptr = ptr + ffi.sizeof'spriteEntry_t'
+			end
+			self.enemySpriteSets:insert(spriteSet)
+		end
+	end
+
+
 	self.allEnemyFieldValues = {}
 	for _,field in ipairs{
 		'sound',
@@ -916,6 +965,9 @@ function SMEnemies:enemiesPrint()
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
 			io.write(': '..tolua(betaname))
+			-- NOTICE the last 4 bytes are 2 addresses: 
+			-- 1: to a debug enemy population pointer
+			-- 2: index into debug spritemap at $a201 sized $22
 			--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
 		end
 		print()
@@ -926,15 +978,22 @@ function SMEnemies:enemiesPrint()
 	for _,shot in ipairs(self.enemyShots) do
 		print(('%04x'):format(shot.addr), shot.ptr[0])
 	end
-end
 
+	print"all enemySpriteSets"
+	for _,spriteSet in ipairs(self.enemySpriteSets) do
+		print((' $%06x'):format(spriteSet.addr))
+		for _,spriteEntry in ipairs(spriteSet) do
+			print('  '..spriteEntry.obj)
+		end
+	end
+end
 
 function SMEnemies:enemiesBuildMemoryMap(mem)
 	for _,enemy in ipairs(self.enemies) do
 		local addr = topc(enemyBank, enemy.addr)
 		mem:add(addr, ffi.sizeof'enemyClass_t', 'enemyClass_t')
 		if enemy.ptr.name ~= 0 then
-			mem:add(topc(enemyAuxTableBank, enemy.ptr.name), 14, 'debug name')
+			mem:add(topc(enemyAuxTableBank, enemy.ptr.name), 14, 'enemy debug name')
 		end
 	end
 		
@@ -945,6 +1004,30 @@ function SMEnemies:enemiesBuildMemoryMap(mem)
 		local addr = topc(enemyShotBank, shot.addr)
 		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
 	end	
+
+	for _,spriteSet in ipairs(self.enemySpriteSets) do
+		mem:add(spriteSet.addr, 2, 'spriteSet header')
+		for _,spriteEntry in ipairs(spriteSet) do
+			mem:add(spriteEntry.addr, ffi.sizeof'spriteEntry_t', 'spriteEntry_t')
+		end
+	end
 end
+
+--[[
+I could write stuff back.
+there's a few itemDrop_t locations that aren't used
+all bank $b4
+
+8000-9e6d = enemyGFX_t / enemy set values
+			I am only tracking up to 92bc, so there is a final empty enemy sets i'm missing: 92bc, 92c3
+92c6-b00e = debug stuff
+b00e-bc26 = different enemy names
+bc26-dd89 = sprite stuff
+dd89-e2f6 = debug enemy names ... I am missing the 1st entry.
+e2f6-ec1c = debug enemy population data ... pointed to within the enemy name structs at the end 
+ec1c-f1f4 = weakness_t		- paddings are unused space
+f1f4-f488 = itemDrop_t's	- paddings are unused space
+f488-0000 = free space
+--]]
 
 return SMEnemies
