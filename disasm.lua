@@ -309,7 +309,7 @@ local function disasm(code, addr)
 end
 
 --[[
-reads instructions, stops at RET, returns contents in a Lua table
+reads instructions, stops at RTS, returns contents in a Lua table
 (TODO return a uint8_t[] instead?)
 (TODO generate the disasm string as you go?)
 --]]
@@ -329,7 +329,7 @@ local function readCode(rom, addr, maxlen)
 			flag
 		)
 		ofs = ofs + n
-		if instr.name == 'RET' then break end
+		if instr.name == 'RTS' then break end
 	end
 	-- can't do this, because it uses sizeof(ptr), and rom is just a uint8_t*, not uint8_t[]
 	--local code = byteArraySubset(rom, addr, ofs)	-- TODO (rom+addr, ofs)

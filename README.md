@@ -47,6 +47,13 @@ My next goal is to randomize blocks in certain passageways.
 
 ![map of Super Metroid](map.png)
 
+### And recompressing correctly: ###
+
+```
+tileSet tilemap + graphicsTileSet + palettes recompressed from 243079 to 221753, saving 21326 bytes (new data is 91% of original size)
+rooms recompressed from 384391 to 217571, saving 166820 bytes (new data is 56% of original size)
+```
+
 ### And here's a connectivity graph of the rooms.  Multiple arrows means multiple roomstates.
 
 ![graph of Super Metroid rooms](roomgraph.svg)
