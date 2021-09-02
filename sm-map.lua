@@ -18,12 +18,6 @@ local WriteRange = require 'writerange'
 local disasm = require 'disasm'
 
 
-local mapSaveMode7TileSets = true
-local mapSaveWorldImage = true
-local mapSaveTileSets = true
-local mapSaveLayer2Backgrounds = true
-local mapSaveBackgrounds = true
-
 local SMMap = {}
 
 
@@ -58,7 +52,7 @@ local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
 -- 128x128 tile indexes (0-255), each tile is [256][8][8]
 local graphicsTileSizeInPixels = 8
-local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel
+local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel ... = 32 bytes
 local numMode7Tiles = 256
 local mode7sizeInGraphicTiles = 128
 assert(mode7sizeInGraphicTiles * mode7sizeInGraphicTiles == numMode7Tiles * graphicsTileSizeInPixels * graphicsTileSizeInPixels)
@@ -2399,34 +2393,65 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 		end
 		
 		-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
-		local copy = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
-		local line = ffi.new('uint8_t[?]', 4)
-		local uint32 = ffi.new('uint32_t[1]', 0)
-		local uint8 = ffi.cast('uint8_t*', uint32)
-		for i=0,graphicsTileVec.size-1,graphicsTileSizeInBytes do
-			ffi.copy(copy, graphicsTileVec.v + i, graphicsTileSizeInBytes)
-			-- in place convert, row by row ... why are we converting ?
-			ffi.fill(graphicsTileVec.v + i, graphicsTileSizeInBytes, 0)
-			for y=0,7 do
-				ffi.cast('uint16_t*', line)[0] = ffi.cast('uint16_t*', copy + 2*y)[0]
-				ffi.cast('uint16_t*', line)[1] = ffi.cast('uint16_t*', copy + 2*y)[8]
-				for x=0,7 do
-					local shift = bit.lshift(7 - x, 2)
-					uint32[0] = 0
-					for j=0,3 do
-						uint32[0] = bit.bor(
-							uint32[0],
-							bit.lshift(
-								bit.band(bit.rshift(line[j], x), 1),
-								bit.bor(shift, j)
+		--[[
+		8 pixels wide * 8 pixels high * 1/2 byte per pixel = 32 bytes per 8x8 tile
+		--]]
+		do
+			local sprite = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
+			local line = ffi.new('uint8_t[?]', 4)
+			local uint32 = ffi.new('uint32_t[1]', 0)
+			local uint8 = ffi.cast('uint8_t*', uint32)
+			for i=0,graphicsTileVec.size-1,graphicsTileSizeInBytes do
+				ffi.copy(sprite, graphicsTileVec.v + i, graphicsTileSizeInBytes)
+				-- in place convert, row by row ... why are we converting ?
+				ffi.fill(graphicsTileVec.v + i, graphicsTileSizeInBytes, 0)
+				for y=0,7 do
+					-- line[0] = sprite[2*y+0]
+					-- line[1] = sprite[2*y+1]
+					-- line[2] = sprite[2*y+8]
+					-- line[3] = sprite[2*y+9]
+					line[0] = sprite[0+2*y]
+					line[1] = sprite[1+2*y]
+					line[2] = sprite[16+2*y]
+					line[3] = sprite[17+2*y]
+					for x=0,7 do
+						local shift = bit.lshift(7 - x, 2)
+						--[[
+						x	shift=(7-x)<<2
+						0	11100b
+						1	11000b
+						2	10100b
+						3	10000b
+						4	01100b
+						5	01000b
+						6	00100b
+						7	00000b
+						--]]
+						uint32[0] = 0
+						for j=0,3 do
+							--[[
+							j	shift|j
+							0	aaa00
+							1	aaa01
+							2	aaa10
+							3	aaa11	... where aaa is 7 - x
+							
+							so this code is moving 4 bits from line[j] into uint32
+							--]]
+							uint32[0] = bit.bor(
+								uint32[0],
+								bit.lshift(
+									bit.band(bit.rshift(line[j], x), 1),
+									bit.bor(shift, j)
+								)
 							)
-						)
-					end
-					for j=0,3 do
-						graphicsTileVec.v[j + 4*y + i] = bit.bor(
-							graphicsTileVec.v[j + 4*y + i],
-							uint8[j]
-						)
+						end
+						for j=0,3 do
+							graphicsTileVec.v[j + 4*y + i] = bit.bor(
+								graphicsTileVec.v[j + 4*y + i],
+								uint8[j]
+							)
+						end
 					end
 				end
 			end
@@ -2985,7 +3010,7 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	-- TODO first bg with a tileset ... but for now there's only 1 anyways
 	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 	local bgTilemap = bg and bg.tilemap
-	local bgBmp = bgTilemap and ctx.sm.getBitmapForTileSetAndTileMap(tileSet, bgTilemap)
+	local bgBmp = bgTilemap and ctx.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -3043,330 +3068,11 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 								end
 							end
 						end
-						
-						if tileSet then				
-							
-							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
-							--and tileIndex < tileSet.tileGfxCount
--- [[ draw background?
-							if bgBmp then
-								for pj=0,blockSizeInPixels-1 do
-									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
-									for pi=0,blockSizeInPixels-1 do
-										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
-										if x >= 0 and x < ctx.mapTexImage.width
-										and y >= 0 and y < ctx.mapTexImage.height 
-										then
-											local bgw = graphicsTileSizeInPixels * bgTilemap.width
-											local bgh = graphicsTileSizeInPixels * bgTilemap.height
-											local bgx = x % bgw
-											local bgy = y % bgh
-											local paletteIndex = bgBmp.dataBmp[bgx + bgw * bgy]
-											if bit.band(paletteIndex, 0xf) > 0 then
-												local src = tileSet.palette.colors[paletteIndex]
-												local dstIndex = x + ctx.mapTexImage.width * y
-												local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-												dst[0] = math.floor(src.r*255/31)
-												dst[1] = math.floor(src.g*255/31)
-												dst[2] = math.floor(src.b*255/31)
-											end
-										end
-									end
-								end
-							end
---]]
--- [[ layer 2 tilemap
-							if roomBlockData.layer2blocks then
-								local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
-								local pimask = bit.band(tileIndex, 0x400) ~= 0 and 15 or 0
-								local pjmask = bit.band(tileIndex, 0x800) ~= 0 and 15 or 0
-								tileIndex = bit.band(tileIndex, 0x3ff)
-								
-								for pj=0,blockSizeInPixels-1 do
-									for pi=0,blockSizeInPixels-1 do
-										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
-										local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
-										if x >= 0 and x < ctx.mapTexImage.width
-										and y >= 0 and y < ctx.mapTexImage.height 
-										then
-											-- for loop here
-											--local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
-											local spi = bit.bxor(pi, pimask)
-											local spj = bit.bxor(pj, pjmask)
-											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-											if bit.band(paletteIndex, 0xf) > 0 then
-												local src = tileSet.palette.colors[paletteIndex]
-												local dstIndex = x + ctx.mapTexImage.width * y
-												local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-												dst[0] = math.floor(src.r*255/31)
-												dst[1] = math.floor(src.g*255/31)
-												dst[2] = math.floor(src.b*255/31)
-											end
-										end
-									end
-								end
-							end
---]]
-							do
-								local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
-								local pimask = bit.band(d2, 4) ~= 0 and 15 or 0
-								local pjmask = bit.band(d2, 8) ~= 0 and 15 or 0
-								
-								for pj=0,blockSizeInPixels-1 do
-									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
-									for pi=0,blockSizeInPixels-1 do
-										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
-										if x >= 0 and x < ctx.mapTexImage.width
-										and y >= 0 and y < ctx.mapTexImage.height 
-										then
-											local spi = bit.bxor(pi, pimask)
-											local spj = bit.bxor(pj, pjmask)
-											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-											-- now which determines transparency?
-											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
-												local src = tileSet.palette.colors[paletteIndex]
-												local dstIndex = x + ctx.mapTexImage.width * y
-												local dst = ctx.mapTexImage.buffer + 3 * dstIndex
-												dst[0] = math.floor(src.r*255/31)
-												dst[1] = math.floor(src.g*255/31)
-												dst[2] = math.floor(src.b*255/31)
-											end
-										end
-									end
-								end
-							end
---[[ want to see what tileIndex each block is?
-							drawstr(ctx.mapTexImage,
-								2 + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX)),
-								8 + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY)),
-								('%02x'):format(tileIndex))
---]]						
-						end
 
 						-- TODO isSolid will overlap between a few rooms
 						local isBorder = roomBlockData:isBorderAndNotCopy(dx,dy)
 						do --if isBorder or isSolid then
 							local isSolid = roomBlockData:isSolid(dx,dy)
-							
-							do
-								local x = ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksY)
-								local y = tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksX)
-								if x >= 0 and x < ctx.dumpworldTileImg.width
-								and y >= 0 and y < ctx.dumpworldTileImg.height 
-								then
-									local dstIndex = x + ctx.dumpworldTileImg.width * y
-								
-
--- [==[
-										local foreground = bit.band(d2, 2) == 2
-										-- TODO determine foreground vs background info here
-										local sx, sy = dx,dy
-										if roomBlockData:isCopy(dx,dy) then
-											sx, sy = roomBlockData:getCopySource(dx,dy)
-										end
-										-- this function will do getCopySource if you want
-										local tt, ett = roomBlockData:getTileType(sx,sy)
-										local copych1, copych2, copych3 = roomBlockData:getTileData(sx,sy)
-										local dtt = dumpworldTileTypes.empty
--- [====[
-										if tt == RoomBlocks.tileTypes.empty then
-											dtt = dumpworldTileTypes.empty
-										elseif tt == RoomBlocks.tileTypes.slope then
-											--[[ TODO pick the right one
-											-- also note, SM has 1:3 slopes as well, I only have 1:1 and 1:2
-											-- I could just do half blocks in all 4 directions to turn 1:3 into 1:2's
-											slope45_ul_diag45 = 2,
-											slope45_ur_diag45 = 3,
-											slope45_dl_diag45 = 4, 
-											slope45_dr_diag45 = 5,
-											slope27_ul2_diag27 = 6, 
-											slope27_ul1_diag27 = 7,
-											slope27_ur2_diag27 = 8, 
-											slope27_ur1_diag27 = 9, 
-											slope27_dl2_diag27 = 10, 
-											slope27_dl1_diag27 = 11,
-											slope27_dr2_diag27 = 12, 
-											slope27_dr1_diag27 = 13, 
-											--]]
-											dtt = dumpworldTileTypes.slope45_ul_diag45
-										elseif tt == RoomBlocks.tileTypes.spikes then
-											--[[ TODO
-											spike_solid_1x1			= 0x20,
-											spike_notsolid_1x1		= 0x22,
-											--]]
-											dtt = dumpworldTileTypes.spikes
-										elseif tt == RoomBlocks.tileTypes.push then
-											--[[ TODO
-											push_quicksand1			= 0x30,
-											push_quicksand2			= 0x31,
-											push_quicksand3			= 0x32,
-											push_quicksand4			= 0x33,
-											push_quicksand1_2		= 0x35,
-											push_conveyor_right		= 0x38,
-											push_conveyor_left		= 0x39,
-											--]]
-											dtt = dumpworldTileTypes.empty
-										elseif tt == RoomBlocks.tileTypes.copy_left then
-											error("I thought I got the copy offset location")
-										elseif tt == RoomBlocks.tileTypes.solid  then
-											dtt = dumpworldTileTypes.solid
-										elseif tt == RoomBlocks.tileTypes.door then
-											-- this is represented as an object in dumpworld
-											-- and for what it's worth it is an object in super metroid also
-											dtt = dumpworldTileTypes.empty
-										elseif tt == RoomBlocks.tileTypes.spikes_or_invis then
-											if ett == RoomBlocks.extTileTypes.spike_solid2_1x1 then
-												dtt = dumpworldTileTypes.spikes
-											elseif ett == RoomBlocks.extTileTypes.spike_solid3_1x1 then
-												dtt = dumpworldTileTypes.spikes
-											elseif ett == RoomBlocks.extTileTypes.spike_notsolid2_1x1 then
-												dtt = dumpworldTileTypes.spikes
-											elseif ett == RoomBlocks.extTileTypes.invisble_solid	then
-												dtt = dumpworldTileTypes.solid
-											elseif ett == RoomBlocks.extTileTypes.spike_notsolid3_1x1 then
-												dtt = dumpworldTileTypes.spikes
-											else
-												error'here'
-											end
-										elseif tt == RoomBlocks.tileTypes.crumble_or_speed then
-											if ett == RoomBlocks.extTileTypes.crumble_1x1_regen then
-												dtt = dumpworldTileTypes.fallbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.crumble_2x1_regen then
-												dtt = dumpworldTileTypes.fallbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.crumble_1x2_regen then
-												dtt = dumpworldTileTypes.fallbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.crumble_2x2_regen then
-												dtt = dumpworldTileTypes.fallbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.crumble_1x1 then
-												dtt = dumpworldTileTypes.fallbreak
-											elseif ett == RoomBlocks.extTileTypes.crumble_2x1 then
-												dtt = dumpworldTileTypes.fallbreak
-											elseif ett == RoomBlocks.extTileTypes.crumble_1x2 then
-												dtt = dumpworldTileTypes.fallbreak
-											elseif ett == RoomBlocks.extTileTypes.crumble_2x2 then
-												dtt = dumpworldTileTypes.fallbreak
-											elseif ett == RoomBlocks.extTileTypes.speed_regen then
-												dtt = dumpworldTileTypes.speedbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.speed then
-												dtt = dumpworldTileTypes.speedbreak
-											else
-												error'here'
-											end
-										elseif tt == RoomBlocks.tileTypes.breakable then
-											if ett == RoomBlocks.extTileTypes.beam_1x1_regen then
-												dtt = dumpworldTileTypes.blasterbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.beam_2x1_regen then
-												dtt = dumpworldTileTypes.blasterbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.beam_1x2_regen then
-												dtt = dumpworldTileTypes.blasterbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.beam_2x2_regen then
-												dtt = dumpworldTileTypes.blasterbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.beam_1x1 then
-												dtt = dumpworldTileTypes.blasterbreak
-											elseif ett == RoomBlocks.extTileTypes.beam_2x1 then
-												dtt = dumpworldTileTypes.blasterbreak
-											elseif ett == RoomBlocks.extTileTypes.beam_1x2 then
-												dtt = dumpworldTileTypes.blasterbreak
-											elseif ett == RoomBlocks.extTileTypes.beam_2x2 then
-												dtt = dumpworldTileTypes.blasterbreak
-											elseif ett == RoomBlocks.extTileTypes.powerbomb_1x1 then
-												dtt = dumpworldTileTypes.plasmabreak
-											elseif ett == RoomBlocks.extTileTypes.supermissile_1x1_regen then
-												dtt = dumpworldTileTypes.grenadebreak_regen
-											elseif ett == RoomBlocks.extTileTypes.supermissile_1x1 then
-												dtt = dumpworldTileTypes.grenadebreak
-											elseif ett == RoomBlocks.extTileTypes.beam_door then
-												dtt = dumpworldTileTypes.solid
-											else
-											
-												error'here'
-											end
-										elseif tt == RoomBlocks.tileTypes.copy_up  then
-											error("I thought I got the copy offset location")
-										elseif tt == RoomBlocks.tileTypes.grappling then
-											if ett == RoomBlocks.extTileTypes.grappling then
-												dtt = dumpworldTileTypes.solid
-											elseif ett == RoomBlocks.extTileTypes.grappling_break_regen then
-												dtt = dumpworldTileTypes.solid
-											elseif ett == RoomBlocks.extTileTypes.grappling_break then
-												dtt = dumpworldTileTypes.solid
-											elseif ett == RoomBlocks.extTileTypes.grappling2 then
-												dtt = dumpworldTileTypes.solid
-											elseif ett == RoomBlocks.extTileTypes.grappling3 then
-												dtt = dumpworldTileTypes.solid
-											else
---[===[
-												print('here with ext tiletype '..tolua{
-													region = ('%02x'):format(m.obj.region),
-													index = ('%02x'):format(m.obj.index),
-													i = i,
-													j = j,
-													ti = ti,
-													tj = tj,
-													dx = dx,
-													dy = dy,
-													sx = sx,
-													sy = sy,
-													tt = ('%02x'):format(tt),
-													ett = ('%02x'):format(ett),
-													d1 = ('%02x'):format(d1),
-													d2 = ('%02x'):format(d2),
-													d3 = ('%02x'):format(d3),
-													copych1 = ('%02x'):format(copych1),
-													copych2 = ('%02x'):format(copych2),
-													copych3 = ('%02x'):format(copych3),
-												})
---]===]											
-												error'here'
-											end
-											-- TODO grappling blocks eh
-											dtt = dumpworldTileTypes.solid
-										elseif tt == RoomBlocks.tileTypes.bombable then
-											if ett == RoomBlocks.extTileTypes.bombable_1x1_regen then
-												dtt = dumpworldTileTypes.skillsawbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.bombable_2x1_regen then
-												dtt = dumpworldTileTypes.skillsawbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.bombable_1x2_regen then
-												dtt = dumpworldTileTypes.skillsawbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.bombable_2x2_regen then
-												dtt = dumpworldTileTypes.skillsawbreak_regen
-											elseif ett == RoomBlocks.extTileTypes.bombable_1x1 then
-												dtt = dumpworldTileTypes.skillsawbreak
-											elseif ett == RoomBlocks.extTileTypes.bombable_2x1 then
-												dtt = dumpworldTileTypes.skillsawbreak
-											elseif ett == RoomBlocks.extTileTypes.bombable_1x2 then
-												dtt = dumpworldTileTypes.skillsawbreak
-											elseif ett == RoomBlocks.extTileTypes.bombable_2x2 then
-												dtt = dumpworldTileTypes.skillsawbreak
-											else
-												error'here'
-											end
-										else
-											error'here'
-										end
---]====]										
-
-										-- write out a dumpworld map
-										ctx.dumpworldTileImg.buffer[0+3*dstIndex] = dtt
-										ctx.dumpworldTileImg.buffer[1+3*dstIndex] = 0
-										ctx.dumpworldTileImg.buffer[2+3*dstIndex] = 0
-										
-										if foreground then
-											ctx.dumpworldTileFgImg.buffer[0+3*dstIndex] = d1
-											ctx.dumpworldTileFgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
-											ctx.dumpworldTileFgImg.buffer[2+3*dstIndex] = 0
-										else
-											ctx.dumpworldTileBgImg.buffer[0+3*dstIndex] = d1
-											ctx.dumpworldTileBgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
-											ctx.dumpworldTileBgImg.buffer[2+3*dstIndex] = 0
-										end
---]==]
-								end
-							end
-
-
 							for pi=0,debugImageBlockSizeInPixels-1 do
 								for pj=0,debugImageBlockSizeInPixels-1 do
 									local x = pi + debugImageBlockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
@@ -3514,298 +3220,737 @@ function drawRoomBlockPLMs(ctx, roomBlockData)
 end
 
 
-function SMMap:mapSaveImage(filenamePrefix)
-	local Image = require 'image'
+--[[
+now that tileSet is loaded, decode the bgdata
+TODO how about grouping by unique bg_t + tileSet pairs?
+to reduce redundant outputs
+actually we can't do this for bgs that have multiple rs's / varying tileSet's
+so do it upon decode
 
-	--[[
-	now that tileSet is loaded, decode the bgdata
-	TODO how about grouping by unique bg_t + tileSet pairs?
-	to reduce redundant outputs
-	actually we can't do this for bgs that have multiple rs's / varying tileSet's
-	so do it upon decode
+background bitmaps are generated from combining the bgData graphicsTile indexes with a roomstate's tileSet's graphicsTiles
+stored as 8-bit indexed bitmaps ... use the tileset's palette to get the rgb colors
 
-	background bitmaps are generated from combining the bgData graphicsTile indexes with a roomstate's tileSet's graphicsTiles
-	stored as 8-bit indexed bitmaps ... use the tileset's palette to get the rgb colors
+group these by unique bgData + tileData to cache unique indexed bitmaps
+or group by unique bgData + tileSet to cache unique rgb bitmaps
+	
+cache these as we build them
+--]]
+SMMap.bitmapForTileSetAndTileMap = {}
+function SMMap:mapGetBitmapForTileSetAndTileMap(tileSet, tilemap)
+	self.bitmapForTileSetAndTileMap[tileSet.index] = self.bitmapForTileSetAndTileMap[tileSet.index] or {}
+	local bgBmp = self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr]
+	if bgBmp then return bgBmp end
 
-	group these by unique bgData + tileData to cache unique indexed bitmaps
-	or group by unique bgData + tileSet to cache unique rgb bitmaps
-		
-	cache these as we build them
-	--]]
-	self.bitmapForTileSetAndTileMap = {}
-	self.getBitmapForTileSetAndTileMap = function(tileSet, tilemap)
-		self.bitmapForTileSetAndTileMap[tileSet.index] = self.bitmapForTileSetAndTileMap[tileSet.index] or {}
-		local bgBmp = self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr]
-		if bgBmp then return bgBmp end
-
-		bgBmp = {}
+	bgBmp = {}
 
 print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilemap '..('%06x'):format(tilemap.addr))		
-		bgBmp.tilemap = tilemap
-		bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemap.width * tilemap.height)
+	bgBmp.tilemap = tilemap
+	bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemap.width * tilemap.height)
 
-		self:convertTilemapToBitmap(
-			bgBmp.dataBmp,
-			tilemap.data,
-			tileSet.graphicsTileVec.v,
-			tilemap.width,
-			tilemap.height,
-			1)
-		
-		self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
-		return bgBmp
-	end
+	self:convertTilemapToBitmap(
+		bgBmp.dataBmp,
+		tilemap.data,
+		tileSet.graphicsTileVec.v,
+		tilemap.width,
+		tilemap.height,
+		1)
+	
+	self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
+	return bgBmp
+end
+	
+local fullMapWidthInBlocks = 68
+local fullMapHeightInBlocks = 58
 
+function SMMap:mapSaveImageInformative(filenamePrefix)
+	local Image = require 'image'
 	filenamePrefix = filenamePrefix or 'map'
 
-	if mapSaveWorldImage then
-	
-		local fullMapWidthInBlocks = 68
-		local fullMapHeightInBlocks = 58
+	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
+	local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
 
-		local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
-		local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
-	
-		local debugMapImage = Image(w, h, 3, 'unsigned char')
-		local debugMapMaskImage = Image(w, h, 3, 'unsigned char')
-	
-		local mapTexImage = Image(
-			blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
-			blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
-			3, 'unsigned char')
-		mapTexImage:clear()
+	local debugMapImage = Image(w, h, 3, 'unsigned char')
+	local debugMapMaskImage = Image(w, h, 3, 'unsigned char')
 
-		-- 1 pixel : 1 block for dumpworld
-		local dumpw = blocksPerRoom * fullMapWidthInBlocks
-		local dumph = blocksPerRoom * fullMapHeightInBlocks
-	
-		local dumpworldTileImg = Image(dumpw, dumph, 3, 'unsigned char')
-		local dumpworldTileFgImg = Image(dumpw, dumph, 3, 'unsigned char')
-		local dumpworldTileBgImg = Image(dumpw, dumph, 3, 'unsigned char')
-		
-		local ctx = {
-			sm = self,
-			debugMapImage = debugMapImage,
-			debugMapMaskImage = debugMapMaskImage,
-			mapTexImage = mapTexImage,
-			dumpworldTileImg = dumpworldTileImg,
-			dumpworldTileFgImg = dumpworldTileFgImg,
-			dumpworldTileBgImg = dumpworldTileBgImg,
-		}
+	local ctx = {
+		sm = self,
+		debugMapImage = debugMapImage,
+		debugMapMaskImage = debugMapMaskImage,
+	}
 
-		for _,roomBlockData in ipairs(self.roomblocks) do
-			for _,rs in ipairs(roomBlockData.roomStates) do
-				drawRoomBlocks(ctx, roomBlockData, rs)
-			end
-		end
-
-		for _,roomBlockData in ipairs(self.roomblocks) do
-			drawRoomBlockDoors(ctx, roomBlockData)
-			drawRoomBlockPLMs(ctx, roomBlockData)
-		end
-
-		debugMapImage:save(filenamePrefix..'.png')
-		debugMapMaskImage:save(filenamePrefix..'-mask.png')
-		mapTexImage:save(filenamePrefix..'-tex.png')
-		if filenamePrefix == 'map' then	-- don't do this for the .random file
-			dumpworldTileImg:save('../dumpworld/zeta/maps/sm3/tile.png')
-			dumpworldTileFgImg:save('../dumpworld/zeta/maps/sm3/tile-fg.png')
-			dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			drawRoomBlocks(ctx, roomBlockData, rs)
 		end
 	end
+
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		drawRoomBlockDoors(ctx, roomBlockData)
+		drawRoomBlockPLMs(ctx, roomBlockData)
+	end
+
+	debugMapImage:save(filenamePrefix..'.png')
+	debugMapMaskImage:save(filenamePrefix..'-mask.png')
+end
+
+
+local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
+	local m = rs.room
+	local blocks = roomBlockData.blocks
+	local w = roomBlockData.width / blocksPerRoom
+	local h = roomBlockData.height / blocksPerRoom
+	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	
-	-- for now only write out tile graphics for the non-randomized version
-	if filenamePrefix == 'map' then
-		if mapSaveMode7TileSets then
-			for _,tileSet in ipairs(self.tileSets) do
-				if tileSet.mode7TileSet then
-					-- TODO this only in the mapSaveImage function
-					local mode7image = Image(
-						graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
-						graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
-						3, 'unsigned char')
-					mode7image:clear()
-					local maxdestx = 0
-					local maxdesty = 0	
-					for i=0,mode7sizeInGraphicTiles-1 do
-						for j=0,mode7sizeInGraphicTiles-1 do
-							local mode7tileIndex = tileSet.mode7tiles[i + mode7sizeInGraphicTiles * j]
-							for y=0,graphicsTileSizeInPixels-1 do
-								for x=0,graphicsTileSizeInPixels-1 do
-									local destx = x + graphicsTileSizeInPixels * i
-									local desty = y + graphicsTileSizeInPixels * j
-									local paletteIndex = tileSet.mode7TileSet[
-										x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)
-									]
-									local src = tileSet.palette.colors[paletteIndex]
-									-- TODO what about pixel/palette mask/alpha?
-									if src.r > 0 or src.g > 0 or src.b > 0 then
-										maxdestx = math.max(maxdestx, destx)
-										maxdesty = math.max(maxdestx, desty)
-										local dst = mode7image.buffer + 3 * (destx + mode7image.width * desty)
-										dst[0] = math.floor(src.r*255/31)
-										dst[1] = math.floor(src.g*255/31)
-										dst[2] = math.floor(src.b*255/31)
+	local tileSet = rs.tileSet
+	-- TODO first bg with a tileset ... but for now there's only 1 anyways
+	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
+	local bgTilemap = bg and bg.tilemap
+	local bgBmp = bgTilemap and sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
+	
+	for j=0,h-1 do
+		for i=0,w-1 do
+			local ignore
+			for _,info in ipairs(mapDrawExcludeMapBlocks) do
+				local region, index, mx, my, mw, mh = table.unpack(info)
+				if region == m.obj.region
+				and index == m.obj.index
+				and i >= mx and i < mx + mw 
+				and j >= my and j < my + mh
+				then
+					ignore = true
+					break
+				end
+			end
+			if not ignore then
+				for ti=0,blocksPerRoom-1 do
+					for tj=0,blocksPerRoom-1 do
+						local dx = ti + blocksPerRoom * i
+						local dy = tj + blocksPerRoom * j
+						local di = dx + blocksPerRoom * w * dy
+						-- blocks is 0-based
+						local d1 = blocks[0 + 3 * di]
+						local d2 = blocks[1 + 3 * di]
+						local d3 = blocks[2 + 3 * di]
+						
+						if tileSet then				
+							
+							-- TODO seems omitting tileIndexes >= tileGfxCount and just using modulo tileGfxCount makes no difference
+							--and tileIndex < tileSet.tileGfxCount
+-- [[ draw background?
+							if bgBmp then
+								for pj=0,blockSizeInPixels-1 do
+									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										if x >= 0 and x < mapTexImage.width
+										and y >= 0 and y < mapTexImage.height 
+										then
+											local bgw = graphicsTileSizeInPixels * bgTilemap.width
+											local bgh = graphicsTileSizeInPixels * bgTilemap.height
+											local bgx = x % bgw
+											local bgy = y % bgh
+											local paletteIndex = bgBmp.dataBmp[bgx + bgw * bgy]
+											if bit.band(paletteIndex, 0xf) > 0 then
+												local src = tileSet.palette.colors[paletteIndex]
+												local dstIndex = x + mapTexImage.width * y
+												local dst = mapTexImage.buffer + 3 * dstIndex
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
+											end
+										end
 									end
 								end
 							end
-						end
-					end
-					mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
-					mode7image:save(filenamePrefix..' tileSet='..('%02x'):format(tileSet.index)..' mode7.png')
-				end
-			end
-		end
-		
-		if mapSaveTileSets then
-			-- TODO how about a wrap row?  grid x, grid y, result x, result y 
-			for _,tileSet in ipairs(self.tileSets) do
-				if tileSet.tileGfxBmp then
-					local rowWidth = 32
-					local img = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-					local imgused = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
-					for tileIndex=0,tileSet.tileGfxCount-1 do
-						local xofs = tileIndex % rowWidth
-						local yofs = math.floor(tileIndex / rowWidth)
-						for i=0,blockSizeInPixels-1 do
-							for j=0,blockSizeInPixels-1 do
-								local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
-								local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
-								local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-								local r,g,b = 0,0,0
-								if bit.band(paletteIndex, 0xf) > 0 then
-									local src = tileSet.palette.colors[paletteIndex]
-									r = math.floor(src.r*255/31)
-									g = math.floor(src.g*255/31)
-									b = math.floor(src.b*255/31)
-								end
-								img.buffer[0 + 3 * dstIndex] = r
-								img.buffer[1 + 3 * dstIndex] = g
-								img.buffer[2 + 3 * dstIndex] = b
+--]]
+-- [[ layer 2 tilemap
+							if roomBlockData.layer2blocks then
+								local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
+								local pimask = bit.band(tileIndex, 0x400) ~= 0 and 15 or 0
+								local pjmask = bit.band(tileIndex, 0x800) ~= 0 and 15 or 0
+								tileIndex = bit.band(tileIndex, 0x3ff)
 								
-								-- draw some diagonal green lines over the used tiles
-								if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
-									r = math.floor(.5 * 0 + .5 * r)
-									g = math.floor(.5 * 255 + .5 * g)
-									b = math.floor(.5 * 0 + .5 * b)
-								end
-								imgused.buffer[0 + 3 * dstIndex] = r
-								imgused.buffer[1 + 3 * dstIndex] = g
-								imgused.buffer[2 + 3 * dstIndex] = b
-							end
-						end
-					end
-					img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
-					imgused:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
-				
-					do
-						local numGraphicTiles = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
-						local tilemapElemSizeX = 16
-						local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
-						assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
-						local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
-						for i=0,numGraphicTiles-1 do
-							tilemap[i].graphicsTileIndex = i
-							tilemap[i].colorIndexHi = 0
-							tilemap[i].xflip = 0
-							tilemap[i].yflip = 0
-						end
-						local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
-						local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
-						local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
-						self:convertTilemapToBitmap(
-							tilemapElemIndexedBmp,		-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
-							tilemap,					-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
-							tileSet.graphicsTileVec.v,	-- graphicsTiles = 
-							tilemapElemSizeX,			-- tilemapElemSizeX
-							tilemapElemSizeY,			-- tilemapElemSizeY
-							1)							-- count
-						local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
-						self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet)
-						graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
-					end
-				end
-			end
-		end
-
-		if mapSaveLayer2Backgrounds then
-			for _,roomBlockData in ipairs(self.roomblocks) do
-				if roomBlockData.layer2blocks then
-					local _, rs = roomBlockData.roomStates:find(nil, function(rs) return rs.tileSet end)
-					local tileSet = rs and rs.tileSet or self.tileSets[1]
-
-					local pixw = blockSizeInPixels * roomBlockData.width
-					local pixh = blockSizeInPixels * roomBlockData.height
-					local img = Image(pixw, pixh, 3, 'unsigned char')
-					img:clear()
-					local w = roomBlockData.width
-					local h = roomBlockData.height
-					for y=0,h-1 do
-						for x=0,w-1 do
-							local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks + 2 * (x + w * y))[0]
-							local pimask = bit.band(tileIndex, 0x400) ~= 0 and 15 or 0
-							local pjmask = bit.band(tileIndex, 0x800) ~= 0 and 15 or 0
-							tileIndex = bit.band(tileIndex, 0x3ff)
-							for pj=0,blockSizeInPixels-1 do
-								for pi=0,blockSizeInPixels-1 do
-									local spi = bit.bxor(pi, pimask)
-									local spj = bit.bxor(pj, pjmask)
-									local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-									local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-									if bit.band(paletteIndex, 0xf) > 0 then
-										local src = tileSet.palette.colors[paletteIndex]
-										local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
-										dst[0] = src.r*255/31
-										dst[1] = src.g*255/31
-										dst[2] = src.b*255/31
+								for pj=0,blockSizeInPixels-1 do
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+										if x >= 0 and x < mapTexImage.width
+										and y >= 0 and y < mapTexImage.height 
+										then
+											-- for loop here
+											--local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
+											local spi = bit.bxor(pi, pimask)
+											local spj = bit.bxor(pj, pjmask)
+											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+											if bit.band(paletteIndex, 0xf) > 0 then
+												local src = tileSet.palette.colors[paletteIndex]
+												local dstIndex = x + mapTexImage.width * y
+												local dst = mapTexImage.buffer + 3 * dstIndex
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
+											end
+										end
 									end
 								end
 							end
-						end
-					end
-
-					img:save('layer2bgs/'..('%06x'):format(roomBlockData.addr)..'.png')
-				end
-			end
-		end
-
-		if mapSaveBackgrounds then
-			for _,tilemap in ipairs(self.bgTilemaps) do
-				local fn = ('bgs/%06x.png'):format(tilemap.addr)
-
-				local tileSet
-				local bg = tilemap.bg
-				if bg then
-					local rs = bg.roomStates[1]
-					tileSet = rs and rs.tileSet
-				end
-
-				-- if we don't have a tileset ... then how do we know which one to use?
-				tileSet = tileSet or self.tileSets[1]
-				
-				local bgBmp = self.getBitmapForTileSetAndTileMap(tileSet, tilemap)
-
-				-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
-				-- just for the sake of getting palette info
-
-				local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
-				img:clear()
-				for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
-					for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
-						local offset = x + img.width * y
-						local paletteIndex = bgBmp.dataBmp[offset]
-						if bit.band(paletteIndex, 0xf) > 0 then 
-							local rgb = tileSet.palette.colors[paletteIndex]
-							local dst = img.buffer + 3 * offset
-							dst[0] = math.floor(rgb.r*255/31)
-							dst[1] = math.floor(rgb.g*255/31)
-							dst[2] = math.floor(rgb.b*255/31)
+--]]
+							do
+								local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
+								local pimask = bit.band(d2, 4) ~= 0 and 15 or 0
+								local pjmask = bit.band(d2, 8) ~= 0 and 15 or 0
+								
+								for pj=0,blockSizeInPixels-1 do
+									local y = pj + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY))
+									for pi=0,blockSizeInPixels-1 do
+										local x = pi + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX))
+										if x >= 0 and x < mapTexImage.width
+										and y >= 0 and y < mapTexImage.height 
+										then
+											local spi = bit.bxor(pi, pimask)
+											local spj = bit.bxor(pj, pjmask)
+											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+											-- now which determines transparency?
+											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
+												local src = tileSet.palette.colors[paletteIndex]
+												local dstIndex = x + mapTexImage.width * y
+												local dst = mapTexImage.buffer + 3 * dstIndex
+												dst[0] = math.floor(src.r*255/31)
+												dst[1] = math.floor(src.g*255/31)
+												dst[2] = math.floor(src.b*255/31)
+											end
+										end
+									end
+								end
+							end
+--[[ want to see what tileIndex each block is?
+							drawstr(mapTexImage,
+								2 + blockSizeInPixels * (ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksX)),
+								8 + blockSizeInPixels * (tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksY)),
+								('%02x'):format(tileIndex))
+--]]						
 						end
 					end
 				end
-				img:save(fn)
 			end
 		end
+	end
+end
+
+function SMMap:mapSaveImageTextured(filenamePrefix)
+	local Image = require 'image'
+	filenamePrefix = filenamePrefix or 'map'
+
+	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
+	local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
+
+	local mapTexImage = Image(
+		blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
+		blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
+		3, 'unsigned char')
+	mapTexImage:clear()
+
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
+		end
+	end
+
+	mapTexImage:save(filenamePrefix..'-tex.png')
+end
+
+local function drawRoomBlocksDumpworld(
+	roomBlockData,
+	rs,
+	dumpworldTileImg,
+	dumpworldTileFgImg,
+	dumpworldTileBgImg
+)
+	local m = rs.room
+	local blocks = roomBlockData.blocks
+	local w = roomBlockData.width / blocksPerRoom
+	local h = roomBlockData.height / blocksPerRoom
+	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
+	
+	for j=0,h-1 do
+		for i=0,w-1 do
+			local ignore
+			for _,info in ipairs(mapDrawExcludeMapBlocks) do
+				local region, index, mx, my, mw, mh = table.unpack(info)
+				if region == m.obj.region
+				and index == m.obj.index
+				and i >= mx and i < mx + mw 
+				and j >= my and j < my + mh
+				then
+					ignore = true
+					break
+				end
+			end
+			if not ignore then
+				for ti=0,blocksPerRoom-1 do
+					for tj=0,blocksPerRoom-1 do
+						local dx = ti + blocksPerRoom * i
+						local dy = tj + blocksPerRoom * j
+						local di = dx + blocksPerRoom * w * dy
+						-- blocks is 0-based
+						local d1 = blocks[0 + 3 * di]
+						local d2 = blocks[1 + 3 * di]
+						local d3 = blocks[2 + 3 * di]
+						
+						-- TODO isSolid will overlap between a few rooms
+						local isBorder = roomBlockData:isBorderAndNotCopy(dx,dy)
+						do --if isBorder or isSolid then
+							local isSolid = roomBlockData:isSolid(dx,dy)
+							
+							do
+								local x = ti + blocksPerRoom * (m.obj.x + i + ofsInRoomBlocksY)
+								local y = tj + blocksPerRoom * (m.obj.y + j + ofsInRoomBlocksX)
+								if x >= 0 and x < dumpworldTileImg.width
+								and y >= 0 and y < dumpworldTileImg.height 
+								then
+									local dstIndex = x + dumpworldTileImg.width * y
+-- [==[
+									local foreground = bit.band(d2, 2) == 2
+									-- TODO determine foreground vs background info here
+									local sx, sy = dx,dy
+									if roomBlockData:isCopy(dx,dy) then
+										sx, sy = roomBlockData:getCopySource(dx,dy)
+									end
+									-- this function will do getCopySource if you want
+									local tt, ett = roomBlockData:getTileType(sx,sy)
+									local copych1, copych2, copych3 = roomBlockData:getTileData(sx,sy)
+									local dtt = dumpworldTileTypes.empty
+-- [====[
+									if tt == RoomBlocks.tileTypes.empty then
+										dtt = dumpworldTileTypes.empty
+									elseif tt == RoomBlocks.tileTypes.slope then
+										--[[ TODO pick the right one
+										-- also note, SM has 1:3 slopes as well, I only have 1:1 and 1:2
+										-- I could just do half blocks in all 4 directions to turn 1:3 into 1:2's
+										slope45_ul_diag45 = 2,
+										slope45_ur_diag45 = 3,
+										slope45_dl_diag45 = 4, 
+										slope45_dr_diag45 = 5,
+										slope27_ul2_diag27 = 6, 
+										slope27_ul1_diag27 = 7,
+										slope27_ur2_diag27 = 8, 
+										slope27_ur1_diag27 = 9, 
+										slope27_dl2_diag27 = 10, 
+										slope27_dl1_diag27 = 11,
+										slope27_dr2_diag27 = 12, 
+										slope27_dr1_diag27 = 13, 
+										--]]
+										dtt = dumpworldTileTypes.slope45_ul_diag45
+									elseif tt == RoomBlocks.tileTypes.spikes then
+										--[[ TODO
+										spike_solid_1x1			= 0x20,
+										spike_notsolid_1x1		= 0x22,
+										--]]
+										dtt = dumpworldTileTypes.spikes
+									elseif tt == RoomBlocks.tileTypes.push then
+										--[[ TODO
+										push_quicksand1			= 0x30,
+										push_quicksand2			= 0x31,
+										push_quicksand3			= 0x32,
+										push_quicksand4			= 0x33,
+										push_quicksand1_2		= 0x35,
+										push_conveyor_right		= 0x38,
+										push_conveyor_left		= 0x39,
+										--]]
+										dtt = dumpworldTileTypes.empty
+									elseif tt == RoomBlocks.tileTypes.copy_left then
+										error("I thought I got the copy offset location")
+									elseif tt == RoomBlocks.tileTypes.solid  then
+										dtt = dumpworldTileTypes.solid
+									elseif tt == RoomBlocks.tileTypes.door then
+										-- this is represented as an object in dumpworld
+										-- and for what it's worth it is an object in super metroid also
+										dtt = dumpworldTileTypes.empty
+									elseif tt == RoomBlocks.tileTypes.spikes_or_invis then
+										if ett == RoomBlocks.extTileTypes.spike_solid2_1x1 then
+											dtt = dumpworldTileTypes.spikes
+										elseif ett == RoomBlocks.extTileTypes.spike_solid3_1x1 then
+											dtt = dumpworldTileTypes.spikes
+										elseif ett == RoomBlocks.extTileTypes.spike_notsolid2_1x1 then
+											dtt = dumpworldTileTypes.spikes
+										elseif ett == RoomBlocks.extTileTypes.invisble_solid	then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.spike_notsolid3_1x1 then
+											dtt = dumpworldTileTypes.spikes
+										else
+											error'here'
+										end
+									elseif tt == RoomBlocks.tileTypes.crumble_or_speed then
+										if ett == RoomBlocks.extTileTypes.crumble_1x1_regen then
+											dtt = dumpworldTileTypes.fallbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.crumble_2x1_regen then
+											dtt = dumpworldTileTypes.fallbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.crumble_1x2_regen then
+											dtt = dumpworldTileTypes.fallbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.crumble_2x2_regen then
+											dtt = dumpworldTileTypes.fallbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.crumble_1x1 then
+											dtt = dumpworldTileTypes.fallbreak
+										elseif ett == RoomBlocks.extTileTypes.crumble_2x1 then
+											dtt = dumpworldTileTypes.fallbreak
+										elseif ett == RoomBlocks.extTileTypes.crumble_1x2 then
+											dtt = dumpworldTileTypes.fallbreak
+										elseif ett == RoomBlocks.extTileTypes.crumble_2x2 then
+											dtt = dumpworldTileTypes.fallbreak
+										elseif ett == RoomBlocks.extTileTypes.speed_regen then
+											dtt = dumpworldTileTypes.speedbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.speed then
+											dtt = dumpworldTileTypes.speedbreak
+										else
+											error'here'
+										end
+									elseif tt == RoomBlocks.tileTypes.breakable then
+										if ett == RoomBlocks.extTileTypes.beam_1x1_regen then
+											dtt = dumpworldTileTypes.blasterbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.beam_2x1_regen then
+											dtt = dumpworldTileTypes.blasterbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.beam_1x2_regen then
+											dtt = dumpworldTileTypes.blasterbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.beam_2x2_regen then
+											dtt = dumpworldTileTypes.blasterbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.beam_1x1 then
+											dtt = dumpworldTileTypes.blasterbreak
+										elseif ett == RoomBlocks.extTileTypes.beam_2x1 then
+											dtt = dumpworldTileTypes.blasterbreak
+										elseif ett == RoomBlocks.extTileTypes.beam_1x2 then
+											dtt = dumpworldTileTypes.blasterbreak
+										elseif ett == RoomBlocks.extTileTypes.beam_2x2 then
+											dtt = dumpworldTileTypes.blasterbreak
+										elseif ett == RoomBlocks.extTileTypes.powerbomb_1x1 then
+											dtt = dumpworldTileTypes.plasmabreak
+										elseif ett == RoomBlocks.extTileTypes.supermissile_1x1_regen then
+											dtt = dumpworldTileTypes.grenadebreak_regen
+										elseif ett == RoomBlocks.extTileTypes.supermissile_1x1 then
+											dtt = dumpworldTileTypes.grenadebreak
+										elseif ett == RoomBlocks.extTileTypes.beam_door then
+											dtt = dumpworldTileTypes.solid
+										else
+										
+											error'here'
+										end
+									elseif tt == RoomBlocks.tileTypes.copy_up  then
+										error("I thought I got the copy offset location")
+									elseif tt == RoomBlocks.tileTypes.grappling then
+										if ett == RoomBlocks.extTileTypes.grappling then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling_break_regen then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling_break then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling2 then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling3 then
+											dtt = dumpworldTileTypes.solid
+										else
+--[===[
+											print('here with ext tiletype '..tolua{
+												region = ('%02x'):format(m.obj.region),
+												index = ('%02x'):format(m.obj.index),
+												i = i,
+												j = j,
+												ti = ti,
+												tj = tj,
+												dx = dx,
+												dy = dy,
+												sx = sx,
+												sy = sy,
+												tt = ('%02x'):format(tt),
+												ett = ('%02x'):format(ett),
+												d1 = ('%02x'):format(d1),
+												d2 = ('%02x'):format(d2),
+												d3 = ('%02x'):format(d3),
+												copych1 = ('%02x'):format(copych1),
+												copych2 = ('%02x'):format(copych2),
+												copych3 = ('%02x'):format(copych3),
+											})
+--]===]											
+											error'here'
+										end
+										-- TODO grappling blocks eh
+										dtt = dumpworldTileTypes.solid
+									elseif tt == RoomBlocks.tileTypes.bombable then
+										if ett == RoomBlocks.extTileTypes.bombable_1x1_regen then
+											dtt = dumpworldTileTypes.skillsawbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.bombable_2x1_regen then
+											dtt = dumpworldTileTypes.skillsawbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.bombable_1x2_regen then
+											dtt = dumpworldTileTypes.skillsawbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.bombable_2x2_regen then
+											dtt = dumpworldTileTypes.skillsawbreak_regen
+										elseif ett == RoomBlocks.extTileTypes.bombable_1x1 then
+											dtt = dumpworldTileTypes.skillsawbreak
+										elseif ett == RoomBlocks.extTileTypes.bombable_2x1 then
+											dtt = dumpworldTileTypes.skillsawbreak
+										elseif ett == RoomBlocks.extTileTypes.bombable_1x2 then
+											dtt = dumpworldTileTypes.skillsawbreak
+										elseif ett == RoomBlocks.extTileTypes.bombable_2x2 then
+											dtt = dumpworldTileTypes.skillsawbreak
+										else
+											error'here'
+										end
+									else
+										error'here'
+									end
+--]====]										
+
+									-- write out a dumpworld map
+									dumpworldTileImg.buffer[0+3*dstIndex] = dtt
+									dumpworldTileImg.buffer[1+3*dstIndex] = 0
+									dumpworldTileImg.buffer[2+3*dstIndex] = 0
+									
+									if foreground then
+										dumpworldTileFgImg.buffer[0+3*dstIndex] = d1
+										dumpworldTileFgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
+										dumpworldTileFgImg.buffer[2+3*dstIndex] = 0
+									else
+										dumpworldTileBgImg.buffer[0+3*dstIndex] = d1
+										dumpworldTileBgImg.buffer[1+3*dstIndex] = bit.band(d2, 0x03)
+										dumpworldTileBgImg.buffer[2+3*dstIndex] = 0
+									end
+--]==]
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+
+
+function SMMap:mapSaveDumpworldImage(filenamePrefix)
+	local Image = require 'image'
+	filenamePrefix = filenamePrefix or 'map'
+
+	-- 1 pixel : 1 block for dumpworld
+	local dumpw = blocksPerRoom * fullMapWidthInBlocks
+	local dumph = blocksPerRoom * fullMapHeightInBlocks
+
+	local dumpworldTileImg = Image(dumpw, dumph, 3, 'unsigned char')
+	local dumpworldTileFgImg = Image(dumpw, dumph, 3, 'unsigned char')
+	local dumpworldTileBgImg = Image(dumpw, dumph, 3, 'unsigned char')
+
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			drawRoomBlocksDumpworld(
+				roomBlockData,
+				rs,
+				dumpworldTileImg,
+				dumpworldTileFgImg,
+				dumpworldTileBgImg
+			)
+		end
+	end
+
+	dumpworldTileImg:save('../dumpworld/zeta/maps/sm3/tile.png')
+	dumpworldTileFgImg:save('../dumpworld/zeta/maps/sm3/tile-fg.png')
+	dumpworldTileBgImg:save('../dumpworld/zeta/maps/sm3/tile-bg.png')
+end
+
+
+function SMMap:mapSaveGraphicsMode7()
+	local Image = require 'image'
+	-- for now only write out tile graphics for the non-randomized version
+	for _,tileSet in ipairs(self.tileSets) do
+		if tileSet.mode7TileSet then
+			local mode7image = Image(
+				graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
+				graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
+				3, 'unsigned char')
+			mode7image:clear()
+			local maxdestx = 0
+			local maxdesty = 0	
+			for i=0,mode7sizeInGraphicTiles-1 do
+				for j=0,mode7sizeInGraphicTiles-1 do
+					local mode7tileIndex = tileSet.mode7tiles[i + mode7sizeInGraphicTiles * j]
+					for y=0,graphicsTileSizeInPixels-1 do
+						for x=0,graphicsTileSizeInPixels-1 do
+							local destx = x + graphicsTileSizeInPixels * i
+							local desty = y + graphicsTileSizeInPixels * j
+							local paletteIndex = tileSet.mode7TileSet[
+								x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)
+							]
+							local src = tileSet.palette.colors[paletteIndex]
+							-- TODO what about pixel/palette mask/alpha?
+							if src.r > 0 or src.g > 0 or src.b > 0 then
+								maxdestx = math.max(maxdestx, destx)
+								maxdesty = math.max(maxdestx, desty)
+								local dst = mode7image.buffer + 3 * (destx + mode7image.width * desty)
+								dst[0] = math.floor(src.r*255/31)
+								dst[1] = math.floor(src.g*255/31)
+								dst[2] = math.floor(src.b*255/31)
+							end
+						end
+					end
+				end
+			end
+			mode7image = mode7image:copy{x=0, y=0, width=maxdestx+1, height=maxdesty+1}
+			mode7image:save('mode7 tileSet='..('%02x'):format(tileSet.index)..'.png')
+		end
+	end
+end
+	
+function SMMap:mapSaveGraphicsTileSets()
+	local Image = require 'image'
+	-- TODO how about a wrap row?  grid x, grid y, result x, result y 
+	for _,tileSet in ipairs(self.tileSets) do
+		if tileSet.tileGfxBmp then
+			local rowWidth = 32
+			local img = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+			local imgused = Image(blockSizeInPixels*rowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/rowWidth), 3, 'unsigned char')
+			for tileIndex=0,tileSet.tileGfxCount-1 do
+				local xofs = tileIndex % rowWidth
+				local yofs = math.floor(tileIndex / rowWidth)
+				for i=0,blockSizeInPixels-1 do
+					for j=0,blockSizeInPixels-1 do
+						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
+						local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
+						local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+						local r,g,b = 0,0,0
+						if bit.band(paletteIndex, 0xf) > 0 then
+							local src = tileSet.palette.colors[paletteIndex]
+							r = math.floor(src.r*255/31)
+							g = math.floor(src.g*255/31)
+							b = math.floor(src.b*255/31)
+						end
+						img.buffer[0 + 3 * dstIndex] = r
+						img.buffer[1 + 3 * dstIndex] = g
+						img.buffer[2 + 3 * dstIndex] = b
+						
+						-- draw some diagonal green lines over the used tiles
+						if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
+							r = math.floor(.5 * 0 + .5 * r)
+							g = math.floor(.5 * 255 + .5 * g)
+							b = math.floor(.5 * 0 + .5 * b)
+						end
+						imgused.buffer[0 + 3 * dstIndex] = r
+						imgused.buffer[1 + 3 * dstIndex] = g
+						imgused.buffer[2 + 3 * dstIndex] = b
+					end
+				end
+			end
+			img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
+			imgused:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
+		
+			do
+				local numGraphicTiles = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
+				local tilemapElemSizeX = 16
+				local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
+				assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
+				local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
+				for i=0,numGraphicTiles-1 do
+					tilemap[i].graphicsTileIndex = i
+					tilemap[i].colorIndexHi = 0
+					tilemap[i].xflip = 0
+					tilemap[i].yflip = 0
+				end
+				local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
+				local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
+				local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
+				self:convertTilemapToBitmap(
+					tilemapElemIndexedBmp,		-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
+					tilemap,					-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
+					tileSet.graphicsTileVec.v,	-- graphicsTiles = 
+					tilemapElemSizeX,			-- tilemapElemSizeX
+					tilemapElemSizeY,			-- tilemapElemSizeY
+					1)							-- count
+				local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
+				self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet)
+				graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
+			end
+		end
+	end
+end
+
+function SMMap:mapSaveGraphicsLayer2BGs()
+	local Image = require 'image'
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		if roomBlockData.layer2blocks then
+			local _, rs = roomBlockData.roomStates:find(nil, function(rs) return rs.tileSet end)
+			local tileSet = rs and rs.tileSet or self.tileSets[1]
+
+			local pixw = blockSizeInPixels * roomBlockData.width
+			local pixh = blockSizeInPixels * roomBlockData.height
+			local img = Image(pixw, pixh, 3, 'unsigned char')
+			img:clear()
+			local w = roomBlockData.width
+			local h = roomBlockData.height
+			for y=0,h-1 do
+				for x=0,w-1 do
+					local tileIndex = ffi.cast('uint16_t*', roomBlockData.layer2blocks + 2 * (x + w * y))[0]
+					local pimask = bit.band(tileIndex, 0x400) ~= 0 and 15 or 0
+					local pjmask = bit.band(tileIndex, 0x800) ~= 0 and 15 or 0
+					tileIndex = bit.band(tileIndex, 0x3ff)
+					for pj=0,blockSizeInPixels-1 do
+						for pi=0,blockSizeInPixels-1 do
+							local spi = bit.bxor(pi, pimask)
+							local spj = bit.bxor(pj, pjmask)
+							local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
+							local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+							if bit.band(paletteIndex, 0xf) > 0 then
+								local src = tileSet.palette.colors[paletteIndex]
+								local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
+								dst[0] = src.r*255/31
+								dst[1] = src.g*255/31
+								dst[2] = src.b*255/31
+							end
+						end
+					end
+				end
+			end
+
+			img:save('layer2bgs/'..('%06x'):format(roomBlockData.addr)..'.png')
+		end
+	end
+end
+
+function SMMap:mapSaveGraphicsBGs()
+	local Image = require 'image'
+	for _,tilemap in ipairs(self.bgTilemaps) do
+		local fn = ('bgs/%06x.png'):format(tilemap.addr)
+
+		local tileSet
+		local bg = tilemap.bg
+		if bg then
+			local rs = bg.roomStates[1]
+			tileSet = rs and rs.tileSet
+		end
+
+		-- if we don't have a tileset ... then how do we know which one to use?
+		tileSet = tileSet or self.tileSets[1]
+		
+		local bgBmp = self:mapGetBitmapForTileSetAndTileMap(tileSet, tilemap)
+
+		-- now find the first bgBmp associated with the bg, associated with the bgTilemap ...
+		-- just for the sake of getting palette info
+
+		local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
+		img:clear()
+		for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
+			for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
+				local offset = x + img.width * y
+				local paletteIndex = bgBmp.dataBmp[offset]
+				if bit.band(paletteIndex, 0xf) > 0 then 
+					local rgb = tileSet.palette.colors[paletteIndex]
+					local dst = img.buffer + 3 * offset
+					dst[0] = math.floor(rgb.r*255/31)
+					dst[1] = math.floor(rgb.g*255/31)
+					dst[2] = math.floor(rgb.b*255/31)
+				end
+			end
+		end
+		img:save(fn)
 	end
 end
 

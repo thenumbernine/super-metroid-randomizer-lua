@@ -1,5 +1,6 @@
 return {
-	writeOutImage = true,
+	writeOutOriginalMapImage = true,
+	writeOutModifiedMapImage = true,	-- TODO only do this if we are modifying the map
 
 
 	---------------------------------------------------------
