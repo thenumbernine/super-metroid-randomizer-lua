@@ -2398,7 +2398,6 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 		--]]
 		do
 			local sprite = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
-			local line = ffi.new('uint8_t[?]', 4)
 			local uint32 = ffi.new('uint32_t[1]', 0)
 			local uint8 = ffi.cast('uint8_t*', uint32)
 			for i=0,graphicsTileVec.size-1,graphicsTileSizeInBytes do
@@ -2406,51 +2405,42 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 				-- in place convert, row by row ... why are we converting ?
 				ffi.fill(graphicsTileVec.v + i, graphicsTileSizeInBytes, 0)
 				for y=0,7 do
-					-- line[0] = sprite[2*y+0]
-					-- line[1] = sprite[2*y+1]
-					-- line[2] = sprite[2*y+8]
-					-- line[3] = sprite[2*y+9]
-					line[0] = sprite[0+2*y]
-					line[1] = sprite[1+2*y]
-					line[2] = sprite[16+2*y]
-					line[3] = sprite[17+2*y]
 					for x=0,7 do
-						local shift = bit.lshift(7 - x, 2)
-						--[[
-						x	shift=(7-x)<<2
-						0	11100b
-						1	11000b
-						2	10100b
-						3	10000b
-						4	01100b
-						5	01000b
-						6	00100b
-						7	00000b
-						--]]
 						uint32[0] = 0
-						for j=0,3 do
-							--[[
-							j	shift|j
-							0	aaa00
-							1	aaa01
-							2	aaa10
-							3	aaa11	... where aaa is 7 - x
-							
-							so this code is moving 4 bits from line[j] into uint32
-							--]]
-							uint32[0] = bit.bor(
-								uint32[0],
-								bit.lshift(
-									bit.band(bit.rshift(line[j], x), 1),
-									bit.bor(shift, j)
+						
+						for n=0,1 do
+							for m=0,1 do
+								local j = bit.bor(m, bit.lshift(n, 1))
+								--[[
+								u |= ((sprite[m + y<<1 + n<<4] >> x) & 1) << (((7-x)<<2)|j)
+								--]]
+								uint32[0] = bit.bor(
+									uint32[0],
+									bit.lshift(
+										bit.band(
+											bit.rshift(
+												sprite[m+2*y+16*n],
+												x
+											),
+											1
+										),
+										bit.bor(
+											bit.lshift(7 - x, 2),
+											j
+										)
+									)
 								)
-							)
+							end
 						end
+						--[[
+						dst[j + 4*y + 32*index] |= u[j]
+						--]]
 						for j=0,3 do
-							graphicsTileVec.v[j + 4*y + i] = bit.bor(
-								graphicsTileVec.v[j + 4*y + i],
-								uint8[j]
-							)
+							graphicsTileVec.v[j + 4*y + i] = 
+								bit.bor(
+									graphicsTileVec.v[j + 4*y + i],
+									uint8[j]
+								)
 						end
 					end
 				end
@@ -3005,12 +2995,6 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	local firstcoord
-						
-	local tileSet = rs.tileSet
-	-- TODO first bg with a tileset ... but for now there's only 1 anyways
-	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
-	local bgTilemap = bg and bg.tilemap
-	local bgBmp = bgTilemap and ctx.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -3307,6 +3291,8 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 	local bgTilemap = bg and bg.tilemap
 	local bgBmp = bgTilemap and sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
+	local bgw = graphicsTileSizeInPixels * bgTilemap.width
+	local bgh = graphicsTileSizeInPixels * bgTilemap.height
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -3346,8 +3332,6 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 										if x >= 0 and x < mapTexImage.width
 										and y >= 0 and y < mapTexImage.height 
 										then
-											local bgw = graphicsTileSizeInPixels * bgTilemap.width
-											local bgh = graphicsTileSizeInPixels * bgTilemap.height
 											local bgx = x % bgw
 											local bgy = y % bgh
 											local paletteIndex = bgBmp.dataBmp[bgx + bgw * bgy]
@@ -3453,6 +3437,7 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 		3, 'unsigned char')
 	mapTexImage:clear()
 
+	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
@@ -3917,6 +3902,7 @@ end
 
 function SMMap:mapSaveGraphicsBGs()
 	local Image = require 'image'
+	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,tilemap in ipairs(self.bgTilemaps) do
 		local fn = ('bgs/%06x.png'):format(tilemap.addr)
 

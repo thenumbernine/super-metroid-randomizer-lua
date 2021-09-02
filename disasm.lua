@@ -341,4 +341,5 @@ end
 return {
 	disasm = disasm,
 	readCode = readCode,
+	instrInfo = instrInfo,
 }
