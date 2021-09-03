@@ -279,7 +279,8 @@ timer('everything', function()
 			end
 		end
 
--- [[
+-- this all works fine for making the beam bigger
+--[[
 		-- set max angle to nearly 180' (can't go past that, and can't get it to aim above or below the vertical half-plane.  how to get rid of the vertical limit...
 		write(0x88, 0x8792, 0x3f)		-- was 0x0b
 		write(0x88, 0x879a, 0x3f)		-- was 0x0a
@@ -313,8 +314,8 @@ timer('everything', function()
 		)
 		--]]
 	
-		-- THIS MAKES THE SCOPE INSTA-FULL
-		--[[ better yet, why not change state 1 to instantly set the beam to max width?
+-- works fine.  this makes the scope insta-full
+--[[ better yet, why not change state 1 to instantly set the beam to max width?
 		-- $7e:0998 = main gameplay state (might need to fix this)
 		-- $7e:0a78 = time is frozen flag.  1 = x-ray active, #$8000 = samus dying / autoreserve filling
 		-- $7e:0a7a = x-ray state.  0 = none, 1 = opening, 2 = full, 3..5 = closing (one state per frame)
@@ -337,7 +338,7 @@ timer('everything', function()
 			-- we can just branch straight from 0x876b to $8796
 			0x80, 0x29		-- $88:876b	bra $29		-- jump to $8796
 		)
-		--]]
+--]]
 
 		
 		-- make x-ray state 2 jump to x-ray state 0 to regen the x-ray tiles?
@@ -355,7 +356,7 @@ timer('everything', function()
 		-- write(0x91, 0xe218, 0x00)	-- doesn't cause freeze-ups, but doens't do anything.  
 		-- looks like the 0a78 mem loc isn't just used for freezing but also for x-ray state
 
--- [==[ something in here is messing up graphics, causing x-ray to only work in first screen of the room ... but it causes x-ray disable to reset lblocks correctly
+-- [==[ 
 		-- maybe it's better to just jump past all the 'if time is frozen' (lda $0a78 bne $wherever) branches ...
 		-- TODO in all these, instead of clearing the branch after LDA $whatever, just change the LDA to LDA #$0000
 		-- TODO TODO the lda idea was simpler -- no need to assign dif instructions dependending on bne vs beq
@@ -370,7 +371,7 @@ timer('everything', function()
 		-- BUT this also causes x-ray to screw up when used outside the first screen of the room
 		-- "Calculate layer 2 position and BG scrolls and update BG graphics when scrolling"
 		-- so maybe I can fix this layer-1 and layer-2 data somewhere else?
-		write(0x80, 0xa3ae, 0x80)		--> beq => bra		-- write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
+		--write(0x80, 0xa3ae, 0x80)		--> beq => bra		-- write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
 
 -- NOTICE the next two can't replace the lda $0a78 ora $0a79 with two lda #$0000's ...
 
@@ -394,7 +395,7 @@ timer('everything', function()
 		write(0x86, 0x842f, 0xea, 0xea)	--> bne => nop		-- write(0x86, 0x842c, 0xa9, 0x00, 0x00)
 --]]
 --]==]
---[==[ something in here is messing up graphics, causing block restore after stopping x-ray to fail 
+-- [==[ 
 
 		-- hdma object handler:
 		write(0x88, 0x84c4, 0xea, 0xea)	-- bne => nop
@@ -412,13 +413,13 @@ timer('everything', function()
 		write(0x88, 0xadbf, 0x80)
 		write(0x88, 0xafa6, 0x80)
 --]==]	
---[==[
+-- [==[
 		-- fireflea
 		write(0x88, 0xb0ce, 0xea, 0xea)
 		-- 
 		write(0x88, 0xb3ba, 0x80)
 
--- [[ doesn't seem to affect anything using these or not
+-- [[ 
 		write(0x88, 0xb4df, 0xea, 0xea)
 		write(0x88, 0xc498, 0x80)
 		write(0x88, 0xc593, 0xea, 0xea)
@@ -442,7 +443,7 @@ timer('everything', function()
 		
 		write(0x90, 0xdcfe, 0xea, 0xea)			-- write(0x90, 0xdcfb, 0xa9, 0x00, 0x00)
 
---[==[ causes 'a' to work without x-ray selected
+--[==[ causes 'a'-to-x-ray to work without x-ray selected
 		write(0x90, 0xdd50, 0xea, 0xea)			-- write(0x90, 0xdd4d, 0xa9, 0x00, 0x01)	-- this "time is frozen" condition I'm having it always hit, so opposite the rest: beq => nop
 		write(0x90, 0xdd50, 0x80)	
 --]==]
@@ -477,7 +478,7 @@ g:
 
 
 
---[==[ not needed? might be causing the graphics glitches where x-ray wouldn't work except in the first screen of the room
+-- [==[ something in here is needed for samus pain animation to work while x-raying 
 		write(0x90, 0xde04, 0xea, 0xea)			-- write(0x90, 0xde01, 0xa9, 0x00, 0x00)
 		write(0x90, 0xdff0, 0x80)				-- write(0x90, 0xdfed, 0xa9, 0x00, 0x00)
 		write(0x90, 0xe761, 0xea, 0xea)			-- write(0x90, 0xe75e, 0xa9, 0x00, 0x00)
@@ -544,7 +545,7 @@ g:
 --		write(0x91, 0xe241, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a88] = $0001
 --		write(0x91, 0xe256, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a8e] = $0098
 
---[[ not needed for movement while xraying
+-- [[ not needed for movement while xraying
 		-- if not standing then branch => always branch
 		-- hmm, with this i can't morph
 		--write(0x91, 0xeeac, 0x80)
@@ -583,6 +584,8 @@ g:
 		write(0xa9, 0x87a2, 0xa9, 0x00, 0x00)
 		write(0xa9, 0x92af, 0xa9, 0x00, 0x00)
 --]==]
+
+
 	end
 
 
@@ -621,7 +624,7 @@ g:
 	--]=]
 
 
---[===[ skip all the randomization stuff
+-- [===[ skip all the randomization stuff
 
 	-- make a single object for the representation of the ROM
 	-- this way I can call stuff on it -- like making a memory map -- multiple times
@@ -676,6 +679,18 @@ g:
 		-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		sm:buildMemoryMap():print'memorymap.txt'
 	end)
+
+	do	-- if config.writeOutDisasm then
+		timer('write out disasm', function()
+			local pagelen = 0x8000
+			local page = ffi.new('uint8_t[?]', pagelen)
+			for _,bank in ipairs{0x80} do
+				local addr = topc(bank, 0x8000)
+				ffi.copy(page, rom + addr, pagelen)
+				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, byteArrayToTable(page))
+			end
+		end)
+	end
 
 	--[[
 	for verificaiton: there is one plm per item throughout the game

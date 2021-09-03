@@ -853,7 +853,7 @@ function Door:init(args)
 	and self.ptr.code > 0x8000 
 	then
 		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
-		self.doorCode = disasm.readCode(rom, self.doorCodeAddr, 0x100)
+		self.doorCode = disasm.readCode(self.doorCodeAddr, rom, 0x100)
 	end
 end
 
@@ -1973,7 +1973,7 @@ function SMMap:mapAddLayerHandling(addr)
 	if layerHandling then return layerHandling end
 	local layerHandling = {
 		addr = addr,
-		code = disasm.readCode(self.rom, addr, 0x100),
+		code = disasm.readCode(addr, self.rom, 0x100),
 		roomStates = table(),
 	}
 	self.layerHandlings:insert(layerHandling)
@@ -4330,7 +4330,7 @@ function SMMap:mapPrint()
 		print(' code: '..layerHandling.code:mapi(function(cmd)
 			return ('%02x'):format(cmd)
 		end):concat' ')
-		print(disasm.disasm(layerHandling.code, layerHandling.addr))
+		print(disasm.disasm(layerHandling.addr, layerHandling.code))
 		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
@@ -4390,7 +4390,7 @@ function SMMap:mapPrint()
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
 			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodeAddr)
-			print(disasm.disasm(disasm.readCode(rom, roomSelectCodeAddr, 0x100), roomSelectCodeAddr))
+			print(disasm.disasm(roomSelectCodeAddr, disasm.readCode(roomSelectCodeAddr, rom, 0x100)))
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
@@ -4398,7 +4398,7 @@ function SMMap:mapPrint()
 				..' '..door.ptr[0])
 			if door.doorCode then
 				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat' ')
-				print(disasm.disasm(door.doorCode, door.doorCodeAddr))
+				print(disasm.disasm(door.doorCodeAddr, door.doorCode))
 			end
 		end
 	end
@@ -4519,7 +4519,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 			-- TODO store for printing?  possibly relocation?
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
-			local code = disasm.readCode(rom, addr, 100)
+			local code = disasm.readCode(addr, rom, 100)
 			
 			mem:add(addr, #code, 'room select code', m)
 		end
