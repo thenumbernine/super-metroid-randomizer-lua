@@ -1,6 +1,9 @@
 #!/usr/bin/env luajit
 	
 require 'ext'
+topc = require 'pc'.to
+frompc = require 'pc'.from
+
 
 --[[
 useful pages:
@@ -260,16 +263,6 @@ timer('everything', function()
 		return dest
 	end
 
-	function topc(bank, offset)
-		return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
-	end
-	
-	function frompc(addr)
-		local bank = bit.bor(bit.band(bit.rshift(addr, 15), 0x7f), 0x80)
-		local ofs = bit.bor(bit.band(addr, 0x7fff), 0x8000)
-		return bank, ofs
-	end
-
 	if config.skipIntro then 
 		--applyPatch'introskip_doorflags.ips' 
 		copyByteArray(rom + 0x016eda, hexStrToByteArray'1f')
@@ -350,6 +343,13 @@ timer('everything', function()
 		)
 		--]]
 
+		
+		-- make x-ray state 2 jump to x-ray state 0 to regen the x-ray tiles?
+		--  hmm, sadly, this does make the whole game stutter
+		--  and this doesn't regen the tiles
+		--write(0x88, 0x87bb, 0x4c, 0x44, 0x87)	-- jmp $8744
+
+
 		-- make x-ray always on...
 		-- freeze-time is stored at 7e:0a78, but it is used in a lot of the detection of whether x-ray is active or not, so just removing code that sets this won't make time continue -- it has side-effects
 		-- actually -- fixing it always-on using zsnes causes the x-ray effect to glitch, but while you turn left and right back and forth while using x-ray, enemies will continue to move.  side effects: can't open doors, sometimes freezes.
@@ -362,7 +362,11 @@ timer('everything', function()
 
 -- maybe it's better to just jump past all the 'if time is frozen' branches ...
 -- TODO in all these, instead of clearing the branch after LDA $whatever, just change the LDA to LDA #$0000
-
+-- TODO TODO the lda idea was simpler -- no need to assign dif instructions dependending on bne vs beq
+-- but the SNES says otherwise ... seems some code only works with the branch forced rather than the A reg forced. (why?)
+-- TODO this might be why the xray no longer seems to initialize upon its first press
+-- before I'm pretty sure the xray grahics would reset upon pressing x-ray button
+-- but now you just get one clean init per room, and even that seems to have its graphics off
 -- [=[ I tried changing the 0x80 page branches to off into LDA's of zero , but that froze up input
 		write(0x80, 0x9c8a, 0xa9, 0x00, 0x00)
 		write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
@@ -438,7 +442,7 @@ timer('everything', function()
 		write(0x90, 0xac1c, 0xa9, 0x00, 0x00)
 		write(0x90, 0xb6af, 0xa9, 0x00, 0x00)
 		write(0x90, 0xdcfb, 0xa9, 0x00, 0x00)
-		write(0x90, 0xdd4d, 0xa9, 0x00, 0x00)	-- wait, should this be 01 instead?  seems to work with 00
+		write(0x90, 0xdd4d, 0xa9, 0x00, 0x01)	-- wait, should this be 01 instead?  seems to work with 00, but maybe better with 01?
 		write(0x90, 0xde01, 0xa9, 0x00, 0x00)
 		write(0x90, 0xdfed, 0xa9, 0x00, 0x00)
 		write(0x90, 0xe75e, 0xa9, 0x00, 0x00)
@@ -448,19 +452,22 @@ timer('everything', function()
 	-- [[ something in here needed for movement while xraying
 		write(0x91, 0x808a, 0xa9, 0x00, 0x00)
 		write(0x91, 0x8172, 0xa9, 0x00, 0x00)
+		
 		--write(0x91, 0xcadc, 0xa9, 0x00, 0x00)	-- causes our lockups
+		--write(0x91, 0xcadf, 0xea, 0xea)	-- causes our lockups
+		
 		write(0x91, 0xdf66, 0xa9, 0x00, 0x00)
 	--]]
 --]]
-
-		-- change sta to stz so we clear the freeze flag
-		--  causes freeze
-		--write(0x91, 0xcafe, 0x9c)	
 
 		-- x-ray setup carry clear does nothing (no opt-out of xray)
 		-- is great for letting you move around during scope, but monsters are still frozen.
 		-- also if you start xraying while standing still, then you go into xray mode and can't move much.
 		write(0x91, 0xcaec, 0xea, 0xea)
+
+		-- change sta to stz so we clear the freeze flag
+		--  causes freeze
+		--write(0x91, 0xcafe, 0x9c)	
 
 		write(0x91, 0xe1a8, 0xea, 0xea)	-- skip game state test for x-ray setup
 
@@ -494,7 +501,8 @@ timer('everything', function()
 		-- but TODO then fcaf isn't called and the xray doesn't update ... so maybe i need to jump at the end ...
 		write(0x90, 0xe918, 0x80, 0xf9, 0xea)
 		-- here's $90:e94f, x-ray callback of some sort, gonna try to bypass it to normal = $a337 
-		write(0x90, 0xe94f, 0x4c, 0x37, 0xa3)
+		-- seems to work with or without replacing this
+		--write(0x90, 0xe94f, 0x4c, 0x37, 0xa3)
 --]]
 
 -- [[ frozen in enemy ai page
@@ -505,6 +513,10 @@ timer('everything', function()
 		write(0xa0, 0x9120, 0xa9, 0x00, 0x00)	-- lda #$0000
 		write(0xa0, 0x972b, 0xa9, 0x00, 0x00)	-- lda #$0000
 --]]	
+
+		-- mother brain and pause state $0a78
+		write(0xa9, 0x87a2, 0xa9, 0x00, 0x00)
+		write(0xa9, 0x92af, 0xa9, 0x00, 0x00)
 	end
 
 

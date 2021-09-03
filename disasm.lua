@@ -3,6 +3,7 @@
 --]]
 
 local ffi = require 'ffi'
+local frompc = require 'pc'.from
 
 local instrsForNames = {
 	ADC = {0x69, 0x6D, 0x6F, 0x65, 0x72, 0x67, 0x7D, 0x7F, 0x79, 0x75, 0x61, 0x71, 0x77, 0x63, 0x73},
@@ -276,33 +277,46 @@ end
 
 local flag = ffi.new('uint8_t[1]', 0)
 
+local function getLineStr(addr, flag, ...)
+	local code0, code1, code2, code3 = ...
+	local instr = instrInfo[code0]
+	local instrstr, n = instr.eat(
+		{
+			code1,
+			code2,
+			code3
+		},	-- TODO just use ptrs
+		addr,	-- TODO ... 0000 vs 8000 here, and BEQ resolving the correct address ...
+		flag	-- or maybe I just shouldn't use 'frompc' next:
+	)
+	local bank, instrofs = frompc(addr)
+	-- notice frompc is snes based so it's only using 15 bits and setting the 15th
+	-- so wrt addresses, 0x0000-1 = 0xffff, but 0x0000 will show up as address 0x8000 (15th bit goes into the bank) 
+	local linestr = ('$%02X:%04X'):format(bank, instrofs)
+	for j=0,3 do
+		if j < n then
+			linestr = linestr .. (' %02X'):format(select(j+1, ...) or 0xff)
+		else
+			linestr = linestr .. '   '
+		end
+	end
+	linestr = linestr ..' '..instr.name..' '..instrstr
+	return linestr, n
+end
+
 -- code is lua table, 1-based
 local function disasm(code, addr)
 	flag[0] = 0
 	local ss = table()
-	local ofs = 1
-	while ofs <= #code do
-		local instr = instrInfo[code[ofs]]
-		local instrstr, n = instr.eat(
-			{
-				code[ofs+1] or 0xff,
-				code[ofs+2] or 0xff,
-				code[ofs+3] or 0xff
-			},	-- TODO just use ptrs
-			addr+ofs-1,
-			flag
+	local ofs = 0
+	while ofs < #code do
+		local str, n = getLineStr(addr+ofs, flag,
+			code[ofs],
+			code[ofs+1] or 0xff,
+			code[ofs+2] or 0xff,
+			code[ofs+3] or 0xff
 		)
-		local bank, instrofs = frompc(addr+ofs-1)	-- -1 because 'ofs' is the 1-based index into 'code'
-		local s = ('$%02X:%04X'):format(bank, instrofs)
-		for j=0,3 do
-			if j < n then
-				s = s .. (' %02X'):format(code[ofs+j] or 0xff)
-			else
-				s = s .. '   '
-			end
-		end
-		s = s ..' '..instr.name..' '..instrstr
-		ss:insert(s)
+		ss:insert(str)
 		ofs = ofs + n
 	end
 	return ss:concat'\n'
@@ -342,4 +356,5 @@ return {
 	disasm = disasm,
 	readCode = readCode,
 	instrInfo = instrInfo,
+	getLineStr = getLineStr,
 }
