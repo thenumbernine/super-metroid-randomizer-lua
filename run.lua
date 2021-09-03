@@ -355,7 +355,7 @@ timer('everything', function()
 		-- write(0x91, 0xe218, 0x00)	-- doesn't cause freeze-ups, but doens't do anything.  
 		-- looks like the 0a78 mem loc isn't just used for freezing but also for x-ray state
 
---[==[ something in here is messing up graphics, causing x-ray to only work in first screen of the room
+-- [==[ something in here is messing up graphics, causing x-ray to only work in first screen of the room ... but it causes x-ray disable to reset lblocks correctly
 		-- maybe it's better to just jump past all the 'if time is frozen' (lda $0a78 bne $wherever) branches ...
 		-- TODO in all these, instead of clearing the branch after LDA $whatever, just change the LDA to LDA #$0000
 		-- TODO TODO the lda idea was simpler -- no need to assign dif instructions dependending on bne vs beq
@@ -365,6 +365,11 @@ timer('everything', function()
 		-- but now you just get one clean init per room, and even that seems to have its graphics off
 -- [=[ I tried changing the 0x80 page branches to off into LDA's of zero , but that froze up input
 		write(0x80, 0x9c8d, 0xea, 0xea)	--> bne => nop		-- write(0x80, 0x9c8a, 0xa9, 0x00, 0x00)	--> lda $0a78 => lda #$0000
+		
+		-- NOTICE this is needed for x-ray depress to reset blocks correctly
+		-- BUT this also causes x-ray to screw up when used outside the first screen of the room
+		-- "Calculate layer 2 position and BG scrolls and update BG graphics when scrolling"
+		-- so maybe I can fix this layer-1 and layer-2 data somewhere else?
 		write(0x80, 0xa3ae, 0x80)		--> beq => bra		-- write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
 
 -- NOTICE the next two can't replace the lda $0a78 ora $0a79 with two lda #$0000's ...
@@ -387,6 +392,9 @@ timer('everything', function()
 		write(0x84, 0xeeae, 0xea, 0xea)	--> bne => nop		-- write(0x84, 0xeeab, 0xa9, 0x00, 0x00)
 
 		write(0x86, 0x842f, 0xea, 0xea)	--> bne => nop		-- write(0x86, 0x842c, 0xa9, 0x00, 0x00)
+--]]
+--]==]
+--[==[ something in here is messing up graphics, causing block restore after stopping x-ray to fail 
 
 		-- hdma object handler:
 		write(0x88, 0x84c4, 0xea, 0xea)	-- bne => nop
@@ -403,7 +411,8 @@ timer('everything', function()
 		write(0x88, 0xadb7, 0x80)
 		write(0x88, 0xadbf, 0x80)
 		write(0x88, 0xafa6, 0x80)
-	
+--]==]	
+--[==[
 		-- fireflea
 		write(0x88, 0xb0ce, 0xea, 0xea)
 		-- 
@@ -430,12 +439,43 @@ timer('everything', function()
 		write(0x90, 0xac1f, 0xea, 0xea)			-- write(0x90, 0xac1c, 0xa9, 0x00, 0x00)
 		write(0x90, 0xb6b2, 0x80)				-- write(0x90, 0xb6af, 0xa9, 0x00, 0x00)
 --]==]
+		
 		write(0x90, 0xdcfe, 0xea, 0xea)			-- write(0x90, 0xdcfb, 0xa9, 0x00, 0x00)
 
 --[==[ causes 'a' to work without x-ray selected
 		write(0x90, 0xdd50, 0xea, 0xea)			-- write(0x90, 0xdd4d, 0xa9, 0x00, 0x01)	-- this "time is frozen" condition I'm having it always hit, so opposite the rest: beq => nop
 		write(0x90, 0xdd50, 0x80)	
 --]==]
+		
+		-- to get shots working instead make the x-ray handler 91:cad6 jump into the normal handler 90:b80d
+--[[ 
+what it is:
+$90:DDC8 A5 8B       LDA $8B    [$7E:008B]  ;\
+$90:DDCA 2C B6 09    BIT $09B6  [$7E:09B6]  ;} If not holding run:
+$90:DDCD D0 04       BNE $04    [$DDD3]     ;/
+$90:DDCF 20 0D B8    JSR $B80D  [$90:B80D]  ; HUD selection handler - nothing / power bombs
+$90:DDD2 60          RTS
+$90:DDD3 22 D6 CA 91 JSL $91CAD6[$91:CAD6]  ; Execute x-ray handler
+$90:DDD7 60          RTS
+
+what I want:
+20 0d b8	jsr $b80d		<- nothing/power bomb handler
+a5 8b		lda $8b
+2c b6 09	bit $09b6
+f0 04		beq g:
+22 d6 ca 91	jsl $91:cad6
+g:
+60			rts
+--]]
+		write(0x90, 0xddc8,
+			0x20, 0x0d, 0xb8,
+			0xa5, 0x8b,
+			0x2c, 0xb6, 0x09,
+			0xf0, 0x04,
+			0x22, 0xd6, 0xca, 0x91,
+			0x60)
+
+
 
 --[==[ not needed? might be causing the graphics glitches where x-ray wouldn't work except in the first screen of the room
 		write(0x90, 0xde04, 0xea, 0xea)			-- write(0x90, 0xde01, 0xa9, 0x00, 0x00)
@@ -445,7 +485,8 @@ timer('everything', function()
 		write(0x90, 0xea50, 0xea, 0xea)			-- write(0x90, 0xea4d, 0xa9, 0x00, 0x00)	-- 
 --]==]
 
-	-- [[ something in here needed for movement while xraying
+	-- [=[ something in here needed for movement while xraying ... 
+	-- with this commented, i could move without x-ray, but got a lockup upon stopping x-ray
 		write(0x91, 0x808d, 0xea, 0xea)			-- write(0x91, 0x808a, 0xa9, 0x00, 0x00)
 		write(0x91, 0x8175, 0xea, 0xea)			-- write(0x91, 0x8172, 0xa9, 0x00, 0x00)
 	
@@ -467,7 +508,7 @@ timer('everything', function()
 
 
 		write(0x91, 0xdf69, 0xea, 0xea)			-- write(0x91, 0xdf66, 0xa9, 0x00, 0x00)
-	--]]
+	--]=]
 --]]
 
 		-- x-ray setup carry clear does nothing (no opt-out of xray)
@@ -493,15 +534,15 @@ timer('everything', function()
 		write(0x91, 0xe20c, 0xea, 0xea, 0xea)	-- don't write facing right x-ray crouching state
 		write(0x91, 0xe214, 0xea, 0xea, 0xea)	-- don't write facing left x-ray crouching state
 
-		write(0x91, 0xe21d, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a30] = $0005
+--		write(0x91, 0xe21d, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a30] = $0005
 
 		write(0x91, 0xe231, 0xea, 0xea, 0xea, 0xea)	-- don't disable enemy projectiles
 		write(0x91, 0xe235, 0xea, 0xea, 0xea, 0xea)	-- don't disable PLMs 
 		write(0x91, 0xe239, 0xea, 0xea, 0xea, 0xea)	-- don't disable animated tile objects
 		write(0x91, 0xe23d, 0xea, 0xea, 0xea, 0xea)	-- don't disable palette fx objects
 
-		write(0x91, 0xe241, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a88] = $0001
-		write(0x91, 0xe256, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a8e] = $0098
+--		write(0x91, 0xe241, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a88] = $0001
+--		write(0x91, 0xe256, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a8e] = $0098
 
 --[[ not needed for movement while xraying
 		-- if not standing then branch => always branch
@@ -529,7 +570,7 @@ timer('everything', function()
 		--write(0x90, 0xe94f, 0x4c, 0x37, 0xa3)
 --]]
 
--- [[ frozen in enemy ai page
+-- [[ this is needed for enemies to move while x-ray
 		write(0xa0, 0x8697, 0xea, 0xea)		-- write(0xa0, 0x8694, 0xa9, 0x00, 0x00)
 		write(0xa0, 0x903c, 0xea, 0xea)		-- write(0xa0, 0x9036, 0xa9, 0x00, 0x00)
 		write(0xa0, 0x9060, 0x80)			-- write(0xa0, 0x905a, 0xa9, 0x00, 0x00)
