@@ -283,13 +283,9 @@ timer('everything', function()
 		-- set max angle to nearly 180' (can't go past that, and can't get it to aim above or below the vertical half-plane.  how to get rid of the vertical limit...
 		write(0x88, 0x8792, 0x3f)		-- was 0x0b
 		write(0x88, 0x879a, 0x3f)		-- was 0x0a
+		
 		-- set angle delta to as fast as possible:
 		write(0x88, 0x8770, 0xff, 0xff)
-		-- x-ray works in fireflea room
-		-- TODO fire-flea is rendered all with layer 3 bg, so ... does this have to do with it?
-		--write(0x91, 0xd156, 0xea, 0xea)
-		-- x-ray works in all rooms (just have 91:d143 immediately return)
-		write(0x91, 0xd143, 0x6b)
 
 		-- x-ray acts like it is off-screen (and that makes it fill the whole screen)
 		write(0x88, 0x8919, 0x11, 0xbe)
@@ -318,7 +314,7 @@ timer('everything', function()
 		--]]
 	
 		-- THIS MAKES THE SCOPE INSTA-FULL
-		-- [[ better yet, why not change state 1 to instantly set the beam to max width?
+		--[[ better yet, why not change state 1 to instantly set the beam to max width?
 		-- $7e:0998 = main gameplay state (might need to fix this)
 		-- $7e:0a78 = time is frozen flag.  1 = x-ray active, #$8000 = samus dying / autoreserve filling
 		-- $7e:0a7a = x-ray state.  0 = none, 1 = opening, 2 = full, 3..5 = closing (one state per frame)
@@ -356,20 +352,20 @@ timer('everything', function()
 		-- in x-ray setup stage 1:
 		-- write(0x91, 0xcafd, 0x00)		-- causes freeze-ups
 		-- in x-ray setup:
-		-- write(0x91, 0xe218, 0x00)	-- doesn't cause freeze-ups, but doens't do anything
+		-- write(0x91, 0xe218, 0x00)	-- doesn't cause freeze-ups, but doens't do anything.  
+		-- looks like the 0a78 mem loc isn't just used for freezing but also for x-ray state
 
-
-
--- maybe it's better to just jump past all the 'if time is frozen' branches ...
--- TODO in all these, instead of clearing the branch after LDA $whatever, just change the LDA to LDA #$0000
--- TODO TODO the lda idea was simpler -- no need to assign dif instructions dependending on bne vs beq
--- but the SNES says otherwise ... seems some code only works with the branch forced rather than the A reg forced. (why?)
--- TODO this might be why the xray no longer seems to initialize upon its first press
--- before I'm pretty sure the xray grahics would reset upon pressing x-ray button
--- but now you just get one clean init per room, and even that seems to have its graphics off
+--[==[ something in here is messing up graphics, causing x-ray to only work in first screen of the room
+		-- maybe it's better to just jump past all the 'if time is frozen' (lda $0a78 bne $wherever) branches ...
+		-- TODO in all these, instead of clearing the branch after LDA $whatever, just change the LDA to LDA #$0000
+		-- TODO TODO the lda idea was simpler -- no need to assign dif instructions dependending on bne vs beq
+		-- but the SNES says otherwise ... seems some code only works with the branch forced rather than the A reg forced. (why?)
+		-- TODO this might be why the xray no longer seems to initialize upon its first press
+		-- before I'm pretty sure the xray grahics would reset upon pressing x-ray button
+		-- but now you just get one clean init per room, and even that seems to have its graphics off
 -- [=[ I tried changing the 0x80 page branches to off into LDA's of zero , but that froze up input
-		write(0x80, 0x9c8a, 0xa9, 0x00, 0x00)
-		write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
+		write(0x80, 0x9c8d, 0xea, 0xea)	--> bne => nop		-- write(0x80, 0x9c8a, 0xa9, 0x00, 0x00)	--> lda $0a78 => lda #$0000
+		write(0x80, 0xa3ae, 0x80)		--> beq => bra		-- write(0x80, 0xa3ab, 0xa9, 0x00, 0x00)
 
 -- NOTICE the next two can't replace the lda $0a78 ora $0a79 with two lda #$0000's ...
 
@@ -379,32 +375,21 @@ timer('everything', function()
 -- this is lda $0a78 ora $0a79 ... soo .. needs two replaced
 -- but here's the weird thing, this replacement locks all controls up.
 -- does LDA set the BEQ bit?
---[[	
-		write(0x80, 0xa52c, 
-			0xa9, 0x00, 0x00, 
-			0xa9, 0x00, 0x00,
-			0xa9, 0x00, 0x00,	-- replace the beq +03
-			0xea, 0xea			-- replace the jmp $a63e
-		)
---]]
 
--- [[ not needed for graphics update on unpress
+
+-- not needed for graphics update on unpress
 -- but one may be shooting while x-raying	
 		write(0x80, 0xa73b, 0x80)		-- beq => bra
---]]
---[[	lda 0 doesn't work while the beq->bra does
-		write(0x80, 0xa735, 0xa9, 0x00, 0x00, 0xa9, 0x00, 0x00)	-- same
---]]
 --]=]
 
 -- [[ not needed for graphics update on unpress
 -- but one may be shooting while x-raying	
-		write(0x84, 0xeeab, 0xa9, 0x00, 0x00)
+		write(0x84, 0xeeae, 0xea, 0xea)	--> bne => nop		-- write(0x84, 0xeeab, 0xa9, 0x00, 0x00)
 
-		write(0x86, 0x842c, 0xa9, 0x00, 0x00)
+		write(0x86, 0x842f, 0xea, 0xea)	--> bne => nop		-- write(0x86, 0x842c, 0xa9, 0x00, 0x00)
 
 		-- hdma object handler:
-		write(0x88, 0x84c4, 0xea, 0xea)	-- bne $xx => nop nop
+		write(0x88, 0x84c4, 0xea, 0xea)	-- bne => nop
 	
 		-- handle x-ray scope
 		-- "if time is not frozen then return" as part of deactivate beam
@@ -424,6 +409,7 @@ timer('everything', function()
 		-- 
 		write(0x88, 0xb3ba, 0x80)
 
+-- [[ doesn't seem to affect anything using these or not
 		write(0x88, 0xb4df, 0xea, 0xea)
 		write(0x88, 0xc498, 0x80)
 		write(0x88, 0xc593, 0xea, 0xea)
@@ -435,28 +421,52 @@ timer('everything', function()
 		write(0x8f, 0xc134, 0xea, 0xea)
 		write(0x8f, 0xc186, 0xea, 0xea)
 --]]
+--]==]
 
+-- [[ 
+		
+-- [==[ needed for movement while 'a'
+		write(0x90, 0xa33a, 0xea, 0xea)			-- write(0x90, 0xa337, 0xa9, 0x00, 0x00)
+		write(0x90, 0xac1f, 0xea, 0xea)			-- write(0x90, 0xac1c, 0xa9, 0x00, 0x00)
+		write(0x90, 0xb6b2, 0x80)				-- write(0x90, 0xb6af, 0xa9, 0x00, 0x00)
+--]==]
+		write(0x90, 0xdcfe, 0xea, 0xea)			-- write(0x90, 0xdcfb, 0xa9, 0x00, 0x00)
 
--- [[ needed for movement while xraying
-		write(0x90, 0xa337, 0xa9, 0x00, 0x00)
-		write(0x90, 0xac1c, 0xa9, 0x00, 0x00)
-		write(0x90, 0xb6af, 0xa9, 0x00, 0x00)
-		write(0x90, 0xdcfb, 0xa9, 0x00, 0x00)
-		write(0x90, 0xdd4d, 0xa9, 0x00, 0x01)	-- wait, should this be 01 instead?  seems to work with 00, but maybe better with 01?
-		write(0x90, 0xde01, 0xa9, 0x00, 0x00)
-		write(0x90, 0xdfed, 0xa9, 0x00, 0x00)
-		write(0x90, 0xe75e, 0xa9, 0x00, 0x00)
-		write(0x90, 0xe9d1, 0xa9, 0x00, 0x00)
-		write(0x90, 0xea4d, 0xa9, 0x00, 0x00)	-- 
+--[==[ causes 'a' to work without x-ray selected
+		write(0x90, 0xdd50, 0xea, 0xea)			-- write(0x90, 0xdd4d, 0xa9, 0x00, 0x01)	-- this "time is frozen" condition I'm having it always hit, so opposite the rest: beq => nop
+		write(0x90, 0xdd50, 0x80)	
+--]==]
+
+--[==[ not needed? might be causing the graphics glitches where x-ray wouldn't work except in the first screen of the room
+		write(0x90, 0xde04, 0xea, 0xea)			-- write(0x90, 0xde01, 0xa9, 0x00, 0x00)
+		write(0x90, 0xdff0, 0x80)				-- write(0x90, 0xdfed, 0xa9, 0x00, 0x00)
+		write(0x90, 0xe761, 0xea, 0xea)			-- write(0x90, 0xe75e, 0xa9, 0x00, 0x00)
+		write(0x90, 0xe9d1, 0x80)				-- write(0x90, 0xe9d1, 0xa9, 0x00, 0x00)
+		write(0x90, 0xea50, 0xea, 0xea)			-- write(0x90, 0xea4d, 0xa9, 0x00, 0x00)	-- 
+--]==]
 
 	-- [[ something in here needed for movement while xraying
-		write(0x91, 0x808a, 0xa9, 0x00, 0x00)
-		write(0x91, 0x8172, 0xa9, 0x00, 0x00)
-		
+		write(0x91, 0x808d, 0xea, 0xea)			-- write(0x91, 0x808a, 0xa9, 0x00, 0x00)
+		write(0x91, 0x8175, 0xea, 0xea)			-- write(0x91, 0x8172, 0xa9, 0x00, 0x00)
+	
 		--write(0x91, 0xcadc, 0xa9, 0x00, 0x00)	-- causes our lockups
 		--write(0x91, 0xcadf, 0xea, 0xea)	-- causes our lockups
-		
-		write(0x91, 0xdf66, 0xa9, 0x00, 0x00)
+		-- why is this locking up?  it's repeatedly calling the $88:8435 "spawn x-ray HDMA object" routine
+		-- maybe if I change it to "spawn HDMA object to slot X" routine at $88:8477 instead?
+		--write(0x91, 0xcaef, 0x77)
+		-- nope.  mind you, 8477 requires some extra stuff to be set compared to 8435
+		--write(0x91, 0xcaef, 0x1b)
+		-- same with 841b
+		-- ok how about this, 83e2 is unused, and spawns a HDMA into a specific slot, so ... can I use that?
+		-- well, gotta adjust the stack after the call, because 841b uses [s+1]+3, while 8435 uses [s+1]+1
+		-- maybe i can change the x-ray HDMA instructions?
+		-- instead 91:d277 going to 91:d277, have it go back to 91:d233
+		--write(0x91, 0xd27d, 0xa3)	-- still locking up
+		-- OK what this did?  only opens the beam a little bit, but does let the normal view scroll and follow you while the x-ray part lags behind, 
+		--write(0x91, 0xd27d, 0x29)
+
+
+		write(0x91, 0xdf69, 0xea, 0xea)			-- write(0x91, 0xdf66, 0xa9, 0x00, 0x00)
 	--]]
 --]]
 
@@ -469,6 +479,12 @@ timer('everything', function()
 		--  causes freeze
 		--write(0x91, 0xcafe, 0x9c)	
 
+		-- x-ray works in fireflea room
+		-- TODO fire-flea is rendered all with layer 3 bg, so ... does this have to do with it?
+		--write(0x91, 0xd156, 0xea, 0xea)
+		-- x-ray works in all rooms (just have 91:d143 immediately return)
+		write(0x91, 0xd143, 0x6b)
+
 		write(0x91, 0xe1a8, 0xea, 0xea)	-- skip game state test for x-ray setup
 
 		-- does what it's supposed to, lets you move with x-ray
@@ -476,10 +492,18 @@ timer('everything', function()
 		write(0x91, 0xe1f9, 0xea, 0xea, 0xea)	-- don't write facing left x-ray standing state
 		write(0x91, 0xe20c, 0xea, 0xea, 0xea)	-- don't write facing right x-ray crouching state
 		write(0x91, 0xe214, 0xea, 0xea, 0xea)	-- don't write facing left x-ray crouching state
-		
 
--- [[ not needed for movement while xraying
--- but one may be shooting while x-raying	
+		write(0x91, 0xe21d, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a30] = $0005
+
+		write(0x91, 0xe231, 0xea, 0xea, 0xea, 0xea)	-- don't disable enemy projectiles
+		write(0x91, 0xe235, 0xea, 0xea, 0xea, 0xea)	-- don't disable PLMs 
+		write(0x91, 0xe239, 0xea, 0xea, 0xea, 0xea)	-- don't disable animated tile objects
+		write(0x91, 0xe23d, 0xea, 0xea, 0xea, 0xea)	-- don't disable palette fx objects
+
+		write(0x91, 0xe241, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a88] = $0001
+		write(0x91, 0xe256, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea)	-- don't do mem[$0a8e] = $0098
+
+--[[ not needed for movement while xraying
 		-- if not standing then branch => always branch
 		-- hmm, with this i can't morph
 		--write(0x91, 0xeeac, 0x80)
@@ -506,17 +530,18 @@ timer('everything', function()
 --]]
 
 -- [[ frozen in enemy ai page
-		write(0xa0, 0x8694, 0xa9, 0x00, 0x00)	-- lda #$0000
-		write(0xa0, 0x9036, 0xa9, 0x00, 0x00)	-- lda #$0000
-		write(0xa0, 0x905a, 0xa9, 0x00, 0x00)	-- lda #$0000
-		write(0xa0, 0x90a6, 0xa9, 0x00, 0x00)	-- lda #$0000
-		write(0xa0, 0x9120, 0xa9, 0x00, 0x00)	-- lda #$0000
-		write(0xa0, 0x972b, 0xa9, 0x00, 0x00)	-- lda #$0000
+		write(0xa0, 0x8697, 0xea, 0xea)		-- write(0xa0, 0x8694, 0xa9, 0x00, 0x00)
+		write(0xa0, 0x903c, 0xea, 0xea)		-- write(0xa0, 0x9036, 0xa9, 0x00, 0x00)
+		write(0xa0, 0x9060, 0x80)			-- write(0xa0, 0x905a, 0xa9, 0x00, 0x00)
+		write(0xa0, 0x90ac, 0xea, 0xea)		-- write(0xa0, 0x90a6, 0xa9, 0x00, 0x00)
+		write(0xa0, 0x9126, 0xea, 0xea)		-- write(0xa0, 0x9120, 0xa9, 0x00, 0x00)
+		write(0xa0, 0x9731, 0xea, 0xea)		-- write(0xa0, 0x972b, 0xa9, 0x00, 0x00)
 --]]	
 
 		-- mother brain and pause state $0a78
 		write(0xa9, 0x87a2, 0xa9, 0x00, 0x00)
 		write(0xa9, 0x92af, 0xa9, 0x00, 0x00)
+--]==]
 	end
 
 
@@ -555,6 +580,7 @@ timer('everything', function()
 	--]=]
 
 
+--[===[ skip all the randomization stuff
 
 	-- make a single object for the representation of the ROM
 	-- this way I can call stuff on it -- like making a memory map -- multiple times
@@ -934,7 +960,8 @@ timer('everything', function()
 	timer('write modified ROM memory map', function()
 		sm:buildMemoryMap():print()
 	end)
-	
+--]===]
+
 	-- write back out
 	file[outfilename] = header .. ffi.string(rom, #romstr)
 

@@ -311,10 +311,10 @@ local function disasm(code, addr)
 	local ofs = 0
 	while ofs < #code do
 		local str, n = getLineStr(addr+ofs, flag,
-			code[ofs],
-			code[ofs+1] or 0xff,
+			code[ofs+1],
 			code[ofs+2] or 0xff,
-			code[ofs+3] or 0xff
+			code[ofs+3] or 0xff,
+			code[ofs+4] or 0xff
 		)
 		ss:insert(str)
 		ofs = ofs + n
