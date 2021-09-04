@@ -3,6 +3,7 @@ local config = require 'config'
 local struct = require 'struct'
 local expRand = require 'exprand'
 local randomizeEnemyProps = config.randomizeEnemyProps
+local topc = require 'pc'.to
 
 local typeinfo = {
 	uint8_t = {range={0,0xff}},

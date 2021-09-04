@@ -1,9 +1,8 @@
 #!/usr/bin/env luajit
 	
 require 'ext'
-topc = require 'pc'.to
-frompc = require 'pc'.from
-
+local topc = require 'pc'.to
+local frompc = require 'pc'.from
 
 --[[
 useful pages:
@@ -31,19 +30,6 @@ timer('everything', function()
 	local ffi = require 'ffi'
 	local config = require 'config'
 
-
-	local cmdline = {}
-	for i=1,#arg do
-		local s = arg[i]
-		local j = s:find'=' 
-		if j then 
-			local k = s:sub(1,j-1)
-			local v = s:sub(j+1)
-			cmdline[k] = v
-		else
-			cmdline[s] = true
-		end
-	end
 	for k,v in pairs(cmdline) do
 		if not ({
 			seed=1,
@@ -53,7 +39,6 @@ timer('everything', function()
 			error("got unknown cmdline argument "..k)
 		end
 	end
-
 
 	local seed = cmdline.seed
 	if seed then
@@ -69,7 +54,7 @@ timer('everything', function()
 
 
 	local infilename = cmdline['in'] or 'sm.sfc'
-	local outfilename = cmdline['out'] or 'sm-random.sfc'
+	local outfilename = cmdline.out or 'sm-random.sfc'
 
 	function exec(s)
 		print('>'..s)
@@ -210,13 +195,18 @@ timer('everything', function()
 	end
 
 	function byteArraySubset(src, ofs, len)
-		if ofs + len > ffi.sizeof(src) then
-			error('tried to copy past end '..tolua{
-				src = src,
-				ofs = ofs,
-				len = len,
-				sizeof_src = ffi.sizeof(src),
-			})
+		assert(type(src) == 'cdata')
+		-- only do bounds check if we're dealing with an array
+		-- if it's a pointer then we can't deduce size
+		if tostring(ffi.typeof(src)):sub(-2) == ']>' then
+			if ofs + len > ffi.sizeof(src) then
+				error('tried to copy past end '..tolua{
+					src = src,
+					ofs = ofs,
+					len = len,
+					sizeof_src = ffi.sizeof(src),
+				})
+			end
 		end
 		local dest = ffi.new('uint8_t[?]', len)
 		src = ffi.cast('uint8_t*', src)
@@ -630,8 +620,6 @@ g:
 	-- this way I can call stuff on it -- like making a memory map -- multiple times
 	local SM = require 'sm'
 
-
-
 	-- global for now
 	timer('read ROM', function()
 		sm = SM(rom)
@@ -639,37 +627,37 @@ g:
 
 	-- write out unaltered stuff
 	if config.writeOutOriginalMapImage then
-		--[[
+		-- [[
 		timer('write original ROM info images', function()
 			sm:mapSaveImageInformative'map'
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM textured image', function()
 			sm:mapSaveImageTextured'map'
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM output images', function()
 			sm:mapSaveDumpworldImage()
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM map mode7 images', function()
 			sm:mapSaveGraphicsMode7()
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM map tileset images', function()
 			sm:mapSaveGraphicsTileSets()
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM map backgrounds', function()
 			sm:mapSaveGraphicsBGs()
 		end)
 		--]]
-		--[[
+		-- [[
 		timer('write original ROM map layer 2 backgrounds', function()
 			sm:mapSaveGraphicsLayer2BGs()
 		end)
@@ -683,11 +671,20 @@ g:
 	do	-- if config.writeOutDisasm then
 		timer('write out disasm', function()
 			local pagelen = 0x8000
-			local page = ffi.new('uint8_t[?]', pagelen)
-			for _,bank in ipairs{0x80} do
+			for _,bank in ipairs{
+				0x80,	-- system routines
+				0x81,	-- SRAM
+				0x82,	-- top level main game routines
+				0x83,	-- (data) fx and door definitions 
+				0x84,	-- plms
+				0x85,	-- message boxes
+				0x86,	-- enemy projectiles
+				0x87,	-- animated tiles
+				0x88,	-- hdma
+				--...
+			} do
 				local addr = topc(bank, 0x8000)
-				ffi.copy(page, rom + addr, pagelen)
-				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, byteArrayToTable(page))
+				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, rom+addr, pagelen, pagelen)
 			end
 		end)
 	end

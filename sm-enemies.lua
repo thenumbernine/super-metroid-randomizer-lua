@@ -6,6 +6,7 @@ local ffi = require 'ffi'
 local struct = require 'struct'
 local config = require 'config'
 local randomizeEnemyProps = config.randomizeEnemyProps
+local topc = require 'pc'.to
 
 local enemyShotBank = 0x86
 

@@ -16,6 +16,7 @@ local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
 local disasm = require 'disasm'
+local topc = require 'pc'.to
 
 
 local SMMap = {}
@@ -853,7 +854,7 @@ function Door:init(args)
 	and self.ptr.code > 0x8000 
 	then
 		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
-		self.doorCode = disasm.readCode(self.doorCodeAddr, rom, 0x100)
+		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom, 0x100)
 	end
 end
 
@@ -1973,7 +1974,7 @@ function SMMap:mapAddLayerHandling(addr)
 	if layerHandling then return layerHandling end
 	local layerHandling = {
 		addr = addr,
-		code = disasm.readCode(addr, self.rom, 0x100),
+		code = disasm.readUntilRet(addr, self.rom, 0x100),
 		roomStates = table(),
 	}
 	self.layerHandlings:insert(layerHandling)
@@ -3291,8 +3292,8 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 	local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 	local bgTilemap = bg and bg.tilemap
 	local bgBmp = bgTilemap and sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
-	local bgw = graphicsTileSizeInPixels * bgTilemap.width
-	local bgh = graphicsTileSizeInPixels * bgTilemap.height
+	local bgw = bgBmp and graphicsTileSizeInPixels * bgTilemap.width
+	local bgh = bgBmp and graphicsTileSizeInPixels * bgTilemap.height
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -4327,10 +4328,10 @@ function SMMap:mapPrint()
 	print"all layerHandling's:"
 	for _,layerHandling in ipairs(self.layerHandlings) do
 		print(('%06x'):format(layerHandling.addr))
-		print(' code: '..layerHandling.code:mapi(function(cmd)
-			return ('%02x'):format(cmd)
-		end):concat' ')
-		print(disasm.disasm(layerHandling.addr, layerHandling.code))
+		print(' code: '..range(0,ffi.sizeof(layerHandling.code)-1):mapi(function(i)
+				return ('%02x'):format(layerHandling.code[i])
+			end):concat' ')
+		print(disasm.disasm(layerHandling.addr, layerHandling.code, ffi.sizeof(layerHandling.code)))
 		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
@@ -4390,15 +4391,18 @@ function SMMap:mapPrint()
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
 			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodeAddr)
-			print(disasm.disasm(roomSelectCodeAddr, disasm.readCode(roomSelectCodeAddr, rom, 0x100)))
+			local code = disasm.readUntilRet(roomSelectCodeAddr, rom, 0x100)
+			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.ctype..': '
 				..('$83:%04x'):format(door.addr)
 				..' '..door.ptr[0])
 			if door.doorCode then
-				print('   code: '..door.doorCode:mapi(function(c) return ('%02x'):format(c) end):concat' ')
-				print(disasm.disasm(door.doorCodeAddr, door.doorCode))
+				print('   code: '..range(0,ffi.sizeof(door.doorCode)-1):mapi(function(i) 
+						return ('%02x'):format(door.doorCode[i])
+					end):concat' ')
+				print(disasm.disasm(door.doorCodeAddr, door.doorCode, ffi.sizeof(door.doorCode)))
 			end
 		end
 	end
@@ -4517,24 +4521,23 @@ function SMMap:mapBuildMemoryMap(mem)
 			
 			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 		
-			-- TODO store for printing?  possibly relocation?
+			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.select.testCodeAddr)
-			local code = disasm.readCode(addr, rom, 100)
-			
-			mem:add(addr, #code, 'room select code', m)
+			local code = disasm.readUntilRet(addr, rom, 100)
+			mem:add(addr, ffi.sizeof(code), 'room select code', m)
 		end
 		
 		mem:add(topc(self.doorAddrBank, m.obj.doors), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
 			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
 			if door.doorCode then
-				mem:add(door.doorCodeAddr, #door.doorCode, 'door code', m)
+				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', m)
 			end
 		end
 	end
 
 	for _,layerHandling in ipairs(self.layerHandlings) do
-		mem:add(layerHandling.addr, #layerHandling.code, 'layer handling code', layerHandling.roomStates[1].room)
+		mem:add(layerHandling.addr, ffi.sizeof(layerHandling.code), 'layer handling code', layerHandling.roomStates[1].room)
 	end
 
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
