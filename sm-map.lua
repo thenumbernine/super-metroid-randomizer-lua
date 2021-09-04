@@ -17,6 +17,7 @@ local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
 local disasm = require 'disasm'
 local topc = require 'pc'.to
+local config = require 'config'
 
 
 local SMMap = {}
@@ -35,16 +36,26 @@ SMMap.bgBank = 0x8f
 SMMap.doorCodeBank = 0x8f
 -- then comes a group o fplms, and then comes a group of layer handling
 SMMap.layerHandlingBank = 0x8f
+
 -- TODO use a bank? isn't it the same as the roomBank?  0x8f.
 SMMap.plmBaseAddress = 0x70000
+
 -- and then we go back to some more rooms
 
 SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
 
+local loadStationBank = 0x80
+local loadStationRegionTableAddr = 0xc4b5
 
-local commonRoomSubtileAddr = 0x1c8000
-local commonRoomTilemapAddr = 0x1ca09d
+local commonRoomGraphicsTileAddr = 0x1c8000	-- b9:8000
+
+--[[
+where is b9:a09d used in code?
+82:e841
+82:eaf1
+--]]
+local commonRoomTilemapAddr = 0x1ca09d	-- b9:a09d
 
 
 local blocksPerRoom = 16
@@ -57,6 +68,65 @@ local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPix
 local numMode7Tiles = 256
 local mode7sizeInGraphicTiles = 128
 assert(mode7sizeInGraphicTiles * mode7sizeInGraphicTiles == numMode7Tiles * graphicsTileSizeInPixels * graphicsTileSizeInPixels)
+
+
+local debugImageBlockSizeInPixels = 4
+local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
+
+
+
+-- [=[ this is all used for rendering the map.png -- and is specific to the original metroid
+local fullMapWidthInBlocks = 68
+local fullMapHeightInBlocks = 58
+
+-- data is sized 32*m.width x 16*m.width
+local ofsPerRegion = {
+	function(m) 
+		--[[
+		special case for Crateria right of Wrecked Ship
+		ok how to generalize this?
+		one way is to recursively build the room locations in the overworld map picture
+		however you then run into trouble with lifts that can be arbitrary heights
+
+		so next , how about (certain?) doors are given arbitrary spacing
+		and then we try to adjust and minimize that spacing such that all rooms fit together?
+		--]]
+		if m.region == 0	-- Crateria
+		and m.x > 45 
+		then
+			return 6,1
+		end
+		return -1,1
+	end,	-- crateria
+	function(m) return -4,19 end,	-- brinstar
+	function(m) return 27,39 end,	-- norfair
+	function(m) return 33,-9 end,	-- wrecked ship
+	function(m) return 24,19 end,	-- maridia
+	function(m) return -4,1 end,	-- tourian
+	function(m) return -9,26 end,	-- ceres
+	function(m) return 3,48 end,	-- testing
+}
+
+--]=]
+--[=[ how about for sm-vitality 
+local fullMapWidthInBlocks = 103
+local fullMapHeightInBlocks = 76
+local ofsPerRegion = {
+	function(m) return 21,	43	end,		-- region 0
+	function(m) return 15,	23	end,		-- region 1
+	function(m) return 57,	12	end,		-- region 2
+	function(m) return 16,	-1	end,		-- region 3
+	function(m) return -27,	28	end,		-- region 4
+	function(m) return 40,	59	end,		-- region 5
+	function(m) return 0,	0	end,		-- region 6
+	function(m) return 0,	0	end,		-- region 7
+}
+--]=]
+
+
+
+
+
 
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
@@ -913,6 +983,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 		
 		ptr = mptr,
 	}	
+print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)	
 	self.rooms:insert(m)
 	
 	data = data + ffi.sizeof'room_t'
@@ -1070,9 +1141,10 @@ if done then break end
 			rs.layerHandlingAddr = self:mapAddLayerHandling(addr)
 			rs.layerHandlingAddr.roomStates:insert(rs)
 		end
-		
-		local addr = rs.obj.roomBlockAddr24:topc()
-		rs:setRoomBlockData(self:mapAddRoomBlockData(addr, m))
+	
+		if config.mapReadRoomBlockData then
+			rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
+		end
 	end
 
 	-- door addrs
@@ -1802,14 +1874,37 @@ function SMMap:mapAddRoomBlockData(addr, m)
 --print('roomaddr '..roomaddrstr)
 	
 	-- then we decompress the next 0x10000 bytes ...
---print('decompressing address '..('0x%06x'):format(addr))
-	local data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
---print('decompressed from '..compressedSize..' to '..ffi.sizeof(data))
+print('room block data decompressing address '..('0x%06x'):format(addr))
+	local data, compressedSize
+	xpcall(function()
+		data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
+	end, function(err)
+		print(err..'\n'..debug.traceback())
+	end)
+	if not data then return end
+print('room block data decompressed from '..compressedSize..' to '..ffi.sizeof(data))
 	
 	local ofs = 0
 	local head = byteArraySubset(data, ofs, 2) ofs=ofs+2
+	local headval = ffi.cast('uint16_t*', head)[0]
+	-- headval is always 2 * w * h
+	-- (except one room where it is (2+2/3) * w * h
+	-- does this mean ch3 is optional?
+
 	local w = m.obj.width * blocksPerRoom
 	local h = m.obj.height * blocksPerRoom
+
+print('head', headval)
+print('decompressed / numblocks', (ffi.sizeof(data) - 2) / (w * h))
+print('head / numblocks', headval / (w * h))
+print('decompressed / head', (ffi.sizeof(data) - 2) / headval)
+-- decompressed / numblocks is only ever 3 or 5
+-- what determines which?
+if (ffi.sizeof(data) - 2) / (w * h) < 3 then
+	print("WARNING - room has not enough blocks to fill the room")
+	return
+end
+
 	local ch12 = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
 	local ch3 = byteArraySubset(data, ofs, w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
 	local blocks = ffi.new('uint8_t[?]', 3 * w * h)
@@ -1830,16 +1925,17 @@ function SMMap:mapAddRoomBlockData(addr, m)
 	local tail
 	-- if there's still more to read...
 	if ofs < dataSize then
-		layer2blocks = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
-		if ofs > dataSize then
-			error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+		if dataSize - ofs < 2*w*h then
+			print("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+		else
+			layer2blocks = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
 		end
-		-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
-		-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
-		if ofs < dataSize then
-			tail = byteArraySubset(data, ofs, dataSize - ofs)
-		end	
 	end
+	-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
+	-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
+	if ofs < dataSize then
+		tail = byteArraySubset(data, ofs, dataSize - ofs)
+	end	
 
 	-- keep track of doors
 	
@@ -2231,14 +2327,26 @@ function SMMap:mapReadTileSets()
 
 	do
 		local buffer
-		buffer, self.commonRoomGraphicsTileCompressedSize = lz.decompress(rom, commonRoomSubtileAddr, 0x10000) --common room elements
+		buffer, self.commonRoomGraphicsTileCompressedSize = lz.decompress(rom, commonRoomGraphicsTileAddr, 0x10000) --common room elements
 		self.commonRoomGraphicsTileVec = vector'uint8_t'
 		self.commonRoomGraphicsTileVec:insert(self.commonRoomGraphicsTileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		-- size is 0x3000
+		-- decompresesd size is 0x3000
 print('self.commonRoomGraphicsTileVec size', ('$%x'):format(self.commonRoomGraphicsTileVec.size))
 	end
 
 	do
+print'uses of the common room tilemap byte vec:'		
+print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xe841))[0]))
+print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xeaf1))[0]))
+print('these should match '..('%04x'):format(0xa09d))	-- common room tilemap pageofs
+print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xe83c))[0]))
+print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xeaec))[0]))
+print('these should match '..('%04x'):format(0xb900)) 	-- common room tilemap bank << 8
+-- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
+-- but TODO if that's the case, why not just seek past the end of the common room graphics tile addr,
+--  since those two are usually packed?
+-- well, in roms like Metroid Redesigned, where these lookup instructions have been changed, it looks like the graphics tile buffer is also not present
+		
 		local buffer
 		buffer, self.commonRoomTilemapCompressedSize = lz.decompress(rom, commonRoomTilemapAddr, 0x10000) --common room elements
 		self.commonRoomTilemapByteVec = vector'uint8_t'
@@ -2481,14 +2589,55 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 	end
 end
 
+function SMMap:mapReadLoadStations()
+	local rom = self.rom
+
+	-- TODO is this what I should be using as entry points to loading rooms?
+	-- load stations
+	-- http://patrickjohnston.org/bank/82
+	local p = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableAddr))
+	for region=0,7 do
+		self.loadStationsForRegion:insert{
+			region = region,
+			addr = p[0],
+			stations = table(),
+		}
+		p=p+1
+	end
+	-- how do you tell how many entries each one has?
+	-- one way is to just not overrun the next address
+	-- but what about the last address?
+	-- of course that is a debug/empty table
+	-- but TODO how do you determine the debug region loadStation count?
+	for region=0,#self.loadStationsForRegion-2 do
+		local lsr = self.loadStationsForRegion[region+1]
+		local addr = lsr.addr
+		local nextAddr = assert(self.loadStationsForRegion[region+2].addr)
+		assert((nextAddr - addr) % ffi.sizeof'loadStation_t' == 0)
+		local count = (nextAddr - addr) / ffi.sizeof'loadStation_t'
+		
+		local ptr = ffi.cast('loadStation_t*', rom + topc(loadStationBank, addr))
+		for i=0,count-1 do
+			local ls = {}
+			ls.ptr = ptr
+			ls.obj = ffi.new('loadStation_t', ptr[0])
+			lsr.stations:insert(ls)
+			ptr = ptr + 1
+		end
+	end
+end
 
 function SMMap:mapInit()
 	local rom = self.rom
 
 	-- check where the PLM bank is
 	-- TODO this will affect the items.lua addresses
+	-- read from 84:84ac
 	-- default is 0x8f
-	self.plmBank = rom[0x204ac]
+	self.plmBank = rom[0x204ac]	
+print('plmBank '..('%02x'):format(self.plmBank))
+
+	self.loadStationsForRegion = table()
 
 	self.rooms = table()
 	self.roomblocks = table()
@@ -2506,75 +2655,31 @@ function SMMap:mapInit()
 	self.tileSetGraphicsTileSets = table()
 	self.tileSetTilemaps = table()
 
+
 	self:mapReadTileSets()
 
-	--[[
-	from $078000 to $079193 is plm_t data
-	the first room_t is at $0791f8
-	from there it is a dense structure of ...
-	room_t
-	roomselect's (in reverse order)
-	roomstate_t's (in forward order)
-	dooraddrs
-	... then comes extra stuff, sometimes:
-	scrolldata (which is in one place wedged into nowhere)
-	plm scrollmod
 
-	TODO don't check *every* byte from 0x8000 to 0xffff
-	instead start with one room_t - wherever you start: $079202 
-	- from room's, read all roomstates, and read all their rooms, and read all their door rooms
+	self:mapReadLoadStations()
+
+	--[[ load fixed rooms	
+	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
+	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
 	--]]
-	--[[ method #1: scan every possible byte from $078000 to $079193
-	for pageofs=0x8000,0xffff do
-		local ptr = rom + topc(self.roomBank, pageofs)
-		local mptr = ffi.cast('room_t*', ptr)
-		if (
-			(ptr[12] == 0xE5 or ptr[12] == 0xE6) 
-			and mptr.region < 8 
-			and (mptr.width ~= 0 and mptr.width < 20) 
-			and (mptr.height ~= 0 and mptr.height < 20)
-			and mptr.gfxFlags < 0x10 
-			and mptr.doors > 0x7F00
-		) then
-			self:mapAddRoom(pageofs, false)
-		end
-	end
-	-- link all doors to their rooms
-	for _,m in ipairs(self.rooms) do
-		for _,door in ipairs(m.doors) do
-			if door.ctype == 'door_t' then
-				local destRoom = assert(
-					select(2, self.rooms:find(nil, function(m) 
-						return m.addr == door.ptr.destRoomAddr 
-					end)), 
-					'!!!! door '..('%06x'):format(ffi.cast('uint8_t*',door.ptr)-rom)..' points nowhere')
-				-- points to the dest room
-				door.destRoom = destRoom
+	-- [[
+	for _,lsr in ipairs(self.loadStationsForRegion) do
+print('loadStation region '..lsr.region)		
+		for _,ls in ipairs(lsr.stations) do
+			local addr = ls.obj.roomAddr
+print(' loadStation addr '..('%04x'):format(addr))
+			if addr > 0 then
+				local room = self:mapAddRoom(addr, true)
+				if not room then
+print("loadStation addr "..('%04x'):format(addr).." failed to load room")
+				end
 			end
 		end
 	end
 	--]]
-	-- [[ method #2: recursively construct, starting at room 00/00 at $0791f8
-	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
-	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
-	--]]
-
---[[ these are not first bg tilemaps of rooms..  where are they stored? 
--- some are garbage
-	self:mapAddBGTilemap(topc(0xb9, 0xa75e))
-	self:mapAddBGTilemap(topc(0xb9, 0xd56a))
-	self:mapAddBGTilemap(topc(0xb9, 0xd5a1))
-	self:mapAddBGTilemap(topc(0xb9, 0xd99c))
-	self:mapAddBGTilemap(topc(0xb9, 0xde11))
-	self:mapAddBGTilemap(topc(0xb9, 0xe94f))
-	self:mapAddBGTilemap(topc(0xb9, 0xf11d))
-	self:mapAddBGTilemap(topc(0xb9, 0xf70d))
-	self:mapAddBGTilemap(topc(0xb9, 0xf72e))
-	self:mapAddBGTilemap(topc(0xb9, 0xff4e))
-	self:mapAddBGTilemap(topc(0xba, 0x9023))
-	self:mapAddBGTilemap(topc(0xba, 0xc620))
---]]
-
 
 	--[[ get a table of doors based on their plm arg low byte
 	self.doorPLMForID = table()
@@ -2590,67 +2695,78 @@ function SMMap:mapInit()
 	end
 	--]]
 
-	-- [[ -------------------------------- ASSERT STRUCT ---------------------------------
-	-- asserting underlying contiguousness of structure of the room_t's...
-	-- verify that after each room_t, the roomselect / roomstate_t / dooraddrs are packed together
-
-	-- before the first room_t is 174 plm_t's, 
-	-- then 100 bytes of something
-	assert(self.rooms)
-	for j,m in ipairs(self.rooms) do
-		local d = ffi.cast('uint8_t*',m.ptr)
-		local roomaddr = d - rom
-		d = d + ffi.sizeof'room_t'
-		-- last roomselect should always be 2 byte term
-		--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
-		-- if there's only 1 roomState then it is a term, and
-		for i=1,#m.roomStates do
-			assert(d == ffi.cast('uint8_t*', m.roomStates[i].select_ptr))
-			d = d + ffi.sizeof(m.roomStates[i].select_ctype)
-		end
-		-- next should always match the last room
-		for i=#m.roomStates,1,-1 do
-			assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
-			d = d + ffi.sizeof'roomstate_t'
-		end
-		-- for a single room there is an extra 26 bytes of padding between the roomstate_t's and the dooraddrs
-		-- and that room is $07ad1b, the speed booster room
-		-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
-		-- says it is just part of the speed booster room
-		-- the memory map at http://patrickjohnston.org/bank/8F
-		-- doesn't say it is anything
-		if roomaddr == 0x07ad1b then
---[[ if you want to keep it ...
-			local data = ffi.new('uint8_t[?]', 26)
-			ffi.copy(data, d, 26)
-			m.speedBoosterRoomExtraData = data
-print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..byteArrayToHexStr(data))
---]]			
-			d = d + 26
-		end
-		local dooraddr = topc(self.doorAddrBank, m.obj.doors)
-		assert(d == rom + dooraddr)
-		d = d + 2 * #m.doors
+	if config.mapAssertStructure then
+		-------------------------------- ASSERT STRUCT ---------------------------------
 		
-		-- now expect all scrolldatas of all rooms of this room_t
-		-- the # of unique scrolldatas is either 0 or 1
-		local scrolls = m.roomStates:map(function(rs)
-			return true, rs.obj.scrollAddr
-		end):keys():filter(function(scroll)
-			return scroll > 1 and scroll ~= 0x8000
-		end):sort()
-		assert(#scrolls <= 1)
-		-- room_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
-		-- so... shouldn't this assertion fail?
-		for _,scroll in ipairs(scrolls) do
-			local addr = topc(self.scrollBank, scroll)
-			assert(d == rom + addr)
-			d = d + m.obj.width * m.obj.height
+		-- asserting underlying contiguousness of structure of the room_t's...
+		-- verify that after each room_t, the roomselect / roomstate_t / dooraddrs are packed together
+
+		-- before the first room_t is 174 plm_t's, 
+		-- then 100 bytes of something
+		assert(self.rooms)
+		for j,m in ipairs(self.rooms) do
+			local d = ffi.cast('uint8_t*',m.ptr)
+			local roomaddr = d - rom
+			d = d + ffi.sizeof'room_t'
+			-- last roomselect should always be 2 byte term
+			--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
+			-- if there's only 1 roomState then it is a term, and
+			for i=1,#m.roomStates do
+				assert(d == ffi.cast('uint8_t*', m.roomStates[i].select_ptr))
+				d = d + ffi.sizeof(m.roomStates[i].select_ctype)
+			end
+			-- next should always match the last room
+			for i=#m.roomStates,1,-1 do
+				assert(d == ffi.cast('uint8_t*', m.roomStates[i].ptr))
+				d = d + ffi.sizeof'roomstate_t'
+			end
+			-- for a single room there is an extra 26 bytes of padding between the roomstate_t's and the dooraddrs
+			-- and that room is $07ad1b, the speed booster room
+			-- the memory map at http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
+			-- says it is just part of the speed booster room
+			-- the memory map at http://patrickjohnston.org/bank/8F
+			-- doesn't say it is anything
+			if roomaddr == 0x07ad1b then
+	--[[ if you want to keep it ...
+				local data = ffi.new('uint8_t[?]', 26)
+				ffi.copy(data, d, 26)
+				m.speedBoosterRoomExtraData = data
+	print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..': '..byteArrayToHexStr(data))
+	--]]			
+				d = d + 26
+			end
+			local dooraddr = topc(self.doorAddrBank, m.obj.doors)
+	--		assert(d == rom + dooraddr)
+			if d ~= rom + dooraddr then
+				print("warning - doorAddr does not proceed roomStates")
+				d = rom + dooraddr
+			end
+			d = d + 2 * #m.doors
+			
+			-- now expect all scrolldatas of all rooms of this room_t
+			-- the # of unique scrolldatas is either 0 or 1
+			local scrolls = m.roomStates:map(function(rs)
+				return true, rs.obj.scrollAddr
+			end):keys():filter(function(scroll)
+				return scroll > 1 and scroll ~= 0x8000
+			end):sort()
+			if #scrolls > 1 then
+				print("warning - got more than one scrolls "..#scrolls)
+			end
+			-- room_t $07adad -- room before wave room -- has its scrolldata overlap with the dooraddr
+			-- so... shouldn't this assertion fail?
+			for _,scroll in ipairs(scrolls) do
+				local addr = topc(self.scrollBank, scroll)
+	--			assert(d == rom + addr)
+				if d ~= rom + addr then
+					print("warning - scrollAddr does not proceed doorAddr")
+					d = rom + addr
+				end
+				d = d + m.obj.width * m.obj.height
+			end
 		end
-	end
+	end --------------------------------------------------------------------------------
 
-
-	--]] --------------------------------------------------------------------------------
 
 	-- TODO switch to graphicsTile indexes used, per 8x8 block
 	-- collect all unique indexes of each roomblockdata	
@@ -2685,12 +2801,14 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 	end
 	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
-			for tileIndex,_ in pairs(rs.roomBlockData.tileIndexesUsed) do
-				rs.tileSet.tileIndexesUsed[tileIndex] = true
+			if rs.roomBlockData then
+				for tileIndex,_ in pairs(rs.roomBlockData.tileIndexesUsed) do
+					rs.tileSet.tileIndexesUsed[tileIndex] = true
+				end
 			end
 		end
 	end
-
+	
 	--[[
 	ok here
 	we can compress away the tile indexes
@@ -2703,60 +2821,23 @@ print('speed booster room extra trailing data at '..('$%06x'):format(d - rom)..'
 	
 	--]]
 
-
-	-- load stations
-	-- http://patrickjohnston.org/bank/82
-	self.loadStations = table()
-	local ptr = rom + topc(0x80, 0xc4c5)
-	local loadStationCountr = 151
-	for i=0,loadStationCountr-1 do
-		local ls = {}
-		ls.ptr = ffi.cast('loadStation_t*', ptr)
-		ls.obj = ffi.new('loadStation_t', ls.ptr[0])
-
-		if ls.ptr.roomAddr ~= 0 
-		and ls.ptr.roomAddr ~= 0xe82c	-- debug rooms.  I think with the sweep based method, I miss out on section 7.  tehn again, mabye this isn't seciton 7
-		then
-			ls.room = assert(select(2, self.rooms:find(nil, function(room)
-				return room:getAddr(self) == ls.ptr.roomAddr
-			end)), "failed to find the room for addr "..('%04x'):format(ls.ptr.roomAddr))
+	-- find rooms for loadStations 
+	for _,lsr in ipairs(self.loadStationsForRegion) do
+		for _,ls in ipairs(lsr.stations) do
+			if ls.obj.roomAddr ~= 0 
+			--and ls.obj.roomAddr ~= 0xe82c	-- debug rooms.  I think with the sweep based method, I miss out on section 7.  tehn again, mabye this isn't seciton 7
+			then
+				ls.room = select(2, self.rooms:find(nil, function(room)
+					return room:getAddr(self) == ls.obj.roomAddr
+				end))
+				if not ls.room then 
+					print("failed to find room for loadStation addr "..('%04x'):format(ls.ptr.roomAddr))
+				end
+			end
+			-- TODO similar pointer for door_t? though I don't move doors yet.
 		end
-		-- TODO similar pointer for door_t? though I don't move doors yet.
-		
---print('loadStation_t'..ls.obj..' '..(ls.room and ('room_t'..ls.room.obj) or ''))
-		self.loadStations[i+1] = ls
-		ptr = ptr + ffi.sizeof'loadStation_t'
 	end
 end
-
-
-
-local debugImageBlockSizeInPixels = 4
-local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
-
-local debugImageColorMap = range(254)
---debugImageColorMap = shuffle(debugImageColorMap)
-debugImageColorMap[0] = 0
-debugImageColorMap[255] = 255
--- data is sized 32*m.width x 16*m.width
-local ofsPerRegion = {
-	function(m) 
-		-- special case for Crateria right of Wrecked Ship
-		if m.region == 0	-- Crateria
-		and m.x > 45 
-		then
-			return 6,1
-		end
-		return -1,1
-	end,	-- crateria
-	function(m) return -4,19 end,	-- brinstar
-	function(m) return 27,39 end,	-- norfair
-	function(m) return 33,-9 end,	-- wrecked ship
-	function(m) return 24,19 end,	-- maridia
-	function(m) return -4,1 end,	-- tourian
-	function(m) return -9,26 end,	-- ceres
-	function(m) return 3,48 end,	-- testing
-}
 
 
 -- it'd be really nice to draw the room region/index next to the room ...
@@ -2915,6 +2996,45 @@ local function drawstr(img, posx, posy, s)
 	end
 end
 
+local dumpworldTileTypes = {
+	empty = 0,
+	solid = 1,
+	slope45_ul_diag45 = 2,
+	slope45_ur_diag45 = 3,
+	slope45_dl_diag45 = 4, 
+	slope45_dr_diag45 = 5,
+	slope27_ul2_diag27 = 6, 
+	slope27_ul1_diag27 = 7,
+	slope27_ur2_diag27 = 8, 
+	slope27_ur1_diag27 = 9, 
+	slope27_dl2_diag27 = 10, 
+	slope27_dl1_diag27 = 11,
+	slope27_dr2_diag27 = 12, 
+	slope27_dr1_diag27 = 13, 
+	water = 14,
+	ladder = 15,
+	blasterbreak = 16,
+	plasmabreak = 17,
+	skillsawbreak = 18,
+	missilebreak = 19,
+	grenadebreak = 20,
+	speedbreak = 21,
+	spikes = 22,
+	blasterbreak_regen = 23,
+	plasmabreak_regen = 24,
+	skillsawbreak_regen = 25,
+	missilebreak_regen = 26,
+	grenadebreak_regen = 27,
+	speedbreak_regen = 28,
+	fallbreak = 29,
+	fallbreak_regen = 30,
+}
+
+local debugImageColorMap = range(254)
+--debugImageColorMap = shuffle(debugImageColorMap)
+debugImageColorMap[0] = 0
+debugImageColorMap[255] = 255
+
 -- to prevent overlap
 -- honestly, excluding the empty background tiles below fixes most of this
 -- but for the solid tile output, I still want to see those types, so that's why I added this code 
@@ -2952,40 +3072,6 @@ local mapDrawExcludeMapBlocks = {
 	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
 }
 
-local dumpworldTileTypes = {
-	empty = 0,
-	solid = 1,
-	slope45_ul_diag45 = 2,
-	slope45_ur_diag45 = 3,
-	slope45_dl_diag45 = 4, 
-	slope45_dr_diag45 = 5,
-	slope27_ul2_diag27 = 6, 
-	slope27_ul1_diag27 = 7,
-	slope27_ur2_diag27 = 8, 
-	slope27_ur1_diag27 = 9, 
-	slope27_dl2_diag27 = 10, 
-	slope27_dl1_diag27 = 11,
-	slope27_dr2_diag27 = 12, 
-	slope27_dr1_diag27 = 13, 
-	water = 14,
-	ladder = 15,
-	blasterbreak = 16,
-	plasmabreak = 17,
-	skillsawbreak = 18,
-	missilebreak = 19,
-	grenadebreak = 20,
-	speedbreak = 21,
-	spikes = 22,
-	blasterbreak_regen = 23,
-	plasmabreak_regen = 24,
-	skillsawbreak_regen = 25,
-	missilebreak_regen = 26,
-	grenadebreak_regen = 27,
-	speedbreak_regen = 28,
-	fallbreak = 29,
-	fallbreak_regen = 30,
-}
-
 local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local m = rs.room
 	local debugMapImage = ctx.debugMapImage
@@ -3000,15 +3086,17 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	for j=0,h-1 do
 		for i=0,w-1 do
 			local ignore
-			for _,info in ipairs(mapDrawExcludeMapBlocks) do
-				local region, index, mx, my, mw, mh = table.unpack(info)
-				if region == m.obj.region
-				and index == m.obj.index
-				and i >= mx and i < mx + mw 
-				and j >= my and j < my + mh
-				then
-					ignore = true
-					break
+			if config.mapOmitOverlappingRoomsInOriginal then
+				for _,info in ipairs(mapDrawExcludeMapBlocks) do
+					local region, index, mx, my, mw, mh = table.unpack(info)
+					if region == m.obj.region
+					and index == m.obj.index
+					and i >= mx and i < mx + mw 
+					and j >= my and j < my + mh
+					then
+						ignore = true
+						break
+					end
 				end
 			end
 			if not ignore then
@@ -3078,6 +3166,13 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 				end
 			end
 		end
+	end
+
+	if not firstcoord then
+		firstcoord = {
+			debugImageBlockSizeInPixels * (blocksPerRoom * (m.obj.x + ofsInRoomBlocksX)),
+			debugImageBlockSizeInPixels * (blocksPerRoom * (m.obj.y + ofsInRoomBlocksY)),
+		}
 	end
 
 	drawstr(debugMapImage, firstcoord[1], firstcoord[2], ('%x-%02x'):format(m.obj.region, m.obj.index))
@@ -3243,9 +3338,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 	self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
 	return bgBmp
 end
-	
-local fullMapWidthInBlocks = 68
-local fullMapHeightInBlocks = 58
+
 
 function SMMap:mapSaveImageInformative(filenamePrefix)
 	local Image = require 'image'
@@ -3262,6 +3355,31 @@ function SMMap:mapSaveImageInformative(filenamePrefix)
 		debugMapImage = debugMapImage,
 		debugMapMaskImage = debugMapMaskImage,
 	}
+
+	local regionRanges = {}
+	for _,roomBlockData in ipairs(self.roomblocks) do
+		for _,rs in ipairs(roomBlockData.roomStates) do
+			local m = rs.room
+			local range = regionRanges[m.obj.region]
+			if not range then
+				range = {}
+				range.region = m.obj.region
+				range.x1 = m.obj.x
+				range.y1 = m.obj.y
+				range.x2 = m.obj.x + m.obj.width - 1
+				range.y2 = m.obj.y + m.obj.height - 1
+				regionRanges[m.obj.region] = range
+			else
+				range.x1 = math.min(range.x1, m.obj.x)
+				range.y1 = math.min(range.y1, m.obj.y)
+				range.x2 = math.max(range.x2, m.obj.x + m.obj.width - 1)
+				range.y2 = math.max(range.y2, m.obj.y + m.obj.height - 1)
+			end
+		end
+	end
+	for region,range in pairs(regionRanges) do
+		print('region '..tolua(range))
+	end
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
@@ -3298,15 +3416,17 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 	for j=0,h-1 do
 		for i=0,w-1 do
 			local ignore
-			for _,info in ipairs(mapDrawExcludeMapBlocks) do
-				local region, index, mx, my, mw, mh = table.unpack(info)
-				if region == m.obj.region
-				and index == m.obj.index
-				and i >= mx and i < mx + mw 
-				and j >= my and j < my + mh
-				then
-					ignore = true
-					break
+			if config.mapOmitOverlappingRoomsInOriginal then
+				for _,info in ipairs(mapDrawExcludeMapBlocks) do
+					local region, index, mx, my, mw, mh = table.unpack(info)
+					if region == m.obj.region
+					and index == m.obj.index
+					and i >= mx and i < mx + mw 
+					and j >= my and j < my + mh
+					then
+						ignore = true
+						break
+					end
 				end
 			end
 			if not ignore then
@@ -3465,15 +3585,17 @@ local function drawRoomBlocksDumpworld(
 	for j=0,h-1 do
 		for i=0,w-1 do
 			local ignore
-			for _,info in ipairs(mapDrawExcludeMapBlocks) do
-				local region, index, mx, my, mw, mh = table.unpack(info)
-				if region == m.obj.region
-				and index == m.obj.index
-				and i >= mx and i < mx + mw 
-				and j >= my and j < my + mh
-				then
-					ignore = true
-					break
+			if config.mapOmitOverlappingRoomsInOriginal then
+				for _,info in ipairs(mapDrawExcludeMapBlocks) do
+					local region, index, mx, my, mw, mh = table.unpack(info)
+					if region == m.obj.region
+					and index == m.obj.index
+					and i >= mx and i < mx + mw 
+					and j >= my and j < my + mh
+					then
+						ignore = true
+						break
+					end
 				end
 			end
 			if not ignore then
@@ -4502,6 +4624,16 @@ function SMMap:mapPrint()
 		print('  size='..('$%06x'):format(graphicsTileSet.size))
 		print('  compressedSize='..('$%06x'):format(graphicsTileSet.compressedSize))
 	end
+
+
+	print()
+	print"all loadStation_t's:"
+	for i,lsr in ipairs(self.loadStationsForRegion) do
+		print(' region='..lsr.region..' addr='..('%04x'):format(lsr.addr))
+		for _,ls in ipairs(lsr.stations) do
+			print('  '..ls.obj)
+		end
+	end
 end
 
 function SMMap:mapBuildMemoryMap(mem)
@@ -4596,7 +4728,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	mem:add(
-		commonRoomSubtileAddr,
+		commonRoomGraphicsTileAddr,
 		self.commonRoomGraphicsTileCompressedSize,
 		'common room graphicsTile_t lz data')
 	mem:add(
@@ -4659,6 +4791,24 @@ function SMMap:mapBuildMemoryMap(mem)
 		)	
 	end
 --]]
+
+	-- add load stations
+	mem:add(
+		topc(loadStationBank, loadStationRegionTableAddr),
+		2 * #self.loadStationsForRegion,
+		'load station region addrs'
+	)
+	for i,lsr in ipairs(self.loadStationsForRegion) do
+		local region = lsr.region
+		for i,ls in ipairs(lsr.stations) do
+			mem:add(
+				topc(loadStationBank, lsr.addr) + ffi.sizeof'loadStation_t' * (i-1),
+				ffi.sizeof'loadStation_t',
+				'loadStation_t',
+				ls.room
+			)
+		end
+	end
 end
 
 function SMMap:mapWritePLMs(roomBankWriteRanges)
@@ -4709,8 +4859,11 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 					eyeparts = eyeparts or table()
 					eyeparts:insert(plm)
 				elseif name:match'^door_eye_' then
-					assert(not eyedoor, "one eye door per room, I guess")
-					eyedoor = plm
+					if eyedoor then
+						print("one eye door per room, I guess")
+					else
+						eyedoor = plm
+					end
 				end
 
 				plm.args = bit.bor(
@@ -5649,13 +5802,17 @@ function SMMap:mapWrite()
 	roomBankWriteRanges:print()
 
 
+--[[
 	-- now that we've moved some rooms around, update them in the loading station and demo section
+	-- or TODO instead, lookup save stations within the rooms and write those back
+	--				and also with lifts
 	for _,ls in ipairs(self.loadStations) do
 		if ls.room then
 			ls.ptr.roomAddr = ls.room:getAddr(self)
 --print("updating loadStation addr "..ls.ptr.roomAddr)
 		end
 	end
+--]]
 
 	-- TODO same with demo?
 end

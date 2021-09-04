@@ -9,6 +9,7 @@ so TODO clean up and bureaucratize
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local MemoryMap = require 'memorymap'
+local config = require 'config'
 
 local SM = class(
 	require 'sm-enemies',
@@ -29,7 +30,7 @@ function SM:init(rom)
 	self:weaponsInit()
 	self:enemiesInit()
 	self:mapInit()		-- do this before itemsInit
-	self:itemsInit()	-- itemsInit depends on mapInit
+	self:itemsInit()
 end
 
 function SM:buildMemoryMap()

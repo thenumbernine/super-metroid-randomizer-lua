@@ -63,15 +63,20 @@ timer('everything', function()
 		return table.unpack(results, 1, results.n)
 	end
 
-	-- [[ apply patches
+	-- [[ apply patches -- do this before removing any rom header
 	file.__tmp = file[infilename]
 	local function applyPatch(patchfilename)
 		exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2 show')
 		file.__tmp = file.__tmp2
 		file.__tmp2 = nil
 	end
-	if config.skipItemFanfare then applyPatch'itemsounds.ips' end
+	
+	if config.skipItemFanfare then
+		applyPatch'itemsounds.ips'
+	end
+	
 	--applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
+	
 	romstr = file.__tmp
 	file.__tmp = nil
 	--]]
@@ -82,9 +87,11 @@ timer('everything', function()
 
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
+		print('skipping rom file header')
 		header = romstr:sub(1,512)
 		romstr = romstr:sub(513)
 	end
+	assert(bit.band(#romstr, 0x7fff) == 0, "rom is not bank-aligned")
 
 	-- global so other files can see it
 	local rom = ffi.cast('uint8_t*', romstr) 
@@ -95,8 +102,8 @@ timer('everything', function()
 	local struct = require 'struct'
 
 	ffi.cdef[[
-	typedef uint8_t uint24_t[3];
-	]]
+typedef uint8_t uint24_t[3];
+]]
 
 	addr24_t = struct{
 		name = 'addr24_t',
@@ -114,9 +121,7 @@ timer('everything', function()
 		end,
 	}
 
-
-
-	local rgb_t = struct{
+	rgb_t = struct{
 		name = 'rgb_t',
 		fields = {
 			{r = 'uint16_t:5'},
@@ -259,7 +264,6 @@ timer('everything', function()
 		copyByteArray(rom + 0x010067, hexStrToByteArray'2200ff80')
 		copyByteArray(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
 	end
-
 
 	if config.beefUpXRay then
 		local function write(bank, pageofs, ...)
@@ -574,8 +578,6 @@ g:
 		write(0xa9, 0x87a2, 0xa9, 0x00, 0x00)
 		write(0xa9, 0x92af, 0xa9, 0x00, 0x00)
 --]==]
-
-
 	end
 
 
@@ -626,42 +628,40 @@ g:
 	end)
 
 	-- write out unaltered stuff
-	if config.writeOutOriginalMapImage then
-		-- [[
+	if config.mapSaveImageInformative then
 		timer('write original ROM info images', function()
 			sm:mapSaveImageInformative'map'
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveImageTextured then
 		timer('write original ROM textured image', function()
 			sm:mapSaveImageTextured'map'
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveDumpworldImage then
 		timer('write original ROM output images', function()
 			sm:mapSaveDumpworldImage()
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveGraphicsMode7 then
 		timer('write original ROM map mode7 images', function()
 			sm:mapSaveGraphicsMode7()
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveGraphicsTileSets then
 		timer('write original ROM map tileset images', function()
 			sm:mapSaveGraphicsTileSets()
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveGraphicsBGs then
 		timer('write original ROM map backgrounds', function()
 			sm:mapSaveGraphicsBGs()
 		end)
-		--]]
-		-- [[
+	end
+	if config.mapSaveGraphicsLayer2BGs then
 		timer('write original ROM map layer 2 backgrounds', function()
 			sm:mapSaveGraphicsLayer2BGs()
 		end)
-		--]]
 	end
 	timer('write original ROM memory map', function()
 		-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
@@ -798,7 +798,7 @@ g:
 	--]]
 
 	-- also (only for wake zebes early?) open the grey door from old mother brain so you don't need morph to get back?
-	do
+	if config.removeGreyDoorInOldMotherBrainRoom then
 		local m = sm:mapFindRoom(0, 0x13)
 		local rs = m.roomStates[2]	-- sleeping old mother brain
 		local plmset = rs.plmset
@@ -807,25 +807,14 @@ g:
 	end
 
 
-	-- debugging -- remove the savestation from the plm used by room 00/04
-	do
-		local m = sm:mapFindRoom(0, 0x04)
-		local rs = m.roomStates[1]
-		local plmset = rs.plmset
-		assert(#plmset.plms == 1)
-		local plm = plmset.plms:remove()	-- remove the lone save point
-		assert(plm.cmd == sm.plmCmdValueForName.save_station)
-	end
-
-
 	-- also while I'm here, lets remove the unfinished/unused rooms
 	-- notice, when using recursive room building, this skips them anyways
-	-- [[
-	timer('removing unused rooms', function()
-		sm:mapRemoveRoom(sm:mapFindRoom(2, 0x3d))
-		sm:mapRemoveRoom(sm:mapFindRoom(7, 0x00))
-	end)
-	--]]
+	if config.removeUnusedRooms then
+		timer('removing unused rooms', function()
+			sm:mapRemoveRoom(sm:mapFindRoom(2, 0x3d))
+			sm:mapRemoveRoom(sm:mapFindRoom(7, 0x00))
+		end)
+	end
 
 	--[[ redirect our doors to cut out the toned-down rooms (like the horseshoe shaped room before springball)
 	local merging424and425 = true
@@ -880,75 +869,75 @@ g:
 	end
 	--]]
 
-	-- [=[
-	timer('filling in OOB map blocks with solid', function()
-		-- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
-		local fillSolidInfo = table{
-			--[[
-			-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
-			-- I might have to just excise regions from the item-scavenger instead
-			{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
-			{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
-			{1, 0x24, 0,0,16,32+6},			-- brinstar right elevator to crateria.
-			{1, 0x34, 0,16,16,16},			-- brinstar elevator to norfair / entrance to kraid
-			{2, 0x03, 0,0,16,32},			-- brinstar elevator to norfair
-			{2, 0x26, 0,16-6,16,6},			-- norfair elevator to lower norfair
-			{2, 0x36, 64,0,16,32+6},		-- norfair elevator to lower norfair
-			{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
-			{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
-			--]]
-			
-			{0, 0x00, 0,0,16,32},			-- crateria first room empty regions
-			{0, 0x00, 0,48,16,16},			-- "
-			
-			{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room 
+	if config.fillInOOBMapBlocksWithSolid then
+		timer('filling in OOB map blocks with solid', function()
+			-- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
+			local fillSolidInfo = table{
+				--[[
+				-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
+				-- I might have to just excise regions from the item-scavenger instead
+				{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
+				{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
+				{1, 0x24, 0,0,16,32+6},			-- brinstar right elevator to crateria.
+				{1, 0x34, 0,16,16,16},			-- brinstar elevator to norfair / entrance to kraid
+				{2, 0x03, 0,0,16,32},			-- brinstar elevator to norfair
+				{2, 0x26, 0,16-6,16,6},			-- norfair elevator to lower norfair
+				{2, 0x36, 64,0,16,32+6},		-- norfair elevator to lower norfair
+				{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
+				{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
+				--]]
+				
+				{0, 0x00, 0,0,16,32},			-- crateria first room empty regions
+				{0, 0x00, 0,48,16,16},			-- "
+				
+				{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room 
 
-			{1, 0x18, 0,16-3,16,3},			-- brinstar first missile room
+				{1, 0x18, 0,16-3,16,3},			-- brinstar first missile room
 
-			{2, 0x48, 2, 3*16-4, 1,1},		-- return from lower norfair spade room
-			{2, 0x48, 16-2, 3*16-4, 1,1},	-- "
+				{2, 0x48, 2, 3*16-4, 1,1},		-- return from lower norfair spade room
+				{2, 0x48, 16-2, 3*16-4, 1,1},	-- "
 
-			{4, 0x04, 29, 11, 3, 3},		-- maridia big room - under top door pillars
-			{4, 0x08, 1, 11, 3, 4},			-- maridia next big room - under top door pillars
-			{4, 0x08, 5, 13, 1, 4},			-- "
-			{4, 0x08, 5*16, 2*16, 16,16},	-- maridia next big room - debug area not fully developed
-			{4, 0x0b, 16, 0, 16, 16},		-- maridia top left room to missile and super
-			{4, 0x0e, 1,16+3,1,2},			-- maridia crab room before refill
-			{4, 0x0e, 14,16+3,1,2},			-- "
-			{4, 0x0e, 1,16+11,1,2},			-- "
-			{4, 0x0e, 14,16+11,1,2},		-- "
-			{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side 
-			{4, 0x1b, 0, 32-5, 16, 4},		-- maridia green pipe in the middle pillars underneath
-			{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side 
-			{4, 0x1c, 3*16-4, 16-5, 4, 4},	-- maridia second sand area pillars under door on right side 
-			{4, 0x24, 0, 64-5, 4, 4},		-- maridia lower right sand area
-			{4, 0x24, 16-4, 64-5, 8, 4},	-- "
-			{4, 0x24, 32-4, 64-5, 4, 4},	-- "
-			{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
-		} 
-		if not merging424and425 then
-			fillSolidInfo:append{
-				{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
-				{4, 0x25, 16-4, 48-5, 4, 4},	-- "
-			}
-		end
-		for _,info in ipairs(fillSolidInfo) do
-			local region, index, x1,y1,w,h = table.unpack(info)
-			local m = assert(sm:mapFindRoom(region, index))
-			local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?
-			for j=0,h-1 do
-				local y = y1 + j
-				assert(y >= 0 and y < roomBlockData.height)
-				for i=0,w-1 do
-					local x = x1 + i
-					assert(x >= 0 and x < roomBlockData.width)
-					local bi = 1 + 3 * (x + roomBlockData.width * y)
-					roomBlockData.blocks[bi] = bit.bor(bit.band(roomBlockData.blocks[bi], 0x0f), 0x80)
+				{4, 0x04, 29, 11, 3, 3},		-- maridia big room - under top door pillars
+				{4, 0x08, 1, 11, 3, 4},			-- maridia next big room - under top door pillars
+				{4, 0x08, 5, 13, 1, 4},			-- "
+				{4, 0x08, 5*16, 2*16, 16,16},	-- maridia next big room - debug area not fully developed
+				{4, 0x0b, 16, 0, 16, 16},		-- maridia top left room to missile and super
+				{4, 0x0e, 1,16+3,1,2},			-- maridia crab room before refill
+				{4, 0x0e, 14,16+3,1,2},			-- "
+				{4, 0x0e, 1,16+11,1,2},			-- "
+				{4, 0x0e, 14,16+11,1,2},		-- "
+				{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side 
+				{4, 0x1b, 0, 32-5, 16, 4},		-- maridia green pipe in the middle pillars underneath
+				{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side 
+				{4, 0x1c, 3*16-4, 16-5, 4, 4},	-- maridia second sand area pillars under door on right side 
+				{4, 0x24, 0, 64-5, 4, 4},		-- maridia lower right sand area
+				{4, 0x24, 16-4, 64-5, 8, 4},	-- "
+				{4, 0x24, 32-4, 64-5, 4, 4},	-- "
+				{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
+			} 
+			if not merging424and425 then
+				fillSolidInfo:append{
+					{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
+					{4, 0x25, 16-4, 48-5, 4, 4},	-- "
+				}
+			end
+			for _,info in ipairs(fillSolidInfo) do
+				local region, index, x1,y1,w,h = table.unpack(info)
+				local m = assert(sm:mapFindRoom(region, index))
+				local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?
+				for j=0,h-1 do
+					local y = y1 + j
+					assert(y >= 0 and y < roomBlockData.height)
+					for i=0,w-1 do
+						local x = x1 + i
+						assert(x >= 0 and x < roomBlockData.width)
+						local bi = 1 + 3 * (x + roomBlockData.width * y)
+						roomBlockData.blocks[bi] = bit.bor(bit.band(roomBlockData.blocks[bi], 0x0f), 0x80)
+					end
 				end
 			end
-		end
-	end)
-	--]=]
+		end)
+	end
 
 	-- randomize rooms?  still working on this
 	-- *) enemy placement
@@ -990,7 +979,7 @@ g:
 		end)
 	end
 
-	do --if config.randomizeDoors or config.randomizeItems or config.wakeZebesEarly then
+	if config.mapRecompress then
 		timer('write map changes to ROM', function()
 			-- write back changes
 			sm:mapWrite()
