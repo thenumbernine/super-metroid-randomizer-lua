@@ -5,33 +5,30 @@ return {
 
 	mapSaveImageInformative = true,
 	mapSaveImageTextured = true,
+	mapSaveImageTextured_HighlightItems = true,
+	mapSaveGraphicsMode7 = true,
+	mapSaveGraphicsTileSets = true,
+	mapSaveGraphicsBGs = true,
+	mapSaveGraphicsLayer2BGs = true,
 	mapSaveDumpworldImage = false,
-	mapSaveGraphicsMode7 = false,
-	mapSaveGraphicsTileSets = false,
-	mapSaveGraphicsBGs = false,
-	mapSaveGraphicsLayer2BGs = false,
-
-	--writeOutModifiedMapImage = true,	-- TODO only do this if we are modifying the map
-
+	
 	-- rearrange and recompress data in the map
-	--mapRecompress = true,
+	mapRecompress = true,
+
+	-- write the ROM back out
+	writeOutModifiedMapImage = true,
 	
-	
---[==[
 
 	-- for the original rom:
 	-- asserts the order of map data is packed in the same way the original rom packs it.
 	-- I'm betting a lot of custom roms won't play by these rules
 	mapAssertStructure = true,
 
+--[==[
 	-- for the original rom:
 	-- whether to chop out rooms that overlap each other in the original layout
 	-- doesn't do much good for custom roms
 	mapOmitOverlappingRoomsInOriginal = true,
-
-	-- for the original rom:
-	-- randomizing sometimes has trouble with this
-	removeGreyDoorInOldMotherBrainRoom = true,
 
 	-- for the original rom:
 	-- remove unused rooms, specifically 2-3d and 7-00
@@ -90,6 +87,10 @@ return {
 
 	-- randomize weapon damages
 	randomizeWeapons = false,--true, 
+
+	-- for the original rom:
+	-- randomizing sometimes has trouble with this
+	removeGreyDoorInOldMotherBrainRoom = true,
 
 --]==]
 

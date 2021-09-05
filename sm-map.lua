@@ -17,6 +17,7 @@ local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
 local disasm = require 'disasm'
 local topc = require 'pc'.to
+local frompc = require 'pc'.from
 local config = require 'config'
 
 
@@ -36,9 +37,7 @@ SMMap.bgBank = 0x8f
 SMMap.doorCodeBank = 0x8f
 -- then comes a group o fplms, and then comes a group of layer handling
 SMMap.layerHandlingBank = 0x8f
-
--- TODO use a bank? isn't it the same as the roomBank?  0x8f.
-SMMap.plmBaseAddress = 0x70000
+SMMap.plmBank = 0x8f
 
 -- and then we go back to some more rooms
 
@@ -48,19 +47,23 @@ SMMap.enemyGFXBank = 0xb4
 local loadStationBank = 0x80
 local loadStationRegionTableAddr = 0xc4b5
 
-local commonRoomGraphicsTileAddr = 0x1c8000	-- b9:8000
+local commonRoomGraphicsTileAddr24 = ffi.new('addr24_t', {bank=0xb9, ofs=0x8000})
+assert(commonRoomGraphicsTileAddr24:topc() == 0x1c8000)
 
---[[
-where is b9:a09d used in code?
-82:e841
-82:eaf1
---]]
-local commonRoomTilemapAddr = 0x1ca09d	-- b9:a09d
+local commonRoomTilemapAddr24 = ffi.new('addr24_t', {bank=0xb9, ofs=0xa09d})
+assert(commonRoomTilemapAddr24:topc() == 0x1ca09d)
+
+-- where is b9:a09d used in code?
+local commonRoomTilemapAddrLocs = table{
+	-- ofsaddr is 16-bit, bankaddr is 8-bit
+	{ofsaddr=topc(0x82, 0xe841), bankaddr=topc(0x82, 0xe83d)},
+	{ofsaddr=topc(0x82, 0xeaf1), bankaddr=topc(0x82, 0xeaed)},
+}
 
 
 local blocksPerRoom = 16
 local blockSizeInPixels = 16
-local debugImageRoomSizeInPixels = blocksPerRoom * blockSizeInPixels
+local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
 -- 128x128 tile indexes (0-255), each tile is [256][8][8]
 local graphicsTileSizeInPixels = 8
@@ -74,7 +77,7 @@ local debugImageBlockSizeInPixels = 4
 local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
 
 
-
+-- TODO pick by md5 of the rom?
 -- [=[ this is all used for rendering the map.png -- and is specific to the original metroid
 local fullMapWidthInBlocks = 68
 local fullMapHeightInBlocks = 58
@@ -1063,8 +1066,7 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	for i=#m.roomStates,1,-1 do
 		local rs = m.roomStates[i]
 		if rs.obj.plmAddr ~= 0 then
-			local addr = topc(self.plmBank, rs.obj.plmAddr)
-			local plmset = self:mapAddPLMSetFromAddr(addr, m)
+			local plmset = self:mapAddPLMSetFromAddr(topc(self.plmBank, rs.obj.plmAddr), m)
 			rs:setPLMSet(plmset)
 		end
 	end
@@ -1173,7 +1175,7 @@ if done then break end
 	--if roomAddr == 0x79804 then
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.roomvarAddr ~= 0 then
-			local d = rom + self.plmBaseAddress + rs.obj.roomvarAddr
+			local d = rom + topc(self.plmBank, rs.obj.roomvarAddr)
 			local roomvar = table()
 			repeat
 				roomvar:insert(d[0])	-- x
@@ -1321,7 +1323,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 	-- now interpret the plms...
 	for _,plm in ipairs(plmset.plms) do
 		if plm.cmd == self.plmCmdValueForName.scrollmod then
-			local startaddr = self.plmBaseAddress + plm.args
+			local startaddr = topc(self.plmBank, plm.args)
 			local addr = startaddr
 			local data = table()
 			while true do
@@ -2256,7 +2258,7 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	self.tileSetGraphicsTileSets:insert(graphicsTileSet)
 	
 	-- NOTICE this buffer is SEPARATE of tileSet.graphicsTileVec
-	-- tileSet.graphicsTileVec starts with this, pads it, appends the commonRoomGraphicsTileVec, 
+	-- tileSet.graphicsTileVec starts with this, pads it, appends the commonRoomGraphicsTiles,
 	-- and even right now does some in-place stuff to it
 	-- SO if you modify that, don't forget to update this buffer as well (somehow)
 	graphicsTileSet.data, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
@@ -2322,38 +2324,60 @@ function TileSet:setTilemap(tilemap)
 end
 
 
+function SMMap:mapReadCompressedGraphicsTiles(addr)
+	local buffer, compressedSize = lz.decompress(self.rom, addr, 0x10000) --common room elements
+	local size = ffi.sizeof(buffer)
+	assert(size % graphicsTileSizeInBytes == 0)
+	return {
+		addr = addr,
+		buffer = buffer,
+		size = size,
+		count = size / graphicsTileSizeInBytes,
+		compressedSize = compressedSize,
+	}
+end
+
+function SMMap:mapReadCompressedTilemap(addr)
+	local buffer, compressedSize = lz.decompress(self.rom, addr, 0x10000) --common room elements
+	local size = ffi.sizeof(buffer)
+	assert(size % ffi.sizeof'tilemapElem_t' == 0)
+	return {
+		addr = addr,
+		buffer = buffer,
+		size = size,
+		count = size / ffi.sizeof'tilemapElem_t',
+		compressedSize = compressedSize,	-- in bytes, stored to determine how well recompression worked
+	}
+end
+
+
 function SMMap:mapReadTileSets()
 	local rom = self.rom
 
-	do
-		local buffer
-		buffer, self.commonRoomGraphicsTileCompressedSize = lz.decompress(rom, commonRoomGraphicsTileAddr, 0x10000) --common room elements
-		self.commonRoomGraphicsTileVec = vector'uint8_t'
-		self.commonRoomGraphicsTileVec:insert(self.commonRoomGraphicsTileVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		-- decompresesd size is 0x3000
-print('self.commonRoomGraphicsTileVec size', ('$%x'):format(self.commonRoomGraphicsTileVec.size))
-	end
+	self.commonRoomGraphicsTiles = self:mapReadCompressedGraphicsTiles(commonRoomGraphicsTileAddr24:topc())
+	-- decompresesd size is 0x3000
+print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles.size))
+	
+	self.commonRoomTilemaps = self:mapReadCompressedTilemap(commonRoomTilemapAddr24:topc())
+	-- size is 0x800 ... so 256 8bit tile infos
+	-- in my 32-tiles-per-row pics, this is 8 rows
+print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.size))
 
-	do
-print'uses of the common room tilemap byte vec:'		
-print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xe841))[0]))
-print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xeaf1))[0]))
-print('these should match '..('%04x'):format(0xa09d))	-- common room tilemap pageofs
-print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xe83c))[0]))
-print((' %04x'):format(ffi.cast('uint16_t*', rom + topc(0x82, 0xeaec))[0]))
-print('these should match '..('%04x'):format(0xb900)) 	-- common room tilemap bank << 8
--- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
--- but TODO if that's the case, why not just seek past the end of the common room graphics tile addr,
---  since those two are usually packed?
--- well, in roms like Metroid Redesigned, where these lookup instructions have been changed, it looks like the graphics tile buffer is also not present
-		
-		local buffer
-		buffer, self.commonRoomTilemapCompressedSize = lz.decompress(rom, commonRoomTilemapAddr, 0x10000) --common room elements
-		self.commonRoomTilemapByteVec = vector'uint8_t'
-		self.commonRoomTilemapByteVec:insert(self.commonRoomTilemapByteVec:iend(), buffer, buffer + ffi.sizeof(buffer))
-		-- size is 0x800 ... so 256 8bit tile infos
-		-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilemapByteVec.size))
+	-- if this happens then your rom's code has been modified to the point that the common room tilemap loading is somewhere else, or is pointed to somewhere else
+	-- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
+	-- but TODO if that's the case, why not just seek past the end of the common room graphics tile addr,
+	--  since those two are usually packed?
+	-- well, in roms like Metroid Redesigned, where these lookup instructions have been changed, it looks like the graphics tile buffer is also not present
+	for _,loc in ipairs(commonRoomTilemapAddrLocs) do
+		local ofsvalue = ffi.cast('uint16_t*', rom + loc.ofsaddr)[0]
+		if ofsvalue ~= commonRoomTilemapAddr24.ofs then
+			print(" WARNING - the value at location "..('%02x:%04x'):format(frompc(loc.ofsaddr))..", is "..('%04x'):format(ofsvalue)..", should be "..('%04x'):format(commonRoomTilemapAddr24.ofs))
+		end
+
+		local bankvalue = rom[loc.bankaddr]
+		if bankvalue ~= commonRoomTilemapAddr24.bank then
+			print(" WARNING - the value at location "..('%02x:%04x'):format(frompc(loc.bankaddr))..", is "..('%02x'):format(bankvalue)..", should be "..('%02x'):format(commonRoomTilemapAddr24.bank))
+		end	
 	end
 
 	-- load all the tileset address info that is referenced by per-room stuff
@@ -2498,7 +2522,7 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 			end
 		end
 		if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
-			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTileVec:begin(), self.commonRoomGraphicsTileVec:iend())
+			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.buffer, self.commonRoomGraphicsTiles.buffer + self.commonRoomGraphicsTiles.size)
 		end
 		
 		-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
@@ -2560,7 +2584,7 @@ print('self.commonRoomTilemapByteVec size', ('$%x'):format(self.commonRoomTilema
 
 		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
-			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemapByteVec:begin(), self.commonRoomTilemapByteVec:iend())
+			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.buffer, self.commonRoomTilemaps.buffer + self.commonRoomTilemaps.size)
 		end
 		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap.data + tileSet.tilemap.size)
 		
@@ -3548,10 +3572,7 @@ end
 function SMMap:mapSaveImageTextured(filenamePrefix)
 	local Image = require 'image'
 	filenamePrefix = filenamePrefix or 'map'
-
-	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
-	local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
-
+	
 	local mapTexImage = Image(
 		blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
 		blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
@@ -3562,6 +3583,36 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
+		end
+	end
+	if config.mapSaveImageTextured_HighlightItems then
+		-- do this last, so no room tiles overlap it
+		for _,m in ipairs(self.rooms) do
+			local ofsInRoomBlocksX, ofsInRoomBlocksY = ofsPerRegion[m.obj.region+1](m.ptr)
+			local xofs = roomSizeInPixels * ofsInRoomBlocksX
+			local yofs = roomSizeInPixels * ofsInRoomBlocksY
+			for _,rs in ipairs(m.roomStates) do
+				if rs.plmset then
+					for _,plm in ipairs(rs.plmset.plms) do
+						local name = self.plmCmdNameForValue[plm.cmd]
+						if name and name:sub(1,5) == 'item_' then
+							local x = xofs + blockSizeInPixels / 2 + blockSizeInPixels * (plm.x + blocksPerRoom * m.obj.x)
+							local y = yofs + blockSizeInPixels / 2 + blockSizeInPixels * (plm.y + blocksPerRoom * m.obj.y)
+						
+							for rad=1,8,2 do
+								local x1 = x - rad
+								local y1 = y - rad
+								local x2 = x + rad
+								local y2 = y + rad
+								drawline(mapTexImage, x1, y1, x2, y1, 0x00, 0xff, 0xff)
+								drawline(mapTexImage, x2, y1, x2, y2, 0x00, 0xff, 0xff)
+								drawline(mapTexImage, x2, y2, x1, y2, 0x00, 0xff, 0xff)
+								drawline(mapTexImage, x1, y2, x1, y1, 0x00, 0xff, 0xff)
+							end
+						end
+					end
+				end
+			end
 		end
 	end
 
@@ -4489,7 +4540,7 @@ function SMMap:mapPrint()
 					local plmName = plm:getName()
 					if plmName then io.write(plmName..': ') end
 					print(plm)
-					--print('    plm scrollmod: '..('$%06x'):format(plm.args + self.plmBaseAddress)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+					--print('    plm scrollmod: '..('$%06x'):format(topc(self.plmBank, plm.args))..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 				end
 			end
 			--]]
@@ -4544,7 +4595,7 @@ function SMMap:mapPrint()
 			if plmName then io.write(plmName..': ') end
 			print(plm)
 			if plm.scrollmod then
-				print('  plm scrollmod: '..('$%06x'):format(self.plmBaseAddress + plm.args)..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
+				print('  plm scrollmod: '..('$%06x'):format(topc(self.plmBank, plm.args))..': '..plm.scrollmod:map(function(x) return ('%02x'):format(x) end):concat' ')
 			end
 		end
 	end
@@ -4702,7 +4753,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		--]]
 		for _,plm in ipairs(plmset.plms) do
 			if plm.scrollmod then
-				mem:add(self.plmBaseAddress + plm.args, #plm.scrollmod, 'plm scrollmod', m)
+				mem:add(topc(self.plmBank, plm.args), #plm.scrollmod, 'plm scrollmod', m)
 			end
 		end
 	end
@@ -4728,12 +4779,12 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	mem:add(
-		commonRoomGraphicsTileAddr,
-		self.commonRoomGraphicsTileCompressedSize,
+		self.commonRoomGraphicsTiles.addr,
+		self.commonRoomGraphicsTiles.compressedSize,
 		'common room graphicsTile_t lz data')
 	mem:add(
-		commonRoomTilemapAddr,
-		self.commonRoomTilemapCompressedSize,
+		self.commonRoomTilemaps.addr,
+		self.commonRoomTilemaps.compressedSize,
 		'common room tilemapElem_t lz data')
 
 -- [[
@@ -5591,7 +5642,12 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		--		update m.roomStates[1..n].ptr.roomvarAddr
 		for _,rs in ipairs(m.roomStates) do
 			if rs.roomvar then
-				rs.obj.roomvarAddr = bit.band(0xffff, ptr-rom)
+				local bank, ofs = frompc(ptr - rom)
+				--assert(bank == self.plmBank)
+				if bank ~= self.plmBank then
+					print('DANGER DANGER - you are writing roomvar data outside the PLM bank')
+				end
+				rs.obj.roomvarAddr = ofs
 				rs.ptr.roomvarAddr = rs.obj.roomvarAddr
 				for _,c in ipairs(rs.roomvar) do
 					ptr[0] = c
@@ -5798,14 +5854,15 @@ function SMMap:mapWrite()
 
 	roomBankWriteRanges.name = 'room_t'
 	self:mapWriteRooms(roomBankWriteRanges)
+
 	
-	roomBankWriteRanges:print()
-
-
---[[
 	-- now that we've moved some rooms around, update them in the loading station and demo section
 	-- or TODO instead, lookup save stations within the rooms and write those back
 	--				and also with lifts
+	for _,lsr in ipairs(self.loadStationsForRegion) do
+		-- TODO
+	end
+--[[
 	for _,ls in ipairs(self.loadStations) do
 		if ls.room then
 			ls.ptr.roomAddr = ls.room:getAddr(self)
@@ -5813,6 +5870,8 @@ function SMMap:mapWrite()
 		end
 	end
 --]]
+
+	roomBankWriteRanges:print()
 
 	-- TODO same with demo?
 end
