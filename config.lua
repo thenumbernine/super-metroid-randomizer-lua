@@ -4,13 +4,13 @@ return {
 	mapReadRoomBlockData = true,
 
 	-- saving data in the original rom
-	mapSaveImageInformative = true,
-	mapSaveImageTextured = true,
-	mapSaveImageTextured_HighlightItems = true,
-	mapSaveGraphicsMode7 = true,
-	mapSaveGraphicsTileSets = true,
-	mapSaveGraphicsBGs = true,
-	mapSaveGraphicsLayer2BGs = true,
+	mapSaveImageInformative = false,
+	mapSaveImageTextured = false,
+	mapSaveImageTextured_HighlightItems = false,
+	mapSaveGraphicsMode7 = false,
+	mapSaveGraphicsTileSets = false,
+	mapSaveGraphicsBGs = false,
+	mapSaveGraphicsLayer2BGs = false,
 	
 	mapSaveDumpworldImage = false,
 	
@@ -22,6 +22,9 @@ return {
 	
 
 --[==[
+	-- whether to write out disasm
+	writeOutDisasm = true,
+
 	-- for the original rom:
 	-- asserts the order of map data is packed in the same way the original rom packs it.
 	-- I'm betting a lot of custom roms won't play by these rules

@@ -668,10 +668,10 @@ g:
 		sm:buildMemoryMap():print'memorymap.txt'
 	end)
 
-	do	-- if config.writeOutDisasm then
+	if config.writeOutDisasm then
 		timer('write out disasm', function()
 			local pagelen = 0x8000
-			for _,bank in ipairs{
+			for _,bank in ipairs(table{
 				0x80,	-- system routines
 				0x81,	-- SRAM
 				0x82,	-- top level main game routines
@@ -681,8 +681,8 @@ g:
 				0x86,	-- enemy projectiles
 				0x87,	-- animated tiles
 				0x88,	-- hdma
-				--...
-			} do
+			}:append(range(0x89, 0xdf))) do
+				-- you know, data could mess this up 
 				local addr = topc(bank, 0x8000)
 				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, rom+addr, pagelen, pagelen)
 			end

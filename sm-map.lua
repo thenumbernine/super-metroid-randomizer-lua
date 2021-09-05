@@ -2695,12 +2695,11 @@ print('plmBank '..('%02x'):format(self.plmBank))
 	self.tileSetGraphicsTileSets = table()
 	self.tileSetTilemaps = table()
 
-
 	self:mapReadTileSets()
-
 
 	self:mapReadLoadStations()
 
+	
 	--[[ load fixed rooms	
 	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
 	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
@@ -2737,6 +2736,15 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 		end
 	end
 	--]]
+
+
+	-- load kraid's background, since its address will have to be updated in the code
+	-- this should already be referenced by a room, (and therefore already loaded)
+	self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(0xb9, 0xfa38))
+	assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
+	self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
+	assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
+
 
 	if config.mapAssertStructure then
 		-------------------------------- ASSERT STRUCT ---------------------------------
@@ -5836,12 +5844,14 @@ function SMMap:mapWrite()
 		local rom = self.rom
 		local writeRange = WriteRange({
 			--{0x1c8000, 0x1ca634},	-- common room graphics tiles + tilemaps
-			--{0x1ca634, 0x1d4629},	-- bg tilemapElem_t lz data ... have random padding in there which looks like multiple bg tilemaps per room bg tilemap ptr (am I missing something?)
+			--{0x1ca634, 0x1d4629},	-- bg tilemapElem_t lz data ... have random padding but doesn't seem to be used 
 			--{0x1d4629, 0x20b6f6},	-- tileSet graphicsTile_t lz data
 			--{0x20b6f6, 0x212d7c},	-- tileSet tilemaps lz data
 			--{0x212d7c, 0x2142bb},	-- tileSet palette rgb_t lz data
 			--{0x2142bb, 0x27322e},	-- roomblocks lz data
 			--{0x27322e, 0x278000},	-- padding
+		
+			-- the whole block:
 			{0x1c8000, 0x278000},
 		}, 'common room graphics tiles + tilemaps + bg tilemaps + tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
 		
@@ -5894,8 +5904,20 @@ function SMMap:mapWrite()
 			tilemap.bg.ptr.addr24:frompc(fromaddr)
 		end
 
-		-- TODO write out the bg_t's
+		-- update the kraid code that points to the kraid bg tilemaps
+		do
+			local bank, ofs = frompc(self.mapKraidBGTilemapTop.addr)
+			rom[topc(0xa7, 0xaac9)] = bit.band(ofs, 0xff)
+			rom[topc(0xa7, 0xaacf)] = bit.rshift(ofs, 8)
+			rom[topc(0xa7, 0xaad5)] = bank
+			
+			local bank, ofs = frompc(self.mapKraidBGTilemapBottom.addr)
+			rom[topc(0xa7, 0xaaeb)] = bit.band(ofs, 0xff)
+			rom[topc(0xa7, 0xaaf1)] = bit.rshift(ofs, 8)
+			rom[topc(0xa7, 0xaaf7)] = bank
+		end
 
+		-- TODO write out the bg_t's
 		-- and then update the roomstate bg_t's
 
 		print()
