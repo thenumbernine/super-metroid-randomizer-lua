@@ -33,7 +33,11 @@ function Blob:init(args)--rom, addr, count, ctype)
 
 	if self.compressed then
 		assert(not args.count, "can't be compressed and specify count")
+		
+		-- TODO for some ill-formatted rooms, some old dangling rooms will still be accessible by room door pointers in the data (even if they are not in the game)
+		-- and that will lead us to this function crashing
 		self.data, self.compressedSize = lz.decompress(self.rom, self.addr, self.ctype)
+		
 		assert(ffi.sizeof(self.data) % ffi.sizeof(self.ctype) == 0)
 		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.ctype)
 	else

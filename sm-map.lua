@@ -11,6 +11,7 @@ tile graphics TODO's:
 --]]
 
 local ffi = require 'ffi'
+local template = require 'template'
 local struct = require 'struct'
 local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
@@ -948,9 +949,6 @@ function SMMap:mapAddBGTilemap(addr)
 	for _,tilemap in ipairs(self.bgTilemaps) do
 		if tilemap.addr == addr then return tilemap end
 	end
-	
-	local tilemap = {}
-	tilemap.addr = addr
 
 	--[[
 	bg tilemap.size is 0x800 / 2048 or 0x1000 / 4096
@@ -959,17 +957,16 @@ function SMMap:mapAddBGTilemap(addr)
 	some are tilemap.size==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
 	--]]
 	
-	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr)
-	-- TODO ambiguous ... how about sizeInBytes?
-	-- or about just using 'count' or 'len'
-	tilemap.size = ffi.sizeof(tilemap.data)	
-
-	local sizeofElem = ffi.sizeof'tilemapElem_t'
-	assert(tilemap.size % sizeofElem == 0)
-	local count = tilemap.size / sizeofElem		-- number of tilemaps
+	local tilemap = Blob{
+		rom = self.rom,
+		addr = addr,
+		ctype = 'tilemapElem_t',
+		compressed = true,
+	}
+	
 	tilemap.width = 32
-	tilemap.height = count / tilemap.width
-	assert(tilemap.width * tilemap.height * sizeofElem == tilemap.size)
+	tilemap.height = tilemap.count / tilemap.width
+	assert(tilemap.width * tilemap.height * ffi.sizeof(tilemap.ctype) == tilemap:size())
 
 	self.bgTilemaps:insert(tilemap)
 	return tilemap
@@ -2321,32 +2318,14 @@ function TileSet:setTilemap(tilemap)
 	end
 end
 
-
-function SMMap:mapReadCompressedGraphicsTiles(addr)
-	local buffer, compressedSize = lz.decompress(self.rom, addr) --common room elements
-	local size = ffi.sizeof(buffer)
-	assert(size % graphicsTileSizeInBytes == 0)
-	return {
-		addr = addr,
-		buffer = buffer,
-		size = size,
-		count = size / graphicsTileSizeInBytes,
-		compressedSize = compressedSize,
-	}
-end
-
-function SMMap:mapReadCompressedTilemap(addr)
-	local buffer, compressedSize = lz.decompress(self.rom, addr) --common room elements
-	local size = ffi.sizeof(buffer)
-	assert(size % ffi.sizeof'tilemapElem_t' == 0)
-	return {
-		addr = addr,
-		buffer = buffer,
-		size = size,
-		count = size / ffi.sizeof'tilemapElem_t',
-		compressedSize = compressedSize,	-- in bytes, stored to determine how well recompression worked
-	}
-end
+ffi.cdef(template([[
+typedef struct {
+	uint8_t s[<?=graphicsTileSizeInBytes?>];
+} graphicsTile_t;
+]], {
+	graphicsTileSizeInBytes = graphicsTileSizeInBytes,
+}))
+assert(ffi.sizeof'graphicsTile_t' == graphicsTileSizeInBytes)
 
 -- used by the map only so far, so i'll keep it here
 function SMMap:graphicsLoadMode7(ptr, size)
@@ -2377,15 +2356,27 @@ end
 
 function SMMap:mapReadTileSets()
 	local rom = self.rom
-
-	self.commonRoomGraphicsTiles = self:mapReadCompressedGraphicsTiles(commonRoomGraphicsTileAddr24:topc())
-	-- decompresesd size is 0x3000
-print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles.size))
 	
-	self.commonRoomTilemaps = self:mapReadCompressedTilemap(commonRoomTilemapAddr24:topc())
+	--common room elements
+	self.commonRoomGraphicsTiles = Blob{
+		rom = self.rom,
+		addr = commonRoomGraphicsTileAddr24:topc(),
+		ctype = 'graphicsTile_t',
+		compressed = true,
+	}
+	-- decompresesd size is 0x3000
+print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:size()))
+	
+	--common room elements
+	self.commonRoomTilemaps = Blob{
+		rom = self.rom,
+		addr = commonRoomTilemapAddr24:topc(),
+		ctype = 'tilemapElem_t',
+		compressed = true,
+	}
 	-- size is 0x800 ... so 256 8bit tile infos
 	-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.size))
+print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:size()))
 
 	-- if this happens then your rom's code has been modified to the point that the common room tilemap loading is somewhere else, or is pointed to somewhere else
 	-- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
@@ -2477,7 +2468,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 		so I wonder if that mode7 tileSetIndex if condition is even needed
 		--]]
 		local graphicsTileVec = vector'uint8_t'
-		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet.data + tileSet.graphicsTileSet:size())
+		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet.data + tileSet.graphicsTileSet.count)
 
 		-- for tileSet 0x11-0x14
 		-- tileSet 0x11, 0x12 = room 06/00
@@ -2527,7 +2518,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 			end
 		end
 		if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
-			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.buffer, self.commonRoomGraphicsTiles.buffer + self.commonRoomGraphicsTiles.size)
+			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.data, self.commonRoomGraphicsTiles.data + self.commonRoomGraphicsTiles.count)
 		end
 	
 		self:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
@@ -2536,9 +2527,9 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 
 		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
-			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.buffer, self.commonRoomTilemaps.buffer + self.commonRoomTilemaps.size)
+			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.data, self.commonRoomTilemaps.data + self.commonRoomTilemaps.count)
 		end
-		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap.data + tileSet.tilemap:size())
+		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap.data + tileSet.tilemap.count)
 		
 		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
@@ -4480,7 +4471,7 @@ function SMMap:mapPrint()
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
 		if bg.tilemap then
-			print('  tilemap.size: '..('$%x'):format(bg.tilemap.size))
+			print('  tilemap.size: '..('$%x'):format(bg.tilemap:size()))
 			print('  tilemap.addr: '..('$%x'):format(bg.tilemap.addr))
 		end
 	end
@@ -4730,22 +4721,12 @@ function SMMap:mapBuildMemoryMap(mem)
 	for _,tilemap in ipairs(self.bgTilemaps) do
 		local bg = tilemap.bg
 		local rs = bg and bg.roomStates[1]
-		mem:add(
-			tilemap.addr,
-			tilemap.compressedSize,
-			'bg tilemaps lz data',
-			rs and rs.room or nil
-		)
+		tilemap:addMem(mem, 'bg tilemaps lz data', rs and rs.room or nil)
 	end
 
-	mem:add(
-		self.commonRoomGraphicsTiles.addr,
-		self.commonRoomGraphicsTiles.compressedSize,
-		'common room graphicsTile_t lz data')
-	mem:add(
-		self.commonRoomTilemaps.addr,
-		self.commonRoomTilemaps.compressedSize,
-		'common room tilemaps lz data')
+	self.commonRoomGraphicsTiles:addMem(mem, 'common room graphicsTile_t lz data')
+	
+	self.commonRoomTilemaps:addMem(mem, 'common room tilemaps lz data')
 
 -- [[
 	-- should I do this for used palettes, not just my fixed maximum?
@@ -5770,32 +5751,17 @@ function SMMap:mapWrite()
 			{0x1c8000, 0x278000},
 		}, 'common room graphics tiles + tilemaps + bg tilemaps + tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
 		
-		local totalOriginalCompressedSize = 0
-		local totalRecompressedSize = 0
+		local compressInfo = {
+			totalOriginalCompressedSize = 0,
+			totalRecompressedSize = 0,
+		}
 		
 		-- write back the common graphics tiles/tilemaps
 		-- recompress them and see how well that works
-		
-		local data = self.commonRoomGraphicsTiles.buffer
-		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + self.commonRoomGraphicsTiles.compressedSize
-		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
-		data = recompressed
-		self.commonRoomGraphicsTiles.compressedSize = ffi.sizeof(recompressed)
-		local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
-		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
-		self.commonRoomGraphicsTiles.addr = fromaddr
-		
-		local data = self.commonRoomTilemaps.buffer
-		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + self.commonRoomTilemaps.compressedSize
-		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
-		data = recompressed
-		self.commonRoomTilemaps.compressedSize = ffi.sizeof(recompressed)
-		local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
-		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
-		self.commonRoomTilemaps.addr = fromaddr
 
+		self.commonRoomGraphicsTiles:recompress(writeRange, compressInfo)
+		self.commonRoomTilemaps:recompress(writeRange, compressInfo)
+	
 		-- now update the common room tilemap ptrs
 		for _,loc in ipairs(commonRoomTilemapAddrLocs) do
 			local bank, ofs = frompc(self.commonRoomTilemaps.addr)
@@ -5805,18 +5771,10 @@ function SMMap:mapWrite()
 
 		-- now recompress bgTilemaps
 		for _,tilemap in ipairs(self.bgTilemaps) do
-			local data = tilemap.data
-			local recompressed = lz.compress(data)
-			totalOriginalCompressedSize = totalOriginalCompressedSize + tilemap.compressedSize
-			totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
-			data = recompressed
-			tilemap.compressedSize = ffi.sizeof(recompressed)
-			local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
-			ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
-			tilemap.addr = fromaddr
-			
+			tilemap:recompress(writeRange, compressInfo)
+
 			-- update bgTilemap pointers within the bg_t's
-			tilemap.bg.ptr.addr24:frompc(fromaddr)
+			tilemap.bg.ptr.addr24:frompc(tilemap.addr)
 		end
 
 		-- update the kraid code that points to the kraid bg tilemaps
@@ -5838,9 +5796,9 @@ function SMMap:mapWrite()
 		-- and then update the roomstate bg_t's
 
 		print()
-		print('common room graphics tiles + tilemaps + bg tilemaps recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
-			', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
-			..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
+		print('common room graphics tiles + tilemaps + bg tilemaps recompressed from '..compressInfo.totalOriginalCompressedSize..' to '..compressInfo.totalRecompressedSize..
+			', saving '..(compressInfo.totalOriginalCompressedSize - compressInfo.totalRecompressedSize)..' bytes '
+			..'(new data is '..math.floor(compressInfo.totalRecompressedSize/compressInfo.totalOriginalCompressedSize*100)..'% of original size)')
 	
 		-- write these before writing roomstates
 		self:mapWriteTileSets(writeRange)		-- tileSet_t's...
