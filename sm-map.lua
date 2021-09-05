@@ -45,7 +45,10 @@ SMMap.enemySpawnBank = 0xa1
 SMMap.enemyGFXBank = 0xb4
 
 local loadStationBank = 0x80
-local loadStationRegionTableAddr = 0xc4b5
+local loadStationRegionTableOffset = 0xc4b5
+local loadStationRegionCount = 8
+-- where is 80:c4b5 referenced in code?  at 80:c458
+local loadStationEndOffset = 0xcd07	-- don't go past here when writing
 
 local commonRoomGraphicsTileAddr24 = ffi.new('addr24_t', {bank=0xb9, ofs=0x8000})
 assert(commonRoomGraphicsTileAddr24:topc() == 0x1c8000)
@@ -2619,24 +2622,29 @@ function SMMap:mapReadLoadStations()
 	-- TODO is this what I should be using as entry points to loading rooms?
 	-- load stations
 	-- http://patrickjohnston.org/bank/82
-	local p = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableAddr))
-	for region=0,7 do
+	local ptr = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableOffset))
+	for region=0,loadStationRegionCount-1 do
 		self.loadStationsForRegion:insert{
 			region = region,
-			addr = p[0],
+			addr = ptr[0],
 			stations = table(),
 		}
-		p=p+1
+		ptr = ptr + 1
 	end
 	-- how do you tell how many entries each one has?
 	-- one way is to just not overrun the next address
 	-- but what about the last address?
 	-- of course that is a debug/empty table
 	-- but TODO how do you determine the debug region loadStation count?
-	for region=0,#self.loadStationsForRegion-2 do
+	for region=0,#self.loadStationsForRegion-1 do
 		local lsr = self.loadStationsForRegion[region+1]
 		local addr = lsr.addr
-		local nextAddr = assert(self.loadStationsForRegion[region+2].addr)
+		local nextAddr
+		if region < #self.loadStationsForRegion-1 then
+			nextAddr = self.loadStationsForRegion[region+2].addr
+		else
+			nextAddr = loadStationEndOffset
+		end
 		assert((nextAddr - addr) % ffi.sizeof'loadStation_t' == 0)
 		local count = (nextAddr - addr) / ffi.sizeof'loadStation_t'
 		
@@ -2699,8 +2707,11 @@ print(' loadStation addr '..('%04x'):format(addr))
 				local room = self:mapAddRoom(addr, true)
 				if not room then
 print("loadStation addr "..('%04x'):format(addr).." failed to load room")
+				else
+					ls.room = room
 				end
 			end
+			-- TODO what about the doorAddr? what does this point to?
 		end
 	end
 	--]]
@@ -2845,22 +2856,6 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 	
 	--]]
 
-	-- find rooms for loadStations 
-	for _,lsr in ipairs(self.loadStationsForRegion) do
-		for _,ls in ipairs(lsr.stations) do
-			if ls.obj.roomAddr ~= 0 
-			--and ls.obj.roomAddr ~= 0xe82c	-- debug rooms.  I think with the sweep based method, I miss out on section 7.  tehn again, mabye this isn't seciton 7
-			then
-				ls.room = select(2, self.rooms:find(nil, function(room)
-					return room:getAddr(self) == ls.obj.roomAddr
-				end))
-				if not ls.room then 
-					print("failed to find room for loadStation addr "..('%04x'):format(ls.ptr.roomAddr))
-				end
-			end
-			-- TODO similar pointer for door_t? though I don't move doors yet.
-		end
-	end
 end
 
 
@@ -4845,7 +4840,7 @@ function SMMap:mapBuildMemoryMap(mem)
 
 	-- add load stations
 	mem:add(
-		topc(loadStationBank, loadStationRegionTableAddr),
+		topc(loadStationBank, loadStationRegionTableOffset),
 		2 * #self.loadStationsForRegion,
 		'load station region addrs'
 	)
@@ -5859,21 +5854,37 @@ function SMMap:mapWrite()
 	-- now that we've moved some rooms around, update them in the loading station and demo section
 	-- or TODO instead, lookup save stations within the rooms and write those back
 	--				and also with lifts
-	for _,lsr in ipairs(self.loadStationsForRegion) do
-		-- TODO
-	end
---[[
-	for _,ls in ipairs(self.loadStations) do
-		if ls.room then
-			ls.ptr.roomAddr = ls.room:getAddr(self)
---print("updating loadStation addr "..ls.ptr.roomAddr)
+	assert(#self.loadStationsForRegion <= loadStationRegionCount)
+	do
+		local rom = self.rom
+		local loadStationEndPtr = rom + topc(loadStationBank, loadStationEndOffset)
+		local rt = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableOffset))
+		local ptr = ffi.cast('loadStation_t*', rt + loadStationRegionCount)
+		for _,lsr in ipairs(self.loadStationsForRegion) do
+			lsr.addr = select(2, frompc(ffi.cast('uint8_t*', ptr) - rom))
+			rt[0] = lsr.addr
+			rt = rt + 1
+			for _,ls in ipairs(lsr.stations) do
+				if ffi.cast('uint8_t*', ptr) >= loadStationEndPtr then
+					print'WARNING - ran out of room writing the loadStations!'
+					break
+				end
+				ls.ptr = ptr
+				if ls.room then
+					ls.obj.roomAddr = assert(ls.room.addr)
+				else
+					if ls.obj.roomAddr ~= 0 then
+						print("WARNING - loadStation doesn't have a room, but does have a nonzero roomAddr")
+					end
+				end
+				ptr[0] = ls.obj
+				ptr = ptr + 1
+			end
+			if ffi.cast('uint8_t*',ptr) >= loadStationEndPtr then break end
 		end
 	end
---]]
 
 	roomBankWriteRanges:print()
-
-	-- TODO same with demo?
 end
 
 

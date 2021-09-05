@@ -3,28 +3,29 @@ return {
 	-- this is needed for the rest of the map room stuff 
 	mapReadRoomBlockData = true,
 
+	-- saving data in the original rom
 	mapSaveImageInformative = true,
-	mapSaveImageTextured = true,
-	mapSaveImageTextured_HighlightItems = true,
-	mapSaveGraphicsMode7 = true,
-	mapSaveGraphicsTileSets = true,
-	mapSaveGraphicsBGs = true,
-	mapSaveGraphicsLayer2BGs = true,
+	mapSaveImageTextured = false,
+	mapSaveImageTextured_HighlightItems = false,
+	mapSaveGraphicsMode7 = false,
+	mapSaveGraphicsTileSets = false,
+	mapSaveGraphicsBGs = false,
+	mapSaveGraphicsLayer2BGs = false,
 	mapSaveDumpworldImage = false,
 	
 	-- rearrange and recompress data in the map
 	mapRecompress = true,
 
-	-- write the ROM back out
-	writeOutModifiedMapImage = true,
+	-- write the informative image of the randomized rom 
+	writeOutModifiedMapImage = false,
 	
 
+--[==[
 	-- for the original rom:
 	-- asserts the order of map data is packed in the same way the original rom packs it.
 	-- I'm betting a lot of custom roms won't play by these rules
-	mapAssertStructure = true,
+	mapAssertStructure = false,
 
---[==[
 	-- for the original rom:
 	-- whether to chop out rooms that overlap each other in the original layout
 	-- doesn't do much good for custom roms
