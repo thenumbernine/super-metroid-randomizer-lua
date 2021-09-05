@@ -100,7 +100,7 @@ function SMGraphics:graphicsInit()
 	self:graphicsInitPauseScreen()
 end
 
-function SMGraphics:mapSaveEquipScreenImages()
+function SMGraphics:graphicsSaveEquipScreenImages()
 	local Image = require 'image'
 
 	local tilemapWidth = 32

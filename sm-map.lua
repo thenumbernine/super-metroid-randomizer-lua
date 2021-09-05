@@ -950,7 +950,6 @@ function SMMap:mapAddBGTilemap(addr)
 	
 	local tilemap = {}
 	tilemap.addr = addr
-	self.bgTilemaps:insert(tilemap)
 
 	--[[
 	bg tilemap.size is 0x800 / 2048 or 0x1000 / 4096
@@ -971,6 +970,7 @@ function SMMap:mapAddBGTilemap(addr)
 	tilemap.height = count / tilemap.width
 	assert(tilemap.width * tilemap.height * sizeofElem == tilemap.size)
 
+	self.bgTilemaps:insert(tilemap)
 	return tilemap
 end
 
@@ -4763,12 +4763,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			rs = tileSet.roomStates[1]
 			if rs then break end
 		end
-		mem:add(
-			palette.addr,
-			palette.compressedSize,
-			'tileSet palette rgb_t lz data',
-			rs and rs.room or nil
-		)
+		palette:addMem(mem, 'tileSet palette rgb_t lz data', rs and rs.room or nil)
 	end
 
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
@@ -5365,15 +5360,17 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 --]]
 		{0x1d4629, 0x2142bb},		-- the end of this is the beginning of a roomblock lz data range, soo ... combine?
 	}, 'tileSet tilemap+graphicsTileSet+palette lz data')
---]=]	
-	local totalOriginalCompressedSize = 0
-	local totalRecompressedSize = 0
+--]=]
+	local compressInfo = {
+		totalOriginalCompressedSize = 0,
+		totalRecompressedSize = 0,
+	}
 
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
 		local data = tilemap.data
 		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + tilemap.compressedSize
-		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + tilemap.compressedSize
+		compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + ffi.sizeof(recompressed)
 		data = recompressed
 		tilemap.compressedSize = ffi.sizeof(recompressed)
 		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
@@ -5392,8 +5389,8 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	for _,graphicsTileSet in ipairs(self.tileSetGraphicsTileSets) do
 		local data = graphicsTileSet.data
 		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + graphicsTileSet.compressedSize
-		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + graphicsTileSet.compressedSize
+		compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + ffi.sizeof(recompressed)
 		data = recompressed
 		graphicsTileSet.compressedSize = ffi.sizeof(recompressed)
 		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
@@ -5410,18 +5407,11 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	for _,palette in ipairs(self.tileSetPalettes) do
-		local data = palette.data
-		local recompressed = lz.compress(data)
-		totalOriginalCompressedSize = totalOriginalCompressedSize + palette.compressedSize
-		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
-		data = recompressed
-		palette.compressedSize = ffi.sizeof(recompressed)
-		local fromaddr, toaddr = tileSetAndRoomBlockWriteRange:get(ffi.sizeof(data))
-		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
-		palette.addr = fromaddr
+		palette:recompress(tileSetAndRoomBlockWriteRange, compressInfo)
+		
 		-- update anything dependent on this palette
 		for _,tileSet in ipairs(palette.tileSets) do
-			tileSet.obj.paletteAddr24:frompc(fromaddr)
+			tileSet.obj.paletteAddr24:frompc(palette.addr)
 
 			-- TODO don't do this here, do this on write later
 			tileSet.ptr.paletteAddr24.bank = tileSet.obj.paletteAddr24.bank
@@ -5430,9 +5420,9 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	print()
-	print('tileSet tilemap + graphicsTileSet + palettes recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
-		', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
-		..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
+	print('tileSet tilemap + graphicsTileSet + palettes recompressed from '..compressInfo.totalOriginalCompressedSize..' to '..compressInfo.totalRecompressedSize..
+		', saving '..(compressInfo.totalOriginalCompressedSize - compressInfo.totalRecompressedSize)..' bytes '
+		..'(new data is '..math.floor(compressInfo.totalRecompressedSize/compressInfo.totalOriginalCompressedSize*100)..'% of original size)')
 
 	-- remove duplicate tileSet_t's 
 	for i=#self.tileSets,2,-1 do

@@ -13,6 +13,7 @@ return {
 	mapSaveGraphicsLayer2BGs = false,
 	graphicsSaveEquipScreenImages = false,
 
+	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
 	
 	-- rearrange and recompress data in the map

@@ -26,19 +26,20 @@ args:
 			if 'compressed' is used then this is inferred from the decompressed size.
 --]]
 function Blob:init(args)--rom, addr, count, ctype)
-	local rom = assert(args.rom)
+	self.rom = assert(args.rom)
 	self.addr = assert(args.addr)
 	self.ctype = args.ctype	-- or class ctype
-	
-	if args.compressed then
+	self.compressed = args.compressed
+
+	if self.compressed then
 		assert(not args.count, "can't be compressed and specify count")
-		self.data, self.compressedSize = lz.decompress(rom, self.addr, self.ctype)
+		self.data, self.compressedSize = lz.decompress(self.rom, self.addr, self.ctype)
 		assert(ffi.sizeof(self.data) % ffi.sizeof(self.ctype) == 0)
 		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.ctype)
 	else
 		self.count = assert(args.count)
 		self.data = ffi.new(self.ctype..'[?]', self.count)
-		ffi.copy(self.data, rom + self.addr, self.count * ffi.sizeof(self.ctype))
+		ffi.copy(self.data, self.rom + self.addr, self.count * ffi.sizeof(self.ctype))
 	end
 end
 
@@ -47,7 +48,25 @@ function Blob:size()
 end
 
 function Blob:addMem(mem, ...)
-	mem:add(self.addr, self:size(), ...)
+	if self.compressed then
+		mem:add(self.addr, self.compressedSize, ...)
+	else
+		mem:add(self.addr, self:size(), ...)
+	end
+end
+
+function Blob:recompress(writeRange, compressInfo)
+	assert(self.compressed)
+
+	local data = self.data
+	local recompressed = lz.compress(data)
+	compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + self.compressedSize
+	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + ffi.sizeof(recompressed)
+	data = recompressed
+	self.compressedSize = ffi.sizeof(recompressed)
+	local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
+	ffi.copy(self.rom + fromaddr, data, ffi.sizeof(data))
+	self.addr = fromaddr
 end
 
 return Blob
