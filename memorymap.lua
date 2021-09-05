@@ -1,5 +1,6 @@
 local class = require 'ext.class'
 local table = require 'ext.table'
+local pc = require 'pc'
 
 local MemoryMap = class()
 
@@ -63,7 +64,7 @@ function MemoryMap:print(filename)
 			end
 		end
 		f:write'\n'
-		if prevRange and bit.band(prevRange.addr, 0x7f8000) ~= bit.band(range.addr, 0x7f8000) then
+		if prevRange and bit.rshift(prevRange.addr, 15) ~= bit.rshift(range.addr, 15) then
 			f:write'--------------\n'
 		end
 		
@@ -74,6 +75,7 @@ function MemoryMap:print(filename)
 			f:write('     ')
 		end
 		f:write(': '..('$%06x'):format(range.addr)..'..'..('$%06x'):format(range.addr+range.len-1))
+		f:write(' : '..('$%02x:%04x'):format(pc.from(range.addr))..'..'..('$%02x:%04x'):format(pc.from(range.addr+range.len-1)))
 		f:write(' ('..range.name..')')
 	end
 	f:write(' ('..ranges:last().name..')\n')

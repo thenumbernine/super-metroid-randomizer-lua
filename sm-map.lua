@@ -47,7 +47,7 @@ SMMap.enemyGFXBank = 0xb4
 local loadStationBank = 0x80
 local loadStationRegionTableOffset = 0xc4b5
 local loadStationRegionCount = 8
--- where is 80:c4b5 referenced in code?  at 80:c458
+-- if I want to move this, then where is 80:c4b5 referenced in code?  at 80:c458
 local loadStationEndOffset = 0xcd07	-- don't go past here when writing
 
 local commonRoomGraphicsTileAddr24 = ffi.new('addr24_t', {bank=0xb9, ofs=0x8000})
@@ -1441,9 +1441,11 @@ function SMMap:mapAddBG(addr, rom)
 	self.bgs:insert(bg)
 
 	if header == 4 then
-		local tilesetAddr = ptr.addr24:topc()
-print('decoding bg addr '..('%06x'):format(addr)..' tileset '..('%06x'):format(tilesetAddr))
-		bg.tilemap = self:mapAddBGTilemap(tilesetAddr)
+--print('decoding bg addr '..('%06x'):format(addr)..' tileset '..('%06x'):format(ptr.addr24:topc()))
+		bg.tilemap = self:mapAddBGTilemap(ptr.addr24:topc())
+		-- don't overwrite?  and if we do then make this bg.tilemap.bgs:insert(bg)
+		-- but nope, seems bg tilemaps are 1:1 with bgs
+		assert(not bg.tilemap.bg)
 		bg.tilemap.bg = bg	-- is this 1:1?
 	end
 
@@ -2134,34 +2136,34 @@ function SMMap:convertTilemapToBitmap(
 	tilemapElemSizeY,
 	count
 )
-	local dst = ffi.cast('uint8_t*', dst)
-	graphicsTiles = ffi.cast('uint8_t*', graphicsTiles)
+	dst = ffi.cast('uint8_t*', dst)
+	tilemap = ffi.cast('tilemapElem_t*', tilemap)
+	graphicsTiles = ffi.cast('uint8_t*', graphicsTiles)	-- 8 bytes per 32x32x4bpp graphicsTile
 	local dstbase = dst
-	local tilemapElem = ffi.cast('uint16_t*', tilemap)
-	--local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
+	local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
 	
 	for tileIndex=0,count-1 do
 		for dstSubtileY=0,tilemapElemSizeY-1 do
-			--local col = dst
+			local dstcol = dst
 			for dstSubtileX=0,tilemapElemSizeX-1 do
-				local tileInfo = tilemapElem[dstSubtileX + tilemapElemSizeX * dstSubtileY + tilemapElemSizeX * tilemapElemSizeY * tileIndex]
-				local xflip = bit.band(tileInfo, 0x4000) ~= 0 and 7 or 0
-				local yflip = bit.band(tileInfo, 0x8000) ~= 0 and 7 or 0
-				local colorIndexHi = bit.rshift(bit.band(tileInfo, 0x1c00), 6)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
+				local xflip = tilemap.xflip ~= 0 and 7 or 0
+				local yflip = tilemap.yflip ~= 0 and 7 or 0
+				local colorIndexHi = bit.lshift(tilemap.colorIndexHi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
+				local graphicsTileIndex = tilemap.graphicsTileIndex
 				for y=0,7 do
 					for x=0,7 do
 						-- graphicsTileOffset = cccc cccc:ccbb baaa
 						-- a = x or ~x depending on xflip
 						-- b = y or ~y depending on yflip
-						-- c = tilemapElem.graphicsTileIndex
+						-- c = tilemap.graphicsTileIndex
 						local graphicsTileOffset = bit.bor(
 							bit.bxor(x, xflip),
 							bit.lshift(bit.bxor(y, yflip), 3),
-							bit.lshift(bit.band(tileInfo, 0x3ff), 6)
+							bit.lshift(graphicsTileIndex, 6)
 						)
 						--graphicsTileOffset.x = bit.bxor(x, xflip)
-						--graphicsTileOffset.y = bit.bxor(y, xflip)
-						--graphicsTileOffset.graphicsTileIndex = tilemapElem.graphicsTileIndex
+						--graphicsTileOffset.y = bit.bxor(y, yflip)
+						--graphicsTileOffset.graphicsTileIndex = graphicsTileIndex
 						-- graphicsTileOffset is a nibble index
 						-- so the real byte index into the graphicsTiles is ... 0ccc cccc:cccb bbaa
 						-- and that means the graphicsTiles are 32 bytes each ... 8 * 8 * 4bpp / 8 bits/byte = 32 bytes
@@ -2169,23 +2171,23 @@ function SMMap:convertTilemapToBitmap(
 						local colorIndexLo = graphicsTiles[bit.rshift(graphicsTileOffset, 1)]
 						if bit.band(graphicsTileOffset, 1) ~= 0 then colorIndexLo = bit.rshift(colorIndexLo, 4) end
 						colorIndexLo = bit.band(colorIndexLo, 0xf)
-						-- so if graphicsTileOffset & 1 == 1 (i.e. if tilemapElem.x & 1 == 1) then we <<= 2
+						-- so if graphicsTileOffset & 1 == 1 (i.e. if tilemap.x & 1 == 1) then we <<= 2
 						--colorIndexLo = bit.band(bit.rshift(colorIndexLo, bit.lshift(bit.band(graphicsTileOffset.ptr[0], 1), 2)), 0xf)
-						dst[x + 8 * dstSubtileX + 8 * tilemapElemSizeX * (y + 8 * dstSubtileY) + 8 * 8 * tilemapElemSizeX * tilemapElemSizeY * tileIndex] = bit.bor(colorIndexHi, colorIndexLo)
+						dstcol[x + 8 * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
 					end
 				end
 				
-				--col = col + graphicsTileSizeInPixels
-				--tilemapElem = tilemapElem + 1
+				dstcol = dstcol + 8
+				tilemap = tilemap + 1
 			end
-			--dst = dst + graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapElemSizeX
+			dst = dst + 8 * 8 * tilemapElemSizeX
 		end
 	end
 	-- [[
 	-- what is this used for?  
 	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
 	-- and all palettes are 128 entries so that bit shouldn't be needed
-	for i=0,tilemapElemSizeX*tilemapElemSizeY*graphicsTileSizeInPixels*graphicsTileSizeInPixels*count-1 do
+	for i=0,8*8*tilemapElemSizeX*tilemapElemSizeY*count-1 do
 		dstbase[i] = bit.band(dstbase[i], 0x7f)
 	end
 	--]]
@@ -2371,6 +2373,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 	-- but TODO if that's the case, why not just seek past the end of the common room graphics tile addr,
 	--  since those two are usually packed?
 	-- well, in roms like Metroid Redesigned, where these lookup instructions have been changed, it looks like the graphics tile buffer is also not present
+	-- TODO how about instead I read the address from here -- and complain if any of these entries differ?
 	for _,loc in ipairs(commonRoomTilemapAddrLocs) do
 		local ofsvalue = ffi.cast('uint16_t*', rom + loc.ofsaddr)[0]
 		if ofsvalue ~= commonRoomTilemapAddr24.ofs then
@@ -2614,6 +2617,11 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 		-- (it will have to map to multiple tileIndexes)
 		-- used for tileIndex removal/optimization
 	end
+
+	-- strangely, immediately *after* the tileset data, is the table into the tileset data
+	-- starting at 8f:e7a7, this is a list of 29 entries of 2 bytes each with values, starting at e6a2, spaced at 9 bytes each.
+	-- which finishes at 8f:e7e1
+	-- which is where the music pointers begin
 end
 
 function SMMap:mapReadLoadStations()
@@ -4768,7 +4776,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		mem:add(
 			tilemap.addr,
 			tilemap.compressedSize,
-			'bg tilemapElem_t lz data',
+			'bg tilemaps lz data',
 			rs and rs.room or nil
 		)
 	end
@@ -4780,7 +4788,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	mem:add(
 		self.commonRoomTilemaps.addr,
 		self.commonRoomTilemaps.compressedSize,
-		'common room tilemapElem_t lz data')
+		'common room tilemaps lz data')
 
 -- [[
 	-- should I do this for used palettes, not just my fixed maximum?
@@ -4818,7 +4826,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		mem:add(
 			tilemap.addr,
 			tilemap.compressedSize,
-			'tileSet tilemapElem_t lz data',
+			'tileSet tilemaps lz data',
 			rs and rs.room or nil
 		)
 	end
@@ -5799,6 +5807,7 @@ function SMMap:mapWrite()
 	-- 3) write last
 
 
+	-- not being used at the moment...
 	local roomBankWriteRanges = WriteRange({
 		{0x78000, 0x79194},		-- plms
 		-- 9194-91f7 = asm
@@ -5810,7 +5819,7 @@ function SMMap:mapWrite()
 		-- c8c7-c98d = layer asm, which is L12 data
 		{0x7c98e, 0x7e0fd},	-- rooms of regions 3-6
 		-- e1d8-e513 = door asm 
-		-- e514-e689 = room select asm.  notice these call one another, so you can't just omve them around willy nilly
+		-- e514-e689 = room select asm.  notice these call one another, so you can't just move them around willy nilly
 		-- e68a-e82b = more tables and stuff
 		{0x7e82c, 0x7e881},	-- within this region is e85b-e87e, which is assumed to be unused ...
 		-- e88f-e99a = setup asm
@@ -5820,22 +5829,88 @@ function SMMap:mapWrite()
 		-- then comes door code
 	})
 	
-	-- write these before writing roomstates
+
+
+
 	do
-		-- this is how the data is ordered in the rom:
-		local tileSetAndRoomBlockWriteRange = WriteRange({
-			-- NOTICE from 0x1c8000 to 1ca633 is common room compressed graphicsTile_t then tilemapElem_t
-			-- then comes the bg tilemapElem_t's, but they have random padding in there,
-			-- and immediately after comes this:
-			-- so I'm a step away from just writing everything from 0x1c8000 to 0x278000
-			{0x1d4629, 0x278000},
-		}, 'tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
-		self:mapWriteTileSets(tileSetAndRoomBlockWriteRange)		-- tileSet_t's...
-		self:mapWriteRoomBlocks(tileSetAndRoomBlockWriteRange)		-- roomBlockData ...
+		local rom = self.rom
+		local writeRange = WriteRange({
+			--{0x1c8000, 0x1ca634},	-- common room graphics tiles + tilemaps
+			--{0x1ca634, 0x1d4629},	-- bg tilemapElem_t lz data ... have random padding in there which looks like multiple bg tilemaps per room bg tilemap ptr (am I missing something?)
+			--{0x1d4629, 0x20b6f6},	-- tileSet graphicsTile_t lz data
+			--{0x20b6f6, 0x212d7c},	-- tileSet tilemaps lz data
+			--{0x212d7c, 0x2142bb},	-- tileSet palette rgb_t lz data
+			--{0x2142bb, 0x27322e},	-- roomblocks lz data
+			--{0x27322e, 0x278000},	-- padding
+			{0x1c8000, 0x278000},
+		}, 'common room graphics tiles + tilemaps + bg tilemaps + tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
+		
+		local totalOriginalCompressedSize = 0
+		local totalRecompressedSize = 0
+		
+		-- write back the common graphics tiles/tilemaps
+		-- recompress them and see how well that works
+		
+		local data = self.commonRoomGraphicsTiles.buffer
+		local recompressed = lz.compress(data)
+		totalOriginalCompressedSize = totalOriginalCompressedSize + self.commonRoomGraphicsTiles.compressedSize
+		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		data = recompressed
+		self.commonRoomGraphicsTiles.compressedSize = ffi.sizeof(recompressed)
+		local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
+		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
+		self.commonRoomGraphicsTiles.addr = fromaddr
+		
+		local data = self.commonRoomTilemaps.buffer
+		local recompressed = lz.compress(data)
+		totalOriginalCompressedSize = totalOriginalCompressedSize + self.commonRoomTilemaps.compressedSize
+		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+		data = recompressed
+		self.commonRoomTilemaps.compressedSize = ffi.sizeof(recompressed)
+		local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
+		ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
+		self.commonRoomTilemaps.addr = fromaddr
+
+		-- now update the common room tilemap ptrs
+		for _,loc in ipairs(commonRoomTilemapAddrLocs) do
+			local bank, ofs = frompc(self.commonRoomTilemaps.addr)
+			ffi.cast('uint16_t*', rom + loc.ofsaddr)[0] = ofs
+			rom[loc.bankaddr] = bank
+		end
+
+		-- now recompress bgTilemaps
+		for _,tilemap in ipairs(self.bgTilemaps) do
+			local data = tilemap.data
+			local recompressed = lz.compress(data)
+			totalOriginalCompressedSize = totalOriginalCompressedSize + tilemap.compressedSize
+			totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
+			data = recompressed
+			tilemap.compressedSize = ffi.sizeof(recompressed)
+			local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
+			ffi.copy(rom + fromaddr, data, ffi.sizeof(data))
+			tilemap.addr = fromaddr
+			
+			-- update bgTilemap pointers within the bg_t's
+			tilemap.bg.ptr.addr24:frompc(fromaddr)
+		end
+
+		-- TODO write out the bg_t's
+
+		-- and then update the roomstate bg_t's
+
+		print()
+		print('common room graphics tiles + tilemaps + bg tilemaps recompressed from '..totalOriginalCompressedSize..' to '..totalRecompressedSize..
+			', saving '..(totalOriginalCompressedSize - totalRecompressedSize)..' bytes '
+			..'(new data is '..math.floor(totalRecompressedSize/totalOriginalCompressedSize*100)..'% of original size)')
+	
+		-- write these before writing roomstates
+		self:mapWriteTileSets(writeRange)		-- tileSet_t's...
+		self:mapWriteRoomBlocks(writeRange)		-- roomBlockData ...
 		
 		-- output memory ranges
-		tileSetAndRoomBlockWriteRange:print()
+		writeRange:print()
 	end
+
 
 	roomBankWriteRanges.name = 'plm_t'
 	self:mapWritePLMs(roomBankWriteRanges)
@@ -5844,8 +5919,6 @@ function SMMap:mapWrite()
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
 
-	-- TODO recompress and write bg_t's
-	-- but first I need to decode them all
 
 	roomBankWriteRanges.name = 'room_t'
 	self:mapWriteRooms(roomBankWriteRanges)
