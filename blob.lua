@@ -58,14 +58,12 @@ end
 function Blob:recompress(writeRange, compressInfo)
 	assert(self.compressed)
 
-	local data = self.data
-	local recompressed = lz.compress(data)
+	local recompressed = lz.compress(self.data)
 	compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + self.compressedSize
-	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + ffi.sizeof(recompressed)
-	data = recompressed
 	self.compressedSize = ffi.sizeof(recompressed)
-	local fromaddr, toaddr = writeRange:get(ffi.sizeof(data))
-	ffi.copy(self.rom + fromaddr, data, ffi.sizeof(data))
+	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + self.compressedSize
+	local fromaddr, toaddr = writeRange:get(self.compressedSize)
+	ffi.copy(self.rom + fromaddr, recompressed, self.compressedSize)
 	self.addr = fromaddr
 end
 
