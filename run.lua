@@ -663,9 +663,9 @@ g:
 			sm:mapSaveGraphicsLayer2BGs()
 		end)
 	end
-	if config.mapSaveEquipScreenImages then
+	if config.graphicsSaveEquipScreenImages then
 		timer('write out equip screen images', function()
-			sm:mapSaveEquipScreenImages()
+			sm:graphicsSaveEquipScreenImages()
 		end)
 	end
 	timer('write original ROM memory map', function()

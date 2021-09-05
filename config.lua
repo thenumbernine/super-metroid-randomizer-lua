@@ -11,7 +11,7 @@ return {
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	mapSaveEquipScreenImages = false,
+	graphicsSaveEquipScreenImages = false,
 
 	mapSaveDumpworldImage = false,
 	

@@ -20,6 +20,12 @@ local topc = require 'pc'.to
 local frompc = require 'pc'.from
 local config = require 'config'
 
+local SMGraphics = require 'sm-graphics'
+
+local Palette = SMGraphics.Palette 
+local graphicsTileSizeInPixels = SMGraphics.graphicsTileSizeInPixels 
+local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes 
+
 
 local SMMap = {}
 
@@ -68,9 +74,6 @@ local blocksPerRoom = 16
 local blockSizeInPixels = 16
 local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
--- 128x128 tile indexes (0-255), each tile is [256][8][8]
-local graphicsTileSizeInPixels = 8
-local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel ... = 32 bytes
 local numMode7Tiles = 256
 local mode7sizeInGraphicTiles = 128
 assert(mode7sizeInGraphicTiles * mode7sizeInGraphicTiles == numMode7Tiles * graphicsTileSizeInPixels * graphicsTileSizeInPixels)
@@ -2223,17 +2226,6 @@ local mode7entry_t = struct{
 assert(ffi.sizeof'mode7entry_t' == 2)
 
 
-local Palette = class()
-
--- read decompressed data from an abs addr in mem
--- TODO abstract read source to be compressed/uncompressed
-function Palette:init(ptr,  count)
-	self.colors = ffi.new('rgb_t[?]', count)
-	ffi.copy(self.colors, ptr, count * ffi.sizeof'rgb_t')
-	self.count = count
-end
-
-
 function SMMap:mapAddTileSetPalette(addr)
 	for _,palette in ipairs(self.tileSetPalettes) do
 		if palette.addr == addr then return palette end
@@ -2360,13 +2352,14 @@ function SMMap:mapReadCompressedTilemap(addr)
 	}
 end
 
+-- used by the map only so far, so i'll keep it here
 function SMMap:graphicsLoadMode7(ptr, size)
 	-- uint8_t mode7tileSet[256][8][8], values are 0-255 palette index
 	local mode7graphicsTiles = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * numMode7Tiles)
 	for mode7tileIndex=0,numMode7Tiles-1 do
 		for x=0,graphicsTileSizeInPixels-1 do
 			for y=0,graphicsTileSizeInPixels-1 do
-				tileSet.mode7graphicsTiles[x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)] 
+				mode7graphicsTiles[x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)] 
 					= ptr[1 + 2 * (x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex))]
 			end
 		end
@@ -2378,71 +2371,13 @@ function SMMap:graphicsLoadMode7(ptr, size)
 	local mode7tilemap = ffi.new('uint8_t[?]', mode7sizeInGraphicTiles * mode7sizeInGraphicTiles)
 	for i=0,mode7sizeInGraphicTiles-1 do
 		for j=0,mode7sizeInGraphicTiles-1 do
-			tileSet.mode7tilemap[i + mode7sizeInGraphicTiles * j] 
+			mode7tilemap[i + mode7sizeInGraphicTiles * j] 
 				= ptr[0 + 2 * (i + mode7sizeInGraphicTiles * j)]
 		end
 	end
 
 	return mode7graphicsTiles, mode7tilemap
 end
-
-function SMMap:graphicsSwizzleTileBitsInPlace(ptr, size)
-	-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
-	--[[
-	8 pixels wide * 8 pixels high * 1/2 byte per pixel = 32 bytes per 8x8 tile
-	--]]
-	assert(size % graphicsTileSizeInBytes == 0)	
-	
-	local sprite = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
-	local uint32 = ffi.new('uint32_t[1]', 0)
-	local uint8 = ffi.cast('uint8_t*', uint32)
-	for i=0,size-1,graphicsTileSizeInBytes do
-		ffi.copy(sprite, ptr + i, graphicsTileSizeInBytes)
-		-- in place convert, row by row ... why are we converting ?
-		ffi.fill(ptr + i, graphicsTileSizeInBytes, 0)
-		for y=0,7 do
-			for x=0,7 do
-				uint32[0] = 0
-				
-				for n=0,1 do
-					for m=0,1 do
-						local j = bit.bor(m, bit.lshift(n, 1))
-						--[[
-						u |= ((sprite[m + y<<1 + n<<4] >> x) & 1) << (((7-x)<<2)|j)
-						--]]
-						uint32[0] = bit.bor(
-							uint32[0],
-							bit.lshift(
-								bit.band(
-									bit.rshift(
-										sprite[m+2*y+16*n],
-										x
-									),
-									1
-								),
-								bit.bor(
-									bit.lshift(7 - x, 2),
-									j
-								)
-							)
-						)
-					end
-				end
-				--[[
-				dst[j + 4*y + 32*index] |= u[j]
-				--]]
-				for j=0,3 do
-					ptr[j + 4*y + i] = 
-						bit.bor(
-							ptr[j + 4*y + i],
-							uint8[j]
-						)
-				end
-			end
-		end
-	end
-end
-
 
 function SMMap:mapReadTileSets()
 	local rom = self.rom
@@ -2711,43 +2646,6 @@ print('plmBank '..('%02x'):format(self.plmBank))
 	self.tileSetPalettes = table()
 	self.tileSetGraphicsTileSets = table()
 	self.tileSetTilemaps = table()
-
-
-	-- read pause & equip screen tiles
-	-- should this be here?
-	-- or in a new file?
-	do
-		local function readDataBlock(bank, ofs, size)
-			local result = {}
-			local addr = topc(bank, ofs)
-			result.addr = addr
-			result.size = size
-			result.data = byteArraySubset(self.rom, addr, size)
-			return result
-		end
-		self.pauseAndEquipScreenTiles = readDataBlock(0xb6, 0x8000, 0x4000)
-		
-		-- TODO who uses this?  nobody? 
-		--  or should it be merged with the prev graphicsTiles
-		self.tileSelectAndPauseSpriteTiles = readDataBlock(0xb6, 0xc000, 0x2000)
-		
-		self.pauseScreenTilemap = readDataBlock(0xb6, 0xe000, 0x800)	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
-		self.equipScreenTilemap = readDataBlock(0xb6, 0xe800, 0x800)
-		self.pauseScreenPalette = readDataBlock(0xb6, 0xf000, 0x200)
-		-- and then b6:f200 on is free
-
-
-		do
-			local addr = self.pauseScreenPalette.addr
-			self.pauseScreenPalette = Palette(self.pauseScreenPalette.data, self.pauseScreenPalette.size / 2)
-			self.pauseScreenPalette.addr = addr
-		end
-
-
-		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-		self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles.size)
-		self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles.size)
-	end
 
 
 	self:mapReadTileSets()
@@ -4181,63 +4079,6 @@ function SMMap:mapSaveGraphicsBGs()
 end
 
 
-function SMMap:mapSaveEquipScreenImages()
-	local Image = require 'image'
-
-	local tilemapWidth = 32
-	local tilemapHeight = 32
-
-	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.pauseScreenTilemap.data))
-	self.pauseScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
-	self:convertTilemapToBitmap(
-		self.pauseScreenBmp,
-		self.pauseScreenTilemap.data,
-		self.pauseAndEquipScreenTiles.data,
-		tilemapWidth,
-		tilemapHeight,
-		1)
-
-	self.pauseScreenImage = Image(
-		graphicsTileSizeInPixels * tilemapWidth,
-		graphicsTileSizeInPixels * tilemapHeight,
-		3,
-		'unsigned char')
-	self.pauseScreenImage:clear()
-	self:indexedBitmapToRGB(
-		self.pauseScreenImage.buffer,
-		self.pauseScreenBmp,
-		self.pauseScreenImage.width,
-		self.pauseScreenImage.height,
-		self.pauseScreenPalette)
-	self.pauseScreenImage:save'pausescreen.png'
-
-
-	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.equipScreenTilemap.data))
-	self.equipScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
-	self:convertTilemapToBitmap(
-		self.equipScreenBmp,
-		self.equipScreenTilemap.data,	-- which graphicsTileSet?  or should the two be combined?
-		self.pauseAndEquipScreenTiles.data, --self.tileSelectAndPauseSpriteTiles.data,
-		tilemapWidth,
-		tilemapHeight,
-		1)
-
-	self.equipScreenImage = Image(
-		graphicsTileSizeInPixels * tilemapWidth,
-		graphicsTileSizeInPixels * tilemapHeight,
-		3,
-		'unsigned char')
-	self.equipScreenImage:clear()
-	self:indexedBitmapToRGB(
-		self.equipScreenImage.buffer,
-		self.equipScreenBmp,
-		self.equipScreenImage.width,
-		self.equipScreenImage.height,
-		self.pauseScreenPalette)
-	self.equipScreenImage:save'equipscreen.png'
-end
-
-
 function SMMap:mapPrintRoomBlocks()
 	-- print/draw rooms
 	print()
@@ -5605,7 +5446,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		local ti = self.tileSets[i]
 		for j=1,#self.tileSets-1 do
 			local tj = self.tileSets[j]
-			if byteArraysAreEqual(ti.obj.ptr, tj.obj.ptr) then
+			if byteArraysAreEqual(ti.obj.ptr, tj.obj.ptr, ffi.sizeof'tileSet_t') then
 print("tileSet_t "..('%02x'):format(tj.index)..' and '..('%02x'):format(ti.index)..' are matching -- removing '..('%02x'):format(ti.index))
 				-- TODO
 			end
