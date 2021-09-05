@@ -5223,6 +5223,23 @@ function SMMap:mapWriteEnemyGFXSets()
 	--]]
 end
 
+
+-- used in Blob:recompress()
+local CompressInfo = class()
+
+function CompressInfo:init(name)
+	self.name = name
+	self.totalOriginalCompressedSize = 0
+	self.totalRecompressedSize = 0
+end
+
+function CompressInfo:__tostring()
+	return self.name..' recompressed from '..self.totalOriginalCompressedSize..' to '..self.totalRecompressedSize..
+		', saving '..(self.totalOriginalCompressedSize - self.totalRecompressedSize)..' bytes '
+		..'(new data is '..math.floor(self.totalRecompressedSize/self.totalOriginalCompressedSize*100)..'% of original size)'
+end
+
+
 function SMMap:mapWriteTileSets(tileSetAndRoomBlockWriteRange)
 	local rom = self.rom
 
@@ -5335,10 +5352,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		{0x1d4629, 0x2142bb},		-- the end of this is the beginning of a roomblock lz data range, soo ... combine?
 	}, 'tileSet tilemap+graphicsTileSet+palette lz data')
 --]=]
-	local compressInfo = {
-		totalOriginalCompressedSize = 0,
-		totalRecompressedSize = 0,
-	}
+	local compressInfo = CompressInfo'tileSet tilemap + graphicsTileSet + palettes'
 
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
 		tilemap:recompress(tileSetAndRoomBlockWriteRange, compressInfo)
@@ -5380,9 +5394,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	print()
-	print('tileSet tilemap + graphicsTileSet + palettes recompressed from '..compressInfo.totalOriginalCompressedSize..' to '..compressInfo.totalRecompressedSize..
-		', saving '..(compressInfo.totalOriginalCompressedSize - compressInfo.totalRecompressedSize)..' bytes '
-		..'(new data is '..math.floor(compressInfo.totalRecompressedSize/compressInfo.totalOriginalCompressedSize*100)..'% of original size)')
+	print(compressInfo)
 
 	-- remove duplicate tileSet_t's 
 	for i=#self.tileSets,2,-1 do
@@ -5751,10 +5763,7 @@ function SMMap:mapWrite()
 			{0x1c8000, 0x278000},
 		}, 'common room graphics tiles + tilemaps + bg tilemaps + tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
 		
-		local compressInfo = {
-			totalOriginalCompressedSize = 0,
-			totalRecompressedSize = 0,
-		}
+		local compressInfo = CompressInfo'common room graphics tiles + tilemaps + bg tilemaps'
 		
 		-- write back the common graphics tiles/tilemaps
 		-- recompress them and see how well that works
@@ -5796,9 +5805,7 @@ function SMMap:mapWrite()
 		-- and then update the roomstate bg_t's
 
 		print()
-		print('common room graphics tiles + tilemaps + bg tilemaps recompressed from '..compressInfo.totalOriginalCompressedSize..' to '..compressInfo.totalRecompressedSize..
-			', saving '..(compressInfo.totalOriginalCompressedSize - compressInfo.totalRecompressedSize)..' bytes '
-			..'(new data is '..math.floor(compressInfo.totalRecompressedSize/compressInfo.totalOriginalCompressedSize*100)..'% of original size)')
+		print(compressInfo)
 	
 		-- write these before writing roomstates
 		self:mapWriteTileSets(writeRange)		-- tileSet_t's...
