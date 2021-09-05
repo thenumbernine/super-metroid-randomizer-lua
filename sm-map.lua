@@ -16,15 +16,17 @@ local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
 local disasm = require 'disasm'
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
 local config = require 'config'
 
-local SMGraphics = require 'sm-graphics'
+local Palette = require 'palette'
 
-local Palette = SMGraphics.Palette 
+local SMGraphics = require 'sm-graphics'
 local graphicsTileSizeInPixels = SMGraphics.graphicsTileSizeInPixels 
 local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes 
+
+local pc = require 'pc'
+local topc = pc.to
+local frompc = pc.from
 
 
 local SMMap = {}
@@ -957,7 +959,7 @@ function SMMap:mapAddBGTilemap(addr)
 	some are tilemap.size==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
 	--]]
 	
-	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr, 0x10000)
+	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr)
 	-- TODO ambiguous ... how about sizeInBytes?
 	-- or about just using 'count' or 'len'
 	tilemap.size = ffi.sizeof(tilemap.data)	
@@ -1885,7 +1887,7 @@ function SMMap:mapAddRoomBlockData(addr, m)
 print('room block data decompressing address '..('0x%06x'):format(addr))
 	local data, compressedSize
 	xpcall(function()
-		data, compressedSize = lz.decompress(self.rom, addr, 0x10000)
+		data, compressedSize = lz.decompress(self.rom, addr)
 	end, function(err)
 		print(err..'\n'..debug.traceback())
 	end)
@@ -2200,7 +2202,7 @@ function SMMap:indexedBitmapToRGB(dstRgbBmp, srcIndexedBmp, imgwidth, imgheight,
 			local i = x + imgwidth * y
 			local paletteIndex = srcIndexedBmp[i]
 			if bit.band(paletteIndex, 0xf) > 0 then	-- is this always true?
-				local rgb = palette.colors[paletteIndex]
+				local rgb = palette.data[paletteIndex]
 				dstRgbBmp[0 + 3 * i] = math.floor(rgb.r*255/31)
 				dstRgbBmp[1 + 3 * i] = math.floor(rgb.g*255/31)
 				dstRgbBmp[2 + 3 * i] = math.floor(rgb.b*255/31)
@@ -2231,18 +2233,9 @@ function SMMap:mapAddTileSetPalette(addr)
 		if palette.addr == addr then return palette end
 	end
 	
-	-- what do I call this?  abs-addr (as opposed to 24-bit addrs)?  file-offset?
-	local data, compressedSize = lz.decompress(self.rom, addr, 0x200)
-	local len = ffi.sizeof(data)
-	assert(len % ffi.sizeof'rgb_t' == 0)
-	local count = len / ffi.sizeof'rgb_t'
+	local palette = Palette{rom=self.rom, addr=addr, compressed=true}
+	assert(palette.count == 128)	-- always true for map's palettes
 	
-	local palette = Palette(data, count)
-	assert(palette.count == 128)	-- always true
-	
-	palette.addr = addr
-	palette.compressedSize = compressedSize 
-		
 	self.tileSetPalettes:insert(palette)
 	palette.tileSets = table()
 	
@@ -2263,7 +2256,7 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	-- tileSet.graphicsTileVec starts with this, pads it, appends the commonRoomGraphicsTiles,
 	-- and even right now does some in-place stuff to it
 	-- SO if you modify that, don't forget to update this buffer as well (somehow)
-	graphicsTileSet.data, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr, 0x10000)	-- TODO how big?
+	graphicsTileSet.data, graphicsTileSet.compressedSize = lz.decompress(self.rom, graphicsTileSet.addr)
 	graphicsTileSet.size = ffi.sizeof(graphicsTileSet.data)	-- stored for debugging only
 	
 	return graphicsTileSet
@@ -2280,7 +2273,7 @@ function SMMap:mapAddTileSetTilemap(addr)
 	tilemap.tileSets = table()
 	self.tileSetTilemaps:insert(tilemap)
 			
-	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr, 0x10000)
+	tilemap.data, tilemap.compressedSize = lz.decompress(self.rom, tilemap.addr)
 	tilemap.size = ffi.sizeof(tilemap.data)	-- stored for debugging only
 
 	return tilemap
@@ -2327,7 +2320,7 @@ end
 
 
 function SMMap:mapReadCompressedGraphicsTiles(addr)
-	local buffer, compressedSize = lz.decompress(self.rom, addr, 0x10000) --common room elements
+	local buffer, compressedSize = lz.decompress(self.rom, addr) --common room elements
 	local size = ffi.sizeof(buffer)
 	assert(size % graphicsTileSizeInBytes == 0)
 	return {
@@ -2340,7 +2333,7 @@ function SMMap:mapReadCompressedGraphicsTiles(addr)
 end
 
 function SMMap:mapReadCompressedTilemap(addr)
-	local buffer, compressedSize = lz.decompress(self.rom, addr, 0x10000) --common room elements
+	local buffer, compressedSize = lz.decompress(self.rom, addr) --common room elements
 	local size = ffi.sizeof(buffer)
 	assert(size % ffi.sizeof'tilemapElem_t' == 0)
 	return {
@@ -3445,7 +3438,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 											local bgy = y % bgh
 											local paletteIndex = bgBmp.dataBmp[bgx + bgw * bgy]
 											if bit.band(paletteIndex, 0xf) > 0 then
-												local src = tileSet.palette.colors[paletteIndex]
+												local src = tileSet.palette.data[paletteIndex]
 												local dstIndex = x + mapTexImage.width * y
 												local dst = mapTexImage.buffer + 3 * dstIndex
 												dst[0] = math.floor(src.r*255/31)
@@ -3478,7 +3471,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 											local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
 											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
 											if bit.band(paletteIndex, 0xf) > 0 then
-												local src = tileSet.palette.colors[paletteIndex]
+												local src = tileSet.palette.data[paletteIndex]
 												local dstIndex = x + mapTexImage.width * y
 												local dst = mapTexImage.buffer + 3 * dstIndex
 												dst[0] = math.floor(src.r*255/31)
@@ -3508,7 +3501,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 											local paletteIndex = tileSet.tileGfxBmp[srcIndex]
 											-- now which determines transparency?
 											if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
-												local src = tileSet.palette.colors[paletteIndex]
+												local src = tileSet.palette.data[paletteIndex]
 												local dstIndex = x + mapTexImage.width * y
 												local dst = mapTexImage.buffer + 3 * dstIndex
 												dst[0] = math.floor(src.r*255/31)
@@ -3904,7 +3897,7 @@ function SMMap:mapSaveGraphicsMode7()
 							local paletteIndex = tileSet.mode7graphicsTiles[
 								x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)
 							]
-							local src = tileSet.palette.colors[paletteIndex]
+							local src = tileSet.palette.data[paletteIndex]
 							-- TODO what about pixel/palette mask/alpha?
 							if src.r > 0 or src.g > 0 or src.b > 0 then
 								maxdestx = math.max(maxdestx, destx)
@@ -3942,7 +3935,7 @@ function SMMap:mapSaveGraphicsTileSets()
 						local paletteIndex = tileSet.tileGfxBmp[srcIndex]
 						local r,g,b = 0,0,0
 						if bit.band(paletteIndex, 0xf) > 0 then
-							local src = tileSet.palette.colors[paletteIndex]
+							local src = tileSet.palette.data[paletteIndex]
 							r = math.floor(src.r*255/31)
 							g = math.floor(src.g*255/31)
 							b = math.floor(src.b*255/31)
@@ -4022,7 +4015,7 @@ function SMMap:mapSaveGraphicsLayer2BGs()
 							local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
 							local paletteIndex = tileSet.tileGfxBmp[srcIndex]
 							if bit.band(paletteIndex, 0xf) > 0 then
-								local src = tileSet.palette.colors[paletteIndex]
+								local src = tileSet.palette.data[paletteIndex]
 								local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
 								dst[0] = src.r*255/31
 								dst[1] = src.g*255/31
@@ -4066,7 +4059,7 @@ function SMMap:mapSaveGraphicsBGs()
 				local offset = x + img.width * y
 				local paletteIndex = bgBmp.dataBmp[offset]
 				if bit.band(paletteIndex, 0xf) > 0 then 
-					local rgb = tileSet.palette.colors[paletteIndex]
+					local rgb = tileSet.palette.data[paletteIndex]
 					local dst = img.buffer + 3 * offset
 					dst[0] = math.floor(rgb.r*255/31)
 					dst[1] = math.floor(rgb.g*255/31)
@@ -4619,7 +4612,7 @@ function SMMap:mapPrint()
 		print(' '..('$%06x'):format(palette.addr))
 		print('  count='..('$%x'):format(palette.count))
 		print('  color={'..range(0,palette.count-1):mapi(function(i)
-				return tostring(palette.colors[i])
+				return tostring(palette.data[i])
 			end):concat', '..'}')
 		print('  used by tileSets: '..palette.tileSets:mapi(function(tileSet) return ('%02x'):format(tileSet.index) end):concat' ')
 	end
@@ -5271,7 +5264,7 @@ function SMMap:mapWriteTileSets(tileSetAndRoomBlockWriteRange)
 			local pj = self.tileSetPalettes[j]
 			-- if they were equal then they should be using the same object, which should have unique instances in the array
 			assert(pi.addr ~= pj.addr)
-			if byteArraysAreEqual(pi.colors, pj.colors) then
+			if byteArraysAreEqual(pi.data, pj.data) then
 print("palettes "..('%04x'):format(pj.addr)..' and '..('%04x'):format(pi.addr)..' are matching -- removing '..('%04x'):format(pi.addr))
 				
 				for _,tileSet in ipairs(self.tileSets) do
@@ -5417,7 +5410,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	end
 
 	for _,palette in ipairs(self.tileSetPalettes) do
-		local data = palette.colors
+		local data = palette.data
 		local recompressed = lz.compress(data)
 		totalOriginalCompressedSize = totalOriginalCompressedSize + palette.compressedSize
 		totalRecompressedSize = totalRecompressedSize + ffi.sizeof(recompressed)
@@ -5741,7 +5734,7 @@ function SMMap:mapWriteRoomBlocks(writeRange)
 		--]=]
 
 	--[=[ verify that compression works by decompressing and re-compressing
-		local data2, compressedSize2 = lz.decompress(rom, roomBlockData.addr, 0x10000)
+		local data2, compressedSize2 = lz.decompress(rom, roomBlockData.addr)
 		assert(compressedSize == compressedSize2)
 		assert(ffi.sizeof(data) == ffi.sizeof(data2))
 		for i=0,ffi.sizeof(data)-1 do

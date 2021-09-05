@@ -1,10 +1,14 @@
 local ffi = require 'ffi'
 local bit = require 'bit'
 local class = require 'ext.class'
-local pc = require 'pc'
+local table = require 'ext.table'
+local Blob = require 'blob'
+local Palette = require 'palette'
 
+local pc = require 'pc'
 local topc = pc.to
 local frompc = pc.from
+
 
 local SMGraphics = {}
 
@@ -13,16 +17,6 @@ local SMGraphics = {}
 local graphicsTileSizeInPixels = 8
 local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel ... = 32 bytes
 
-
-local Palette = class()
-
--- read decompressed data from an abs addr in mem
--- TODO abstract read source to be compressed/uncompressed
-function Palette:init(ptr,  count)
-	self.colors = ffi.new('rgb_t[?]', count)
-	ffi.copy(self.colors, ptr, count * ffi.sizeof'rgb_t')
-	self.count = count
-end
 
 
 function SMGraphics:graphicsSwizzleTileBitsInPlace(ptr, size)
@@ -86,36 +80,20 @@ end
 
 function SMGraphics:graphicsInitPauseScreen()
 	-- read pause & equip screen tiles
-	local function readDataBlock(bank, ofs, size)
-		local result = {}
-		local addr = topc(bank, ofs)
-		result.addr = addr
-		result.size = size
-		result.data = byteArraySubset(self.rom, addr, size)
-		return result
-	end
-	self.pauseAndEquipScreenTiles = readDataBlock(0xb6, 0x8000, 0x4000)
+	self.pauseAndEquipScreenTiles = Blob{rom=self.rom, addr=topc(0xb6, 0x8000), count=0x4000}
 	
 	-- TODO who uses this?  nobody? 
 	--  or should it be merged with the prev graphicsTiles
-	self.tileSelectAndPauseSpriteTiles = readDataBlock(0xb6, 0xc000, 0x2000)
+	self.tileSelectAndPauseSpriteTiles = Blob{rom=self.rom, addr=topc(0xb6, 0xc000), count=0x2000}
 	
-	self.pauseScreenTilemap = readDataBlock(0xb6, 0xe000, 0x800)	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
-	self.equipScreenTilemap = readDataBlock(0xb6, 0xe800, 0x800)
-	self.pauseScreenPalette = readDataBlock(0xb6, 0xf000, 0x200)
+	self.pauseScreenTilemap = Blob{rom=self.rom, addr=topc(0xb6, 0xe000), count=0x800}	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
+	self.equipScreenTilemap = Blob{rom=self.rom, addr=topc(0xb6, 0xe800), count=0x800}
+	self.pauseScreenPalette = Palette{rom=self.rom, addr=topc(0xb6, 0xf000), count=0x100}
 	-- and then b6:f200 on is free
 
-
-	do
-		local addr = self.pauseScreenPalette.addr
-		self.pauseScreenPalette = Palette(self.pauseScreenPalette.data, self.pauseScreenPalette.size / 2)
-		self.pauseScreenPalette.addr = addr
-	end
-
-
 	-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-	self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles.size)
-	self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles.size)
+	self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles:size())
+	self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles:size())
 end
 
 function SMGraphics:graphicsInit()
@@ -128,7 +106,7 @@ function SMGraphics:mapSaveEquipScreenImages()
 	local tilemapWidth = 32
 	local tilemapHeight = 32
 
-	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.pauseScreenTilemap.data))
+	assert(tilemapWidth * tilemapHeight * 2 == self.pauseScreenTilemap:size())
 	self.pauseScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
 	self:convertTilemapToBitmap(
 		self.pauseScreenBmp,
@@ -153,7 +131,7 @@ function SMGraphics:mapSaveEquipScreenImages()
 	self.pauseScreenImage:save'pausescreen.png'
 
 
-	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.equipScreenTilemap.data))
+	assert(tilemapWidth * tilemapHeight * 2 == self.equipScreenTilemap:size())
 	self.equipScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
 	self:convertTilemapToBitmap(
 		self.equipScreenBmp,
@@ -179,13 +157,17 @@ function SMGraphics:mapSaveEquipScreenImages()
 end
 
 function SMGraphics:graphicsBuildMemoryMap(mem)
+	self.pauseAndEquipScreenTiles:addMem(mem, 'pause and equip screen graphics tiles')
+	self.tileSelectAndPauseSpriteTiles:addMem(mem, 'tile select and pause screen graphics tiles')
+	self.pauseScreenTilemap:addMem(mem, 'pause screen tilemap')
+	self.equipScreenTilemap:addMem(mem, 'equip screen tilemap')
+	self.pauseScreenPalette:addMem(mem, 'pause screen palette')
 end
 
 
 -- let SMMap use these
 SMGraphics.graphicsTileSizeInPixels = graphicsTileSizeInPixels 
 SMGraphics.graphicsTileSizeInBytes = graphicsTileSizeInBytes 
-SMGraphics.Palette = Palette 
 
 
 return SMGraphics 

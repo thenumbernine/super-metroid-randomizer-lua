@@ -27,7 +27,8 @@ assert(ffi.new('lzcmd_t', 32+64+128).cmd == 7)
 
 
 -- decompresses from 'rom' to a lua table of numbers
-local function decompress(rom, addr, maxlen)
+local function decompress(rom, addr, ctype)
+	ctype = ctype or 'uint8_t'
 	local startaddr = addr
 	local result = vector'uint8_t'
 
@@ -61,7 +62,6 @@ local function decompress(rom, addr, maxlen)
 	end
 
 	while true do
-		assert(addr < startaddr + maxlen, "compressed data exceeded boundary")
 		local c = readbyte()
 		if c == 0xff then break end
 		local lzc = ffi.new('lzcmd_t', c)
@@ -111,11 +111,18 @@ local function decompress(rom, addr, maxlen)
 		end
 	end
 
+	
 	-- resize so ffi.sizeof() gives the buffer's size
 	-- TODO instead just return the vector
-	local newresult = ffi.new('uint8_t[?]', result.size)
-	ffi.copy(newresult, result.v, result.size)
-	return newresult, addr - startaddr
+	
+	assert(result.size % ffi.sizeof(ctype) == 0)
+	local count = result.size / ffi.sizeof(ctype)
+	
+	local typedResult = ffi.new(ctype..'[?]', count)
+	
+	ffi.copy(typedResult, result.v, result.size)
+	
+	return typedResult, addr - startaddr
 end
 
 -- compresses from a lua table of numbers to another lua table of numbers

@@ -121,17 +121,6 @@ typedef uint8_t uint24_t[3];
 		end,
 	}
 
-	rgb_t = struct{
-		name = 'rgb_t',
-		fields = {
-			{r = 'uint16_t:5'},
-			{g = 'uint16_t:5'},
-			{b = 'uint16_t:5'},
-			{a = 'uint16_t:1'},
-		},
-	}
-	assert(ffi.sizeof'rgb_t' == 2)
-
 	function pickRandom(t)
 		return t[math.random(#t)]
 	end
