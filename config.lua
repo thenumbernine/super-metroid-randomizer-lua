@@ -11,7 +11,8 @@ return {
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	
+	mapSaveEquipScreenImages = false,
+
 	mapSaveDumpworldImage = false,
 	
 	-- rearrange and recompress data in the map

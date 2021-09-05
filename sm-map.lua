@@ -133,8 +133,6 @@ local ofsPerRegion = {
 
 
 
-
-
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
 local room_t = struct{
 	name = 'room_t',
@@ -2193,13 +2191,13 @@ function SMMap:convertTilemapToBitmap(
 	--]]
 end
 
-function SMMap:indexedBitmapToRGB(dstRgbBmp, srcIndexedBmp, imgwidth, imgheight, tileSet)
+function SMMap:indexedBitmapToRGB(dstRgbBmp, srcIndexedBmp, imgwidth, imgheight, palette)
 	for y=0,imgheight-1 do
 		for x=0,imgwidth-1 do
 			local i = x + imgwidth * y
 			local paletteIndex = srcIndexedBmp[i]
 			if bit.band(paletteIndex, 0xf) > 0 then	-- is this always true?
-				local rgb = tileSet.palette.colors[paletteIndex]
+				local rgb = palette.colors[paletteIndex]
 				dstRgbBmp[0 + 3 * i] = math.floor(rgb.r*255/31)
 				dstRgbBmp[1 + 3 * i] = math.floor(rgb.g*255/31)
 				dstRgbBmp[2 + 3 * i] = math.floor(rgb.b*255/31)
@@ -2225,30 +2223,37 @@ local mode7entry_t = struct{
 assert(ffi.sizeof'mode7entry_t' == 2)
 
 
+local Palette = class()
+
+-- read decompressed data from an abs addr in mem
+-- TODO abstract read source to be compressed/uncompressed
+function Palette:init(ptr,  count)
+	self.colors = ffi.new('rgb_t[?]', count)
+	ffi.copy(self.colors, ptr, count * ffi.sizeof'rgb_t')
+	self.count = count
+end
+
+
 function SMMap:mapAddTileSetPalette(addr)
 	for _,palette in ipairs(self.tileSetPalettes) do
 		if palette.addr == addr then return palette end
 	end
-
-	local palette = {}
+	
+	-- what do I call this?  abs-addr (as opposed to 24-bit addrs)?  file-offset?
+	local data, compressedSize = lz.decompress(self.rom, addr, 0x200)
+	local len = ffi.sizeof(data)
+	assert(len % ffi.sizeof'rgb_t' == 0)
+	local count = len / ffi.sizeof'rgb_t'
+	
+	local palette = Palette(data, count)
+	assert(palette.count == 128)	-- always true
+	
+	palette.addr = addr
+	palette.compressedSize = compressedSize 
+		
 	self.tileSetPalettes:insert(palette)
 	palette.tileSets = table()
 	
-	-- what do I call this?  abs-addr (as opposed to 24-bit addrs)?  file-offset?
-	palette.addr = addr
-	local data, compressedSize = lz.decompress(self.rom, palette.addr, 0x200)
-	palette.compressedSize = compressedSize 
-	local len = ffi.sizeof(data)
-	assert(len % ffi.sizeof'rgb_t' == 0)
-	palette.size = len / ffi.sizeof'rgb_t'	-- TODO "count" or "len" to not be ambiguous?
-	assert(palette.size == 128)	-- always true
---[[ this seems to free the original data once it leaves scope
-	palette.colors = ffi.cast('uint16_t*', data)
---]]
--- [[
-	palette.colors = ffi.new('rgb_t[?]', palette.size)
-	ffi.copy(palette.colors, data, palette.size * ffi.sizeof'rgb_t')
---]]
 	return palette
 end
 
@@ -2355,6 +2360,89 @@ function SMMap:mapReadCompressedTilemap(addr)
 	}
 end
 
+function SMMap:graphicsLoadMode7(ptr, size)
+	-- uint8_t mode7tileSet[256][8][8], values are 0-255 palette index
+	local mode7graphicsTiles = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * numMode7Tiles)
+	for mode7tileIndex=0,numMode7Tiles-1 do
+		for x=0,graphicsTileSizeInPixels-1 do
+			for y=0,graphicsTileSizeInPixels-1 do
+				tileSet.mode7graphicsTiles[x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)] 
+					= ptr[1 + 2 * (x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex))]
+			end
+		end
+	end
+
+	-- who uses this?
+	-- just a few rooms in Ceres space station -- the rotating room, and the rotating image of Ridley flying away
+	-- uint8_t mode7tilemap[128][128], values are 0-255 lookup of the mode7tileSet
+	local mode7tilemap = ffi.new('uint8_t[?]', mode7sizeInGraphicTiles * mode7sizeInGraphicTiles)
+	for i=0,mode7sizeInGraphicTiles-1 do
+		for j=0,mode7sizeInGraphicTiles-1 do
+			tileSet.mode7tilemap[i + mode7sizeInGraphicTiles * j] 
+				= ptr[0 + 2 * (i + mode7sizeInGraphicTiles * j)]
+		end
+	end
+
+	return mode7graphicsTiles, mode7tilemap
+end
+
+function SMMap:graphicsSwizzleTileBitsInPlace(ptr, size)
+	-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
+	--[[
+	8 pixels wide * 8 pixels high * 1/2 byte per pixel = 32 bytes per 8x8 tile
+	--]]
+	assert(size % graphicsTileSizeInBytes == 0)	
+	
+	local sprite = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
+	local uint32 = ffi.new('uint32_t[1]', 0)
+	local uint8 = ffi.cast('uint8_t*', uint32)
+	for i=0,size-1,graphicsTileSizeInBytes do
+		ffi.copy(sprite, ptr + i, graphicsTileSizeInBytes)
+		-- in place convert, row by row ... why are we converting ?
+		ffi.fill(ptr + i, graphicsTileSizeInBytes, 0)
+		for y=0,7 do
+			for x=0,7 do
+				uint32[0] = 0
+				
+				for n=0,1 do
+					for m=0,1 do
+						local j = bit.bor(m, bit.lshift(n, 1))
+						--[[
+						u |= ((sprite[m + y<<1 + n<<4] >> x) & 1) << (((7-x)<<2)|j)
+						--]]
+						uint32[0] = bit.bor(
+							uint32[0],
+							bit.lshift(
+								bit.band(
+									bit.rshift(
+										sprite[m+2*y+16*n],
+										x
+									),
+									1
+								),
+								bit.bor(
+									bit.lshift(7 - x, 2),
+									j
+								)
+							)
+						)
+					end
+				end
+				--[[
+				dst[j + 4*y + 32*index] |= u[j]
+				--]]
+				for j=0,3 do
+					ptr[j + 4*y + i] = 
+						bit.bor(
+							ptr[j + 4*y + i],
+							uint8[j]
+						)
+				end
+			end
+		end
+	end
+end
+
 
 function SMMap:mapReadTileSets()
 	local rom = self.rom
@@ -2422,7 +2510,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 			ceres room 6-00 is 1:1 with tileSets 11-12
 			ceres room 6-05 is 1:1 with tileSets 13-14
 		--]]
-		--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7TileSet == 0
+		--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7graphicsTiles == 0
 		local isCeres = tileSetIndex >= 0x0f and tileSetIndex <= 0x14		-- all ceres
 		local isCeresRidleyRoom = tileSetIndex == 0x13 or tileSetIndex == 0x14
 		local loadMode7 = tileSetIndex >= 0x11 and tileSetIndex <= 0x14		-- ceres rooms 6-00 and 6-05
@@ -2466,27 +2554,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 		-- for these rooms, the tileSet.tilemap.addr points to the mode7 data
 		if loadMode7 then
 			print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
-			-- uint8_t mode7tileSet[256][8][8], values are 0-255 palette index
-			tileSet.mode7TileSet = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * numMode7Tiles)
-			for mode7tileIndex=0,numMode7Tiles-1 do
-				for x=0,graphicsTileSizeInPixels-1 do
-					for y=0,graphicsTileSizeInPixels-1 do
-						tileSet.mode7TileSet[x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)] 
-							= graphicsTileVec.v[1 + 2 * (x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex))]
-					end
-				end
-			end
-
-			-- who uses this?
-			-- just a few rooms in Ceres space station -- the rotating room, and the rotating image of Ridley flying away
-			-- uint8_t mode7tiles[128][128], values are 0-255 lookup of the mode7tileSet
-			tileSet.mode7tiles = ffi.new('uint8_t[?]', mode7sizeInGraphicTiles * mode7sizeInGraphicTiles)
-			for i=0,mode7sizeInGraphicTiles-1 do
-				for j=0,mode7sizeInGraphicTiles-1 do
-					tileSet.mode7tiles[i + mode7sizeInGraphicTiles * j] 
-						= graphicsTileVec.v[0 + 2 * (i + mode7sizeInGraphicTiles * j)]
-				end
-			end
+			tileSet.mode7graphicsTiles, tileSet.mode7tilemap = self:graphicsLoadMode7(graphicsTileVec.v, graphicsTileVec.size)
 			
 			--[[ vanilla ceres ridley room layer handling, when layerHandlingAddr == $c97b
 			used with roomstate_t's $07dd95, $07dd7b
@@ -2530,62 +2598,9 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 		if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
 			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.buffer, self.commonRoomGraphicsTiles.buffer + self.commonRoomGraphicsTiles.size)
 		end
+	
+		self:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
 		
-		-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
-		--[[
-		8 pixels wide * 8 pixels high * 1/2 byte per pixel = 32 bytes per 8x8 tile
-		--]]
-		do
-			local sprite = ffi.new('uint8_t[?]', graphicsTileSizeInBytes)
-			local uint32 = ffi.new('uint32_t[1]', 0)
-			local uint8 = ffi.cast('uint8_t*', uint32)
-			for i=0,graphicsTileVec.size-1,graphicsTileSizeInBytes do
-				ffi.copy(sprite, graphicsTileVec.v + i, graphicsTileSizeInBytes)
-				-- in place convert, row by row ... why are we converting ?
-				ffi.fill(graphicsTileVec.v + i, graphicsTileSizeInBytes, 0)
-				for y=0,7 do
-					for x=0,7 do
-						uint32[0] = 0
-						
-						for n=0,1 do
-							for m=0,1 do
-								local j = bit.bor(m, bit.lshift(n, 1))
-								--[[
-								u |= ((sprite[m + y<<1 + n<<4] >> x) & 1) << (((7-x)<<2)|j)
-								--]]
-								uint32[0] = bit.bor(
-									uint32[0],
-									bit.lshift(
-										bit.band(
-											bit.rshift(
-												sprite[m+2*y+16*n],
-												x
-											),
-											1
-										),
-										bit.bor(
-											bit.lshift(7 - x, 2),
-											j
-										)
-									)
-								)
-							end
-						end
-						--[[
-						dst[j + 4*y + 32*index] |= u[j]
-						--]]
-						for j=0,3 do
-							graphicsTileVec.v[j + 4*y + i] = 
-								bit.bor(
-									graphicsTileVec.v[j + 4*y + i],
-									uint8[j]
-								)
-						end
-					end
-				end
-			end
-		end
-
 		tileSet:setTilemap(self:mapAddTileSetTilemap(tileSet.obj.tileAddr24:topc()))
 
 		local tilemapByteVec = vector'uint8_t'
@@ -2600,6 +2615,8 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps.siz
 		-- store as 16 x 16 x index rgb
 		tileSet.tileGfxBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * tileSet.tileGfxCount)
 
+		
+		-- TODO don't do this unless you're writing out the textured map image?
 		self:convertTilemapToBitmap(
 			tileSet.tileGfxBmp,
 			tilemapByteVec.v,		-- tilemapElem_t[tileGfxCount][2][2]
@@ -2694,6 +2711,44 @@ print('plmBank '..('%02x'):format(self.plmBank))
 	self.tileSetPalettes = table()
 	self.tileSetGraphicsTileSets = table()
 	self.tileSetTilemaps = table()
+
+
+	-- read pause & equip screen tiles
+	-- should this be here?
+	-- or in a new file?
+	do
+		local function readDataBlock(bank, ofs, size)
+			local result = {}
+			local addr = topc(bank, ofs)
+			result.addr = addr
+			result.size = size
+			result.data = byteArraySubset(self.rom, addr, size)
+			return result
+		end
+		self.pauseAndEquipScreenTiles = readDataBlock(0xb6, 0x8000, 0x4000)
+		
+		-- TODO who uses this?  nobody? 
+		--  or should it be merged with the prev graphicsTiles
+		self.tileSelectAndPauseSpriteTiles = readDataBlock(0xb6, 0xc000, 0x2000)
+		
+		self.pauseScreenTilemap = readDataBlock(0xb6, 0xe000, 0x800)	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
+		self.equipScreenTilemap = readDataBlock(0xb6, 0xe800, 0x800)
+		self.pauseScreenPalette = readDataBlock(0xb6, 0xf000, 0x200)
+		-- and then b6:f200 on is free
+
+
+		do
+			local addr = self.pauseScreenPalette.addr
+			self.pauseScreenPalette = Palette(self.pauseScreenPalette.data, self.pauseScreenPalette.size / 2)
+			self.pauseScreenPalette.addr = addr
+		end
+
+
+		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
+		self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles.size)
+		self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles.size)
+	end
+
 
 	self:mapReadTileSets()
 
@@ -3933,7 +3988,7 @@ function SMMap:mapSaveGraphicsMode7()
 	local Image = require 'image'
 	-- for now only write out tile graphics for the non-randomized version
 	for _,tileSet in ipairs(self.tileSets) do
-		if tileSet.mode7TileSet then
+		if tileSet.mode7graphicsTiles then
 			local mode7image = Image(
 				graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
 				graphicsTileSizeInPixels * mode7sizeInGraphicTiles,
@@ -3943,12 +3998,12 @@ function SMMap:mapSaveGraphicsMode7()
 			local maxdesty = 0	
 			for i=0,mode7sizeInGraphicTiles-1 do
 				for j=0,mode7sizeInGraphicTiles-1 do
-					local mode7tileIndex = tileSet.mode7tiles[i + mode7sizeInGraphicTiles * j]
+					local mode7tileIndex = tileSet.mode7tilemap[i + mode7sizeInGraphicTiles * j]
 					for y=0,graphicsTileSizeInPixels-1 do
 						for x=0,graphicsTileSizeInPixels-1 do
 							local destx = x + graphicsTileSizeInPixels * i
 							local desty = y + graphicsTileSizeInPixels * j
-							local paletteIndex = tileSet.mode7TileSet[
+							local paletteIndex = tileSet.mode7graphicsTiles[
 								x + graphicsTileSizeInPixels * (y + graphicsTileSizeInPixels * mode7tileIndex)
 							]
 							local src = tileSet.palette.colors[paletteIndex]
@@ -4036,7 +4091,7 @@ function SMMap:mapSaveGraphicsTileSets()
 					tilemapElemSizeY,			-- tilemapElemSizeY
 					1)							-- count
 				local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
-				self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet)
+				self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet.palette)
 				graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
 			end
 		end
@@ -4123,6 +4178,63 @@ function SMMap:mapSaveGraphicsBGs()
 		end
 		img:save(fn)
 	end
+end
+
+
+function SMMap:mapSaveEquipScreenImages()
+	local Image = require 'image'
+
+	local tilemapWidth = 32
+	local tilemapHeight = 32
+
+	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.pauseScreenTilemap.data))
+	self.pauseScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
+	self:convertTilemapToBitmap(
+		self.pauseScreenBmp,
+		self.pauseScreenTilemap.data,
+		self.pauseAndEquipScreenTiles.data,
+		tilemapWidth,
+		tilemapHeight,
+		1)
+
+	self.pauseScreenImage = Image(
+		graphicsTileSizeInPixels * tilemapWidth,
+		graphicsTileSizeInPixels * tilemapHeight,
+		3,
+		'unsigned char')
+	self.pauseScreenImage:clear()
+	self:indexedBitmapToRGB(
+		self.pauseScreenImage.buffer,
+		self.pauseScreenBmp,
+		self.pauseScreenImage.width,
+		self.pauseScreenImage.height,
+		self.pauseScreenPalette)
+	self.pauseScreenImage:save'pausescreen.png'
+
+
+	assert(tilemapWidth * tilemapHeight * 2 == ffi.sizeof(self.equipScreenTilemap.data))
+	self.equipScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
+	self:convertTilemapToBitmap(
+		self.equipScreenBmp,
+		self.equipScreenTilemap.data,	-- which graphicsTileSet?  or should the two be combined?
+		self.pauseAndEquipScreenTiles.data, --self.tileSelectAndPauseSpriteTiles.data,
+		tilemapWidth,
+		tilemapHeight,
+		1)
+
+	self.equipScreenImage = Image(
+		graphicsTileSizeInPixels * tilemapWidth,
+		graphicsTileSizeInPixels * tilemapHeight,
+		3,
+		'unsigned char')
+	self.equipScreenImage:clear()
+	self:indexedBitmapToRGB(
+		self.equipScreenImage.buffer,
+		self.equipScreenBmp,
+		self.equipScreenImage.width,
+		self.equipScreenImage.height,
+		self.pauseScreenPalette)
+	self.equipScreenImage:save'equipscreen.png'
 end
 
 
@@ -4664,8 +4776,8 @@ function SMMap:mapPrint()
 	print"all tileSet palettes:"
 	for _,palette in ipairs(self.tileSetPalettes) do
 		print(' '..('$%06x'):format(palette.addr))
-		print('  size='..('$%x'):format(palette.size))
-		print('  color={'..range(0,palette.size-1):mapi(function(i)
+		print('  count='..('$%x'):format(palette.count))
+		print('  color={'..range(0,palette.count-1):mapi(function(i)
 				return tostring(palette.colors[i])
 			end):concat', '..'}')
 		print('  used by tileSets: '..palette.tileSets:mapi(function(tileSet) return ('%02x'):format(tileSet.index) end):concat' ')
@@ -5917,7 +6029,9 @@ function SMMap:mapWrite()
 			rom[topc(0xa7, 0xaaf7)] = bank
 		end
 
-		-- TODO write out the bg_t's
+		-- TODO write out the bg_t's ... but they are intermingled with door code, which can't be moved without updating addresses ... soo ...
+		-- TODO TODO disassembler where I replace all jmps and jsrs and br*'s with address names and labels
+		-- 			and then create a DAG call graph
 		-- and then update the roomstate bg_t's
 
 		print()

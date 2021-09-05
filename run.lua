@@ -663,6 +663,11 @@ g:
 			sm:mapSaveGraphicsLayer2BGs()
 		end)
 	end
+	if config.mapSaveEquipScreenImages then
+		timer('write out equip screen images', function()
+			sm:mapSaveEquipScreenImages()
+		end)
+	end
 	timer('write original ROM memory map', function()
 		-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		sm:buildMemoryMap():print'memorymap.txt'
