@@ -777,7 +777,9 @@ function Room:setAddr(sm, addr)
 end
 function Room:getAddr(sm)
 	assert(self.ptr, "you can't get the addr if you don't know the ptr")
-	return bit.band(0xffff, ffi.cast('uint8_t*', self.ptr) - sm.rom)
+	local addr = ffi.cast('uint8_t*', self.ptr) - sm.rom
+	local bank, ofs = frompc(addr)
+	return ofs
 end
 function Room:findDoorTo(destRoom)
 	local _, door = self.doors:find(nil, function(door) 
@@ -895,11 +897,16 @@ function PLM.__concat(a,b)
 end
 
 function PLM:__tostring()
-	-- TODO don't forget about scrollmod
-	-- sorted in order of data addresses
-	--return tostring(self:toC())
-	-- sorted in alphabetic order (and includes optional fields like 'scrollmod')
-	return tolua(self) -- ... but it's not hex ...
+	local s = '{'
+		..('cmd=%04x'):format(self.cmd)
+		..(', x=%02x'):format(self.x)
+		..(', y=%02x'):format(self.y)
+		..(', args=%04x'):format(self.args)
+	if self.scrollmod then
+		s = s .. ', scrollmod='.. tolua(self.scrollmod)
+	end
+	s = s .. '}'
+	return s
 end
 
 
@@ -913,25 +920,37 @@ end
 
 
 local Door = class()
+
 SMMap.Door = Door
 
--- args: 
--- 	just 'addr' right now - points to the door structure
---	and 'sm' for the super metroid hack global info
+--[[
+args: 
+	sm = for the super metroid hack global info
+	addr = right now - points to the door structure
+
+looks like right now I am not rearranging any of the door_t or lift_t's
+--]]
 function Door:init(args)
-	self.addr = assert(args.addr)
+	args = table(args):setmetatable(nil)
+	
 	local sm = args.sm
 	local rom = sm.rom
-
-	-- derived fields:
-	local addr = topc(sm.doorBank, self.addr)
+	
+	local addr = assert(args.addr)
 	local data = rom + addr 
 	local destRoomAddr = ffi.cast('uint16_t*', data)[0]
 	-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
-	local doorType = destRoomAddr == 0 and 'lift_t' or 'door_t'
-	self.type = doorType
-	self.ptr = ffi.cast(doorType..'*', data)
-	if doorType == 'door_t' 
+	local ctype = destRoomAddr == 0 and 'lift_t' or 'door_t'
+
+	self.addr = addr
+	--local addr = topc(sm.doorBank, self.addr)
+	
+	-- derived fields:
+	
+	self.type = ctype
+	self.ptr = ffi.cast(ctype..'*', data)
+	
+	if ctype == 'door_t' 
 	and self.ptr.code > 0x8000 
 	then
 		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
@@ -940,8 +959,11 @@ function Door:init(args)
 end
 
 function Door:setDestRoom(room)
-	self.ptr.destRoomAddr = bit.band(0xffff, room.addr)
 	self.destRoom = room
+	-- TODO don't bother do this until writing
+	local bank, ofs = frompc(room.addr)
+	assert(bank == self.roomBank)
+	self.ptr.destRoomAddr = ofs
 end
 
 -- TODO make common with mapAddTileSetTilemap
@@ -958,7 +980,7 @@ function SMMap:mapAddBGTilemap(addr)
 	--]]
 	
 	local tilemap = Blob{
-		rom = self.rom,
+		sm = self,
 		addr = addr,
 		type = 'tilemapElem_t',
 		compressed = true,
@@ -982,7 +1004,6 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 	local data = rom + absaddr
 	local mptr = ffi.cast('room_t*', data)
 	local m = Room{
-	-- TODO bank-offset addr vs pc addr for all my structures ...
 		addr = pageofs,
 		
 		-- switch over to this from ptr, and then to pure lua from this
@@ -1161,7 +1182,7 @@ if done then break end
 	while doorAddr > 0x8000 do
 		m.doors:insert(Door{
 			sm = self,
-			addr = doorAddr,
+			addr = topc(self.doorBank, doorAddr),
 		})
 		doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
 		addr = addr + 2
@@ -2231,7 +2252,7 @@ function SMMap:mapAddTileSetPalette(addr)
 		if palette.addr == addr then return palette end
 	end
 	
-	local palette = Palette{rom=self.rom, addr=addr, compressed=true}
+	local palette = Palette{sm=self, addr=addr, compressed=true}
 	assert(palette.count == 128)	-- always true for map's palettes
 	
 	self.tileSetPalettes:insert(palette)
@@ -2250,7 +2271,7 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	-- and even right now does some in-place stuff to it
 	-- SO if you modify that, don't forget to update this buffer as well (somehow)
 	local graphicsTileSet = Blob{
-		rom = self.rom,
+		sm = self,
 		addr = addr,
 		--type = 'uint8_t',
 		compressed = true,
@@ -2268,7 +2289,7 @@ function SMMap:mapAddTileSetTilemap(addr)
 	end
 	
 	local tilemap = Blob{
-		rom = self.rom,
+		sm = self,
 		addr = addr,
 		--type = 'tilemapElem_t',
 		compressed = true,
@@ -2359,7 +2380,7 @@ function SMMap:mapReadTileSets()
 	
 	--common room elements
 	self.commonRoomGraphicsTiles = Blob{
-		rom = self.rom,
+		sm = self,
 		addr = commonRoomGraphicsTileAddr24:topc(),
 		type = 'graphicsTile_t',
 		compressed = true,
@@ -2369,7 +2390,7 @@ print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphic
 	
 	--common room elements
 	self.commonRoomTilemaps = Blob{
-		rom = self.rom,
+		sm = self,
 		addr = commonRoomTilemapAddr24:topc(),
 		type = 'tilemapElem_t',
 		compressed = true,
@@ -4147,7 +4168,8 @@ function SMMap:mapWriteGraphDot()
 		return 'cluster_'..roomName
 	end
 	local function getRoomStateName(rs)
-		return ('%04x'):format(bit.band(0xffff,ffi.cast('uint8_t*',rs.ptr)-rom))
+		local bank, ofs = frompc(ffi.cast('uint8_t*',rs.ptr)-rom)
+		return ('%04x'):format(ofs)
 	end
 --print'building graph'			
 	local edges = table()
@@ -4243,7 +4265,7 @@ function SMMap:mapWriteGraphDot()
 							if showDoors then
 								local srcNodeName = roomName
 								local dstNodeName = destRoomName
-								local doorName = 'door'..('%04x'):format(roomDoor.addr)
+								local doorName = 'door'..('%04x'):format(select(2, frompc(roomDoor.addr)))
 								local doorNodeName = roomName..':'..doorName
 								local colorTag = '[color='..colors..']'
 								local labelTag = color == 'blue' and '[label=""]' or ('[label="'..('%04x'):format(doorarg)..'"]') 
@@ -4282,7 +4304,7 @@ function SMMap:mapWriteGraphDot()
 						if showDoors then
 							local srcNodeName = roomName
 							local dstNodeName = destRoomName
-							local doorName = 'door'..('%04x'):format(roomDoor.addr)
+							local doorName = 'door'..('%04x'):format(select(2, frompc(roomDoor.addr)))
 							local doorNodeName = roomName..':'..doorName
 							local colorTag = ''
 							local labelTag = '[label=""]'
@@ -4370,9 +4392,9 @@ function SMMap:mapPrint()
 		end
 	end
 	
-	print'room per plm_t cmd:'
+	print'rooms per plm_t cmd:'
 	for _,plmcmd in ipairs(table.keys(allPLMCmds):sort()) do
-		io.write(('%x: '):format(plmcmd))
+		io.write((' %x: '):format(plmcmd))
 		local sep = ''
 		
 		for _,plmset in ipairs(self.plmsets) do
@@ -4520,7 +4542,7 @@ function SMMap:mapPrint()
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.type..': '
-				..('$83:%04x'):format(door.addr)
+				..('$%02x:%04x'):format(frompc(door.addr))
 				..' '..door.ptr[0])
 			if door.doorCode then
 				print('   code: '..range(0,ffi.sizeof(door.doorCode)-1):mapi(function(i) 
@@ -4966,9 +4988,11 @@ print("used a total of "..doorid.." special and non-special doors")
 					local piaddr = ('$%06x'):format(pi.addr)
 					local pjaddr = ('$%06x'):format(pj.addr)
 					print('plmsets '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
+					local bank, ofs = frompc(pi.addr)
+					assert(bank == self.plmBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs.obj.plmAddr = bit.band(0xffff, pi.addr)
-						rs.ptr.plmAddr = bit.band(0xffff, pi.addr)
+						rs.obj.plmAddr = ofs
+						rs.ptr.plmAddr = ofs
 						rs:setPLMSet(pi)
 					end
 					self.plmsets:remove(j)
@@ -5014,12 +5038,13 @@ print("used a total of "..doorid.." special and non-special doors")
 		addr = addr + ffi.sizeof'uint16_t'
 		assert(addr == endaddr)
 
-		local newofs = bit.band(0xffff, plmset.addr)
+		local bank, ofs = frompc(plmset.addr)
+		assert(bank == self.plmBank)
 		for _,rs in ipairs(plmset.roomStates) do
-			if newofs ~= rs.obj.plmAddr then
-				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plmAddr)..' to '..('%04x'):format(newofs))
-				rs.obj.plmAddr = newofs
-				rs.ptr.plmAddr = newofs
+			if ofs ~= rs.obj.plmAddr then
+				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plmAddr)..' to '..('%04x'):format(ofs))
+				rs.obj.plmAddr = ofs
+				rs.ptr.plmAddr = ofs
 			end
 		end
 	end
@@ -5065,7 +5090,9 @@ print("used a total of "..doorid.." special and non-special doors")
 		for _,plm in ipairs(plms) do
 			assert(plm.scrollmod)
 			assert(plm.cmd == sm.plmCmdValueForName.scrollmod)
-			plm.args = bit.band(0xffff, addr)
+			local bank, ofs = frompc(addr)
+			assert(bank == self.scrollBank)
+			plm.args = ofs
 			plm.ptr.args = plm.args
 		end
 	end
@@ -5111,10 +5138,12 @@ function SMMap:mapWriteEnemySpawnSets()
 					local piaddr = ('$%06x'):format(pi.addr)
 					local pjaddr = ('$%06x'):format(pj.addr)
 					--print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
+					--print('updating roomState '..('%06x'):format(ffi.cast('unsigned char*',rs.ptr)-rom))
+					local bank, ofs = frompc(pi.addr)
+					assert(bank == self.enemySpawnBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						--print('updating roomState '..('%06x'):format(ffi.cast('unsigned char*',rs.ptr)-rom))
-						rs.obj.enemySpawnAddr = bit.band(0xffff, pi.addr)
-						rs.ptr.enemySpawnAddr = bit.band(0xffff, pi.addr)
+						rs.obj.enemySpawnAddr = ofs
+						rs.ptr.enemySpawnAddr = ofs
 						rs:setEnemySpawnSet(pi)
 					end
 					self.enemySpawnSets:remove(j)
@@ -5148,12 +5177,13 @@ function SMMap:mapWriteEnemySpawnSets()
 		addr = addr + 1
 
 		assert(addr == endaddr)
-		local newofs = bit.band(0xffff, enemySpawnSet.addr)
+		local bank, ofs = frompc(enemySpawnSet.addr)
+		assert(bank == self.enemySpawnBank)
 		for _,rs in ipairs(enemySpawnSet.roomStates) do
-			if newofs ~= rs.obj.enemySpawnAddr then
-				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawnAddr)..' to '..('%04x'):format(newofs))
-				rs.obj.enemySpawnAddr = newofs
-				rs.ptr.enemySpawnAddr = newofs
+			if ofs ~= rs.obj.enemySpawnAddr then
+				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawnAddr)..' to '..('%04x'):format(ofs))
+				rs.obj.enemySpawnAddr = ofs
+				rs.ptr.enemySpawnAddr = ofs
 			end
 		end
 	end
@@ -5520,7 +5550,11 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		local ptr = rom + addr
 		m.ptr = ffi.cast('room_t*', ptr)
 		m.ptr[0] = m.obj
-		m.addr = bit.band(addr, 0xffff)	-- TODO get rid of this field and only use m.ptr
+		do
+			local bank, ofs = frompc(addr)
+			assert(bank == self.roomBank)
+			m.addr = ofs
+		end
 		ptr = ptr + ffi.sizeof'room_t'
 
 		-- write m.roomStates[1..n].select
@@ -5534,13 +5568,17 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		--		update roomstate2_t's and roomstate3_t's as you do this
 		for i=#m.roomStates,1,-1 do
 			local rs = m.roomStates[i]
-			local roomStateAddr = bit.band(0xffff, ptr - rom)
+			
+			local roomStateAddr = ptr - rom
+			local bank, ofs = frompc(roomStateAddr)
+			assert(bank == self.roomStateBank)
+			
 			local rsptr = ffi.cast('roomstate_t*', ptr)
 			rsptr[0] = rs.obj
 			rs.ptr = rsptr
 			if rs.select_ctype ~= 'roomselect1_t' then
-				rs.select_ptr.roomStateAddr = roomStateAddr		-- update previous write in rom
-				rs.select.roomStateAddr = roomStateAddr		-- update POD
+				rs.select_ptr.roomStateAddr = ofs	-- update previous write in rom
+				rs.select.roomStateAddr = ofs		-- update POD
 			else
 				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 			end
@@ -5549,10 +5587,12 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		
 		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between rooms.
 		--		update m.obj.doors
-		m.obj.doors = bit.band(0xffff, ptr-rom)
+		m.obj.doors = select(2, frompc(ptr - rom))
 		m.ptr.doors = m.obj.doors
 		for _,door in ipairs(m.doors) do
-			ffi.cast('uint16_t*', ptr)[0] = door.addr
+			local bank, ofs = frompc(door.addr)
+			assert(bank == self.doorBank)
+			ffi.cast('uint16_t*', ptr)[0] = ofs
 			-- right now door.ptr points to the door_t object elsewhere, not to the ptr of the ptr to the door_t
 			ptr = ptr + ffi.sizeof'uint16_t'
 		end
@@ -5595,7 +5635,10 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 					rs.obj.scrollAddr = matches
 					rs.ptr.scrollAddr = matches
 				else
-					rs.obj.scrollAddr = bit.band(0xffff, ptr-rom)
+					local addr = ptr - rom
+					local bank, ofs = frompc(addr)
+					assert(bank == self.scrollBank)
+					rs.obj.scrollAddr = ofs
 					rs.ptr.scrollAddr = rs.obj.scrollAddr
 					for i=1,m.obj.width * m.obj.height do
 						ptr[0] = rs.scrollData[i]
@@ -5612,7 +5655,10 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.type == 'door_t' then
-				door.ptr.destRoomAddr = bit.band(0xffff, ffi.cast('uint8_t*', door.destRoom.ptr) - rom)
+				local addr = ffi.cast('uint8_t*', door.destRoom.ptr) - rom
+				local bank, ofs = frompc(addr)
+				assert(bank == self.roomBank)
+				door.ptr.destRoomAddr = ofs
 			end
 		end
 	end

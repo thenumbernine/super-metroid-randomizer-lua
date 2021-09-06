@@ -80,15 +80,15 @@ end
 
 function SMGraphics:graphicsInitPauseScreen()
 	-- read pause & equip screen tiles
-	self.pauseAndEquipScreenTiles = Blob{rom=self.rom, addr=topc(0xb6, 0x8000), count=0x4000}
+	self.pauseAndEquipScreenTiles = Blob{sm=self, addr=topc(0xb6, 0x8000), count=0x4000}
 	
 	-- TODO who uses this?  nobody? 
 	--  or should it be merged with the prev graphicsTiles
-	self.tileSelectAndPauseSpriteTiles = Blob{rom=self.rom, addr=topc(0xb6, 0xc000), count=0x2000}
+	self.tileSelectAndPauseSpriteTiles = Blob{sm=self, addr=topc(0xb6, 0xc000), count=0x2000}
 	
-	self.pauseScreenTilemap = Blob{rom=self.rom, addr=topc(0xb6, 0xe000), count=0x800}	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
-	self.equipScreenTilemap = Blob{rom=self.rom, addr=topc(0xb6, 0xe800), count=0x800}
-	self.pauseScreenPalette = Palette{rom=self.rom, addr=topc(0xb6, 0xf000), count=0x100}
+	self.pauseScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe000), count=0x800}	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
+	self.equipScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe800), count=0x800}
+	self.pauseScreenPalette = Palette{sm=self, addr=topc(0xb6, 0xf000), count=0x100}
 	-- and then b6:f200 on is free
 
 	-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)

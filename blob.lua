@@ -14,7 +14,7 @@ Blob.type = 'uint8_t'
 
 --[[
 args:
-	rom
+	sm
 	addr
 	type (optional) default uint8_t
 	compressed = flag for whether to decompress
@@ -33,8 +33,8 @@ a good balance would be using cpp/vector
 but this would mean removing lots of ffi.sizeof() code and replacing it with .v and .size
 
 --]]
-function Blob:init(args)--rom, addr, count, type)
-	self.rom = assert(args.rom)
+function Blob:init(args)
+	self.sm = assert(args.sm)
 	self.addr = assert(args.addr)
 	self.type = args.type	-- or class type
 	self.compressed = args.compressed
@@ -44,14 +44,14 @@ function Blob:init(args)--rom, addr, count, type)
 		
 		-- TODO for some ill-formatted rooms, some old dangling rooms will still be accessible by room door pointers in the data (even if they are not in the game)
 		-- and that will lead us to this function crashing
-		self.data, self.compressedSize = lz.decompress(self.rom, self.addr, self.type)
+		self.data, self.compressedSize = lz.decompress(self.sm.rom, self.addr, self.type)
 		
 		assert(ffi.sizeof(self.data) % ffi.sizeof(self.type) == 0)
 		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.type)
 	else
 		self.count = assert(args.count)
 		self.data = ffi.new(self.type..'[?]', self.count)
-		ffi.copy(self.data, self.rom + self.addr, self.count * ffi.sizeof(self.type))
+		ffi.copy(self.data, self.sm.rom + self.addr, self.count * ffi.sizeof(self.type))
 	end
 end
 
@@ -63,6 +63,10 @@ end
 -- it's looking more and more like a vector...
 function Blob:iend()
 	return self.data + self.count
+end
+
+function Blob:ptr()
+	return self.sm.rom + self.addr
 end
 
 function Blob:addMem(mem, ...)
@@ -81,7 +85,7 @@ function Blob:recompress(writeRange, compressInfo)
 	self.compressedSize = ffi.sizeof(recompressed)
 	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + self.compressedSize
 	local fromaddr, toaddr = writeRange:get(self.compressedSize)
-	ffi.copy(self.rom + fromaddr, recompressed, self.compressedSize)
+	ffi.copy(self.sm.rom + fromaddr, recompressed, self.compressedSize)
 	self.addr = fromaddr
 end
 
