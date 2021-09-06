@@ -92,6 +92,7 @@ local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
 SMMap.blockSizeInPixels = blockSizeInPixels
 SMMap.blocksPerRoom = blocksPerRoom 
+SMMap.roomSizeInPixels = roomSizeInPixels 
 
 local numMode7Tiles = 256
 local mode7sizeInGraphicTiles = 128
@@ -2070,13 +2071,18 @@ function SMMap:mapAddRoomBlockData(addr, m)
 		assert(16 * m.obj.height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m.obj.height)
 		return roomBlockData 
 	end
-	
-	local roomBlockData = RoomBlocks{
-		sm = self,
-		addr = addr,
-		m = m,
-	}
-	self.roomblocks:insert(roomBlockData)
+
+	local roomBlockData
+	xpcall(function()
+		roomBlockData = RoomBlocks{
+			sm = self,
+			addr = addr,
+			m = m,
+		}
+		self.roomblocks:insert(roomBlockData)
+	end, function(err)
+		print(err..'\n'..debug.traceback())
+	end)
 	return roomBlockData
 end
 

@@ -2,19 +2,25 @@
 --[[
 whereas 'run.lua' is the console randomizer,
 this is the OpenGL/imgui visualizer
+
+TODO replace the rgb conversion with a shader that takes in the indexed 8-bit image and the palette
+
 --]]
 local ffi = require 'ffi'
 local ig = require 'ffi.imgui'
 local gl = require 'gl'
 local glreport = require 'gl.report'
+local GLTex2D = require 'gl.tex2d'
+local GLProgram = require 'gl.program'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local file = require 'ext.file'
 local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
-local GLTex2D = require 'gl.tex2d'
 local SM = require 'sm'
+
+local cmdline = require 'ext.cmdline'(...)
 
 local App = class(require 'glapp.orbit'(require 'imguiapp'))
 
@@ -22,6 +28,7 @@ App.title = 'Super Metroid Viewer'
 
 local blockSizeInPixels = SM.blockSizeInPixels
 local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels 
+local roomSizeInPixels = SM.roomSizeInPixels 
 
 -- how do we want to pack our tile textures?
 -- this is arbitrary, but pick something squareish so we don't reach the tex dim limit
@@ -69,7 +76,9 @@ end
 
 
 function App:initGL()
-	local romstr = file['sm.sfc']	
+	App.super.initGL(self)
+
+	local romstr = file[cmdline['in'] or 'sm.sfc']	
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
 		print('skipping rom file header')
@@ -104,15 +113,6 @@ function App:initGL()
 	self.regions[7].ofs:set(15, -18)
 	self.regions[8].ofs:set(0, 0)
 
-	App.super.initGL(self)
-
-	self.view.ortho = true
-	self.view.znear = -1e+4
-	self.view.zfar = 1e+4
-	self.view.orthoSize = 256
-	self.view.pos.x = 128
-	self.view.pos.y = -128
-
 	for _,tileSet in ipairs(self.sm.tileSets) do
 		if tileSet.tileGfxBmp then
 			local img = Image(
@@ -139,16 +139,29 @@ function App:initGL()
 	
 			tileSet.tex = GLTex2D{
 				image = img,
-				--[[
-				magFilter = gl.GL_LINEAR,
-				minFilter = gl.GL_LINEAR_MIPMAP_LINEAR,
-				generateMipmap = true,
-				--]]
-				-- [[
 				magFilter = gl.GL_NEAREST,
 				minFilter = gl.GL_NEAREST,
 				generateMipmap = false,
-				--]]
+				wrap = {
+					s = gl.GL_REPEAT,
+					t = gl.GL_REPEAT,
+				},
+			}
+		end
+		if tileSet.palette then
+			local img = Image(tileSet.palette.count, 1, 4, 'unsigned char', function(paletteIndex)
+				local src = tileSet.palette.data[paletteIndex]
+				return
+					math.floor(src.r*255/31),
+					math.floor(src.g*255/31),
+					math.floor(src.b*255/31),
+					bit.band(paletteIndex, 0xf) > 0 and 255 or 0 
+			end)
+			tileSet.paletteTex = GLTex2D{
+				image = img,
+				magFilter = gl.GL_NEAREST,
+				minFilter = gl.GL_NEAREST,
+				generateMipmap = false,
 				wrap = {
 					s = gl.GL_REPEAT,
 					t = gl.GL_REPEAT,
@@ -157,8 +170,8 @@ function App:initGL()
 		end
 	end
 
-
 	-- precache all roomstate bgs
+	-- TODO indexed palette renderer so this isn't needed
 	for _,m in ipairs(self.sm.rooms) do
 		for _,rs in ipairs(m.roomStates) do
 			for _,bg in ipairs(rs.bgs) do
@@ -168,19 +181,57 @@ function App:initGL()
 			end
 		end
 	end
+	
+	self.view.ortho = true
+	self.view.znear = -1e+4
+	self.view.zfar = 1e+4
+	self.view.orthoSize = 256
+	self.view.pos.x = 128
+	self.view.pos.y = -128
 
+	
+	self.indexShader = GLProgram{
+		vertexCode = [[
+varying vec2 tc;
+void main() {
+	tc = gl_MultiTexCoord0.xy;
+	gl_Position = ftransform();
+}
+]],
+		fragmentCode = [[
+varying vec2 tc;
+uniform sampler2D tex;
+uniform sampler2D palette;
+void main() {
+	gl_FragColor = texture2D(tex, tc);
+}
+]],
+		uniforms = {
+			tex = 0,
+			palette = 1,
+		},
+	}
 
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 glreport'here'
 end
 
+-- 1 gl unit = 1 tile
 function App:update()
 
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 
-	local blocksPerRoom = self.sm.blocksPerRoom
-	
+	local blocksPerRoom = SM.blocksPerRoom
+
+	local view = self.view
+	local aspectRatio = self.width / self.height
+	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio )
+	viewxmin = view.pos.x - view.orthoSize * aspectRatio
+	viewxmax = view.pos.x + view.orthoSize * aspectRatio
+	viewymin = view.pos.y - view.orthoSize
+	viewymax = view.pos.y + view.orthoSize
+
 	GLTex2D:enable()
 
 	for i,region in ipairs(self.regions) do
@@ -190,152 +241,155 @@ function App:update()
 			for _,m in ipairs(rooms) do
 				local w = m.obj.width
 				local h = m.obj.height
-				for _,rs in ipairs(m.roomStates) do
-					local tileSet = rs.tileSet
-					local roomBlockData = rs.roomBlockData
-					local layer2blocks = roomBlockData:getLayer2Blocks()
 				
-					-- TODO instead of finding the first, hold a current index for each room 
-					local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
-					local bgTilemap = bg and bg.tilemap
-					local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
-					local bgTex = bgBmp and bgBmp.tex
+				-- in room block units
+				local roomxmin = m.obj.x + region.ofs.x
+				local roomymin = m.obj.y + region.ofs.y
+				local roomxmax = roomxmin + w
+				local roomymax = roomymin + h
+				if blocksPerRoom * roomxmax >= viewxmin
+				and blocksPerRoom * roomxmin <= viewxmax
+				and blocksPerRoom * -roomymax >= viewymin
+				and blocksPerRoom * -roomymin <= viewymax
+				then
+					for _,rs in ipairs(m.roomStates) do
+						local tileSet = rs.tileSet
+						local roomBlockData = rs.roomBlockData
+					
+						-- TODO instead of finding the first, hold a current index for each room 
+						local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
+						local bgTilemap = bg and bg.tilemap
+						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
+						local bgTex = bgBmp and bgBmp.tex
 
-					if tileSet
-					and tileSet.tex
-					and roomBlockData 
-					then
-						if bgTex then
-							bgTex:bind()
+						if tileSet
+						and tileSet.tex
+						and roomBlockData 
+						then
+							if bgTex then
+								bgTex:bind()
+								gl.glBegin(gl.GL_QUADS)
+								for j=0,h-1 do
+									for i=0,w-1 do
+										if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+										and blocksPerRoom * (roomxmin + i) <= viewxmax
+										and blocksPerRoom * -(roomymin + j + 1) >= viewymin
+										and blocksPerRoom * -(roomymin + j) <= viewymax
+										then
+											local x1 = blocksPerRoom * (i + roomxmin)
+											local y1 = blocksPerRoom * (j + roomymin)
+											local x2 = x1 + blocksPerRoom 
+											local y2 = y1 + blocksPerRoom 
+
+											local tx1 = i * roomSizeInPixels / bgTex.width
+											local ty1 = j * roomSizeInPixels / bgTex.height
+											local tx2 = (i+1) * roomSizeInPixels / bgTex.width
+											local ty2 = (j+1) * roomSizeInPixels / bgTex.height
+
+											gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
+											gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
+											gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
+											gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
+										end
+									end
+								end
+								gl.glEnd()
+								bgTex:unbind()
+							end
+
+
+							local tex = tileSet.tex
+							tex:bind()
 							gl.glBegin(gl.GL_QUADS)
+							
+							local blocks12 = roomBlockData:getBlocks12()
+							local blocks3 = roomBlockData:getBlocks3()
+							local layer2blocks = roomBlockData:getLayer2Blocks()
 							for j=0,h-1 do
 								for i=0,w-1 do
-									local x1 = blocksPerRoom * (i + m.obj.x + region.ofs.x)
-									local y1 = blocksPerRoom * (j + m.obj.y + region.ofs.y)
-									local x2 = x1 + blocksPerRoom 
-									local y2 = y1 + blocksPerRoom 
-
-									local tx1 = i * 256 / bgTex.width
-									local ty1 = j * 256 / bgTex.height
-									local tx2 = (i+1) * 256 / bgTex.width
-									local ty2 = (j+1) * 256 / bgTex.height
-
-									gl.glTexCoord2f(tx1, ty1)
-									gl.glVertex2f(x1, -y1)
-
-									gl.glTexCoord2f(tx2, ty1)
-									gl.glVertex2f(x2, -y1)
-									
-									gl.glTexCoord2f(tx2, ty2)
-									gl.glVertex2f(x2, -y2)
-									
-									gl.glTexCoord2f(tx1, ty2)
-									gl.glVertex2f(x1, -y2)
-								end
-							end
-							gl.glEnd()
-							bgTex:unbind()
-						end
-
-
-						local tex = tileSet.tex
-						tex:bind()
-						gl.glBegin(gl.GL_QUADS)
-						
-						local blocks12 = roomBlockData:getBlocks12()
-						local blocks3 = roomBlockData:getBlocks3()
-						for j=0,h-1 do
-							for i=0,w-1 do
-								for ti=0,blocksPerRoom-1 do
-									for tj=0,blocksPerRoom-1 do
-										-- draw layer2 background if it's there
-										if layer2blocks 
-										and editorDrawLayer2
-										then
-											local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
-											local pimask = bit.band(tileIndex, 0x400) ~= 0
-											local pjmask = bit.band(tileIndex, 0x800) ~= 0
-											tileIndex = bit.band(tileIndex, 0x3ff)
-										
-											
-											local tx1 = tileIndex % tileSetRowWidth
-											local ty1 = math.floor(tileIndex / tileSetRowWidth)
-
-											tx1 = tx1 / tileSetRowWidth
-											ty1 = ty1 / (tex.height / blockSizeInPixels)
-
-											local tx2 = tx1 + blockSizeInPixels/tex.width
-											local ty2 = ty1 + blockSizeInPixels/tex.height
-
-											if pimask then tx1,tx2 = tx2,tx1 end
-											if pjmask then ty1,ty2 = ty2,ty1 end
-
-											local x1 = ti + blocksPerRoom * (i + m.obj.x + region.ofs.x)
-											local y1 = tj + blocksPerRoom * (j + m.obj.y + region.ofs.y)
-											local x2 = x1 + 1
-											local y2 = y1 + 1
-											
-											gl.glTexCoord2f(tx1, ty1)
-											gl.glVertex2f(x1, -y1)
-
-											gl.glTexCoord2f(tx2, ty1)
-											gl.glVertex2f(x2, -y1)
-											
-											gl.glTexCoord2f(tx2, ty2)
-											gl.glVertex2f(x2, -y2)
-											
-											gl.glTexCoord2f(tx1, ty2)
-											gl.glVertex2f(x1, -y2)
-										end
-										
-										-- draw tile
-										if editorDrawForeground then
-											local dx = ti + blocksPerRoom * i
-											local dy = tj + blocksPerRoom * j
-											local di = dx + blocksPerRoom * w * dy
-											
-											local d1 = blocks12[0 + 2 * di]
-											local d2 = blocks12[1 + 2 * di]
-											local d3 = blocks3[di]
+									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+									and blocksPerRoom * (roomxmin + i) <= viewxmax
+									and blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									and blocksPerRoom * -(roomymin + j) <= viewymax
+									then
+										for ti=0,blocksPerRoom-1 do
+											for tj=0,blocksPerRoom-1 do
+												-- draw layer2 background if it's there
+												if layer2blocks 
+												and editorDrawLayer2
+												then
+													local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
+													local pimask = bit.band(tileIndex, 0x400) ~= 0
+													local pjmask = bit.band(tileIndex, 0x800) ~= 0
+													tileIndex = bit.band(tileIndex, 0x3ff)
 												
-											local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
-											local pimask = bit.band(d2, 4) ~= 0
-											local pjmask = bit.band(d2, 8) ~= 0
+													
+													local tx1 = tileIndex % tileSetRowWidth
+													local ty1 = math.floor(tileIndex / tileSetRowWidth)
+
+													tx1 = tx1 / tileSetRowWidth
+													ty1 = ty1 / (tex.height / blockSizeInPixels)
+
+													local tx2 = tx1 + blockSizeInPixels/tex.width
+													local ty2 = ty1 + blockSizeInPixels/tex.height
+
+													if pimask then tx1,tx2 = tx2,tx1 end
+													if pjmask then ty1,ty2 = ty2,ty1 end
+
+													local x1 = ti + blocksPerRoom * (i + roomxmin)
+													local y1 = tj + blocksPerRoom * (j + roomymin)
+													local x2 = x1 + 1
+													local y2 = y1 + 1
+													
+													gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
+													gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
+													gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
+													gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
+												end
+												
+												-- draw tile
+												if editorDrawForeground then
+													local dx = ti + blocksPerRoom * i
+													local dy = tj + blocksPerRoom * j
+													local di = dx + blocksPerRoom * w * dy
+													
+													local d1 = blocks12[0 + 2 * di]
+													local d2 = blocks12[1 + 2 * di]
+													local d3 = blocks3[di]
+														
+													local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
+													local pimask = bit.band(d2, 4) ~= 0
+													local pjmask = bit.band(d2, 8) ~= 0
 
 
-											local tx1 = tileIndex % tileSetRowWidth
-											local ty1 = math.floor(tileIndex / tileSetRowWidth)
+													local tx1 = tileIndex % tileSetRowWidth
+													local ty1 = math.floor(tileIndex / tileSetRowWidth)
 
-											tx1 = tx1 / tileSetRowWidth
-											ty1 = ty1 / (tex.height / blockSizeInPixels)
+													tx1 = tx1 / tileSetRowWidth
+													ty1 = ty1 / (tex.height / blockSizeInPixels)
 
-											local tx2 = tx1 + blockSizeInPixels/tex.width
-											local ty2 = ty1 + blockSizeInPixels/tex.height
+													local tx2 = tx1 + blockSizeInPixels/tex.width
+													local ty2 = ty1 + blockSizeInPixels/tex.height
 
-											if pimask then tx1,tx2 = tx2,tx1 end
-											if pjmask then ty1,ty2 = ty2,ty1 end
+													if pimask then tx1,tx2 = tx2,tx1 end
+													if pjmask then ty1,ty2 = ty2,ty1 end
 
-											local x = ti + blocksPerRoom * (i + m.obj.x + region.ofs.x)
-											local y = tj + blocksPerRoom * (j + m.obj.y + region.ofs.y)
-											
-											gl.glTexCoord2f(tx1, ty1)
-											gl.glVertex2f(x, -y)
-
-											gl.glTexCoord2f(tx2, ty1)
-											gl.glVertex2f(x+1, -y)
-											
-											gl.glTexCoord2f(tx2, ty2)
-											gl.glVertex2f(x+1, -y-1)
-											
-											gl.glTexCoord2f(tx1, ty2)
-											gl.glVertex2f(x, -y-1)
+													local x = ti + blocksPerRoom * (i + roomxmin)
+													local y = tj + blocksPerRoom * (j + roomymin)
+													
+													gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x, -y)
+													gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x+1, -y)
+													gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x+1, -y-1)
+													gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x, -y-1)
+												end
+											end
 										end
 									end
 								end
 							end
+							gl.glEnd()
+							tex:unbind()
 						end
-						gl.glEnd()
-						tex:unbind()
 					end
 				end
 			end
@@ -383,6 +437,7 @@ end
 
 function App:updateGUI()
 	checkboxTooltip('Draw Foreground', _G, 'editorDrawForeground')
+	ig.igSameLine()
 	checkboxTooltip('Draw Layer 2 Background', _G, 'editorDrawLayer2')
 
 	ig.igPushIDStr'regions'
