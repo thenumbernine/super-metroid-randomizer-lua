@@ -18,12 +18,12 @@ assert(ffi.sizeof'rgb_t' == 2)
 
 local Palette = class(Blob)
 
-Palette.ctype = 'rgb_t' 
+Palette.type = 'rgb_t' 
 
 -- read decompressed data from an abs addr in mem
 -- TODO abstract read source to be compressed/uncompressed
 function Palette:init(args)
-	assert(not args.ctype)
+	assert(not args.type)
 	Palette.super.init(self, args)
 end
 

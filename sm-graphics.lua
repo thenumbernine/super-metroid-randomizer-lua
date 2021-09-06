@@ -92,8 +92,8 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- and then b6:f200 on is free
 
 	-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-	self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles:size())
-	self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles:size())
+	self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles:sizeof())
+	self:graphicsSwizzleTileBitsInPlace(self.tileSelectAndPauseSpriteTiles.data, self.tileSelectAndPauseSpriteTiles:sizeof())
 end
 
 function SMGraphics:graphicsInit()
@@ -106,7 +106,7 @@ function SMGraphics:graphicsSaveEquipScreenImages()
 	local tilemapWidth = 32
 	local tilemapHeight = 32
 
-	assert(tilemapWidth * tilemapHeight * 2 == self.pauseScreenTilemap:size())
+	assert(tilemapWidth * tilemapHeight * 2 == self.pauseScreenTilemap:sizeof())
 	self.pauseScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
 	self:convertTilemapToBitmap(
 		self.pauseScreenBmp,
@@ -131,7 +131,7 @@ function SMGraphics:graphicsSaveEquipScreenImages()
 	self.pauseScreenImage:save'pausescreen.png'
 
 
-	assert(tilemapWidth * tilemapHeight * 2 == self.equipScreenTilemap:size())
+	assert(tilemapWidth * tilemapHeight * 2 == self.equipScreenTilemap:sizeof())
 	self.equipScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
 	self:convertTilemapToBitmap(
 		self.equipScreenBmp,

@@ -929,7 +929,7 @@ function Door:init(args)
 	local destRoomAddr = ffi.cast('uint16_t*', data)[0]
 	-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
 	local doorType = destRoomAddr == 0 and 'lift_t' or 'door_t'
-	self.ctype = doorType
+	self.type = doorType
 	self.ptr = ffi.cast(doorType..'*', data)
 	if doorType == 'door_t' 
 	and self.ptr.code > 0x8000 
@@ -960,13 +960,13 @@ function SMMap:mapAddBGTilemap(addr)
 	local tilemap = Blob{
 		rom = self.rom,
 		addr = addr,
-		ctype = 'tilemapElem_t',
+		type = 'tilemapElem_t',
 		compressed = true,
 	}
 	
 	tilemap.width = 32
 	tilemap.height = tilemap.count / tilemap.width
-	assert(tilemap.width * tilemap.height * ffi.sizeof(tilemap.ctype) == tilemap:size())
+	assert(tilemap.width * tilemap.height * ffi.sizeof(tilemap.type) == tilemap:sizeof())
 
 	self.bgTilemaps:insert(tilemap)
 	return tilemap
@@ -1135,7 +1135,7 @@ if done then break end
 				local bg = self:mapAddBG(addr, rom)
 				bg.roomStates:insert(rs)
 				rs.bgs:insert(bg)
-				addr = addr + ffi.sizeof(bg.ctype.name)
+				addr = addr + ffi.sizeof(bg.type.name)
 				if bg.obj.header == 0 then break end
 			end
 		end
@@ -1206,7 +1206,7 @@ if done then break end
 
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
-			if door.ctype == 'door_t' then
+			if door.type == 'door_t' then
 				door.destRoom = self:mapAddRoom(door.ptr.destRoomAddr, true)
 			end
 		end
@@ -1432,7 +1432,7 @@ function SMMap:mapAddBG(addr, rom)
 
 	bg = {
 		addr = addr,
-		ctype = ctype,
+		type = ctype,
 		ptr = ptr,
 		-- list of all m's that use this bg
 		roomStates = table(),
@@ -2252,7 +2252,7 @@ function SMMap:mapAddTileSetGraphicsTileSet(addr)
 	local graphicsTileSet = Blob{
 		rom = self.rom,
 		addr = addr,
-		--ctype = 'uint8_t',
+		--type = 'uint8_t',
 		compressed = true,
 	}
 	
@@ -2270,7 +2270,7 @@ function SMMap:mapAddTileSetTilemap(addr)
 	local tilemap = Blob{
 		rom = self.rom,
 		addr = addr,
-		--ctype = 'tilemapElem_t',
+		--type = 'tilemapElem_t',
 		compressed = true,
 	}
 
@@ -2361,22 +2361,22 @@ function SMMap:mapReadTileSets()
 	self.commonRoomGraphicsTiles = Blob{
 		rom = self.rom,
 		addr = commonRoomGraphicsTileAddr24:topc(),
-		ctype = 'graphicsTile_t',
+		type = 'graphicsTile_t',
 		compressed = true,
 	}
 	-- decompresesd size is 0x3000
-print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:size()))
+print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:sizeof()))
 	
 	--common room elements
 	self.commonRoomTilemaps = Blob{
 		rom = self.rom,
 		addr = commonRoomTilemapAddr24:topc(),
-		ctype = 'tilemapElem_t',
+		type = 'tilemapElem_t',
 		compressed = true,
 	}
 	-- size is 0x800 ... so 256 8bit tile infos
 	-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:size()))
+print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
 
 	-- if this happens then your rom's code has been modified to the point that the common room tilemap loading is somewhere else, or is pointed to somewhere else
 	-- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
@@ -2468,7 +2468,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 		so I wonder if that mode7 tileSetIndex if condition is even needed
 		--]]
 		local graphicsTileVec = vector'uint8_t'
-		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet.data + tileSet.graphicsTileSet.count)
+		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet:iend())
 
 		-- for tileSet 0x11-0x14
 		-- tileSet 0x11, 0x12 = room 06/00
@@ -2518,7 +2518,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 			end
 		end
 		if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
-			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.data, self.commonRoomGraphicsTiles.data + self.commonRoomGraphicsTiles.count)
+			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.data, self.commonRoomGraphicsTiles:iend())
 		end
 	
 		self:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
@@ -2527,9 +2527,9 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 
 		local tilemapByteVec = vector'uint8_t'
 		if loadCommonRoomElements then
-			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.data, self.commonRoomTilemaps.data + self.commonRoomTilemaps.count)
+			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.data, self.commonRoomTilemaps:iend())
 		end
-		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap.data + tileSet.tilemap.count)
+		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap:iend())
 		
 		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
@@ -3195,7 +3195,7 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			local door = srcRoom.doors[exitIndex+1]
 			if not door then
 --print('found no door')
-			elseif door.ctype ~= 'door_t' then
+			elseif door.type ~= 'door_t' then
 --print("door isn't a ctype")
 			-- TODO handle lifts?
 			else
@@ -4194,7 +4194,7 @@ function SMMap:mapWriteGraphDot()
 				local roomDoor = m.doors[exitIndex+1]
 				
 				if roomDoor 
-				and roomDoor.ctype == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
+				and roomDoor.type == 'door_t' 	-- otherwise, lift_t is a suffix of a lift door_t
 				then
 
 					assert(roomDoor.destRoom)
@@ -4290,7 +4290,7 @@ function SMMap:mapWriteGraphDot()
 							edges:insert('"'..srcNodeName..'" -> "'..doorNodeName..'"'..colorTag)
 							edges:insert('"'..doorNodeName..'" -> "'..dstNodeName..'"'..colorTag)
 						else
-							--if m.doors:last().ctype == 'lift_t' then
+							--if m.doors:last().type == 'lift_t' then
 							--local roomDoor = m.doors[#m.doors-1]
 							local destRoomName = getRoomName(roomDoor.destRoom)
 							-- create door edges from each roomstate to each room
@@ -4471,7 +4471,7 @@ function SMMap:mapPrint()
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
 		if bg.tilemap then
-			print('  tilemap.size: '..('$%x'):format(bg.tilemap:size()))
+			print('  tilemap.size: '..('$%x'):format(bg.tilemap:sizeof()))
 			print('  tilemap.addr: '..('$%x'):format(bg.tilemap.addr))
 		end
 	end
@@ -4519,7 +4519,7 @@ function SMMap:mapPrint()
 			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
 		end
 		for _,door in ipairs(m.doors) do
-			print('  '..door.ctype..': '
+			print('  '..door.type..': '
 				..('$83:%04x'):format(door.addr)
 				..' '..door.ptr[0])
 			if door.doorCode then
@@ -4575,7 +4575,7 @@ function SMMap:mapPrint()
 	local doorcodes = table()
 	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
-			if door.ctype == 'door_t' then
+			if door.type == 'door_t' then
 				doorcodes[door.ptr.code] = true
 			end
 		end
@@ -4615,7 +4615,7 @@ function SMMap:mapPrint()
 	print"all tileSet tilemaps:"
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
 		print(' '..('$%06x'):format(tilemap.addr))
-		print('  size='..('$%06x'):format(tilemap:size()))
+		print('  size='..('$%06x'):format(tilemap:sizeof()))
 		print('  compressedSize='..('$%06x'):format(tilemap.compressedSize))
 	end
 
@@ -4623,7 +4623,7 @@ function SMMap:mapPrint()
 	print"all tileSet graphicsTileSets:"
 	for _,graphicsTileSet in ipairs(self.tileSetGraphicsTileSets) do
 		print(' '..('$%06x'):format(graphicsTileSet.addr))
-		print('  size='..('$%06x'):format(graphicsTileSet:size()))
+		print('  size='..('$%06x'):format(graphicsTileSet:sizeof()))
 		print('  compressedSize='..('$%06x'):format(graphicsTileSet.compressedSize))
 	end
 
@@ -4663,7 +4663,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 		mem:add(topc(self.doorAddrBank, m.obj.doors), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
-			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.ctype), door.ctype, m)
+			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.type), door.type, m)
 			if door.doorCode then
 				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', m)
 			end
@@ -4715,7 +4715,7 @@ function SMMap:mapBuildMemoryMap(mem)
 
 	for _,bg in ipairs(self.bgs) do
 		local m = bg.roomStates[1].room
-		mem:add(bg.addr, ffi.sizeof(bg.ctype.name), 'bg_t', m)
+		mem:add(bg.addr, ffi.sizeof(bg.type.name), 'bg_t', m)
 	end
 
 	for _,tilemap in ipairs(self.bgTilemaps) do
@@ -5611,7 +5611,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	-- update m.doors[1..n].ptr.destRoomAddr
 	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
-			if door.ctype == 'door_t' then
+			if door.type == 'door_t' then
 				door.ptr.destRoomAddr = bit.band(0xffff, ffi.cast('uint8_t*', door.destRoom.ptr) - rom)
 			end
 		end

@@ -9,26 +9,34 @@ local lz = require 'lz'
 
 local Blob = class()
 
--- default ctype
-Blob.ctype = 'uint8_t'
+-- default type
+Blob.type = 'uint8_t'
 
 --[[
-source dilemma:
-ptr?  then it can read from sources outside the rom, like compressed, but how to save addr?
-rom,addr?  but then what about non-rom (compressed) sources?
-
 args:
 	rom
 	addr
-	ctype (optional) default uint8_t
+	type (optional) default uint8_t
 	compressed = flag for whether to decompress
 	count = if 'compressed' is not used then this is required.
 			if 'compressed' is used then this is inferred from the decompressed size.
+
+data source dilemma:
+ptr?  then it can read from sources outside the rom, like compressed, but how to save addr?
+rom,addr?  but then what about non-rom (compressed) sources?
+I'll use the 'compressed' flag to distinguish these.
+
+next dilemma: ffi arrays (which ffi.sizeof works) vs Lua tables (which are not contiguous in memory)?
+things like tilemaps, decompressed data, etc use ffi arrays.
+however room stuff like PLMSet use Lua tables.
+a good balance would be using cpp/vector
+but this would mean removing lots of ffi.sizeof() code and replacing it with .v and .size
+
 --]]
-function Blob:init(args)--rom, addr, count, ctype)
+function Blob:init(args)--rom, addr, count, type)
 	self.rom = assert(args.rom)
 	self.addr = assert(args.addr)
-	self.ctype = args.ctype	-- or class ctype
+	self.type = args.type	-- or class type
 	self.compressed = args.compressed
 
 	if self.compressed then
@@ -36,26 +44,32 @@ function Blob:init(args)--rom, addr, count, ctype)
 		
 		-- TODO for some ill-formatted rooms, some old dangling rooms will still be accessible by room door pointers in the data (even if they are not in the game)
 		-- and that will lead us to this function crashing
-		self.data, self.compressedSize = lz.decompress(self.rom, self.addr, self.ctype)
+		self.data, self.compressedSize = lz.decompress(self.rom, self.addr, self.type)
 		
-		assert(ffi.sizeof(self.data) % ffi.sizeof(self.ctype) == 0)
-		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.ctype)
+		assert(ffi.sizeof(self.data) % ffi.sizeof(self.type) == 0)
+		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.type)
 	else
 		self.count = assert(args.count)
-		self.data = ffi.new(self.ctype..'[?]', self.count)
-		ffi.copy(self.data, self.rom + self.addr, self.count * ffi.sizeof(self.ctype))
+		self.data = ffi.new(self.type..'[?]', self.count)
+		ffi.copy(self.data, self.rom + self.addr, self.count * ffi.sizeof(self.type))
 	end
 end
 
-function Blob:size()
-	return self.count * ffi.sizeof(self.ctype)
+-- keep 'size' reserved in case I turn this into a 'ffi.cpp.vector'
+function Blob:sizeof()
+	return self.count * ffi.sizeof(self.type)
+end
+
+-- it's looking more and more like a vector...
+function Blob:iend()
+	return self.data + self.count
 end
 
 function Blob:addMem(mem, ...)
 	if self.compressed then
 		mem:add(self.addr, self.compressedSize, ...)
 	else
-		mem:add(self.addr, self:size(), ...)
+		mem:add(self.addr, self:sizeof(), ...)
 	end
 end
 
