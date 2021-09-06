@@ -85,11 +85,20 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- TODO who uses this?  nobody? 
 	--  or should it be merged with the prev graphicsTiles
 	self.tileSelectAndPauseSpriteTiles = Blob{sm=self, addr=topc(0xb6, 0xc000), count=0x2000}
-	
-	self.pauseScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe000), count=0x800}	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
+
+	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
+	self.pauseScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe000), count=0x800}
 	self.equipScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe800), count=0x800}
+
+	-- 0x100 * 2 bytes per rgb_t = 0x200
 	self.pauseScreenPalette = Palette{sm=self, addr=topc(0xb6, 0xf000), count=0x100}
 	-- and then b6:f200 on is free
+
+	-- 1-based, so -1 to get the region #
+	-- 0x1000 = 4096 = 
+	self.regionTilemaps = range(0x8000,0xf000,0x1000):mapi(function(ofs)
+		return Blob{sm=self, addr=topc(0xb5, ofs), count=0x1000}
+	end)
 
 	-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
 	self:graphicsSwizzleTileBitsInPlace(self.pauseAndEquipScreenTiles.data, self.pauseAndEquipScreenTiles:sizeof())
@@ -103,57 +112,63 @@ end
 function SMGraphics:graphicsSaveEquipScreenImages()
 	local Image = require 'image'
 
-	local tilemapWidth = 32
-	local tilemapHeight = 32
 
-	assert(tilemapWidth * tilemapHeight * 2 == self.pauseScreenTilemap:sizeof())
-	self.pauseScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
-	self:convertTilemapToBitmap(
-		self.pauseScreenBmp,
-		self.pauseScreenTilemap.data,
-		self.pauseAndEquipScreenTiles.data,
-		tilemapWidth,
-		tilemapHeight,
-		1)
+	for _,info in ipairs(
+		self.regionTilemaps:mapi(function(regionTilemap,i)
+			return {
+				tilemap = regionTilemap,
+				tilemapWidth = 32,
+				tilemapHeight = 64,
+				destName = 'region'..(i-1),
+				process = function(img)
+					local w, h = img.width, img.height
+					local top = img:copy{x=0, y=0, width=w, height=w}
+					local bottom = img:copy{x=0, y=w, width=w, height=w}
+					local newimg = Image(h, w, 3, 'unsigned char')
+					newimg = newimg:paste{x=0, y=0, image=top}
+					newimg = newimg:paste{x=w, y=0, image=bottom}
+					return newimg
+				end,
+			}
+		end):append{
+			{
+				tilemap = self.pauseScreenTilemap,
+				tilemapWidth = 32,
+				tilemapHeight = 32,
+				destName = 'pausescreen',
+			},
+			{
+				-- which graphicsTileSet?  or should the two be combined?
+				--self.tileSelectAndPauseSpriteTiles.data,
+				tilemap = self.equipScreenTilemap,
+				tilemapWidth = 32,
+				tilemapHeight = 32,
+				destName = 'equipscreen',
+			}
+		}
+	) do
+		assert(info.tilemapWidth * info.tilemapHeight * 2 == info.tilemap:sizeof())
+		local bmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * info.tilemapWidth * info.tilemapHeight)
+		self:convertTilemapToBitmap(
+			bmp,
+			info.tilemap.data,
+			self.pauseAndEquipScreenTiles.data,
+			info.tilemapWidth,
+			info.tilemapHeight,
+			1)
 
-	self.pauseScreenImage = Image(
-		graphicsTileSizeInPixels * tilemapWidth,
-		graphicsTileSizeInPixels * tilemapHeight,
-		3,
-		'unsigned char')
-	self.pauseScreenImage:clear()
-	self:indexedBitmapToRGB(
-		self.pauseScreenImage.buffer,
-		self.pauseScreenBmp,
-		self.pauseScreenImage.width,
-		self.pauseScreenImage.height,
-		self.pauseScreenPalette)
-	self.pauseScreenImage:save'pausescreen.png'
-
-
-	assert(tilemapWidth * tilemapHeight * 2 == self.equipScreenTilemap:sizeof())
-	self.equipScreenBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemapWidth * tilemapHeight)
-	self:convertTilemapToBitmap(
-		self.equipScreenBmp,
-		self.equipScreenTilemap.data,	-- which graphicsTileSet?  or should the two be combined?
-		self.pauseAndEquipScreenTiles.data, --self.tileSelectAndPauseSpriteTiles.data,
-		tilemapWidth,
-		tilemapHeight,
-		1)
-
-	self.equipScreenImage = Image(
-		graphicsTileSizeInPixels * tilemapWidth,
-		graphicsTileSizeInPixels * tilemapHeight,
-		3,
-		'unsigned char')
-	self.equipScreenImage:clear()
-	self:indexedBitmapToRGB(
-		self.equipScreenImage.buffer,
-		self.equipScreenBmp,
-		self.equipScreenImage.width,
-		self.equipScreenImage.height,
-		self.pauseScreenPalette)
-	self.equipScreenImage:save'equipscreen.png'
+		local img = Image(
+			graphicsTileSizeInPixels * info.tilemapWidth,
+			graphicsTileSizeInPixels * info.tilemapHeight,
+			3,
+			'unsigned char')
+		img:clear()
+		self:indexedBitmapToRGB(img.buffer, bmp, img.width, img.height, self.pauseScreenPalette)
+		if info.process then
+			img = info.process(img)
+		end
+		img:save(info.destName..'.png')
+	end
 end
 
 function SMGraphics:graphicsBuildMemoryMap(mem)
@@ -162,6 +177,9 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 	self.pauseScreenTilemap:addMem(mem, 'pause screen tilemap')
 	self.equipScreenTilemap:addMem(mem, 'equip screen tilemap')
 	self.pauseScreenPalette:addMem(mem, 'pause screen palette')
+	for i,regionTilemap in ipairs(self.regionTilemaps) do
+		regionTilemap:addMem(mem, 'region '..(i-1)..' tilemap')
+	end
 end
 
 

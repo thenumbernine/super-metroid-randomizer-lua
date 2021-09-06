@@ -3066,7 +3066,16 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $1a70c0..$1a71f3 : $b4:f0c0..$b4:f1f3 (enemy weakness_t x14)
      : $1a71f4..$1a7379 : $b4:f1f4..$b4:f379 (enemy itemDrop_t x65) ... 6 bytes of padding ...
      : $1a7380..$1a7493 : $b4:f380..$b4:f493 (enemy itemDrop_t x46) ... 6 bytes of padding ...
-     : $1a749a..$1a74b7 : $b4:f49a..$b4:f4b7 (enemy itemDrop_t x5) ... 35656 bytes of padding ...
+     : $1a749a..$1a74b7 : $b4:f49a..$b4:f4b7 (enemy itemDrop_t x5) ... 2888 bytes of padding ...
+--------------
+     : $1a8000..$1a8fff : $b5:8000..$b5:8fff (region 0 tilemap)
+     : $1a9000..$1a9fff : $b5:9000..$b5:9fff (region 1 tilemap)
+     : $1aa000..$1aafff : $b5:a000..$b5:afff (region 2 tilemap)
+     : $1ab000..$1abfff : $b5:b000..$b5:bfff (region 3 tilemap)
+     : $1ac000..$1acfff : $b5:c000..$b5:cfff (region 4 tilemap)
+     : $1ad000..$1adfff : $b5:d000..$b5:dfff (region 5 tilemap)
+     : $1ae000..$1aefff : $b5:e000..$b5:efff (region 6 tilemap)
+     : $1af000..$1affff : $b5:f000..$b5:ffff (region 7 tilemap)
 --------------
      : $1b0000..$1b3fff : $b6:8000..$b6:bfff (pause and equip screen graphics tiles)
      : $1b4000..$1b5fff : $b6:c000..$b6:dfff (tile select and pause screen graphics tiles)

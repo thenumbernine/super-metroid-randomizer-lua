@@ -1646,7 +1646,7 @@ RoomBlocks.extTileTypes = {
 	beam_2x1				= 0xc5,
 	beam_1x2				= 0xc6,
 	beam_2x2				= 0xc7,
-	--powerbomb_1x1_regen	= 0xc8
+	--powerbomb_1x1_regen	= 0xc8,
 	powerbomb_1x1			= 0xc9,
 	supermissile_1x1_regen	= 0xca,
 	supermissile_1x1		= 0xcb,
@@ -3751,23 +3751,7 @@ local function drawRoomBlocksDumpworld(
 											dtt = dumpworldTileTypes.solid
 										else
 										
-											error'here'
-										end
-									elseif tt == RoomBlocks.tileTypes.copy_up  then
-										error("I thought I got the copy offset location")
-									elseif tt == RoomBlocks.tileTypes.grappling then
-										if ett == RoomBlocks.extTileTypes.grappling then
-											dtt = dumpworldTileTypes.solid
-										elseif ett == RoomBlocks.extTileTypes.grappling_break_regen then
-											dtt = dumpworldTileTypes.solid
-										elseif ett == RoomBlocks.extTileTypes.grappling_break then
-											dtt = dumpworldTileTypes.solid
-										elseif ett == RoomBlocks.extTileTypes.grappling2 then
-											dtt = dumpworldTileTypes.solid
-										elseif ett == RoomBlocks.extTileTypes.grappling3 then
-											dtt = dumpworldTileTypes.solid
-										else
---[===[
+-- [===[
 											print('here with ext tiletype '..tolua{
 												region = ('%02x'):format(m.obj.region),
 												index = ('%02x'):format(m.obj.index),
@@ -3789,6 +3773,23 @@ local function drawRoomBlocksDumpworld(
 												copych3 = ('%02x'):format(copych3),
 											})
 --]===]											
+										
+											error'here'
+										end
+									elseif tt == RoomBlocks.tileTypes.copy_up  then
+										error("I thought I got the copy offset location")
+									elseif tt == RoomBlocks.tileTypes.grappling then
+										if ett == RoomBlocks.extTileTypes.grappling then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling_break_regen then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling_break then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling2 then
+											dtt = dumpworldTileTypes.solid
+										elseif ett == RoomBlocks.extTileTypes.grappling3 then
+											dtt = dumpworldTileTypes.solid
+										else
 											error'here'
 										end
 										-- TODO grappling blocks eh
