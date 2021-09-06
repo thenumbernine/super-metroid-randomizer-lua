@@ -2,7 +2,12 @@
 -- http://pikensoft.com/docs/Zelda_LTTP_compression_(Piken).txt
 
 local ffi = require 'ffi'
+local class = require 'ext.class'
+local table = require 'ext.table'
+local range = require 'ext.range'
 local vector = require 'ffi.cpp.vector'
+
+local tableToByteArray = require 'util'.tableToByteArray
 
 ffi.cdef[[
 typedef union {
@@ -33,7 +38,7 @@ local function decompress(rom, addr, ctype)
 	local result = vector'uint8_t'
 
 	local function readbyte()
-		assert(addr >= 0 and addr < #romstr)
+		--assert(addr >= 0 and addr < #romstr)	-- TODO reintroduce maxlen?
 		local v = rom[addr]
 		-- v is now a lua number
 		addr = addr + 1

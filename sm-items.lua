@@ -6,6 +6,8 @@ or in the future (TODO maybe) have this pick out the item plm's based on room an
 --]]
 
 local ffi = require 'ffi'
+local table = require 'ext.table'
+local tolua = require 'ext.tolua'
 local config = require 'config'
 local playerSkills = config.playerSkills
 

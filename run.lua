@@ -1,9 +1,5 @@
 #!/usr/bin/env luajit
 	
-require 'ext'
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
-
 --[[
 useful pages:
 http://wiki.metroidconstruction.com/doku.php?id=super:enemy:list_of_enemies
@@ -12,6 +8,18 @@ http://metroidconstruction.com/SMMM/
 https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
 http://deanyd.net/sm/index.php?title=List_of_rooms
 --]]
+
+local file = require 'ext.file'
+local table = require 'ext.table'
+local tolua = require 'ext.tolua'
+local cmdline = require 'ext.cmdline'(...)
+
+local pc = require 'pc'
+local topc = pc.to
+local frompc = pc.from
+
+local tableToByteArray = require 'util'.tableToByteArray
+local hexStrToByteArray = require 'util'.hexStrToByteArray
 
 local timerIndent = 0
 function timer(name, callback, ...)
@@ -99,159 +107,11 @@ timer('everything', function()
 
 	-- global stuff
 
-	local struct = require 'struct'
-
-	ffi.cdef[[
-typedef uint8_t uint24_t[3];
-]]
-
-	addr24_t = struct{
-		name = 'addr24_t',
-		fields = {
-			{ofs = 'uint16_t'},
-			{bank = 'uint8_t'},
-		},
-		metatable = function(m)
-			function m:topc()
-				return topc(self.bank, self.ofs)
-			end
-			function m:frompc(addr)
-				self.bank, self.ofs = frompc(addr)
-			end
-		end,
-	}
-
-	function pickRandom(t)
-		return t[math.random(#t)]
-	end
-
-	function shuffle(x)
-		local y = {}
-		while #x > 0 do table.insert(y, table.remove(x, math.random(#x))) end
-		while #y > 0 do table.insert(x, table.remove(y, math.random(#y))) end
-		return x
-	end
-
-	function tableSubsetsEqual(a,b,i,j,n)
-		for k=0,n-1 do
-			if a[i+k] ~= b[j+k] then return false end
-		end
-		return true
-	end
-
-	function tablesAreEqual(a,b)
-		if #a ~= #b then return false end
-		for i=1,#a do
-			if a[i] ~= b[i] then return false end
-		end
-		return true
-	end
-
-	function byteArraysAreEqual(a,b,len)
-		if len == nil then
-			len = ffi.sizeof(a)
-			if len ~= ffi.sizeof(b) then return false end
-		end
-		a = ffi.cast('uint8_t*', a)
-		b = ffi.cast('uint8_t*', b)
-		for i=0,len-1 do
-			if a[i] ~= b[i] then return false end
-		end
-		return true
-	end
-
-	function copyByteArray(dst, src, len)
-		if len == nil then
-			if type(src) == 'cdata' then
-				len = ffi.sizeof(src)
-			else
-				error'here'
-			end
-		end
-		ffi.copy(dst, src, len)
-	end
-
-	function tableToByteArray(src)
-		local dest = ffi.new('uint8_t[?]', #src)
-		for i,v in ipairs(src) do
-			assert(type(v) == 'number' and v >= 0 and v <= 255)
-			dest[i-1] = v
-		end
-		return dest
-	end
-
-	function byteArrayToTable(src)
-		local dest = table()
-		for i=1,ffi.sizeof(src) do
-			dest[i] = src[i-1]
-		end
-		return dest
-	end
-
-	function byteArraySubset(src, ofs, len)
-		assert(type(src) == 'cdata')
-		-- only do bounds check if we're dealing with an array
-		-- if it's a pointer then we can't deduce size
-		if tostring(ffi.typeof(src)):sub(-2) == ']>' then
-			if ofs + len > ffi.sizeof(src) then
-				error('tried to copy past end '..tolua{
-					src = src,
-					ofs = ofs,
-					len = len,
-					sizeof_src = ffi.sizeof(src),
-				})
-			end
-		end
-		local dest = ffi.new('uint8_t[?]', len)
-		src = ffi.cast('uint8_t*', src)
-		ffi.copy(dest, src + ofs, len)
-		return dest
-	end
-
-	function hexStrToByteArray(src)
-		local n = #src/2
-		assert(n == math.floor(n))
-		local dest = ffi.new('uint8_t[?]', n)
-		for i=1,n do
-			dest[i-1] = tonumber(src:sub(2*i-1, 2*i), 16)
-		end
-		return dest
-	end
-
-	function byteArrayToHexStr(src, len, sep)
-		len = len or ffi.sizeof(src)
-		src = ffi.cast('uint8_t*', src)
-		local s = ''
-		local tsep = ''
-		for i=1,len do
-			s = s .. tsep..('%02x'):format(src[i-1])
-			tsep = sep or ''
-		end
-		return s
-	end
-
-	function mergeByteArrays(...)
-		local srcs = {...}
-		local totalSize = 0
-		for _,src in ipairs(srcs) do
-			totalSize = totalSize + ffi.sizeof(src)
-		end
-		local dest = ffi.new('uint8_t[?]', totalSize)
-		local k = 0
-		for _,src in ipairs(srcs) do
-			local len = ffi.sizeof(src)
-			ffi.copy(dest + k, src, len)
-			k = k + len
-		end
-		assert(k == totalSize)
-		return dest
-	end
-
 	if config.skipIntro then 
 		--applyPatch'introskip_doorflags.ips' 
-		copyByteArray(rom + 0x016eda, hexStrToByteArray'1f')
-		copyByteArray(rom + 0x010067, hexStrToByteArray'2200ff80')
-		copyByteArray(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
+		ffi.copy(rom + 0x016eda, hexStrToByteArray'1f')
+		ffi.copy(rom + 0x010067, hexStrToByteArray'2200ff80')
+		ffi.copy(rom + 0x007f00, hexStrToByteArray'af98097ec91f00d024afe2d77ed01eafb6d87e0904008fb6d87eafb2d87e0901008fb2d87eaf52097e22008081a900006b')
 	end
 
 	if config.beefUpXRay then
@@ -600,7 +460,7 @@ g:
 			0x8f, 0x20, 0xd8, 0x7e, -- STA $7e:d820
 			0x60,					-- RTS
 		}
-		copyByteArray(rom + 0x070000 + wakeZebesEarlyDoorCode, data)
+		ffi.copy(rom + 0x070000 + wakeZebesEarlyDoorCode, data)
 	end
 	--]=]
 

@@ -35,6 +35,8 @@ uint8_t pc;				//program counter
 
 uint8_t mem[];
 
+typedef uint8_t uint24_t[3];
+
 uint24_t addr24(uint8_t bank, uint16_t offset) {
 	return ((bank & 0x7f) << 15) | (offset & 0x7fff);
 }
@@ -49,6 +51,9 @@ uint16_t& mem16(uint8_t bank, uint16_t offset) {
 
 local ffi = require 'ffi'
 local bit = require 'bit'
+local table = require 'ext.table'
+
+local byteArraySubset = require 'util'.byteArraySubset
 
 local instrsForNames = {
 	ADC = {

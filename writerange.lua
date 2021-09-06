@@ -1,4 +1,5 @@
 local class = require 'ext.class'
+local table = require 'ext.table'
 
 -- [inclusive,exclusive), [start,end), or [addr,addr+len-1)
 local Interval = class()

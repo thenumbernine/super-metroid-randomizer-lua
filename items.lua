@@ -3,6 +3,7 @@
 -- [[
 
 local ffi = require 'ffi'
+local tolua = require 'ext.tolua'
 local config = require 'config'
 local playerSkills = config.playerSkills
 

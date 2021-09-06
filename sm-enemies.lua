@@ -3,10 +3,37 @@
 -- and call 'enemies.lua' => 'randomize_enemies.lua'
 
 local ffi = require 'ffi'
+local class = require 'ext.class'
+local table = require 'ext.table'
+local tolua = require 'ext.tolua'
 local struct = require 'struct'
 local config = require 'config'
 local randomizeEnemyProps = config.randomizeEnemyProps
-local topc = require 'pc'.to
+
+local pc = require 'pc'
+local topc = pc.to
+local frompc = pc.from
+
+local pickRandom = require 'util'.pickRandom
+
+-- where to put this...
+local addr24_t = struct{
+	name = 'addr24_t',
+	fields = {
+		{ofs = 'uint16_t'},
+		{bank = 'uint8_t'},
+	},
+	metatable = function(m)
+		function m:topc()
+			return topc(self.bank, self.ofs)
+		end
+		function m:frompc(addr)
+			self.bank, self.ofs = frompc(addr)
+		end
+	end,
+}
+
+
 
 local enemyShotBank = 0x86
 

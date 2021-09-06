@@ -1,6 +1,7 @@
 local ffi = require 'ffi'
 local bit = require 'bit'
 local class = require 'ext.class'
+local range = require 'ext.range'
 local table = require 'ext.table'
 local Blob = require 'blob'
 local Palette = require 'palette'

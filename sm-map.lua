@@ -11,6 +11,11 @@ tile graphics TODO's:
 --]]
 
 local ffi = require 'ffi'
+local table = require 'ext.table'
+local class = require 'ext.class'
+local range = require 'ext.range'
+local tolua = require 'ext.tolua'
+local math = require 'ext.math'
 local template = require 'template'
 local struct = require 'struct'
 local lz = require 'lz'
@@ -29,6 +34,13 @@ local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes
 local pc = require 'pc'
 local topc = pc.to
 local frompc = pc.from
+
+local byteArraySubset = require 'util'.byteArraySubset
+local tableSubsetsEqual = require 'util'.tableSubsetsEqual
+local tablesAreEqual = require 'util'.tablesAreEqual
+local byteArraysAreEqual = require 'util'.byteArraysAreEqual
+local tableToByteArray = require 'util'.tableToByteArray
+local byteArrayToHexStr = require 'util'.byteArrayToHexStr
 
 
 local SMMap = {}
@@ -3006,7 +3018,7 @@ local dumpworldTileTypes = {
 }
 
 local debugImageColorMap = range(254)
---debugImageColorMap = shuffle(debugImageColorMap)
+--debugImageColorMap = table.shuffle(debugImageColorMap)
 debugImageColorMap[0] = 0
 debugImageColorMap[255] = 255
 
@@ -5065,7 +5077,7 @@ print("used a total of "..doorid.." special and non-special doors")
 			-- update the address of all plms
 			addr, endaddr = plmWriteRanges:get(n)
 			-- write
-			copyByteArray(rom+addr, tableToByteArray(scrollmod))
+			ffi.copy(rom+addr, tableToByteArray(scrollmod), #scrollmod)
 		end
 		-- remember
 		addrForScrollMod[scrollmod] = addr

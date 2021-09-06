@@ -1,4 +1,5 @@
 local ffi = require 'ffi'
+local table = require 'ext.table'
 local template = require 'template'
 
 local function hextostr(digits)

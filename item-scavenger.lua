@@ -1,6 +1,8 @@
 local ffi = require 'ffi'
 local config = require 'config'
 
+local pickRandom = require 'util'.pickRandom
+
 local rom = sm.rom
 
 local dirs = table{{1,0},{0,1},{-1,0},{0,-1}}
