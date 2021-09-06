@@ -54,20 +54,24 @@ for _,roomBlockData in ipairs(sm.roomblocks) do
 		-- now to remove the tiles too
 		--[=[	
 		if not doorIsSpecial then	
+			local blocks12 = roomBlockData:getBlocks12()
+			local blocks3 = roomBlockData:getBlocks3()
 			local i,j = door.x, door.y
 			for k=0,3 do
 				if door.dir == 2 or door.dir == 3 then	-- left/right
 					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." room "..roomBlockData.roomStates[1].room.ptr[0])
 					assert(j >= 0 and j < h)
-					roomBlockData.blocks[0 + 3 * ((i+k) + w * j)] = 0xff
-					roomBlockData.blocks[1 + 3 * ((i+k) + w * j)] = 0
-					roomBlockData.blocks[2 + 3 * ((i+k) + w * j)] = 0
+					local index = (i+k) + w * j
+					blocks12[0 + 2 * index] = 0xff
+					blocks12[1 + 2 * index] = 0
+					blocks3[index] = 0
 				elseif door.dir == 0 or door.dir == 1 then	-- up/down
 					assert(i >= 0 and i < w)
 					assert(j+k >= 0 and j+k < h)
-					roomBlockData.blocks[0 + 3 * (i + w * (j+k))] = 0xff
-					roomBlockData.blocks[1 + 3 * (i + w * (j+k))] = 0
-					roomBlockData.blocks[2 + 3 * (i + w * (j+k))] = 0
+					local index = i + w * (j+k)
+					blocks12[0 + 2 * index] = 0xff
+					blocks12[1 + 2 * index] = 0
+					blocks3[index] = 0
 				else
 					error'here'
 				end

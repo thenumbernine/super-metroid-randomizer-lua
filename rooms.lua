@@ -122,17 +122,20 @@ low nibble:
 for _,roomBlockData in ipairs(sm.roomblocks) do
 	local w,h = roomBlockData.width, roomBlockData.height
 
+	local blocks12 = roomBlockData:getBlocks12()
+	local blocks3 = roomBlockData:getBlocks3()
 	for j=0,h-1 do
 		for i=0,w-1 do
+			local index = i + w * j
 			-- make sure we're not in any door regions, because those have to be shootable/whatever
 			local door = roomBlockData.doors:find(nil, function(door)
 				return i >= door.x and i <= door.x + door.w
 				and j >= door.y and j <= door.y + door.h
 			end)
 			if not door then
-				local a = roomBlockData.blocks[0 + 3 * (i + w * j)]
-				local b = roomBlockData.blocks[1 + 3 * (i + w * j)]
-				local c = roomBlockData.blocks[2 + 3 * (i + w * j)]
+				local a = blocks12[0 + 2 * index]
+				local b = blocks12[1 + 2 * index]
+				local c = blocks3[index]
 --I'm still missing the bomable block in the loewr red room brinstar
 				-- notice that doors and platforms and IDs for doors and platforms can be just about anything
 				if 
@@ -154,18 +157,18 @@ for _,roomBlockData in ipairs(sm.roomblocks) do
 				--or c == 0xf	-- speed block
 				then
 					--[=[ remove
-					roomBlockData.blocks[0 + 3 * (i + w * j)] = 0xff
-					roomBlockData.blocks[1 + 3 * (i + w * j)] = 0
-					roomBlockData.blocks[2 + 3 * (i + w * j)] = 0
+					blocks12[0 + 2 * index] = 0xff
+					blocks12[1 + 2 * index] = 0
+					blocks3[index] = 0
 					--]=]
 					-- [=[ turn to destructable blocks
-					--roomBlockData.blocks[0 + 3 * (i + w * j)] = 0
-					roomBlockData.blocks[1 + 3 * (i + w * j)] = bit.bor(
+					--blocks12[0 + 2 * index] = 0
+					blocks12[1 + 2 * index] = bit.bor(
 						0xc0, 	-- shootable
 						--0xf0,	-- bombable
 						bit.band(b, 0x0f))
 					-- ch3 4's bit means 'no respawn' ?
-					roomBlockData.blocks[2 + 3 * (i + w * j)] = 4
+					blocks3[index] = 4
 					--]=]
 					
 					--c = 0 -- means bombable/shootable, respawning
@@ -173,10 +176,10 @@ for _,roomBlockData in ipairs(sm.roomblocks) do
 					--c = 0xc
 					
 					-- btw, how come there are ch3==0 bombable blocks? (escaping alcatraz)
-					--roomBlockData.blocks[2 + 3 * (i + w * j)] = c
+					--blocks3[index] = c
 					
 --					b = bit.bor(bit.band(b, 0x0f), 0xc0)
---					roomBlockData.blocks[1 + 3 * (i + w * j)] = b
+--					blocks12[1 + 2 * index] = b
 				end
 			end
 		end

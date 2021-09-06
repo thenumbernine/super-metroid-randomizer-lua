@@ -37,21 +37,29 @@ function Blob:init(args)
 	self.sm = assert(args.sm)
 	self.addr = assert(args.addr)
 	self.type = args.type	-- or class type
+	local sizetype = ffi.sizeof(self.type)
+	
 	self.compressed = args.compressed
-
 	if self.compressed then
 		assert(not args.count, "can't be compressed and specify count")
 		
+print('data decompressing from address '..('0x%06x'):format(self.addr))
 		-- TODO for some ill-formatted rooms, some old dangling rooms will still be accessible by room door pointers in the data (even if they are not in the game)
 		-- and that will lead us to this function crashing
+		--xpcall(function()
 		self.data, self.compressedSize = lz.decompress(self.sm.rom, self.addr, self.type)
+		--end, function(err)
+		--	print(err..'\n'..debug.traceback())
+		--end)
+		local size = ffi.sizeof(self.data)
+print('data decompressed from size '..self.compressedSize..' to size '..size)
 		
-		assert(ffi.sizeof(self.data) % ffi.sizeof(self.type) == 0)
-		self.count = ffi.sizeof(self.data) / ffi.sizeof(self.type)
+		assert(size % sizetype == 0)
+		self.count = size / sizetype
 	else
 		self.count = assert(args.count)
 		self.data = ffi.new(self.type..'[?]', self.count)
-		ffi.copy(self.data, self.sm.rom + self.addr, self.count * ffi.sizeof(self.type))
+		ffi.copy(self.data, self.sm.rom + self.addr, self.count * sizetype)
 	end
 end
 

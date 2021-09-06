@@ -738,7 +738,7 @@ function SMEnemies:enemiesInit()
 		return enemy, enemy.name
 	end)
 
-	self.enemyForAddr = self.enemies:map(function(enemy)
+	self.enemyForPageOffset = self.enemies:map(function(enemy)
 		return enemy, enemy.addr
 	end)
 

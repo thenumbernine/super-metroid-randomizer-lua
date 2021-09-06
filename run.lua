@@ -919,14 +919,15 @@ g:
 				local region, index, x1,y1,w,h = table.unpack(info)
 				local m = assert(sm:mapFindRoom(region, index))
 				local roomBlockData = m.roomStates[1].roomBlockData	-- TODO assert all roomStates have matching rooms?
+				local blocks12 = roomBlockData:getBlocks12()
 				for j=0,h-1 do
 					local y = y1 + j
 					assert(y >= 0 and y < roomBlockData.height)
 					for i=0,w-1 do
 						local x = x1 + i
 						assert(x >= 0 and x < roomBlockData.width)
-						local bi = 1 + 3 * (x + roomBlockData.width * y)
-						roomBlockData.blocks[bi] = bit.bor(bit.band(roomBlockData.blocks[bi], 0x0f), 0x80)
+						local bi = 1 + 2 * (x + roomBlockData.width * y)
+						blocks12[bi] = bit.bor(bit.band(blocks12[bi], 0x0f), 0x80)
 					end
 				end
 			end
