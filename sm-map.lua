@@ -1496,12 +1496,181 @@ end
 local RoomBlocks = class(Blob)
 SMMap.RoomBlocks = RoomBlocks
 
+RoomBlocks.compressed = true
+
 function RoomBlocks:init(args)
-	assert(not args.type)
+	assert(args.compressed == nil)
+	assert(args.type == nil)
 	RoomBlocks.super.init(self, args)
-	
+	local m = args.m
+
 	self.rooms = table()
 	self.roomStates = table()
+
+	local ofs = 0
+	local head = byteArraySubset(self.data, ofs, 2) ofs=ofs+2
+	local headval = ffi.cast('uint16_t*', head)[0]
+	-- headval is always 2 * w * h
+	-- (except one room where it is (2+2/3) * w * h
+	-- does this mean ch3 is optional?
+
+	local w = m.obj.width * blocksPerRoom
+	local h = m.obj.height * blocksPerRoom
+
+	-- this is just 16 * room's (width, height)
+	self.width = w
+	self.height = h
+
+	print('head', headval)
+	print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
+	print('head / numblocks', headval / (w * h))
+	print('decompressed / head', (ffi.sizeof(self.data) - 2) / headval)
+	-- decompressed / numblocks is only ever 3 or 5
+	-- what determines which?
+	if (ffi.sizeof(self.data) - 2) / (w * h) < 3 then
+		print("WARNING - room has not enough blocks to fill the room")
+		return
+	end
+
+	local ch12 = byteArraySubset(self.data, ofs, 2*w*h) ofs=ofs+2*w*h
+	local ch3 = byteArraySubset(self.data, ofs, w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
+	local blocks = ffi.new('uint8_t[?]', 3 * w * h)
+	local k = 0
+	for j=0,h-1 do
+		for i=0,w-1 do
+			blocks[0 + 3 * k] = ch12[0 + 2 * k]
+			blocks[1 + 3 * k] = ch12[1 + 2 * k]
+			blocks[2 + 3 * k] = ch3[k]
+			k = k + 1
+		end
+	end
+	local dataSize = ffi.sizeof(self.data)
+	if ofs > dataSize then
+		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+	end
+	local layer2blocks
+	local tail
+	-- if there's still more to read...
+	if ofs < dataSize then
+		if dataSize - ofs < 2*w*h then
+			print("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+		else
+			layer2blocks = byteArraySubset(self.data, ofs, 2*w*h) ofs=ofs+2*w*h
+		end
+	end
+	-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
+	-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
+	if ofs < dataSize then
+		tail = byteArraySubset(self.data, ofs, dataSize - ofs)
+	end	
+
+	-- keep track of doors
+	
+	-- ok, this correlates with the door plms, so it is useful
+	--  but it isn't general to all exits
+	self.doors = table()	-- x,y,w,h
+	-- so that's where this comes in.  it is general to all exits.
+	-- 	key is the exit, value is a list of all positions of each exit xx9xyy block
+	self.blocksForExit = table()
+	local blocks12 = self:getBlocks12()
+	local blocks3 = self:getBlocks3()
+	for j=0,h-1 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
+		for i=0,w-1 do
+			local index = i + w * j
+			local a = blocks12[0 + 2 * index]
+			local b = blocks12[1 + 2 * index]
+			local c = blocks3[index]
+
+-- [[
+-- look for 0x9x in ch2 of of self.blocks
+			if bit.band(b, 0xf0) == 0x90 then
+				local exitIndex = c
+				self.blocksForExit[exitIndex] = self.blocksForExit[exitIndex] or table()
+				self.blocksForExit[exitIndex]:insert{i,j}
+			end
+--]]
+
+--[[
+doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
+ and then next to the 4 numbers, offset based on the door dir 40-43 <-> x+1,x-1,y+2,y-2, 
+ will be the door_t index, repeated 4 times.
+ for non-blue doors, this will match up with a plm in the roomstate that has x,y matching the door's location
+ for blue doors, no plm is needed
+however exits with no doors: 
+ 	* 00/0d the room to the right of the ship, exits 0 & 1 
+ 	* 01/09 the tall pink brinstar room, exit 5
+ 	* 04/01 maridia tube room, exits 1 & 2
+ 	* 04/0e maridia broken tube crab room, exits 0 & 1
+ 	* between maridia tall room 04/04 (exit 4) and maridia balloon room 04/08 (exit 4)
+		-- this one is really unique, since the rest of them would always be 4 indexes in a row, and always at the same offsets %16 depending on their direction, (not always on the map edge)
+			but 04/04 is only a single 04 on the edge of the map surrounded by 0's
+			and 04/08 is two 0404's in a row, in the middle of the map, surrounded by 0's
+	* 04/19 maridia upper right sandpit start
+	* 04/1a maridia where sand pit #1 falls into. there's a third door_t for the sand entrance, 
+			but no 02's in ch3 
+	* 04/1d maridia sand pit #1.  has two door_t's.  only one is seen in the ch3's: exit 1 in the floor
+	* 04/1e maridia sand pit #2.  same as #1 
+	* 04/1f maridia sandfall room #1 ... has no up exit, but the bottom is all 01 tiles for exit #1
+	* 04/20 maridia sandfall room #2 same.  interesting that there is no exit #0 used, only exit #1.
+		the roomstate says there are two doors though, but no door for index 0 can be seen.
+	* 04/21 maridia big pink room with two sand exits to 04/1f (exit 1) and 04/20 (exit 2)
+		-- these are a row of 80 tiles over a row of exit # tiles 
+	* 04/22 maridia upper right sandpit end
+ 	* 04/27 where sand pit 04/2b ends up
+ 	* 04/2b maridia room after botwoon, has 4 doors, two are doors, two are sandpit exits (#1 & #2)
+	* 04/2e maridia upper right sandpit middle
+	* 04/2f sandpit down from room after botwoon 
+ will only have their dest door_t number and a door_t entry ... no plm even
+so how does the map know when to distinguish those tiles from ordinary 00,01,etc shot tiles, especially with no plm there?
+ and esp when the destination door_t structure doesn't say anything about the location from where the door is?
+--]]			
+			if i >= 1 and i <= w-2 
+			and j >= 2 and j <= h-3
+			and c >= 0x40 and c <= 0x43 
+			then
+				-- here's the upper-left of a door.  now, which way is it facing
+				if i<w-3
+				and (c == 0x42 or c == 0x43)
+				and blocks3[(i+1) + w * j] == 0xff 
+				and blocks3[(i+2) + w * j] == 0xfe 
+				and blocks3[(i+3) + w * j] == 0xfd 
+				then
+					-- if c == 0x42 then it's down, if c == 0x43 then it's up 
+					local doorIndex = c == 0x42 
+						and blocks3[i + w * (j+2)]
+						or blocks3[i + w * (j-2)]
+					self.doors:insert{
+						x = i,
+						y = j,
+						w = 4,
+						h = 1,
+						dir = bit.band(3, c),
+						index = doorIndex,
+					}
+				elseif j < h-3	-- TODO assert this
+				and (c == 0x40 or c == 0x41)
+				and blocks3[i + w * (j+1)] == 0xff 
+				and blocks3[i + w * (j+2)] == 0xfe 
+				and blocks3[i + w * (j+3)] == 0xfd 
+				then
+					-- if c == 0x41 then it's left, if c == 0x40 then it's right
+					local doorIndex = c == 0x40 
+						and blocks3[(i+1) + w * j]
+						or blocks3[(i-1) + w * j]
+					self.doors:insert{
+						x = i,
+						y = j,
+						w = 1,
+						h = 4, 
+						dir = bit.band(3, c),
+						index = doorIndex,
+					}
+				else
+					-- nothing, there's lots of other 40..43's out there
+				end
+			end
+		end
+	end
 end
 
 function RoomBlocks:refreshRooms()
@@ -1891,184 +2060,11 @@ function SMMap:mapAddRoomBlockData(addr, m)
 		return roomBlockData 
 	end
 	
-	local roomaddrstr = ('$%06x'):format(addr)
---print('roomaddr '..roomaddrstr)
-
-
 	local roomBlockData = RoomBlocks{
 		sm = self,
 		addr = addr,
-		compressed = true,
+		m = m,
 	}
-	local data = roomBlockData.data
-
-	local ofs = 0
-	local head = byteArraySubset(data, ofs, 2) ofs=ofs+2
-	local headval = ffi.cast('uint16_t*', head)[0]
-	-- headval is always 2 * w * h
-	-- (except one room where it is (2+2/3) * w * h
-	-- does this mean ch3 is optional?
-
-	local w = m.obj.width * blocksPerRoom
-	local h = m.obj.height * blocksPerRoom
-
-print('head', headval)
-print('decompressed / numblocks', (ffi.sizeof(data) - 2) / (w * h))
-print('head / numblocks', headval / (w * h))
-print('decompressed / head', (ffi.sizeof(data) - 2) / headval)
--- decompressed / numblocks is only ever 3 or 5
--- what determines which?
-if (ffi.sizeof(data) - 2) / (w * h) < 3 then
-	print("WARNING - room has not enough blocks to fill the room")
-	return
-end
-
-	local ch12 = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
-	local ch3 = byteArraySubset(data, ofs, w*h) ofs=ofs+w*h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
-	local blocks = ffi.new('uint8_t[?]', 3 * w * h)
-	local k = 0
-	for j=0,h-1 do
-		for i=0,w-1 do
-			blocks[0 + 3 * k] = ch12[0 + 2 * k]
-			blocks[1 + 3 * k] = ch12[1 + 2 * k]
-			blocks[2 + 3 * k] = ch3[k]
-			k = k + 1
-		end
-	end
-	local dataSize = ffi.sizeof(data)
-	if ofs > dataSize then
-		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
-	end
-	local layer2blocks
-	local tail
-	-- if there's still more to read...
-	if ofs < dataSize then
-		if dataSize - ofs < 2*w*h then
-			print("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
-		else
-			layer2blocks = byteArraySubset(data, ofs, 2*w*h) ofs=ofs+2*w*h
-		end
-	end
-	-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
-	-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
-	if ofs < dataSize then
-		tail = byteArraySubset(data, ofs, dataSize - ofs)
-	end	
-
-	-- keep track of doors
-	
-	-- ok, this correlates with the door plms, so it is useful
-	--  but it isn't general to all exits
-	local doors = table()	-- x,y,w,h
-	-- so that's where this comes in.  it is general to all exits.
-	-- 	key is the exit, value is a list of all positions of each exit xx9xyy block
-	local blocksForExit = table()
-	local blocks12 = data + 2
-	local blocks3 = blocks12 + 2 * w * h
-	for j=0,h-1 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
-		for i=0,w-1 do
-			local index = i + w * j
-			local a = blocks12[0 + 2 * index]
-			local b = blocks12[1 + 2 * index]
-			local c = blocks3[index]
-
--- [[
--- look for 0x9x in ch2 of of roomBlockData.blocks
-			if bit.band(b, 0xf0) == 0x90 then
-				local exitIndex = c
-				blocksForExit[exitIndex] = blocksForExit[exitIndex] or table()
-				blocksForExit[exitIndex]:insert{i,j}
-			end
---]]
-
---[[
-doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
- and then next to the 4 numbers, offset based on the door dir 40-43 <-> x+1,x-1,y+2,y-2, 
- will be the door_t index, repeated 4 times.
- for non-blue doors, this will match up with a plm in the roomstate that has x,y matching the door's location
- for blue doors, no plm is needed
-however exits with no doors: 
- 	* 00/0d the room to the right of the ship, exits 0 & 1 
- 	* 01/09 the tall pink brinstar room, exit 5
- 	* 04/01 maridia tube room, exits 1 & 2
- 	* 04/0e maridia broken tube crab room, exits 0 & 1
- 	* between maridia tall room 04/04 (exit 4) and maridia balloon room 04/08 (exit 4)
-		-- this one is really unique, since the rest of them would always be 4 indexes in a row, and always at the same offsets %16 depending on their direction, (not always on the map edge)
-			but 04/04 is only a single 04 on the edge of the map surrounded by 0's
-			and 04/08 is two 0404's in a row, in the middle of the map, surrounded by 0's
-	* 04/19 maridia upper right sandpit start
-	* 04/1a maridia where sand pit #1 falls into. there's a third door_t for the sand entrance, 
-			but no 02's in ch3 
-	* 04/1d maridia sand pit #1.  has two door_t's.  only one is seen in the ch3's: exit 1 in the floor
-	* 04/1e maridia sand pit #2.  same as #1 
-	* 04/1f maridia sandfall room #1 ... has no up exit, but the bottom is all 01 tiles for exit #1
-	* 04/20 maridia sandfall room #2 same.  interesting that there is no exit #0 used, only exit #1.
-		the roomstate says there are two doors though, but no door for index 0 can be seen.
-	* 04/21 maridia big pink room with two sand exits to 04/1f (exit 1) and 04/20 (exit 2)
-		-- these are a row of 80 tiles over a row of exit # tiles 
-	* 04/22 maridia upper right sandpit end
- 	* 04/27 where sand pit 04/2b ends up
- 	* 04/2b maridia room after botwoon, has 4 doors, two are doors, two are sandpit exits (#1 & #2)
-	* 04/2e maridia upper right sandpit middle
-	* 04/2f sandpit down from room after botwoon 
- will only have their dest door_t number and a door_t entry ... no plm even
-so how does the map know when to distinguish those tiles from ordinary 00,01,etc shot tiles, especially with no plm there?
- and esp when the destination door_t structure doesn't say anything about the location from where the door is?
---]]			
-			if i >= 1 and i <= w-2 
-			and j >= 2 and j <= h-3
-			and c >= 0x40 and c <= 0x43 
-			then
-				-- here's the upper-left of a door.  now, which way is it facing
-				if i<w-3
-				and (c == 0x42 or c == 0x43)
-				and blocks3[(i+1) + w * j] == 0xff 
-				and blocks3[(i+2) + w * j] == 0xfe 
-				and blocks3[(i+3) + w * j] == 0xfd 
-				then
-					-- if c == 0x42 then it's down, if c == 0x43 then it's up 
-					local doorIndex = c == 0x42 
-						and blocks3[i + w * (j+2)]
-						or blocks3[i + w * (j-2)]
-					doors:insert{
-						x = i,
-						y = j,
-						w = 4,
-						h = 1,
-						dir = bit.band(3, c),
-						index = doorIndex,
-					}
-				elseif j < h-3	-- TODO assert this
-				and (c == 0x40 or c == 0x41)
-				and blocks3[i + w * (j+1)] == 0xff 
-				and blocks3[i + w * (j+2)] == 0xfe 
-				and blocks3[i + w * (j+3)] == 0xfd 
-				then
-					-- if c == 0x41 then it's left, if c == 0x40 then it's right
-					local doorIndex = c == 0x40 
-						and blocks3[(i+1) + w * j]
-						or blocks3[(i-1) + w * j]
-					doors:insert{
-						x = i,
-						y = j,
-						w = 1,
-						h = 4, 
-						dir = bit.band(3, c),
-						index = doorIndex,
-					}
-				else
-					-- nothing, there's lots of other 40..43's out there
-				end
-			end
-		end
-	end
-
-	-- this is just 16 * room's (width, height)
-	roomBlockData.width = w
-	roomBlockData.height = h
-	-- extra stuff I'm trying to keep track of
-	roomBlockData.doors = doors
-	roomBlockData.blocksForExit = blocksForExit
 	self.roomblocks:insert(roomBlockData)
 	return roomBlockData
 end
