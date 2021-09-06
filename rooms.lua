@@ -189,7 +189,7 @@ end
 local startRoom = assert(sm:mapFindRoom(0, 0x00))
 local ceres = assert(sm:mapFindRoom(6, 0x00)) 
 local doorptr = ceres.doors[1].ptr
-doorptr.destRoomAddr = startRoom.addr
+doorptr.destRoomPageOffset = startRoom.addr
 doorptr.screenX = 3
 doorptr.screenY = 3
 --]]

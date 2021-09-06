@@ -39,7 +39,7 @@ SMMap.doorBank = 0x83
 
 -- each room and its roomstates, dooraddrs, and scrolldata are stored grouped together
 SMMap.roomBank = 0x8f
-SMMap.roomStateBank = 0x8f	-- bank for roomselect_t.roomStateAddr
+SMMap.roomStateBank = 0x8f	-- bank for roomselect_t.roomStatePageOffset
 SMMap.doorAddrBank = 0x8f	-- bank for room_t.doors
 SMMap.scrollBank = 0x8f		-- if scrolldata is stored next to room, roomstate, and dooraddr, then why does it have a separate bank?
 -- then between groups of rooms (and their content) are groups of bg_t's and doorcodes
@@ -157,20 +157,20 @@ local room_t = struct{
 	},
 }
 
--- roomselect testCodeAddr is stored from $e5e6 to $e689 (inclusive)
+-- roomselect testCodePageOffset is stored from $e5e6 to $e689 (inclusive)
 
 local roomselect1_t = struct{
 	name = 'roomselect1_t',
 	fields = {
-		{testCodeAddr = 'uint16_t'},
+		{testCodePageOffset = 'uint16_t'},
 	},
 }
 
 local roomselect2_t = struct{
 	name = 'roomselect2_t',
 	fields = {
-		{testCodeAddr = 'uint16_t'},
-		{roomStateAddr = 'uint16_t'},
+		{testCodePageOffset = 'uint16_t'},
+		{roomStatePageOffset = 'uint16_t'},
 	},
 }
 
@@ -178,9 +178,9 @@ local roomselect2_t = struct{
 local roomselect3_t = struct{
 	name = 'roomselect3_t',
 	fields = {
-		{testCodeAddr = 'uint16_t'},		-- ptr to test code in bank $8f
+		{testCodePageOffset = 'uint16_t'},		-- ptr to test code in bank $8f
 		{testvalue = 'uint8_t'},
-		{roomStateAddr = 'uint16_t'},		-- ptr to roomstate in bank $8f
+		{roomStatePageOffset = 'uint16_t'},		-- ptr to roomstate in bank $8f
 	},
 }
 
@@ -191,9 +191,9 @@ local roomstate_t = struct{
 		{tileSet = 'uint8_t'},				-- tile graphics data
 		{musicTrack = 'uint8_t'},
 		{musicControl = 'uint8_t'},
-		{fx1Addr = 'uint16_t'},				-- $83
-		{enemySpawnAddr = 'uint16_t'},		-- TODO "enemySpawnSetAddr". points to an array of enemySpawn_t
-		{enemyGFXAddr = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of enemyClass_t's + palettes
+		{fx1PageOffset = 'uint16_t'},				-- $83
+		{enemySpawnPageOffset = 'uint16_t'},		-- TODO "enemySpawnSetAddr". points to an array of enemySpawn_t
+		{enemyGFXPageOffset = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of enemyClass_t's + palettes
 	
 		--[[
 		From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
@@ -218,16 +218,16 @@ local roomstate_t = struct{
 		1 = scroll anywhere, but clip the top & bottom 2 blocks (which will hide vertical exits)
 		2 = scroll anywhere at all ... but keeps samus in the middle, which makes it bad for hallways
 		--]]
-		{scrollAddr = 'uint16_t'},
+		{scrollPageOffset = 'uint16_t'},
 		
 		--[[
 		this is only used by the grey torizo room, and points to the extra data after room_t
 		--]]
-		{roomvarAddr = 'uint16_t'},				
-		{fx2Addr = 'uint16_t'},					-- TODO - aka 'main asm ptr'
-		{plmAddr = 'uint16_t'},
-		{bgAddr = 'uint16_t'},				-- offset to bg_t's
-		{layerHandlingAddr = 'uint16_t'},
+		{roomvarPageOffset = 'uint16_t'},				
+		{fx2PageOffset = 'uint16_t'},					-- TODO - aka 'main asm ptr'
+		{plmPageOffset = 'uint16_t'},
+		{bgPageOffset = 'uint16_t'},				-- offset to bg_t's
+		{layerHandlingPageOffset = 'uint16_t'},
 	},
 }
 
@@ -236,7 +236,7 @@ local roomstate_t = struct{
 local plm_t = struct{
 	name = 'plm_t',
 	fields = {
-		{cmd = 'uint16_t'},			-- TODO rename to plmAddr?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyAddr vs enemyClass_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
+		{cmd = 'uint16_t'},			-- TODO rename to plmPageOffset?  but that is ambiguous with this struct's name.  How to keep this analogous with enemyPageOffset vs enemyClass_t vs enemySpawn_t ... maybe rename this to plmSpawn_t ? hmm...
 		{x = 'uint8_t'},
 		{y = 'uint8_t'},
 		{args = 'uint16_t'},
@@ -248,7 +248,7 @@ local plm_t = struct{
 local enemySpawn_t = struct{
 	name = 'enemySpawn_t',
 	fields = {
-		{enemyAddr = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
+		{enemyPageOffset = 'uint16_t'},	-- matches enemies[].addr, instance of enemyClass_t
 		{x = 'uint16_t'},			-- fixed_t pixel:subpixel
 		{y = 'uint16_t'},			-- fixed_t
 		{initGFX = 'uint16_t'},		-- init param / tilemaps / orientation
@@ -264,7 +264,7 @@ local enemySpawn_t = struct{
 local enemyGFX_t = struct{
 	name = 'enemyGFX_t',
 	fields = {
-		{enemyAddr = 'uint16_t'},	-- matches enemies[].addr
+		{enemyPageOffset = 'uint16_t'},	-- matches enemies[].addr
 		{palette = 'uint16_t'},
 	},
 }
@@ -331,7 +331,7 @@ local fx1_t = struct{
 	name = 'fx1_t',
 	fields = {
 		-- bank $83, ptr to door data.  0 means no door-specific fx
-		{doorAddr = 'uint16_t'},				-- 0
+		{doorPageOffset = 'uint16_t'},				-- 0
 		-- starting height of water/lava/acid
 		-- aka "base y position"
 		{liquidStarHeight = 'uint16_t'},		-- 2
@@ -435,13 +435,13 @@ local bg_4_t = struct{
 }
 
 --[[
-header==0xe => copy len bytes from .addr24 to VRAM:.dstOfs if the current doorAddr == .doorAddr
+header==0xe => copy len bytes from .addr24 to VRAM:.dstOfs if the current doorPageOffset == .doorPageOffset
 --]]
 local bg_e_t = struct{
 	name = 'bg_e_t',
 	fields = {
 		{header = 'uint16_t'},
-		{doorAddr = 'uint16_t'},
+		{doorPageOffset = 'uint16_t'},
 		{addr24 = 'addr24_t'},
 		{dstOfs = 'uint16_t'},
 		{len = 'uint16_t'},
@@ -469,7 +469,7 @@ local bgCTypeForHeader = {
 local door_t = struct{
 	name = 'door_t',
 	fields = {
-		{destRoomAddr = 'uint16_t'},				-- 0: points to the room_t to transition into
+		{destRoomPageOffset = 'uint16_t'},				-- 0: points to the room_t to transition into
 		
 	--[[
 	0x40 = change regions
@@ -510,8 +510,8 @@ local lift_t = struct{
 local loadStation_t = struct{
 	name = 'loadStation_t',
 	fields = {
-		{roomAddr = 'uint16_t'},
-		{doorAddr = 'uint16_t'},
+		{roomPageOffset = 'uint16_t'},
+		{doorPageOffset = 'uint16_t'},
 		{doorBTS = 'uint16_t'},
 		{screenX = 'uint16_t'},
 		{screenY = 'uint16_t'},
@@ -524,15 +524,15 @@ local loadStation_t = struct{
 local demoRoom_t = struct{
 	name = 'demoRoom_t',
 	fields = {
-		{roomAddr = 'uint16_t'},
-		{doorAddr = 'uint16_t'},
+		{roomPageOffset = 'uint16_t'},
+		{doorPageOffset = 'uint16_t'},
 		{doorSlot = 'uint16_t'},
 		{screenX = 'uint16_t'},
 		{screenY = 'uint16_t'},
 		{offsetX = 'uint16_t'},
 		{offsetY = 'uint16_t'},
 		{demoLength = 'uint16_t'},
-		{codeAddr = 'uint16_t'},
+		{codePageOffset = 'uint16_t'},
 	},
 }
 
@@ -771,16 +771,21 @@ function Room:init(args)
 		self[k] = v
 	end
 end
-function Room:setAddr(sm, addr)
-	assert(addr >= 0 and addr < 0xffff, "expects a 16-bit page offset, not 24-bit")
-	self.ptr = sm.rom + topc(sm.roomBank, addr)
+
+-- [[ TODO remove these and merge Room with Blob somehow
+function Room:setOffset(sm, ofs)
+	assert(ofs >= 0x8000 and ofs < 0xffff, "expects a 16-bit page offset, not 24-bit")
+	self.ptr = sm.rom + topc(sm.roomBank, ofs)
 end
-function Room:getAddr(sm)
-	assert(self.ptr, "you can't get the addr if you don't know the ptr")
+function Room:getOffset(sm)
+	assert(self.ptr, "you can't get the page offset if you don't know the ptr")
 	local addr = ffi.cast('uint8_t*', self.ptr) - sm.rom
 	local bank, ofs = frompc(addr)
+	assert(bank == sm.roomBank)
 	return ofs
 end
+--]]
+
 function Room:findDoorTo(destRoom)
 	local _, door = self.doors:find(nil, function(door) 
 		return door.destRoom == destRoom
@@ -938,9 +943,9 @@ function Door:init(args)
 	
 	local addr = assert(args.addr)
 	local data = rom + addr 
-	local destRoomAddr = ffi.cast('uint16_t*', data)[0]
-	-- if destRoomAddr == 0 then it is just a 2-byte 'lift' structure ...
-	local ctype = destRoomAddr == 0 and 'lift_t' or 'door_t'
+	local destRoomPageOffset = ffi.cast('uint16_t*', data)[0]
+	-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
+	local ctype = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
 
 	self.addr = addr
 	--local addr = topc(sm.doorBank, self.addr)
@@ -963,7 +968,7 @@ function Door:setDestRoom(room)
 	-- TODO don't bother do this until writing
 	local bank, ofs = frompc(room.addr)
 	assert(bank == self.roomBank)
-	self.ptr.destRoomAddr = ofs
+	self.ptr.destRoomPageOffset = ofs
 end
 
 -- TODO make common with mapAddTileSetTilemap
@@ -1018,14 +1023,14 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 
 	-- roomstates
 	while true do
-		local testCodeAddr = ffi.cast('uint16_t*',data)[0]
+		local testCodePageOffset = ffi.cast('uint16_t*',data)[0]
 		
 		local select_ctype
-		if testCodeAddr == 0xe5e6 then 
+		if testCodePageOffset == 0xe5e6 then 
 			select_ctype = 'roomselect1_t'	-- default / end of the list
-		elseif testCodeAddr == 0xe612
-		or testCodeAddr == 0xe629
-		or testCodeAddr == 0xe5eb
+		elseif testCodePageOffset == 0xe612
+		or testCodePageOffset == 0xe629
+		or testCodePageOffset == 0xe5eb
 		then
 			select_ctype = 'roomselect3_t'	-- this is for doors.  but it's not used. so whatever.
 		else
@@ -1057,7 +1062,7 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	for _,rs in ipairs(m.roomStates) do
 		if rs.select_ctype ~= 'roomselect1_t' then
 			assert(not rs.ptr)
-			local addr = topc(self.roomStateBank, rs.select.roomStateAddr)
+			local addr = topc(self.roomStateBank, rs.select.roomStatePageOffset)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
 			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 		end
@@ -1076,8 +1081,8 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	--]]
 
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.scrollAddr > 0x0001 and rs.obj.scrollAddr ~= 0x8000 then
-			local addr = topc(self.scrollBank, rs.obj.scrollAddr)
+		if rs.obj.scrollPageOffset > 0x0001 and rs.obj.scrollPageOffset ~= 0x8000 then
+			local addr = topc(self.scrollBank, rs.obj.scrollPageOffset)
 			local size = m.obj.width * m.obj.height
 			rs.scrollData = range(size):map(function(i)
 				return rom[addr+i-1]
@@ -1090,8 +1095,8 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	-- so now, when writing them out, they will be in the same order in memory as they were when being read in
 	for i=#m.roomStates,1,-1 do
 		local rs = m.roomStates[i]
-		if rs.obj.plmAddr ~= 0 then
-			local plmset = self:mapAddPLMSetFromAddr(topc(self.plmBank, rs.obj.plmAddr), m)
+		if rs.obj.plmPageOffset ~= 0 then
+			local plmset = self:mapAddPLMSetFromAddr(topc(self.plmBank, rs.obj.plmPageOffset), m)
 			rs:setPLMSet(plmset)
 		end
 	end
@@ -1099,12 +1104,12 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	-- enemySpawnSet
 	-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
 	for _,rs in ipairs(m.roomStates) do
-		local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.obj.enemySpawnAddr))
+		local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.obj.enemySpawnPageOffset))
 		rs:setEnemySpawnSet(enemySpawnSet)
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		rs:setEnemyGFXSet(self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXAddr)))
+		rs:setEnemyGFXSet(self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXPageOffset)))
 	end
 
 	-- some rooms use the same fx1 ptr
@@ -1114,7 +1119,7 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 	-- then make one set and just put the subset's at the end
 	-- (unless the order matters...)
 	for _,rs in ipairs(m.roomStates) do
-		local startaddr = topc(self.fx1Bank, rs.obj.fx1Addr)
+		local startaddr = topc(self.fx1Bank, rs.obj.fx1PageOffset)
 		local addr = startaddr
 		local retry
 		while true do
@@ -1137,7 +1142,7 @@ print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)
 			if true then
 				local fx1 = self:mapAddFX1(addr)
 -- this misses 5 fx1_t's
-local done = fx1.ptr.doorAddr == 0 
+local done = fx1.ptr.doorPageOffset == 0 
 				fx1.rooms:insert(m)
 				rs.fx1s:insert(fx1)
 				
@@ -1150,8 +1155,8 @@ if done then break end
 	end
 
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.bgAddr > 0x8000 then
-			local addr = topc(self.bgBank, rs.obj.bgAddr)
+		if rs.obj.bgPageOffset > 0x8000 then
+			local addr = topc(self.bgBank, rs.obj.bgPageOffset)
 			while true do
 				local bg = self:mapAddBG(addr, rom)
 				bg.roomStates:insert(rs)
@@ -1163,10 +1168,10 @@ if done then break end
 	end
 
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.layerHandlingAddr > 0x8000 then
-			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingAddr)
-			rs.layerHandlingAddr = self:mapAddLayerHandling(addr)
-			rs.layerHandlingAddr.roomStates:insert(rs)
+		if rs.obj.layerHandlingPageOffset > 0x8000 then
+			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingPageOffset)
+			rs.layerHandlingPageOffset = self:mapAddLayerHandling(addr)
+			rs.layerHandlingPageOffset.roomStates:insert(rs)
 		end
 	
 		if config.mapReadRoomBlockData then
@@ -1177,14 +1182,14 @@ if done then break end
 	-- door addrs
 	local startaddr = topc(self.doorAddrBank, m.obj.doors)
 	local addr = startaddr
-	local doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+	local doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 	addr = addr + 2
-	while doorAddr > 0x8000 do
+	while doorPageOffset > 0x8000 do
 		m.doors:insert(Door{
 			sm = self,
-			addr = topc(self.doorBank, doorAddr),
+			addr = topc(self.doorBank, doorPageOffset),
 		})
-		doorAddr = ffi.cast('uint16_t*', rom + addr)[0]
+		doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 		addr = addr + 2
 	end
 	-- exclude terminator
@@ -1193,14 +1198,14 @@ if done then break end
 	
 
 	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
-	-- pointed to by room[00/15].roomstate_t[#1].roomvarAddr
+	-- pointed to by room[00/15].roomstate_t[#1].roomvarPageOffset
 	-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
 	-- this is the rescue animals roomstate
 	-- so this data has to do with the destructable wall on the right side
-	--if roomAddr == 0x79804 then
+	--if roomPageOffset == 0x79804 then
 	for _,rs in ipairs(m.roomStates) do
-		if rs.obj.roomvarAddr ~= 0 then
-			local d = rom + topc(self.plmBank, rs.obj.roomvarAddr)
+		if rs.obj.roomvarPageOffset ~= 0 then
+			local d = rom + topc(self.plmBank, rs.obj.roomvarPageOffset)
 			local roomvar = table()
 			repeat
 				roomvar:insert(d[0])	-- x
@@ -1228,7 +1233,7 @@ if done then break end
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
 			if door.type == 'door_t' then
-				door.destRoom = self:mapAddRoom(door.ptr.destRoomAddr, true)
+				door.destRoom = self:mapAddRoom(door.ptr.destRoomPageOffset, true)
 			end
 		end
 	end
@@ -1380,7 +1385,7 @@ function SMMap:mapAddEnemySpawnSet(addr)
 	local enemiesToKill 
 	while true do
 		local ptr = ffi.cast('enemySpawn_t*', rom + addr)
-		if ptr.enemyAddr == 0xffff then
+		if ptr.enemyPageOffset == 0xffff then
 			-- include term and enemies-to-kill
 			addr = addr + 2
 			break
@@ -2499,7 +2504,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 			print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
 			tileSet.mode7graphicsTiles, tileSet.mode7tilemap = self:graphicsLoadMode7(graphicsTileVec.v, graphicsTileVec.size)
 			
-			--[[ vanilla ceres ridley room layer handling, when layerHandlingAddr == $c97b
+			--[[ vanilla ceres ridley room layer handling, when layerHandlingPageOffset == $c97b
 			used with roomstate_t's $07dd95, $07dd7b
 			which are only for room_t $07dd69 06/05 -- and they are the only roomstates_t's of that room, so I can check via room
 			roomstate_t $07dd95 => tileSet $14 ... used by no one else
@@ -2509,7 +2514,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 			room 06/05's block tileIndex data is all value $1f anyways,
 			so regardless of fixing this tileset, we still have nothing to display.
 			--]]
-			--if rs.layerHandlingAddr == 0xc97b then
+			--if rs.layerHandlingPageOffset == 0xc97b then
 			graphicsTileVec:resize(0x5000)
 			ffi.fill(graphicsTileVec.v, graphicsTileVec.size, 0)
 			if isCeresRidleyRoom then
@@ -2669,7 +2674,7 @@ print('plmBank '..('%02x'):format(self.plmBank))
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 print('loadStation region '..lsr.region)		
 		for _,ls in ipairs(lsr.stations) do
-			local addr = ls.obj.roomAddr
+			local addr = ls.obj.roomPageOffset
 print(' loadStation addr '..('%04x'):format(addr))
 			if addr > 0 then
 				local room = self:mapAddRoom(addr, true)
@@ -2679,7 +2684,7 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 					ls.room = room
 				end
 			end
-			-- TODO what about the doorAddr? what does this point to?
+			-- TODO what about the doorPageOffset? what does this point to?
 		end
 	end
 	--]]
@@ -2750,7 +2755,7 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 			local dooraddr = topc(self.doorAddrBank, m.obj.doors)
 	--		assert(d == rom + dooraddr)
 			if d ~= rom + dooraddr then
-				print("warning - doorAddr does not proceed roomStates")
+				print("warning - doorPageOffset does not proceed roomStates")
 				d = rom + dooraddr
 			end
 			d = d + 2 * #m.doors
@@ -2758,7 +2763,7 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 			-- now expect all scrolldatas of all rooms of this room_t
 			-- the # of unique scrolldatas is either 0 or 1
 			local scrolls = m.roomStates:map(function(rs)
-				return true, rs.obj.scrollAddr
+				return true, rs.obj.scrollPageOffset
 			end):keys():filter(function(scroll)
 				return scroll > 1 and scroll ~= 0x8000
 			end):sort()
@@ -2771,7 +2776,7 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 				local addr = topc(self.scrollBank, scroll)
 	--			assert(d == rom + addr)
 				if d ~= rom + addr then
-					print("warning - scrollAddr does not proceed doorAddr")
+					print("warning - scrollPageOffset does not proceed doorPageOffset")
 					d = rom + addr
 				end
 				d = d + m.obj.width * m.obj.height
@@ -3289,7 +3294,7 @@ function drawRoomBlockPLMs(ctx, roomBlockData)
 				local y = math.round(yofs + debugImageBlockSizeInPixels/2 + debugImageBlockSizeInPixels * (enemySpawn.y / 16 + blocksPerRoom * m.obj.y))
 				drawline(debugMapImage,x+2,y,x-2,y, 0xff, 0x00, 0xff)
 				drawline(debugMapImage,x,y+2,x,y-2, 0xff, 0x00, 0xff)
-				drawstr(debugMapImage, x+5, y, ('$%x'):format(enemySpawn.enemyAddr))
+				drawstr(debugMapImage, x+5, y, ('$%x'):format(enemySpawn.enemyPageOffset))
 			end
 		end
 	end
@@ -4431,7 +4436,7 @@ function SMMap:mapPrint()
 		)
 		for _,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do	
 			io.write('  '..enemySpawn)
-			local enemyName = (self.enemyForAddr[enemySpawn.enemyAddr] or {}).name
+			local enemyName = (self.enemyForAddr[enemySpawn.enemyPageOffset] or {}).name
 			if enemyName then
 				io.write(' '..enemyName)
 			end
@@ -4450,7 +4455,7 @@ function SMMap:mapPrint()
 		)
 		for _,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
 			io.write('  '..enemyGFX)
-			local enemyName = (self.enemyForAddr[enemyGFX.enemyAddr] or {}).name
+			local enemyName = (self.enemyForAddr[enemyGFX.enemyPageOffset] or {}).name
 			if enemyName then
 				io.write(' '..tolua(enemyName))
 			end
@@ -4519,13 +4524,13 @@ function SMMap:mapPrint()
 			--]]
 			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do	
 				print('   enemySpawn_t: '
-					..((self.enemyForAddr[enemySpawn.enemyAddr] or {}).name or '')
+					..((self.enemyForAddr[enemySpawn.enemyPageOffset] or {}).name or '')
 					..': '..enemySpawn)
 			end
 			print('   enemyGFXSet: '..tolua(rs.enemyGFXSet.name))	--:match'\0*(.*)')
 			for _,enemyGFX in ipairs(rs.enemyGFXSet.enemyGFXs) do
 				print('    enemyGFX_t: '
-					..tolua((self.enemyForAddr[enemyGFX.enemyAddr] or {}).name or '')
+					..tolua((self.enemyForAddr[enemyGFX.enemyPageOffset] or {}).name or '')
 					..': '..enemyGFX)
 			end
 			for _,fx1 in ipairs(rs.fx1s) do
@@ -4536,7 +4541,7 @@ function SMMap:mapPrint()
 			end
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
-			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodeAddr)
+			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodePageOffset)
 			local code = disasm.readUntilRet(roomSelectCodeAddr, rom, 0x100)
 			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
 		end
@@ -4584,12 +4589,12 @@ function SMMap:mapPrint()
 	local testCodeAddrs = table()
 	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
-			testCodeAddrs[rs.select.testCodeAddr] = true
+			testCodeAddrs[rs.select.testCodePageOffset] = true
 		end
 	end
 	print('unique test code addrs:')
-	for _,testCodeAddr in ipairs(testCodeAddrs:keys():sort()) do
-		print(('$%04x'):format(testCodeAddr))
+	for _,testCodePageOffset in ipairs(testCodeAddrs:keys():sort()) do
+		print(('$%04x'):format(testCodePageOffset))
 	end
 	--]]
 
@@ -4671,14 +4676,14 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized room width x height
-				local addr = topc(self.scrollBank, rs.obj.scrollAddr)
+				local addr = topc(self.scrollBank, rs.obj.scrollPageOffset)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 			
-			mem:add(topc(self.fx1Bank, rs.obj.fx1Addr), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(topc(self.fx1Bank, rs.obj.fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 		
 			-- TODO possible to relocate?
-			local addr = topc(self.roomBank, rs.select.testCodeAddr)
+			local addr = topc(self.roomBank, rs.select.testCodePageOffset)
 			local code = disasm.readUntilRet(addr, rom, 100)
 			mem:add(addr, ffi.sizeof(code), 'room select code', m)
 		end
@@ -4913,7 +4918,7 @@ print("used a total of "..doorid.." special and non-special doors")
 		if #plmset.plms == 0 then
 			for j=#plmset.roomStates,1,-1 do
 				local rs = plmset.roomStates[j]
-				rs.obj.plmAddr = 0
+				rs.obj.plmPageOffset = 0
 				rs:setPLMSet(nil)
 			end
 		end
@@ -4991,8 +4996,8 @@ print("used a total of "..doorid.." special and non-special doors")
 					local bank, ofs = frompc(pi.addr)
 					assert(bank == self.plmBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs.obj.plmAddr = ofs
-						rs.ptr.plmAddr = ofs
+						rs.obj.plmPageOffset = ofs
+						rs.ptr.plmPageOffset = ofs
 						rs:setPLMSet(pi)
 					end
 					self.plmsets:remove(j)
@@ -5041,10 +5046,10 @@ print("used a total of "..doorid.." special and non-special doors")
 		local bank, ofs = frompc(plmset.addr)
 		assert(bank == self.plmBank)
 		for _,rs in ipairs(plmset.roomStates) do
-			if ofs ~= rs.obj.plmAddr then
-				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plmAddr)..' to '..('%04x'):format(ofs))
-				rs.obj.plmAddr = ofs
-				rs.ptr.plmAddr = ofs
+			if ofs ~= rs.obj.plmPageOffset then
+				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plmPageOffset)..' to '..('%04x'):format(ofs))
+				rs.obj.plmPageOffset = ofs
+				rs.ptr.plmPageOffset = ofs
 			end
 		end
 	end
@@ -5142,8 +5147,8 @@ function SMMap:mapWriteEnemySpawnSets()
 					local bank, ofs = frompc(pi.addr)
 					assert(bank == self.enemySpawnBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs.obj.enemySpawnAddr = ofs
-						rs.ptr.enemySpawnAddr = ofs
+						rs.obj.enemySpawnPageOffset = ofs
+						rs.ptr.enemySpawnPageOffset = ofs
 						rs:setEnemySpawnSet(pi)
 					end
 					self.enemySpawnSets:remove(j)
@@ -5180,10 +5185,10 @@ function SMMap:mapWriteEnemySpawnSets()
 		local bank, ofs = frompc(enemySpawnSet.addr)
 		assert(bank == self.enemySpawnBank)
 		for _,rs in ipairs(enemySpawnSet.roomStates) do
-			if ofs ~= rs.obj.enemySpawnAddr then
-				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawnAddr)..' to '..('%04x'):format(ofs))
-				rs.obj.enemySpawnAddr = ofs
-				rs.ptr.enemySpawnAddr = ofs
+			if ofs ~= rs.obj.enemySpawnPageOffset then
+				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawnPageOffset)..' to '..('%04x'):format(ofs))
+				rs.obj.enemySpawnPageOffset = ofs
+				rs.ptr.enemySpawnPageOffset = ofs
 			end
 		end
 	end
@@ -5242,10 +5247,10 @@ function SMMap:mapWriteEnemyGFXSets()
 		assert(addr == endaddr)
 		local newofs = bit.bor(bit.band(0x7fff, enemyGFXSet.addr), 0x8000)
 		for _,rs in ipairs(enemyGFXSet.roomStates) do
-			if newofs ~= rs.obj.enemyGFXAddr then
-				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.obj.enemyGFXAddr)..' to '..('%04x'):format(newofs))
-				rs.obj.enemyGFXAddr = newofs
-				rs.ptr.enemyGFXAddr = newofs
+			if newofs ~= rs.obj.enemyGFXPageOffset then
+				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.obj.enemyGFXPageOffset)..' to '..('%04x'):format(newofs))
+				rs.obj.enemyGFXPageOffset = newofs
+				rs.ptr.enemyGFXPageOffset = newofs
 			end
 		end
 	end
@@ -5470,7 +5475,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		 -- these two functions are not pointed to by any rooms
 		 --  but their functions are referenced by the code at c8dd, 
 		 -- so this is reserved, can't be moved (without updating the code of c8dd as well)
-		 --  which is the layerHandlingAddr of room 04/37, draygon's room
+		 --  which is the layerHandlingPageOffset of room 04/37, draygon's room
 		 -- in other words, without some deep code introspection (and maybe some sentience)
 		 --  this can't be automatically moved around and updated
 		 -- {0x07c8f6, 0x07c8fc},	-- 6 bytes of draygon's room pausing code
@@ -5569,16 +5574,16 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		for i=#m.roomStates,1,-1 do
 			local rs = m.roomStates[i]
 			
-			local roomStateAddr = ptr - rom
-			local bank, ofs = frompc(roomStateAddr)
+			local roomStatePageOffset = ptr - rom
+			local bank, ofs = frompc(roomStatePageOffset)
 			assert(bank == self.roomStateBank)
 			
 			local rsptr = ffi.cast('roomstate_t*', ptr)
 			rsptr[0] = rs.obj
 			rs.ptr = rsptr
 			if rs.select_ctype ~= 'roomselect1_t' then
-				rs.select_ptr.roomStateAddr = ofs	-- update previous write in rom
-				rs.select.roomStateAddr = ofs		-- update POD
+				rs.select_ptr.roomStatePageOffset = ofs	-- update previous write in rom
+				rs.select.roomStatePageOffset = ofs		-- update POD
 			else
 				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 			end
@@ -5598,7 +5603,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		end
 		
 		-- write m.roomStates[1..n].roomvar (only for grey torizo room)
-		--		update m.roomStates[1..n].ptr.roomvarAddr
+		--		update m.roomStates[1..n].ptr.roomvarPageOffset
 		for _,rs in ipairs(m.roomStates) do
 			if rs.roomvar then
 				local bank, ofs = frompc(ptr - rom)
@@ -5606,8 +5611,8 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 				if bank ~= self.plmBank then
 					print('DANGER DANGER - you are writing roomvar data outside the PLM bank')
 				end
-				rs.obj.roomvarAddr = ofs
-				rs.ptr.roomvarAddr = rs.obj.roomvarAddr
+				rs.obj.roomvarPageOffset = ofs
+				rs.ptr.roomvarPageOffset = rs.obj.roomvarPageOffset
 				for _,c in ipairs(rs.roomvar) do
 					ptr[0] = c
 					ptr = ptr + 1
@@ -5616,30 +5621,30 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		end
 		
 		-- write m.roomStates[1..n].scrollData
-		--		update m.roomStates[1..n].obj.scrollAddr
+		--		update m.roomStates[1..n].obj.scrollPageOffset
 		for i,rs in ipairs(m.roomStates) do
 			if rs.scrollData then
-				assert(rs.obj.scrollAddr > 1 and rs.obj.scrollAddr ~= 0x8000)
+				assert(rs.obj.scrollPageOffset > 1 and rs.obj.scrollPageOffset ~= 0x8000)
 				assert(#rs.scrollData == m.obj.width * m.obj.height)
 				local matches
 				for j=1,i-1 do
 					local rs2 = m.roomStates[j]
 					if rs2.scrollData then
 						if tablesAreEqual(rs.scrollData, rs2.scrollData) then
-							matches = rs2.obj.scrollAddr
+							matches = rs2.obj.scrollPageOffset
 							break
 						end
 					end	
 				end
 				if matches then
-					rs.obj.scrollAddr = matches
-					rs.ptr.scrollAddr = matches
+					rs.obj.scrollPageOffset = matches
+					rs.ptr.scrollPageOffset = matches
 				else
 					local addr = ptr - rom
 					local bank, ofs = frompc(addr)
 					assert(bank == self.scrollBank)
-					rs.obj.scrollAddr = ofs
-					rs.ptr.scrollAddr = rs.obj.scrollAddr
+					rs.obj.scrollPageOffset = ofs
+					rs.ptr.scrollPageOffset = rs.obj.scrollPageOffset
 					for i=1,m.obj.width * m.obj.height do
 						ptr[0] = rs.scrollData[i]
 						ptr = ptr + 1
@@ -5651,14 +5656,14 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		assert(endaddr == ptr - rom)
 	end
 
-	-- update m.doors[1..n].ptr.destRoomAddr
+	-- update m.doors[1..n].ptr.destRoomPageOffset
 	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.type == 'door_t' then
 				local addr = ffi.cast('uint8_t*', door.destRoom.ptr) - rom
 				local bank, ofs = frompc(addr)
 				assert(bank == self.roomBank)
-				door.ptr.destRoomAddr = ofs
+				door.ptr.destRoomPageOffset = ofs
 			end
 		end
 	end
@@ -5894,10 +5899,10 @@ function SMMap:mapWrite()
 				end
 				ls.ptr = ptr
 				if ls.room then
-					ls.obj.roomAddr = assert(ls.room.addr)
+					ls.obj.roomPageOffset = assert(ls.room.addr)
 				else
-					if ls.obj.roomAddr ~= 0 then
-						print("WARNING - loadStation doesn't have a room, but does have a nonzero roomAddr")
+					if ls.obj.roomPageOffset ~= 0 then
+						print("WARNING - loadStation doesn't have a room, but does have a nonzero roomPageOffset")
 					end
 				end
 				ptr[0] = ls.obj

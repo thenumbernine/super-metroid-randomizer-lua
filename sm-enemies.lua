@@ -171,9 +171,9 @@ local Enemy = class()
 --  so an instance must be created for this typecast to work
 -- maybe I should separate out the typecase definition from the Table init ...
 function Enemy:getWeakness()
-	local addr = self.ptr.weakness
-	if addr == 0 then return end
-	local ptr = self.rom + topc(enemyAuxTableBank, addr)
+	local ofs = self.ptr.weakness
+	if ofs == 0 then return end
+	local ptr = self.rom + topc(enemyAuxTableBank, ofs)
 	return ffi.cast('weakness_t*', ptr)
 end
 
@@ -478,7 +478,7 @@ local iceFieldSet = {
 	wave_ice_spazer=1,
 	wave_ice_plasma=1,
 }
-function EnemyWeaknessTable:getRandomizedValues(addr)
+function EnemyWeaknessTable:getRandomizedValues(ofs)
 	local sm = self.sm
 	local values = self.fields:map(function(field)
 		local fieldName, fieldType = next(field)
@@ -492,7 +492,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 		local freezeField = iceFieldSet[fieldName]
 		
 		-- only if it's a freeze field 
-		if freezeField  then
+		if freezeField then
 			if math.random() < randomizeEnemyProps.chanceToInstaFreeze then 
 				return 0xff 
 			end
@@ -507,7 +507,7 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 			value = 1	--pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
 		end	
 
-		if freezeField  then
+		if freezeField then
 			if math.random() > randomizeEnemyProps.chanceToFreeze then
 				value = bit.bor(value, 0x80)	-- can't freeze flag
 			end
@@ -531,14 +531,14 @@ function EnemyWeaknessTable:getRandomizedValues(addr)
 	-- don't change kraid's part's weaknesses
 	-- until I know how to keep the game from crashing
 	for name,_ in pairs(dontChangeWeaknessSet) do
-		if sm.enemyForName[name].ptr.weakness == addr then
+		if sm.enemyForName[name].ptr.weakness == ofs then
 			return
 		end
 	end
 
 	-- make sure Shaktool weakness entry is immune to powerbombs
-	--if addr == ShaktoolWeaknessAddr then	-- local ShaktoolWeaknessAddr = 0xef1e
-	if addr == sm.enemyForName.Shaktool.ptr.weakness then
+	--if ofs == ShaktoolWeaknessPageOffset then	-- local ShaktoolWeaknessPageOffset = 0xef1e
+	if ofs == sm.enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
 	

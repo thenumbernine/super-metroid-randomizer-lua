@@ -742,10 +742,10 @@ g:
 	-- the security cameras stay there, and if I update these then their palette gets messed up
 	-- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall 
 	-- however there's no way to get morph + powerbomb all in one go for the first time you're in the room, so I think I'll leave it this way for now
-	--	rsIntro.obj.fx1Addr = rsNormal.obj.fx1Addr
-	--	rsIntro.obj.enemySpawnAddr = rsNormal.obj.enemySpawnAddr
+	--	rsIntro.obj.fx1PageOffset = rsNormal.obj.fx1PageOffset
+	--	rsIntro.obj.enemySpawnPageOffset = rsNormal.obj.enemySpawnPageOffset
 	--	rsIntro.obj.enemySet = rsNormal.obj.enemySet
-		rsIntro.obj.layerHandlingAddr = rsNormal.obj.layerHandlingAddr
+		rsIntro.obj.layerHandlingPageOffset = rsNormal.obj.layerHandlingPageOffset
 		local rsIntroPLMSet = rsIntro.plmset
 		rsIntro:setPLMSet(rsNormal.plmset)
 		-- TODO remove the rsIntroPLMSet from the list of all PLMSets

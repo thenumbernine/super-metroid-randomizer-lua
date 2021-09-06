@@ -224,7 +224,7 @@ for _,roomBlockData in ipairs(allRoomBlocks) do
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		if rs.enemySpawnSet then
 			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
-				if enemySpawn.enemyAddr == 0xea7f then	-- Koma
+				if enemySpawn.enemyPageOffset == 0xea7f then	-- Koma
 					for i=#thisRoomLocs,1,-1 do
 						if thisRoomLocs[i][1] == math.floor((enemySpawn.x-4)/16)
 						and thisRoomLocs[i][2] == math.floor((enemySpawn.y-4)/16)
