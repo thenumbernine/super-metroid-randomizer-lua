@@ -38,6 +38,7 @@ local tileSetRowWidth = 32
 editorDrawLayer2 = true
 editorDrawForeground = true
 
+-- can't get rid of this yet until I store the tilemaps separately as well
 do
 	local old = SM.mapGetBitmapForTileSetAndTileMap
 	function SM:mapGetBitmapForTileSetAndTileMap(...)
@@ -97,11 +98,20 @@ function App:initGL()
 			index = index,
 			show = index==0,
 			ofs = vec2f(0,0),
+			xmin = math.huge,
+			xmax = -math.huge,
+			ymin = math.huge,
+			ymax = -math.huge,
 		}
 	end)
 	for _,m in ipairs(self.sm.rooms) do
-		local i = m.obj.region+1
-		self.regions[i].rooms:insert(m)
+		local index = m.obj.region+1
+		local region = self.regions[index]
+		region.rooms:insert(m)
+		region.xmin = math.min(region.xmin, m.obj.x)
+		region.ymin = math.min(region.ymin, m.obj.y)
+		region.xmax = math.min(region.xmax, m.obj.x + m.obj.width)
+		region.ymax = math.min(region.ymax, m.obj.y + m.obj.height)
 	end
 
 	self.regions[1].ofs:set(0, 0)
@@ -118,27 +128,27 @@ function App:initGL()
 			local img = Image(
 				blockSizeInPixels * tileSetRowWidth,
 				blockSizeInPixels * math.ceil(tileSet.tileGfxCount / tileSetRowWidth),
-				4,
+				1,
 				'unsigned char')
 			for tileIndex=0,tileSet.tileGfxCount-1 do
 				local xofs = tileIndex % tileSetRowWidth
 				local yofs = math.floor(tileIndex / tileSetRowWidth)
 				for i=0,blockSizeInPixels-1 do
 					for j=0,blockSizeInPixels-1 do
-						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
 						local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
 						local paletteIndex = tileSet.tileGfxBmp[srcIndex]
-						local src = tileSet.palette.data[paletteIndex]
-						img.buffer[0 + 4 * dstIndex] = math.floor(src.r*255/31)
-						img.buffer[1 + 4 * dstIndex] = math.floor(src.g*255/31)
-						img.buffer[2 + 4 * dstIndex] = math.floor(src.b*255/31)
-						img.buffer[3 + 4 * dstIndex] = bit.band(paletteIndex, 0xf) > 0 and 255 or 0 
+						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
+						img.buffer[dstIndex] = paletteIndex
 					end
 				end
 			end
-	
 			tileSet.tex = GLTex2D{
-				image = img,
+				width = img.width,
+				height = img.height,
+				data = img.buffer,
+				internalFormat = gl.GL_RED,
+				format = gl.GL_RED,
+				type = gl.GL_UNSIGNED_BYTE,
 				magFilter = gl.GL_NEAREST,
 				minFilter = gl.GL_NEAREST,
 				generateMipmap = false,
@@ -149,14 +159,15 @@ function App:initGL()
 			}
 		end
 		if tileSet.palette then
-			local img = Image(tileSet.palette.count, 1, 4, 'unsigned char', function(paletteIndex)
+			local img = Image(256, 1, 4, 'unsigned char')
+			img:clear()
+			for paletteIndex=0,math.min(tileSet.palette.count,256)-1 do
 				local src = tileSet.palette.data[paletteIndex]
-				return
-					math.floor(src.r*255/31),
-					math.floor(src.g*255/31),
-					math.floor(src.b*255/31),
-					bit.band(paletteIndex, 0xf) > 0 and 255 or 0 
-			end)
+				img.buffer[0 + 4 * paletteIndex] = math.floor(src.r*255/31)
+				img.buffer[1 + 4 * paletteIndex] = math.floor(src.g*255/31)
+				img.buffer[2 + 4 * paletteIndex] = math.floor(src.b*255/31)
+				img.buffer[3 + 4 * paletteIndex] = bit.band(paletteIndex, 0xf) > 0 and 255 or 0
+			end
 			tileSet.paletteTex = GLTex2D{
 				image = img,
 				magFilter = gl.GL_NEAREST,
@@ -203,7 +214,8 @@ varying vec2 tc;
 uniform sampler2D tex;
 uniform sampler2D palette;
 void main() {
-	gl_FragColor = texture2D(tex, tc);
+	float index = texture2D(tex, tc).r * 255.;
+	gl_FragColor = texture2D(palette, vec2((index + .5)/256., .5));
 }
 ]],
 		uniforms = {
@@ -211,6 +223,7 @@ void main() {
 			palette = 1,
 		},
 	}
+	self.indexShader:useNone()
 
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
@@ -232,12 +245,18 @@ function App:update()
 	viewymin = view.pos.y - view.orthoSize
 	viewymax = view.pos.y + view.orthoSize
 
-	GLTex2D:enable()
 
 	for i,region in ipairs(self.regions) do
 		local rooms = region.rooms
 		local index = i-1
-		if region.show then
+		if region.show 
+		and (
+			blocksPerRoom * region.xmax >= viewxmin
+			or blocksPerRoom * region.xmin <= viewxmax
+			or blocksPerRoom * -region.ymax >= viewymin
+			or blocksPerRoom * -region.ymin <= viewymax
+		)
+		then
 			for _,m in ipairs(rooms) do
 				local w = m.obj.width
 				local h = m.obj.height
@@ -248,9 +267,9 @@ function App:update()
 				local roomxmax = roomxmin + w
 				local roomymax = roomymin + h
 				if blocksPerRoom * roomxmax >= viewxmin
-				and blocksPerRoom * roomxmin <= viewxmax
-				and blocksPerRoom * -roomymax >= viewymin
-				and blocksPerRoom * -roomymin <= viewymax
+				or blocksPerRoom * roomxmin <= viewxmax
+				or blocksPerRoom * -roomymax >= viewymin
+				or blocksPerRoom * -roomymin <= viewymax
 				then
 					for _,rs in ipairs(m.roomStates) do
 						local tileSet = rs.tileSet
@@ -264,17 +283,20 @@ function App:update()
 
 						if tileSet
 						and tileSet.tex
+						and tileSet.paletteTex
 						and roomBlockData 
 						then
 							if bgTex then
+								GLTex2D:enable()
+								
 								bgTex:bind()
 								gl.glBegin(gl.GL_QUADS)
 								for j=0,h-1 do
 									for i=0,w-1 do
 										if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-										and blocksPerRoom * (roomxmin + i) <= viewxmax
-										and blocksPerRoom * -(roomymin + j + 1) >= viewymin
-										and blocksPerRoom * -(roomymin + j) <= viewymax
+										or blocksPerRoom * (roomxmin + i) <= viewxmax
+										or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+										or blocksPerRoom * -(roomymin + j) <= viewymax
 										then
 											local x1 = blocksPerRoom * (i + roomxmin)
 											local y1 = blocksPerRoom * (j + roomymin)
@@ -295,11 +317,15 @@ function App:update()
 								end
 								gl.glEnd()
 								bgTex:unbind()
+								
+								GLTex2D:disable()
 							end
-
+	
+							self.indexShader:use()
 
 							local tex = tileSet.tex
-							tex:bind()
+							tex:bind(0)
+							tileSet.paletteTex:bind(1)
 							gl.glBegin(gl.GL_QUADS)
 							
 							local blocks12 = roomBlockData:getBlocks12()
@@ -308,9 +334,9 @@ function App:update()
 							for j=0,h-1 do
 								for i=0,w-1 do
 									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-									and blocksPerRoom * (roomxmin + i) <= viewxmax
-									and blocksPerRoom * -(roomymin + j + 1) >= viewymin
-									and blocksPerRoom * -(roomymin + j) <= viewymax
+									or blocksPerRoom * (roomxmin + i) <= viewxmax
+									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									or blocksPerRoom * -(roomymin + j) <= viewymax
 									then
 										for ti=0,blocksPerRoom-1 do
 											for tj=0,blocksPerRoom-1 do
@@ -388,15 +414,16 @@ function App:update()
 								end
 							end
 							gl.glEnd()
-							tex:unbind()
+							tileSet.paletteTex:unbind(1)
+							tex:unbind(0)
+
+							self.indexShader:useNone()
 						end
 					end
 				end
 			end
 		end
 	end
-
-	GLTex2D:disable()
 
 	App.super.update(self)
 end
@@ -445,9 +472,9 @@ function App:updateGUI()
 		if ig.igCollapsingHeader('region '..region.index) then
 			ig.igPushIDInt(i)
 			checkboxTooltip('Show Region '..region.index, region, 'show')
+			inputFloatToolkit('xofs', region.ofs, 'x')
+			inputFloatToolkit('yofs', region.ofs, 'y')
 			if i < #self.regions then
-				inputFloatToolkit('xofs', region.ofs, 'x')
-				inputFloatToolkit('yofs', region.ofs, 'y')
 				ig.igSeparator()
 			end
 			ig.igPopID()
