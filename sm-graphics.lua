@@ -310,22 +310,51 @@ function SMGraphics:graphicsInitPauseScreen()
 	reserve
 	--]]
 	self.itemTiles = Blob{sm=self, addr=topc(0x89, 0x8000), count=0x9100-0x8000}
-	self:graphicsSwizzleTileBitsInPlace(self.itemTiles.data, self.itemTiles:sizeof())
 
 	-- what uses this?
 	self.fxTilemapPalette = Palette{sm=self, addr=topc(0x89, 0xaa02), count=(0xab02-0xaa02)/2}
 
+
+	-- what tiles does this index into? the common room tiles?
+	self.lavaTilemap = Blob{sm=self, addr=topc(0x8a, 0x8000), count=0x840}
+	self.acidTilemap = Blob{sm=self, addr=topc(0x8a, 0x8840), count=0x840}
+	self.waterTilemap = Blob{sm=self, addr=topc(0x8a, 0x9080), count=0x840}
+	self.sporeTilemap = Blob{sm=self, addr=topc(0x8a, 0x98c0), count=0x840}
+	self.rainTilemap = Blob{sm=self, addr=topc(0x8a, 0xa100), count=0x840}
+	self.fogTilemap = Blob{sm=self, addr=topc(0x8a, 0xa940), count=0x840}
+	
+	self.scrollingSkyTilemaps = range(0xb180, 0xe980, 0x800):mapi(function(ofs)
+		return Blob{sm=self, addr=topc(0x8a, ofs), count=0x800}
+	end)
+	-- and from 0xe980 - end of page is free
+
+
+	-- samus tiles ...
+	-- where are the tilemaps?
+	self.samusDeathTiles = Blob{sm=self, addr=topc(0x9b, 0x8000), count=0x9400-0x8000}	-- and then a lot more other stuff til the end of bank
+	self.samusPalettes = range(0x9400, 0xa3c0, 0x20):mapi(function(ofs)
+		return Palette{sm=self, addr=topc(0x9b, ofs), count=0x10}
+	end)
+	-- why is the last one not 16 in size?  garbage?
+	self.samusPalettes:insert(Palette{sm=self, addr=topc(0x9b, 0xa3c0), count=6})
+	-- then more padding	
+	self.samus0Tiles = Blob{sm=self, addr=topc(0x9b, 0xe000), count=0xfda0-0xe000}	-- then padding to end of bank
+	self.samus1Tiles = Blob{sm=self, addr=topc(0x9c, 0x8000), count=0xfa80-0x8000}	-- then padding to end of bank
+	self.samus2Tiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf780-0x8000}	-- "
+	self.samus3Tiles = Blob{sm=self, addr=topc(0x9e, 0x8000), count=0xf6c0-0x8000}	-- "
+	self.samus4Tiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf740-0x8000}	-- "
+
+
+
 	-- 1-based, so -1 to get the region #
-	-- 0x1000 = 4096 = 
+	-- 0x1000 = 4096 = 32x64 tiles
+	-- and then the bottom half 32x32 is moved to the right of the top half
 	self.regionTilemaps = range(0x8000,0xf000,0x1000):mapi(function(ofs)
 		return Blob{sm=self, addr=topc(0xb5, ofs), count=0x1000}
 	end)
 
-
 	-- read pause & equip screen tiles
 	self.pauseScreenTiles = Blob{sm=self, addr=topc(0xb6, 0x8000), count=0x6000}
-	-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-	self:graphicsSwizzleTileBitsInPlace(self.pauseScreenTiles.data, self.pauseScreenTiles:sizeof())
 	
 	-- 2 bytes per tile means 0x400 tiles = 32*32 (or some other order)
 	self.pauseScreenTilemap = Blob{sm=self, addr=topc(0xb6, 0xe000), count=0x800}
@@ -335,6 +364,19 @@ function SMGraphics:graphicsInitPauseScreen()
 	self.pauseScreenPalette = Palette{sm=self, addr=topc(0xb6, 0xf000), count=0x100}
 	-- and then b6:f200 on is free
 
+	for _,tiles in ipairs{
+		self.samusDeathTiles,
+		self.samus0Tiles,
+		self.samus1Tiles,
+		self.samus2Tiles,
+		self.samus3Tiles,
+		self.samus4Tiles,
+		self.itemTiles,
+		self.pauseScreenTiles,
+	} do
+		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
+		self:graphicsSwizzleTileBitsInPlace(tiles.data, tiles:sizeof())
+	end
 end
 
 function SMGraphics:graphicsInit()
@@ -342,20 +384,36 @@ function SMGraphics:graphicsInit()
 end
 
 function SMGraphics:graphicsSavePauseScreenImages()
-	for _,info in ipairs{
-		{
-			name = 'itemtiles',
-			tiles = self.itemTiles,
-			palette = self.pauseScreenPalette,
-			tilesWide = 2,
-			tilesWide2 = 2,
-		},
-		{
-			name = 'pausescreentiles',
-			tiles = self.pauseScreenTiles,
-			palette = self.pauseScreenPalette,
-		},
-	} do
+	for _,info in ipairs(
+		table()
+		:append(
+			table{
+				{name='samusDeathTiles', palette=self.samusPalettes[3]},
+				{name='samus0Tiles', tilesWide=3},
+				{name='samus1Tiles', tilesWide=4},
+				{name='samus2Tiles', tilesWide=4},
+				{name='samus3Tiles', tilesWide=2},
+				{name='samus4Tiles', tilesWide=2},
+			}:mapi(function(info)
+				info.tiles = self[info.name]
+				info.palette = info.palette or self.samusPalettes[1]
+				return info
+			end)
+		):append{
+			{
+				name = 'itemtiles',
+				tiles = self.itemTiles,
+				palette = self.pauseScreenPalette,
+				tilesWide = 2,
+				tilesWide2 = 2,
+			},
+			{
+				name = 'pausescreentiles',
+				tiles = self.pauseScreenTiles,
+				palette = self.pauseScreenPalette,
+			},
+		}
+	) do
 		assert(info.tiles:sizeof() % graphicsTileSizeInBytes == 0)
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
 	
@@ -368,29 +426,62 @@ function SMGraphics:graphicsSavePauseScreenImages()
 		
 		img = self:graphicsBitmapIndexedToRGB(img, info.palette)
 		
-
 		img:save(info.name..'.png')
 	end
 
 	for _,info in ipairs(
-		self.regionTilemaps:mapi(function(regionTilemap,i)
-			return {
-				destName = 'region'..(i-1),
-				tilemap = regionTilemap,
-				tilemapWidth = 32,
-				tilemapHeight = 64,
-				palette = self.pauseScreenPalette,
-				process = function(sm, img)
-					return sm:graphicsWrapRows(img, 32*8, 2)
-				end,
-			}
-		end):append{
+		table()
+		:append(
+			table{
+				'lavaTilemap',
+				'acidTilemap',
+				'waterTilemap',
+				'sporeTilemap',
+				'rainTilemap',
+				'fogTilemap',
+			}:mapi(function(name)
+				return {
+					destName = 'effectTilemaps/'..name,
+					tilemap = self[name],
+					tilemapWidth = 32,
+					tilemapHeight = 33,
+					palette = self.pauseScreenPalette,	-- TODO ???
+					tiles = self.pauseScreenTiles,		-- TODO I think this should be commonTiles
+				}
+			end)
+		):append(
+			self.scrollingSkyTilemaps:mapi(function(tilemap, i)
+				return {
+					destName = 'scrollingSkyTilemap'..(i-1),
+					tilemap = tilemap,
+					tilemapWidth = 32,
+					tilemapHeight = 32,
+					palette = self.pauseScreenPalette,	-- TODO ???
+					tiles = self.pauseScreenTiles,		-- TODO I think this should be commonTiles
+				}
+			end)
+		):append(
+			self.regionTilemaps:mapi(function(regionTilemap,i)
+				return {
+					destName = 'regionTilemap'..(i-1),
+					tilemap = regionTilemap,
+					tilemapWidth = 32,
+					tilemapHeight = 64,
+					palette = self.pauseScreenPalette,
+					process = function(sm, img)
+						return sm:graphicsWrapRows(img, 32*8, 2)
+					end,
+					tiles = self.pauseScreenTiles,
+				}
+			end)
+		):append{
 			{
 				destName = 'pausescreen',
 				tilemap = self.pauseScreenTilemap,
 				tilemapWidth = 32,
 				tilemapHeight = 32,
 				palette = self.pauseScreenPalette,
+				tiles = self.pauseScreenTiles,
 			},
 			{
 				destName = 'equipscreen',
@@ -398,6 +489,7 @@ function SMGraphics:graphicsSavePauseScreenImages()
 				tilemapWidth = 32,
 				tilemapHeight = 32,
 				palette = self.pauseScreenPalette,
+				tiles = self.pauseScreenTiles,
 			}
 		}
 	) do
@@ -407,7 +499,7 @@ function SMGraphics:graphicsSavePauseScreenImages()
 			info.tilemap.data,
 			info.tilemapWidth,
 			info.tilemapHeight,
-			self.pauseScreenTiles.data)
+			info.tiles.data)
 
 		img = self:graphicsBitmapIndexedToRGB(
 			img, 
@@ -425,8 +517,31 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 	self.itemTiles:addMem(mem, 'item graphics tiles')
 	self.fxTilemapPalette:addMem(mem, 'fx tilemap palette')
 
+
+	self.lavaTilemap:addMem(mem, 'lavaTilemap')
+	self.acidTilemap:addMem(mem, 'acidTilemap')
+	self.waterTilemap:addMem(mem, 'waterTilemap')
+	self.sporeTilemap:addMem(mem, 'sporeTilemap')
+	self.rainTilemap:addMem(mem, 'rainTilemap')
+	self.fogTilemap:addMem(mem, 'fogTilemap')
+	
+	for _,tilemap in ipairs(self.scrollingSkyTilemaps) do
+		tilemap:addMem(mem, 'scrollingSkyTilemaps')
+	end
+
+	self.samusDeathTiles:addMem(mem, 'samusDeathTiles')
+	for i,palette in ipairs(self.samusPalettes) do
+		palette:addMem(mem, 'samusPalette'..(i-1))
+	end
+	self.samus0Tiles:addMem(mem, 'samus0Tiles')
+	self.samus1Tiles:addMem(mem, 'samus1Tiles')
+	self.samus2Tiles:addMem(mem, 'samus2Tiles')
+	self.samus3Tiles:addMem(mem, 'samus3Tiles')
+	self.samus4Tiles:addMem(mem, 'samus4Tiles')
+
+
 	for i,regionTilemap in ipairs(self.regionTilemaps) do
-		regionTilemap:addMem(mem, 'region '..(i-1)..' tilemap')
+		regionTilemap:addMem(mem, 'regions/region '..(i-1)..' tilemap')
 	end
 
 	self.pauseScreenTiles:addMem(mem, 'pause and equip screen graphics tiles')
