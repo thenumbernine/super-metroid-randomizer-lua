@@ -3826,43 +3826,39 @@ function SMMap:mapSaveGraphicsTileSets()
 	-- TODO how about a wrap row?  grid x, grid y, result x, result y 
 	for _,tileSet in ipairs(self.tileSets) do
 		if tileSet.tileGfxBmp then
-			local tileSetRowWidth = 32
-			local img = Image(blockSizeInPixels*tileSetRowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/tileSetRowWidth), 3, 'unsigned char')
-			local imgused = Image(blockSizeInPixels*tileSetRowWidth, blockSizeInPixels*math.ceil(tileSet.tileGfxCount/tileSetRowWidth), 3, 'unsigned char')
+			local numBlockTilesWide = 32
+		
+			local img = self:graphicsBitmapIndexedToRGB(tileSet.tileGfxBmp, tileSet.palette)
+			local img = self:graphicsWrapRows(img, blockSizeInPixels, numBlockTilesWide)
+			img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
+
+			
+			-- draw some diagonal green lines over the used tiles
+			local highlightColor = {0, 255, 0}
+			-- [[
 			for tileIndex=0,tileSet.tileGfxCount-1 do
-				local xofs = tileIndex % tileSetRowWidth
-				local yofs = math.floor(tileIndex / tileSetRowWidth)
-				for i=0,blockSizeInPixels-1 do
+				if tileSet.tileIndexesUsed[tileIndex] then
+					local xofs = tileIndex % numBlockTilesWide
+					local yofs = (tileIndex - xofs) / numBlockTilesWide
 					for j=0,blockSizeInPixels-1 do
-						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
-						local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
-						local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
-						local r,g,b = 0,0,0
-						if bit.band(paletteIndex, 0xf) > 0 then
-							local src = tileSet.palette.data[paletteIndex]
-							r = math.floor(src.r*255/31)
-							g = math.floor(src.g*255/31)
-							b = math.floor(src.b*255/31)
+						for i=0,blockSizeInPixels-1 do
+							local dstIndex = i + blockSizeInPixels * xofs
+								+ blockSizeInPixels * numBlockTilesWide * (j + blockSizeInPixels * yofs)
+							if (i + j) % 3 == 0 then
+								for ch=0,2 do
+									local v = img.buffer[ch + 3 * dstIndex]
+									v = math.floor(.5 * highlightColor[ch+1] + .5 * v)
+									img.buffer[ch + 3 * dstIndex] = v
+								end
+							end
 						end
-						img.buffer[0 + 3 * dstIndex] = r
-						img.buffer[1 + 3 * dstIndex] = g
-						img.buffer[2 + 3 * dstIndex] = b
-						
-						-- draw some diagonal green lines over the used tiles
-						if tileSet.tileIndexesUsed[tileIndex] and (i + j) % 3 == 0 then
-							r = math.floor(.5 * 0 + .5 * r)
-							g = math.floor(.5 * 255 + .5 * g)
-							b = math.floor(.5 * 0 + .5 * b)
-						end
-						imgused.buffer[0 + 3 * dstIndex] = r
-						imgused.buffer[1 + 3 * dstIndex] = g
-						imgused.buffer[2 + 3 * dstIndex] = b
 					end
 				end
 			end
-			img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
-			imgused:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
+			--]]
+			img:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
 	
+			
 			do
 				assert(tileSet.graphicsTileVec.size % graphicsTileSizeInBytes == 0)
 				local tilesWide = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes

@@ -226,6 +226,66 @@ function SMGraphics:graphicsCreateRGBBitmapForTiles(
 	return self:graphicsBitmapIndexedToRGB(indexedBmp, palette)
 end
 
+--[[
+srcImg = source image
+rowHeight = how many pixels high is a row
+numDstTileCols = how many columns to wrap the rows
+
+for rowHeight=3, numDstTileCols=2,turns 
+
+A B
+C D
+E F
+G H
+I J
+K L
+...
+
+into
+
+A B G H
+C D I J
+E F K L
+...
+
+--]]
+function SMGraphics:graphicsWrapRows(
+	srcImg,
+	tileHeight,
+	numDstTileCols
+)
+	local channels = srcImg.channels
+	local tileWidth = srcImg.width
+	local numSrcTileRows = math.ceil(srcImg.height / tileHeight)
+	local numDstTileRows = math.ceil(numSrcTileRows / numDstTileCols)
+	local sizeofChannels = channels * ffi.sizeof(srcImg.format)
+	local dstImg = Image(
+		tileWidth * numDstTileCols,
+		tileHeight * numDstTileRows,
+		channels,
+		srcImg.format)
+	dstImg:clear()
+	for j=0,numDstTileRows-1 do
+		for i=0,numDstTileCols-1 do
+			for k=0,tileHeight-1 do
+				local srcY = k
+					+ i * tileHeight
+					+ j * tileHeight * numDstTileCols
+				if srcY < srcImg.height then
+					local dstX = tileWidth * i
+					local dstY = k + tileHeight * j
+					ffi.copy(
+						dstImg.buffer + channels * (dstX + dstImg.width * dstY),
+						srcImg.buffer + channels * (srcImg.width * srcY),
+						sizeofChannels * tileWidth)
+				end
+			end
+		end
+	end
+	return dstImg
+end
+
+
 function SMGraphics:graphicsInitPauseScreen()
 	self.itemTiles = Blob{sm=self, addr=topc(0x89, 0x800), count=0x9100-0x8000}
 	self:graphicsSwizzleTileBitsInPlace(self.itemTiles.data, self.itemTiles:sizeof())
