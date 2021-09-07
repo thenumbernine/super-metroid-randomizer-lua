@@ -231,8 +231,7 @@ function App:initGL()
 			local img = Image(
 				blockSizeInPixels * tileSetRowWidth,
 				blockSizeInPixels * math.ceil(tileSet.tileGfxCount / tileSetRowWidth),
-				1,
-				'unsigned char')
+				1, 'uint8_t')
 			for tileIndex=0,tileSet.tileGfxCount-1 do
 				local xofs = tileIndex % tileSetRowWidth
 				local yofs = math.floor(tileIndex / tileSetRowWidth)
@@ -401,10 +400,9 @@ function App:graphicsTilesToTex(ptr, size)
 	
 	local img = self.sm:graphicsConvertTilemapToBitmap(
 		tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
-		ptr,				-- graphicsTiles = 
 		tilemapElemSizeX,	-- tilemapElemSizeX
 		tilemapElemSizeY,	-- tilemapElemSizeY
-		1)					-- count
+		ptr)				-- graphicsTiles
 
 	-- alright now that we have this, we can store the tilemap as a uint16 per graphicstile
 	-- instead of as a rendered bitmap

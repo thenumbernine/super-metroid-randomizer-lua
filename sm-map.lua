@@ -2457,10 +2457,9 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 		-- TODO don't do this unless you're writing out the textured map image?
 		tileSet.tileGfxBmp = self:graphicsConvertTilemapToBitmap(
 			tilemapByteVec.v,		-- tilemapElem_t[tileGfxCount][2][2]
-			graphicsTileVec.v,		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
 			2,
-			2,
-			tileSet.tileGfxCount)	
+			2 * tileSet.tileGfxCount,
+			graphicsTileVec.v)		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
 
 		-- bg_t's need this
 		-- ... will they need this, or just the non-common portion of it?
@@ -3219,10 +3218,9 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 
 	bgBmp.dataBmp = self:graphicsConvertTilemapToBitmap(
 		tilemap.data,
-		tileSet.graphicsTileVec.v,
 		tilemap.width,
 		tilemap.height,
-		1)
+		tileSet.graphicsTileVec.v)
 	
 	self.bitmapForTileSetAndTileMap[tileSet.index][tilemap.addr] = bgBmp
 	return bgBmp
