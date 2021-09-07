@@ -289,7 +289,8 @@ end
 function SMGraphics:graphicsInitPauseScreen()
 	self.itemTiles = Blob{sm=self, addr=topc(0x89, 0x800), count=0x9100-0x8000}
 	self:graphicsSwizzleTileBitsInPlace(self.itemTiles.data, self.itemTiles:sizeof())
-	
+
+	-- what uses this?
 	self.fxTilemapPalette = Palette{sm=self, addr=topc(0x89, 0xaa02), count=(0xab02-0xaa02)/2}
 
 
@@ -319,13 +320,14 @@ function SMGraphics:graphicsInit()
 	self:graphicsInitPauseScreen()
 end
 
-function SMGraphics:graphicsSaveEquipScreenImages()
+function SMGraphics:graphicsSavePauseScreenImages()
 	for _,info in ipairs{
 		{
 			name = 'itemtiles',
 			tiles = self.itemTiles,
-			palette = self.fxTilemapPalette,
+			palette = self.pauseScreenPalette,
 			tilesWide = 2,
+			tilesWide2 = 2,
 		},
 		{
 			name = 'pausescreentiles',
@@ -335,45 +337,61 @@ function SMGraphics:graphicsSaveEquipScreenImages()
 	} do
 		assert(info.tiles:sizeof() % graphicsTileSizeInBytes == 0)
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
-		local img = self:graphicsCreateRGBBitmapForTiles(info.tiles.data, numTiles, info.palette, info.tilesWide)
+	
+		-- TODO this function can just make 8 x (8*numTiles) and just use graphicsWrapRows twice?
+		local img = self:graphicsCreateIndexedBitmapForTiles(info.tiles.data, numTiles, info.tilesWide)
+
+		if info.tilesWide2 then
+			img = self:graphicsWrapRows(img, img.width, info.tilesWide2)
+		end
+		
+		img = self:graphicsBitmapIndexedToRGB(img, info.palette)
+		
+
 		img:save(info.name..'.png')
 	end
 
 	for _,info in ipairs(
 		self.regionTilemaps:mapi(function(regionTilemap,i)
 			return {
+				destName = 'region'..(i-1),
 				tilemap = regionTilemap,
 				tilemapWidth = 32,
 				tilemapHeight = 64,
-				destName = 'region'..(i-1),
+				palette = self.pauseScreenPalette,
 				process = function(sm, img)
 					return sm:graphicsWrapRows(img, 32*8, 2)
 				end,
 			}
 		end):append{
 			{
+				destName = 'pausescreen',
 				tilemap = self.pauseScreenTilemap,
 				tilemapWidth = 32,
 				tilemapHeight = 32,
-				destName = 'pausescreen',
+				palette = self.pauseScreenPalette,
 			},
 			{
+				destName = 'equipscreen',
 				tilemap = self.equipScreenTilemap,
 				tilemapWidth = 32,
 				tilemapHeight = 32,
-				destName = 'equipscreen',
+				palette = self.pauseScreenPalette,
 			}
 		}
 	) do
 		assert(info.tilemapWidth * info.tilemapHeight * 2 == info.tilemap:sizeof())
 
-		local bmp = self:graphicsConvertTilemapToBitmap(
+		local img = self:graphicsConvertTilemapToBitmap(
 			info.tilemap.data,
 			info.tilemapWidth,
 			info.tilemapHeight,
 			self.pauseScreenTiles.data)
 
-		local img = self:graphicsBitmapIndexedToRGB(bmp, self.pauseScreenPalette)
+		img = self:graphicsBitmapIndexedToRGB(
+			img, 
+			info.palette
+		)
 		if info.process then
 			img = info.process(self, img)
 		end
