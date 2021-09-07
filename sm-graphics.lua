@@ -193,13 +193,14 @@ function SMGraphics:graphicsCreateIndexedBitmapForTiles(
 		graphicsTilePtr)				-- graphicsTiles = uint8_t[tilesHigh][tilesWide][graphicsTileSizeInBytes]
 end
 
-function SMGraphics:graphicsBitmapIndexedToRGB(srcIndexedBmp, imgwidth, imgheight, palette)
-	local dstRgbBmp = Image(imgwidth, imgheight, 3, 'unsigned char')
+-- tempted to move this to Image ...
+function SMGraphics:graphicsBitmapIndexedToRGB(srcIndexedBmp, palette)
+	local dstRgbBmp = Image(srcIndexedBmp.width, srcIndexedBmp.height, 3, 'unsigned char')
 	dstRgbBmp:clear()
-	for y=0,imgheight-1 do
-		for x=0,imgwidth-1 do
-			local i = x + imgwidth * y
-			local paletteIndex = srcIndexedBmp[i]
+	for y=0,srcIndexedBmp.height-1 do
+		for x=0,srcIndexedBmp.width-1 do
+			local i = x + srcIndexedBmp.width * y
+			local paletteIndex = srcIndexedBmp.buffer[i]
 			if bit.band(paletteIndex, 0xf) > 0 then	-- is this always true?
 				local rgb = palette.data[paletteIndex]
 				dstRgbBmp.buffer[0 + 3 * i] = math.floor(rgb.r*255/31)
@@ -222,7 +223,7 @@ function SMGraphics:graphicsCreateRGBBitmapForTiles(
 	tilesWide
 )
 	local indexedBmp = self:graphicsCreateIndexedBitmapForTiles(graphicsTilePtr, numTiles, tilesWide)
-	return self:graphicsBitmapIndexedToRGB(indexedBmp.buffer, indexedBmp.width, indexedBmp.height, palette)
+	return self:graphicsBitmapIndexedToRGB(indexedBmp, palette)
 end
 
 function SMGraphics:graphicsInitPauseScreen()
@@ -319,12 +320,7 @@ print(info.name, numTiles)
 			info.tilemapHeight,
 			self.pauseScreenTiles.data)
 
-		local img = self:graphicsBitmapIndexedToRGB(
-			bmp.buffer,
-			bmp.width,
-			bmp.height,
-			self.pauseScreenPalette
-		)
+		local img = self:graphicsBitmapIndexedToRGB(bmp, self.pauseScreenPalette)
 		if info.process then
 			img = info.process(img)
 		end
