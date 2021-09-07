@@ -20,6 +20,10 @@ local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
 local SM = require 'sm'
 
+-- TODO replace this with shaders
+local useBakedLayer3Background = true
+
+
 local cmdline = require 'ext.cmdline'(...)
 
 local App = class(require 'glapp.orbit'(require 'imguiapp'))
@@ -42,37 +46,23 @@ editorDrawPLMs = false
 editorDrawEnemySpawnSets = false
 editorDrawDoors = false
 
---[==[ can't get rid of this yet until I store the tilemaps separately as well
+-- [==[ can't get rid of this yet until I store the tilemaps separately as well
 do
 	local old = SM.mapGetBitmapForTileSetAndTileMap
 	function SM:mapGetBitmapForTileSetAndTileMap(...)
 		local tileSet, tilemap = ...
 		local bgBmp = old(self, ...)
 		if not bgBmp.tex then
-			local img = Image(graphicsTileSizeInPixels * tilemap.width, graphicsTileSizeInPixels * tilemap.height, 3, 'unsigned char')
-			img:clear()
-			for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
-				for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
-					local offset = x + img.width * y
-					local paletteIndex = bgBmp.dataBmp[offset]
-					if bit.band(paletteIndex, 0xf) > 0 then 
-						local rgb = tileSet.palette.data[paletteIndex]
-						local dst = img.buffer + 3 * offset
-						dst[0] = math.floor(rgb.r*255/31)
-						dst[1] = math.floor(rgb.g*255/31)
-						dst[2] = math.floor(rgb.b*255/31)
-					end
-				end
-			end
 			bgBmp.tex = GLTex2D{
-				image = img,
+				width = graphicsTileSizeInPixels * tilemap.width,
+				height = graphicsTileSizeInPixels * tilemap.height,
+				data = bgBmp.dataBmp,
+				format = gl.GL_RED,
+				internalFormat = gl.GL_RED,
+				type = gl.GL_UNSIGNED_BYTE,
 				magFilter = gl.GL_NEAREST,
 				minFilter = gl.GL_NEAREST,
 				generateMipmap = false,
-				wrap = {
-					s = gl.GL_REPEAT,
-					t = gl.GL_REPEAT,
-				},
 			}
 		end
 		return bgBmp
@@ -250,19 +240,21 @@ function App:initGL()
 		end
 	end
 
---[==[
-	-- precache all roomstate bgs
-	-- TODO indexed palette renderer so this isn't needed
-	for _,m in ipairs(self.sm.rooms) do
-		for _,rs in ipairs(m.roomStates) do
-			for _,bg in ipairs(rs.bgs) do
-				if bg.tilemap then
-					self.sm:mapGetBitmapForTileSetAndTileMap(rs.tileSet, bg.tilemap)			
+	if useBakedLayer3Background then
+-- [==[
+		-- precache all roomstate bgs
+		-- TODO indexed palette renderer so this isn't needed
+		for _,m in ipairs(self.sm.rooms) do
+			for _,rs in ipairs(m.roomStates) do
+				for _,bg in ipairs(rs.bgs) do
+					if bg.tilemap then
+						self.sm:mapGetBitmapForTileSetAndTileMap(rs.tileSet, bg.tilemap)			
+					end
 				end
 			end
 		end
-	end
 --]==]
+	end
 
 	self.view.ortho = true
 	self.view.znear = -1e+4
@@ -424,10 +416,6 @@ function App:update()
 					-- TODO instead of finding the first, hold a current index for each room 
 					local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 					local bgTilemap = bg and bg.tilemap
---[==[						
-					local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
-					local bgTex = bgBmp and bgBmp.tex
---]==]						
 					local bgTilemapTex = bgTilemap and bgTilemap.tex
 
 					if tileSet
@@ -435,9 +423,52 @@ function App:update()
 					and tileSet.palette
 					and roomBlockData 
 					then
+if useBakedLayer3Background then
+						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
+						local bgTex = bgBmp and bgBmp.tex
+						if bgTex then
+	
+							self.indexShader:use()
+							
+							bgTex:bind(0)
+							tileSet.palette.tex:bind(1)
+							
+							gl.glBegin(gl.GL_QUADS)
+							for j=0,h-1 do
+								for i=0,w-1 do
+									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+									or blocksPerRoom * (roomxmin + i) <= viewxmax
+									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									or blocksPerRoom * -(roomymin + j) <= viewymax
+									then
+										local x1 = blocksPerRoom * (i + roomxmin)
+										local y1 = blocksPerRoom * (j + roomymin)
+										local x2 = x1 + blocksPerRoom 
+										local y2 = y1 + blocksPerRoom 
+
+										local tx1 = i * roomSizeInPixels / bgTex.width
+										local ty1 = j * roomSizeInPixels / bgTex.height
+										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
+										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
+
+										gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
+										gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
+										gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
+										gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
+									end
+								end
+							end
+							gl.glEnd()
+							
+							tileSet.palette.tex:unbind(1)
+							bgTex:unbind(0)
+							
+							self.indexShader:useNone()
+					
+						end
+end
 --[==[
 						if bgTilemapTex then
-
 							self.tilemapShader:use()
 							
 							bgTilemapTex:bind(0)
