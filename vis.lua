@@ -509,7 +509,7 @@ function App:update()
 
 	local view = self.view
 	local aspectRatio = self.width / self.height
-	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio )
+	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio)
 	viewxmin = view.pos.x - view.orthoSize * aspectRatio
 	viewxmax = view.pos.x + view.orthoSize * aspectRatio
 	viewymin = view.pos.y - view.orthoSize
@@ -572,7 +572,7 @@ function App:update()
 					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
 					local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
 					local rs = m.roomStates[
-						(currentRoomStateIndex % #m.roomStates) + 1
+						((currentRoomStateIndex - 1) % #m.roomStates) + 1
 					]
 						
 					local tileSet = rs.tileSet
@@ -899,17 +899,196 @@ end
 	App.super.update(self)
 end
 
+
+local ObjectSelector = class()
+
+ObjectSelector.snap = 1 
+
+function ObjectSelector:init()
+	self.selectedObjDown = vec2f()
+end
+
+function ObjectSelector:updateMouse(app)
+	if app.mouse.leftDown then
+		if not app.mouse.lastLeftDown then
+			self.dragging = false
+
+			app[self.selectedField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
+			if app[self.selectedField] then
+				app.mouseDownX = app.mouseViewPos.x
+				app.mouseDownY = app.mouseViewPos.y
+				self.selectedObjDown:set(self:getObjPos(app[self.selectedField]))
+			else
+				-- TODO here - start a selection rectangle
+				-- then on mouseup, select all touching rooms
+			end
+		else
+			local obj = app[self.selectedField]
+			if obj then
+				local deltaX = app.mouseViewPos.x - app.mouseDownX
+				local deltaY = app.mouseViewPos.y - app.mouseDownY
+				
+				if math.abs(deltaX) > 5
+				or math.abs(deltaY) > 5
+				then
+					self.dragging = true
+				end
+				
+
+				deltaX = math.round(deltaX / self.snap) * self.snap
+				deltaY = math.round(deltaY / self.snap) * self.snap
+
+				self:setObjPos(
+					obj,
+					self.selectedObjDown.x + deltaX,
+					self.selectedObjDown.y - deltaY
+				)
+			
+				-- if we are dragging then don't let orbit control view
+				app.view.orthoSize = app.viewBeforeSize
+				app.view.pos.x = app.viewBeforeX
+				app.view.pos.y = app.viewBeforeY
+			end
+		end
+	else
+		if app.mouse.lastLeftDown then
+			if not self.dragging then
+				self:onClick(app)
+			end
+--[[ only recalc bounds on mouseup			
+			if m then
+				m.region:calcBounds()
+			end
+--]]
+		end
+	end
+end
+
+function ObjectSelector:onClick(app)
+end
+
+
+local RegionSelector = class(ObjectSelector)
+
+RegionSelector.selectedField = 'selectedRegion'
+
+RegionSelector.snap = blocksPerRoom
+
+function RegionSelector:getObjUnderPos(app, x, y)
+	for _,region in ipairs(app.regions) do
+		if region.show then
+			for _,m in ipairs(region.rooms) do
+				local w = m.obj.width
+				local h = m.obj.height
+				local i = math.floor(x / blocksPerRoom - m.obj.x + region.ofs.x)
+				local j = math.floor(-y / blocksPerRoom - m.obj.y + region.ofs.y)
+				if i >= 0 and i < w
+				and j >= 0 and j < h
+				then
+					if not editorHideFilledMapBlocks
+					or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+					then
+						return region
+					end
+				end
+			end
+		end
+	end
+end
+
+function RegionSelector:getObjPos(region)
+	return 
+		region.ofs.x * blocksPerRoom,
+		region.ofs.y * blocksPerRoom
+end
+
+function RegionSelector:setObjPos(region, x,y)
+	region.ofs:set(
+		x / blocksPerRoom,
+		y / blocksPerRoom
+	)
+end
+
+
+local regionSelector = RegionSelector()
+
+
+local RoomSelector = class(ObjectSelector)
+
+RoomSelector.selectedField = 'selectedRoom'
+
+RoomSelector.snap = blocksPerRoom
+
+function RoomSelector:getObjUnderPos(app, x, y)
+	for _,region in ipairs(app.regions) do
+		if region.show then
+			for _,m in ipairs(region.rooms) do
+				local xmin = m.obj.x + region.ofs.x
+				local ymin = m.obj.y + region.ofs.y
+				local xmax = xmin + m.obj.width
+				local ymax = ymin + m.obj.height
+				if x >= xmin * blocksPerRoom
+				and x <= xmax * blocksPerRoom
+				and y >= -ymax * blocksPerRoom
+				and y <= -ymin * blocksPerRoom
+				then
+					return m
+				end
+			end
+		end
+	end
+end
+
+function RoomSelector:getObjPos(m)
+	return
+		(m.obj.x + m.region.ofs.x) * blocksPerRoom,
+		(m.obj.y + m.region.ofs.y) * blocksPerRoom
+end
+
+function RoomSelector:setObjPos(m, x, y)
+	x = x / blocksPerRoom
+    y = y / blocksPerRoom
+	x = x - m.region.ofs.x
+	y = y - m.region.ofs.y
+	x = math.clamp(x, 0, mapMaxWidth - m.obj.width)
+	y = math.clamp(y, 0, mapMaxHeight - m.obj.height) 
+	if x ~= m.obj.x
+	or y ~= m.obj.y
+	then
+		m.obj.x = x
+		m.obj.y = y
+		
+-- [[ recalc bounds while you drag					
+		m.region:calcBounds()
+--]]
+	end
+end
+
+function RoomSelector:onClick(app)
+	local m = app.selectedRoom
+	if m then
+		local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
+		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
+		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
+print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex)
+	end
+end
+
+local roomSelector = RoomSelector()
+
+
 function App:event(...)
-	local viewBeforeSize = self.view.orthoSize
-	local viewBeforeX = self.view.pos.x
-	local viewBeforeY = self.view.pos.y
+	self.viewBeforeSize = self.view.orthoSize
+	self.viewBeforeX = self.view.pos.x
+	self.viewBeforeY = self.view.pos.y
 
 	App.super.event(self, ...)
 
 
 	local view = self.view
 	local aspectRatio = self.width / self.height
-	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio )
+	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio)
 	viewxmin = view.pos.x - view.orthoSize * aspectRatio
 	viewxmax = view.pos.x + view.orthoSize * aspectRatio
 	viewymin = view.pos.y - view.orthoSize
@@ -920,123 +1099,13 @@ function App:event(...)
 		(1 - self.mouse.pos.y) * viewymin + self.mouse.pos.y * viewymax
 	)
 
+
 	if editorMode == editorModes.pan then
 		-- just use default orbit behavior
 	elseif editorMode == editorModes.moveRegions then
-		if self.mouse.leftDown then
-			if not self.mouse.lastLeftDown then
-				self.mouseDownOnRegion = nil
-				for _,region in ipairs(self.regions) do
-					if region.show then
-						for _,m in ipairs(region.rooms) do
-							local w = m.obj.width
-							local h = m.obj.height
-							
-							-- in room block units
-							local roomxmin = m.obj.x + region.ofs.x
-							local roomymin = m.obj.y + region.ofs.y
-							local roomxmax = roomxmin + w
-							local roomymax = roomymin + h
-							if self.mouseViewPos.x >= roomxmin * blocksPerRoom
-							and self.mouseViewPos.x <= roomxmax * blocksPerRoom
-							and self.mouseViewPos.y >= -roomymax * blocksPerRoom
-							and self.mouseViewPos.y <= -roomymin * blocksPerRoom
-							then
-								self.mouseDownOnRegion = region
-								break
-							end
-						end
-					end
-					if self.mouseDownOnRegion then break end
-				end
-				if self.mouseDownOnRegion then
-					self.mouseDownX = self.mouseViewPos.x
-					self.mouseDownY = self.mouseViewPos.y
-					self.regionDownX = self.mouseDownOnRegion.ofs.x
-					self.regionDownY = self.mouseDownOnRegion.ofs.y
-				end
-			else
-				if self.mouseDownOnRegion then
-					local deltaX = math.round((self.mouseViewPos.x - self.mouseDownX) / blocksPerRoom)
-					local deltaY = math.round((self.mouseViewPos.y - self.mouseDownY) / blocksPerRoom)
-
-					self.mouseDownOnRegion.ofs.x = self.regionDownX + deltaX
-					self.mouseDownOnRegion.ofs.y = self.regionDownY - deltaY
-				
-					-- if we are dragging then don't let orbit control view
-					self.view.orthoSize = viewBeforeSize
-					self.view.pos.x = viewBeforeX
-					self.view.pos.y = viewBeforeY
-				end
-			end
-		end
+		regionSelector:updateMouse(self)
 	elseif editorMode == editorModes.moveRooms then
-		if self.mouse.leftDown then
-			if not self.mouse.lastLeftDown then
-				self.mouseDownOnRoom = nil
-				for _,region in ipairs(self.regions) do
-					if region.show then
-						for _,m in ipairs(region.rooms) do
-							local w = m.obj.width
-							local h = m.obj.height
-							
-							-- in room block units
-							local roomxmin = m.obj.x + region.ofs.x
-							local roomymin = m.obj.y + region.ofs.y
-							local roomxmax = roomxmin + w
-							local roomymax = roomymin + h
-							if self.mouseViewPos.x >= roomxmin * blocksPerRoom
-							and self.mouseViewPos.x <= roomxmax * blocksPerRoom
-							and self.mouseViewPos.y >= -roomymax * blocksPerRoom
-							and self.mouseViewPos.y <= -roomymin * blocksPerRoom
-							then
-								self.mouseDownOnRoom = m
-								break
-							end
-						end
-					end
-					if self.mouseDownOnRoom then break end
-				end
-				if self.mouseDownOnRoom then
-					self.mouseDownX = self.mouseViewPos.x
-					self.mouseDownY = self.mouseViewPos.y
-					self.roomDownX = self.mouseDownOnRoom.obj.x
-					self.roomDownY = self.mouseDownOnRoom.obj.y
-				end
-			else
-				if self.mouseDownOnRoom then
-					local deltaX = math.round((self.mouseViewPos.x - self.mouseDownX) / blocksPerRoom)
-					local deltaY = math.round((self.mouseViewPos.y - self.mouseDownY) / blocksPerRoom)
-
-					local newX = math.clamp(self.roomDownX + deltaX, 0, mapMaxWidth - self.mouseDownOnRoom.obj.width)
-					local newY = math.clamp(self.roomDownY - deltaY, 0, mapMaxHeight - self.mouseDownOnRoom.obj.height) 
-					
-					if newX ~= self.mouseDownOnRoom.obj.x
-					or newY ~= self.mouseDownOnRoom.obj.y
-					then
-						self.mouseDownOnRoom.obj.x = newX
-						self.mouseDownOnRoom.obj.y = newY
-						
--- [[ recalc bounds while you drag					
-						self.mouseDownOnRoom.region:calcBounds()
---]]
-					end
-
-					-- if we are dragging then don't let orbit control view
-					self.view.orthoSize = viewBeforeSize
-					self.view.pos.x = viewBeforeX
-					self.view.pos.y = viewBeforeY
-				end
-			end
---[[ only recalc bounds on mouseup			
-		else
-			if self.mouse.lastLeftDown then
-				if self.mouseDownOnRoom then
-					self.mouseDownOnRoom.region:calcBounds()
-				end
-			end
---]]	
-		end
+		roomSelector:updateMouse(self)
 	end
 end
 
