@@ -335,7 +335,6 @@ function SMGraphics:graphicsSaveEquipScreenImages()
 	} do
 		assert(info.tiles:sizeof() % graphicsTileSizeInBytes == 0)
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
-print(info.name, numTiles)
 		local img = self:graphicsCreateRGBBitmapForTiles(info.tiles.data, numTiles, info.palette, info.tilesWide)
 		img:save(info.name..'.png')
 	end
@@ -347,14 +346,8 @@ print(info.name, numTiles)
 				tilemapWidth = 32,
 				tilemapHeight = 64,
 				destName = 'region'..(i-1),
-				process = function(img)
-					local w, h = img.width, img.height
-					local top = img:copy{x=0, y=0, width=w, height=w}
-					local bottom = img:copy{x=0, y=w, width=w, height=w}
-					local newimg = Image(h, w, 3, 'unsigned char')
-					newimg = newimg:paste{x=0, y=0, image=top}
-					newimg = newimg:paste{x=w, y=0, image=bottom}
-					return newimg
+				process = function(sm, img)
+					return sm:graphicsWrapRows(img, 32*8, 2)
 				end,
 			}
 		end):append{
@@ -382,7 +375,7 @@ print(info.name, numTiles)
 
 		local img = self:graphicsBitmapIndexedToRGB(bmp, self.pauseScreenPalette)
 		if info.process then
-			img = info.process(img)
+			img = info.process(self, img)
 		end
 		img:save(info.destName..'.png')
 	end

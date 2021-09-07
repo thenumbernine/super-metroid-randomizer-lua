@@ -8,7 +8,7 @@ return {
 	mapSaveImageTextured = false,
 	mapSaveImageTextured_HighlightItems = false,
 	mapSaveGraphicsMode7 = false,
-	mapSaveGraphicsTileSets = true,
+	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
 	graphicsSaveEquipScreenImages = true,
