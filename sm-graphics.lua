@@ -5,6 +5,7 @@ local range = require 'ext.range'
 local table = require 'ext.table'
 local Blob = require 'blob'
 local Palette = require 'palette'
+local Image = require 'image'
 
 local pc = require 'pc'
 local topc = pc.to
@@ -77,6 +78,95 @@ function SMGraphics:graphicsSwizzleTileBitsInPlace(ptr, size)
 	end
 end
 
+
+--[[
+convert a 2D array of tilemap elements, plus a list of graphics tiles, into a bitmap
+
+dst = destination, in uint8_t[count][tilemapElemSizeY*graphicsTileSizeInPixels][tilemapElemSizeX*graphicsTileSizeInPixels]
+tilemapElem = source tilemap element array, tilemapElem_t[count][tilemapElemSizeY][tilemapElemSizeX] ... for each graphicsTile reference
+graphicsTiles = source graphicsTile data ... usu 0x4800 or 0x8000 incl common data
+tilemapElemSizeX = 8*8 graphicsTiles wide
+tilemapElemSizeY = 8*8 graphicsTiles high
+count = number of 8 * 8 * tilemapElemSizeX * tilemapElemSizeY tiles ... honestly this coule be multiplied into tilemapElemSizeY
+
+dst should be the destination indexed bitmap
+tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.data (sets of 32x32), or whatever else
+graphicsTiles should be tileSet.graphicsTileVec.v
+count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles x 2 bytes per graphicsTile lookup), or 1 for bg_t's, or whatever else
+
+--]]
+function SMGraphics:graphicsConvertTilemapToBitmap(
+	tilemap,
+	graphicsTiles,
+	tilemapElemSizeX,
+	tilemapElemSizeY,
+	count
+)
+	local dstImg = Image(
+		graphicsTileSizeInPixels * tilemapElemSizeX,
+		graphicsTileSizeInPixels * tilemapElemSizeY * count,
+		1,
+		'unsigned char')
+
+	dst = ffi.cast('uint8_t*', dstImg.buffer)
+	tilemap = ffi.cast('tilemapElem_t*', tilemap)
+	graphicsTiles = ffi.cast('uint8_t*', graphicsTiles)	-- 8 bytes per 32x32x4bpp graphicsTile
+	local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
+	
+	for tileIndex=0,count-1 do
+		for dstSubtileY=0,tilemapElemSizeY-1 do
+			local dstcol = dst
+			for dstSubtileX=0,tilemapElemSizeX-1 do
+				local xflip = tilemap.xflip ~= 0 and 7 or 0
+				local yflip = tilemap.yflip ~= 0 and 7 or 0
+				local colorIndexHi = bit.lshift(tilemap.colorIndexHi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
+				local graphicsTileIndex = tilemap.graphicsTileIndex
+				for y=0,7 do
+					for x=0,7 do
+						-- graphicsTileOffset = cccc cccc:ccbb baaa
+						-- a = x or ~x depending on xflip
+						-- b = y or ~y depending on yflip
+						-- c = tilemap.graphicsTileIndex
+						local graphicsTileOffset = bit.bor(
+							bit.bxor(x, xflip),
+							bit.lshift(bit.bxor(y, yflip), 3),
+							bit.lshift(graphicsTileIndex, 6)
+						)
+						--graphicsTileOffset.x = bit.bxor(x, xflip)
+						--graphicsTileOffset.y = bit.bxor(y, yflip)
+						--graphicsTileOffset.graphicsTileIndex = graphicsTileIndex
+						-- graphicsTileOffset is a nibble index
+						-- so the real byte index into the graphicsTiles is ... 0ccc cccc:cccb bbaa
+						-- and that means the graphicsTiles are 32 bytes each ... 8 * 8 * 4bpp / 8 bits/byte = 32 bytes
+						-- and that last 0'th bit of a == (x or ~x depending on xflip) determines which nibble to use
+						local colorIndexLo = graphicsTiles[bit.rshift(graphicsTileOffset, 1)]
+						if bit.band(graphicsTileOffset, 1) ~= 0 then colorIndexLo = bit.rshift(colorIndexLo, 4) end
+						colorIndexLo = bit.band(colorIndexLo, 0xf)
+						-- so if graphicsTileOffset & 1 == 1 (i.e. if tilemap.x & 1 == 1) then we <<= 2
+						--colorIndexLo = bit.band(bit.rshift(colorIndexLo, bit.lshift(bit.band(graphicsTileOffset.ptr[0], 1), 2)), 0xf)
+						dstcol[x + 8 * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
+					end
+				end
+				
+				dstcol = dstcol + 8
+				tilemap = tilemap + 1
+			end
+			dst = dst + 8 * 8 * tilemapElemSizeX
+		end
+	end
+	-- [[
+	-- what is this used for?  
+	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
+	-- and all palettes are 128 entries so that bit shouldn't be needed
+	for i=0,8*8*tilemapElemSizeX*tilemapElemSizeY*count-1 do
+		dstImg.buffer[i] = bit.band(dstImg.buffer[i], 0x7f)
+	end
+	--]]
+
+	return dstImg
+end
+
+
 --[[
 create w * h bitmap from an 8x8 set of graphicsTiles
 --]]
@@ -86,7 +176,6 @@ function SMGraphics:graphicsCreateIndexedBitmapForTiles(
 	tilesWide 
 )
 	tilesWide = tilesWide or 16
-	local Image = require 'image'
 	local tilesHigh = math.floor(numTiles / tilesWide)
 	if tilesWide * tilesHigh ~= numTiles then
 		error(require 'ext.tolua'{
@@ -102,23 +191,15 @@ function SMGraphics:graphicsCreateIndexedBitmapForTiles(
 		tilemap[i].xflip = 0
 		tilemap[i].yflip = 0
 	end
-	local tilemapElemIndexedBmp = Image(
-		graphicsTileSizeInPixels * tilesWide,
-		graphicsTileSizeInPixels * tilesHigh,
-		1,
-		'unsigned char')
-	self:graphicsConvertTilemapToBitmap(
-		tilemapElemIndexedBmp.buffer,	-- uint8_t[tilesHigh][tilesWide][graphicsTileSizeInPixels][graphicsTileSizeInPixels]
+	return self:graphicsConvertTilemapToBitmap(
 		tilemap,						-- tilemapElem_t[tilesHigh][tilesWide]
 		graphicsTilePtr,				-- graphicsTiles = uint8_t[tilesHigh][tilesWide][graphicsTileSizeInBytes]
 		tilesWide,						-- tilesWide
 		tilesHigh,						-- tilesHigh
 		1)								-- count
-	return tilemapElemIndexedBmp
 end
 
 function SMGraphics:graphicsBitmapIndexedToRGB(srcIndexedBmp, imgwidth, imgheight, palette)
-	local Image = require 'image'
 	local dstRgbBmp = Image(imgwidth, imgheight, 3, 'unsigned char')
 	dstRgbBmp:clear()
 	for y=0,imgheight-1 do
@@ -184,8 +265,6 @@ function SMGraphics:graphicsInit()
 end
 
 function SMGraphics:graphicsSaveEquipScreenImages()
-	local Image = require 'image'
-
 	for _,info in ipairs{
 		{
 			name = 'itemtiles',
@@ -239,13 +318,8 @@ print(info.name, numTiles)
 		}
 	) do
 		assert(info.tilemapWidth * info.tilemapHeight * 2 == info.tilemap:sizeof())
-		local bmp = Image(
-			graphicsTileSizeInPixels * info.tilemapWidth,
-			graphicsTileSizeInPixels * info.tilemapHeight,
-			1,
-			'unsigned char')
-		self:graphicsConvertTilemapToBitmap(
-			bmp.buffer,
+
+		local bmp = self:graphicsConvertTilemapToBitmap(
 			info.tilemap.data,
 			self.pauseScreenTiles.data,
 			info.tilemapWidth,
@@ -254,8 +328,8 @@ print(info.name, numTiles)
 
 		local img = self:graphicsBitmapIndexedToRGB(
 			bmp.buffer,
-			graphicsTileSizeInPixels * info.tilemapWidth,
-			graphicsTileSizeInPixels * info.tilemapHeight,
+			bmp.width,
+			bmp.height,
 			self.pauseScreenPalette
 		)
 		if info.process then
@@ -281,7 +355,7 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 end
 
 
--- let SMMap use these
+-- let SMGraphics use these
 SMGraphics.graphicsTileSizeInPixels = graphicsTileSizeInPixels 
 SMGraphics.graphicsTileSizeInBytes = graphicsTileSizeInBytes 
 

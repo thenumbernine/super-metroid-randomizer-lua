@@ -23,6 +23,7 @@ local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
 local disasm = require 'disasm'
 local config = require 'config'
+local Image = require 'image'
 
 local Blob = require 'blob'
 local Palette = require 'palette'
@@ -2129,86 +2130,6 @@ local graphicsTileOffset_t = struct{
 }
 assert(ffi.sizeof'graphicsTileOffset_t' == 2)
 
---[[
-convert a 2D array of tilemap elements, plus a list of graphics tiles, into a bitmap
-
-dst = destination, in uint8_t[count][tilemapElemSizeY*graphicsTileSizeInPixels][tilemapElemSizeX*graphicsTileSizeInPixels]
-tilemapElem = source tilemap element array, tilemapElem_t[count][tilemapElemSizeY][tilemapElemSizeX] ... for each graphicsTile reference
-graphicsTiles = source graphicsTile data ... usu 0x4800 or 0x8000 incl common data
-tilemapElemSizeX = 8*8 graphicsTiles wide
-tilemapElemSizeY = 8*8 graphicsTiles high
-count = number of 8 * 8 * tilemapElemSizeX * tilemapElemSizeY tiles ... honestly this coule be multiplied into tilemapElemSizeY
-
-dst should be the destination indexed bitmap
-tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.data (sets of 32x32), or whatever else
-graphicsTiles should be tileSet.graphicsTileVec.v
-count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles x 2 bytes per graphicsTile lookup), or 1 for bg_t's, or whatever else
-
---]]
-function SMMap:graphicsConvertTilemapToBitmap(
-	dst,
-	tilemap,
-	graphicsTiles,
-	tilemapElemSizeX,
-	tilemapElemSizeY,
-	count
-)
-	dst = ffi.cast('uint8_t*', dst)
-	tilemap = ffi.cast('tilemapElem_t*', tilemap)
-	graphicsTiles = ffi.cast('uint8_t*', graphicsTiles)	-- 8 bytes per 32x32x4bpp graphicsTile
-	local dstbase = dst
-	local graphicsTileOffset = ffi.new'graphicsTileOffset_t'
-	
-	for tileIndex=0,count-1 do
-		for dstSubtileY=0,tilemapElemSizeY-1 do
-			local dstcol = dst
-			for dstSubtileX=0,tilemapElemSizeX-1 do
-				local xflip = tilemap.xflip ~= 0 and 7 or 0
-				local yflip = tilemap.yflip ~= 0 and 7 or 0
-				local colorIndexHi = bit.lshift(tilemap.colorIndexHi, 4)			-- 1c00h == 0001 1100:0000 0000 b, 1c00h >> 6 == 0000 0000:0111 0000
-				local graphicsTileIndex = tilemap.graphicsTileIndex
-				for y=0,7 do
-					for x=0,7 do
-						-- graphicsTileOffset = cccc cccc:ccbb baaa
-						-- a = x or ~x depending on xflip
-						-- b = y or ~y depending on yflip
-						-- c = tilemap.graphicsTileIndex
-						local graphicsTileOffset = bit.bor(
-							bit.bxor(x, xflip),
-							bit.lshift(bit.bxor(y, yflip), 3),
-							bit.lshift(graphicsTileIndex, 6)
-						)
-						--graphicsTileOffset.x = bit.bxor(x, xflip)
-						--graphicsTileOffset.y = bit.bxor(y, yflip)
-						--graphicsTileOffset.graphicsTileIndex = graphicsTileIndex
-						-- graphicsTileOffset is a nibble index
-						-- so the real byte index into the graphicsTiles is ... 0ccc cccc:cccb bbaa
-						-- and that means the graphicsTiles are 32 bytes each ... 8 * 8 * 4bpp / 8 bits/byte = 32 bytes
-						-- and that last 0'th bit of a == (x or ~x depending on xflip) determines which nibble to use
-						local colorIndexLo = graphicsTiles[bit.rshift(graphicsTileOffset, 1)]
-						if bit.band(graphicsTileOffset, 1) ~= 0 then colorIndexLo = bit.rshift(colorIndexLo, 4) end
-						colorIndexLo = bit.band(colorIndexLo, 0xf)
-						-- so if graphicsTileOffset & 1 == 1 (i.e. if tilemap.x & 1 == 1) then we <<= 2
-						--colorIndexLo = bit.band(bit.rshift(colorIndexLo, bit.lshift(bit.band(graphicsTileOffset.ptr[0], 1), 2)), 0xf)
-						dstcol[x + 8 * tilemapElemSizeX * y] = bit.bor(colorIndexHi, colorIndexLo)
-					end
-				end
-				
-				dstcol = dstcol + 8
-				tilemap = tilemap + 1
-			end
-			dst = dst + 8 * 8 * tilemapElemSizeX
-		end
-	end
-	-- [[
-	-- what is this used for?  
-	-- dest paletteIndex bit 1<<7 has both values 0 and 1 ...  
-	-- and all palettes are 128 entries so that bit shouldn't be needed
-	for i=0,8*8*tilemapElemSizeX*tilemapElemSizeY*count-1 do
-		dstbase[i] = bit.band(dstbase[i], 0x7f)
-	end
-	--]]
-end
 
 -- right now I'm un-interleaving the input data
 -- but maybe I should just leave it as is and cast it to this?
@@ -2532,12 +2453,9 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
 		tileSet.tileGfxCount = bit.rshift(tilemapByteVec.size, 3)
 		-- store as 16 x 16 x index rgb
-		tileSet.tileGfxBmp = ffi.new('uint8_t[?]', blockSizeInPixels * blockSizeInPixels * tileSet.tileGfxCount)
-
 		
 		-- TODO don't do this unless you're writing out the textured map image?
-		self:graphicsConvertTilemapToBitmap(
-			tileSet.tileGfxBmp,
+		tileSet.tileGfxBmp = self:graphicsConvertTilemapToBitmap(
 			tilemapByteVec.v,		-- tilemapElem_t[tileGfxCount][2][2]
 			graphicsTileVec.v,		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
 			2,
@@ -3298,10 +3216,8 @@ function SMMap:mapGetBitmapForTileSetAndTileMap(tileSet, tilemap)
 
 print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilemap '..('%06x'):format(tilemap.addr))		
 	bgBmp.tilemap = tilemap
-	bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemap.width * tilemap.height)
 
-	self:graphicsConvertTilemapToBitmap(
-		bgBmp.dataBmp,
+	bgBmp.dataBmp = self:graphicsConvertTilemapToBitmap(
 		tilemap.data,
 		tileSet.graphicsTileVec.v,
 		tilemap.width,
@@ -3314,7 +3230,6 @@ end
 
 
 function SMMap:mapSaveImageInformative(filenamePrefix)
-	local Image = require 'image'
 	filenamePrefix = filenamePrefix or 'map'
 
 	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
@@ -3430,7 +3345,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 									then
 										local bgx = x % bgw
 										local bgy = y % bgh
-										local paletteIndex = bgBmp.dataBmp[bgx + bgw * bgy]
+										local paletteIndex = bgBmp.dataBmp.buffer[bgx + bgw * bgy]
 										if bit.band(paletteIndex, 0xf) > 0 then
 											local src = tileSet.palette.data[paletteIndex]
 											local dstIndex = x + mapTexImage.width * y
@@ -3463,7 +3378,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 										local spi = bit.bxor(pi, pimask)
 										local spj = bit.bxor(pj, pjmask)
 										local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-										local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+										local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
 										if bit.band(paletteIndex, 0xf) > 0 then
 											local src = tileSet.palette.data[paletteIndex]
 											local dstIndex = x + mapTexImage.width * y
@@ -3492,7 +3407,7 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 										local spi = bit.bxor(pi, pimask)
 										local spj = bit.bxor(pj, pjmask)
 										local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-										local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+										local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
 										-- now which determines transparency?
 										if bit.band(paletteIndex, 0xf) > 0 then	-- why does lo==0 coincide with a blank tile? doesn't that mean colors 0, 16, 32, etc are always black?
 											local src = tileSet.palette.data[paletteIndex]
@@ -3520,7 +3435,6 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 end
 
 function SMMap:mapSaveImageTextured(filenamePrefix)
-	local Image = require 'image'
 	filenamePrefix = filenamePrefix or 'map'
 	
 	local mapTexImage = Image(
@@ -3841,7 +3755,6 @@ end
 
 
 function SMMap:mapSaveDumpworldImage(filenamePrefix)
-	local Image = require 'image'
 	filenamePrefix = filenamePrefix or 'map'
 
 	-- 1 pixel : 1 block for dumpworld
@@ -3871,7 +3784,6 @@ end
 
 
 function SMMap:mapSaveGraphicsMode7()
-	local Image = require 'image'
 	-- for now only write out tile graphics for the non-randomized version
 	for _,tileSet in ipairs(self.tileSets) do
 		if tileSet.mode7graphicsTiles then
@@ -3913,7 +3825,6 @@ function SMMap:mapSaveGraphicsMode7()
 end
 	
 function SMMap:mapSaveGraphicsTileSets()
-	local Image = require 'image'
 	-- TODO how about a wrap row?  grid x, grid y, result x, result y 
 	for _,tileSet in ipairs(self.tileSets) do
 		if tileSet.tileGfxBmp then
@@ -3927,7 +3838,7 @@ function SMMap:mapSaveGraphicsTileSets()
 					for j=0,blockSizeInPixels-1 do
 						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
 						local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
-						local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+						local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
 						local r,g,b = 0,0,0
 						if bit.band(paletteIndex, 0xf) > 0 then
 							local src = tileSet.palette.data[paletteIndex]
@@ -3965,7 +3876,6 @@ function SMMap:mapSaveGraphicsTileSets()
 end
 
 function SMMap:mapSaveGraphicsLayer2BGs()
-	local Image = require 'image'
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		local layer2blocks = roomBlockData:getLayer2Blocks()
 		if layer2blocks then
@@ -3989,7 +3899,7 @@ function SMMap:mapSaveGraphicsLayer2BGs()
 							local spi = bit.bxor(pi, pimask)
 							local spj = bit.bxor(pj, pjmask)
 							local srcIndex = spi + blockSizeInPixels * (spj + blockSizeInPixels * tileIndex)
-							local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+							local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
 							if bit.band(paletteIndex, 0xf) > 0 then
 								local src = tileSet.palette.data[paletteIndex]
 								local dst = img.buffer + 3 * (pi + blockSizeInPixels * x + pixw * (pj + blockSizeInPixels * y))
@@ -4008,7 +3918,6 @@ function SMMap:mapSaveGraphicsLayer2BGs()
 end
 
 function SMMap:mapSaveGraphicsBGs()
-	local Image = require 'image'
 	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,tilemap in ipairs(self.bgTilemaps) do
 		local fn = ('bgs/%06x.png'):format(tilemap.addr)
@@ -4033,7 +3942,7 @@ function SMMap:mapSaveGraphicsBGs()
 		for y=0,graphicsTileSizeInPixels*tilemap.height-1 do
 			for x=0,graphicsTileSizeInPixels*tilemap.width-1 do
 				local offset = x + img.width * y
-				local paletteIndex = bgBmp.dataBmp[offset]
+				local paletteIndex = bgBmp.dataBmp.buffer[offset]
 				if bit.band(paletteIndex, 0xf) > 0 then 
 					local rgb = tileSet.palette.data[paletteIndex]
 					local dst = img.buffer + 3 * offset

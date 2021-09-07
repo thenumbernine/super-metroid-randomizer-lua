@@ -76,9 +76,9 @@ do
 		local bgBmp = old(self, ...)
 		if not bgBmp.tex then
 			bgBmp.tex = GLTex2D{
-				width = graphicsTileSizeInPixels * tilemap.width,
-				height = graphicsTileSizeInPixels * tilemap.height,
-				data = bgBmp.dataBmp,
+				width = bgBmp.dataBmp.width,
+				height = bgBmp.dataBmp.height,
+				data = bgBmp.dataBmp.buffer,
 				format = gl.GL_RED,
 				internalFormat = gl.GL_RED,
 				type = gl.GL_UNSIGNED_BYTE,
@@ -239,7 +239,7 @@ function App:initGL()
 				for i=0,blockSizeInPixels-1 do
 					for j=0,blockSizeInPixels-1 do
 						local srcIndex = i + blockSizeInPixels * (j + blockSizeInPixels * tileIndex)
-						local paletteIndex = tileSet.tileGfxBmp[srcIndex]
+						local paletteIndex = tileSet.tileGfxBmp.buffer[srcIndex]
 						local dstIndex = i + blockSizeInPixels * xofs + img.width * (j + blockSizeInPixels * yofs)
 						img.buffer[dstIndex] = paletteIndex
 					end
@@ -298,7 +298,7 @@ function App:initGL()
 	end
 
 	-- make textures of the region maps
-	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseAndEquipScreenTiles.data, self.sm.pauseAndEquipScreenTiles:sizeof())
+	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseScreenTiles.data, self.sm.pauseScreenTiles:sizeof())
 
 	self.view.ortho = true
 	self.view.znear = -1e+4
@@ -398,11 +398,8 @@ function App:graphicsTilesToTex(ptr, size)
 		tilemap[i].xflip = 0
 		tilemap[i].yflip = 0
 	end
-	local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
-	local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
-	local img = Image(imgwidth, imgheight, 1, 'unsigned char')
-	self.sm:graphicsConvertTilemapToBitmap(
-		img.buffer,			-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
+	
+	local img = self.sm:graphicsConvertTilemapToBitmap(
 		tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
 		ptr,				-- graphicsTiles = 
 		tilemapElemSizeX,	-- tilemapElemSizeX
@@ -1164,7 +1161,7 @@ local function makeTooltipImage(name, tex, w, h, color)
 			ig.ImVec2(w, h),
 			ig.ImVec2(0, -1),
 			ig.ImVec2(1, 0),
-			color
+			color or ig.ImVec4(1,1,1,1)
 		)
 		ig.igEndTooltip()
 	end
@@ -1259,7 +1256,7 @@ function App:updateGUI()
 				makeTooltipImage(
 					'tileset '..tileSet.index..' palette',
 					tileSet.palette.tex,
-					palette.width, 16
+					tileSet.palette.width, 16
 				)
 				ig.igSameLine()
 			end
