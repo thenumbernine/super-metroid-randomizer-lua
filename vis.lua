@@ -15,6 +15,7 @@ local GLProgram = require 'gl.program'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
+local math = require 'ext.math'
 local file = require 'ext.file'
 local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
@@ -38,6 +39,10 @@ local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels
 local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes 
 local roomSizeInPixels = SM.roomSizeInPixels 
 
+-- TODO this should match the region tilemap sizes
+local mapMaxWidth = 64
+local mapMaxHeight = 32
+
 -- how do we want to pack our tile textures?
 -- this is arbitrary, but pick something squareish so we don't reach the tex dim limit
 local tileSetRowWidth = 32
@@ -48,6 +53,19 @@ editorDrawLayer2 = true
 editorDrawPLMs = true
 editorDrawEnemySpawnSets = true
 editorDrawDoors = true
+editorHideFilledMapBlocks = true
+editorShowRegionBorders = false
+editorShowRoomBorders = false
+
+local editorModes = {
+	'pan',
+	'moveRegions',
+	'moveRooms',
+}
+for k,v in pairs(editorModes) do
+	editorModes[v] = k
+end
+editorMode = 1
 
 -- [==[ can't get rid of this yet until I store the tilemaps separately as well
 -- but turns out baking the palette was the biggest slowdown
@@ -75,6 +93,28 @@ end
 --]==]
 
 
+local Region = class()
+
+function Region:init(index)
+	self.rooms = table()
+	self.index = index
+	self.show = true	--index==0
+	self.ofs = vec2f(0,0)
+end
+
+function Region:calcBounds()
+	self.xmin = math.huge
+	self.ymin = math.huge
+	self.xmax = -math.huge
+	self.ymax = -math.huge
+	for _,m in ipairs(self.rooms) do
+		self.xmin = math.min(self.xmin, m.obj.x)
+		self.ymin = math.min(self.ymin, m.obj.y)
+		self.xmax = math.max(self.xmax, m.obj.x + m.obj.width)
+		self.ymax = math.max(self.ymax, m.obj.y + m.obj.height)
+	end
+end
+
 function App:initGL()
 	App.super.initGL(self)
 
@@ -85,38 +125,76 @@ function App:initGL()
 		header = romstr:sub(1,512)
 		romstr = romstr:sub(513)
 	end
-	assert(bit.band(#romstr, 0x7fff) == 0, "rom is not bank-aligned")
+	if bit.band(#romstr, 0x7fff) ~= 0 then
+		print("WARNING - rom is not bank-aligned")
+	end
 
 	-- global so other files can see it
 	self.rom = ffi.cast('uint8_t*', romstr) 
 	self.sm = SM(self.rom)
 
 	self.regions = range(0,7):mapi(function(index)
-		return {
-			rooms = table(),
-			index = index,
-			show = true,--index==0,
-			ofs = vec2f(0,0),
-			xmin = math.huge,
-			xmax = -math.huge,
-			ymin = math.huge,
-			ymax = -math.huge,
-		}
+		return Region(index)
 	end)
 	for _,m in ipairs(self.sm.rooms) do
 		local index = m.obj.region+1
 		local region = self.regions[index]
 		region.rooms:insert(m)
-		region.xmin = math.min(region.xmin, m.obj.x)
-		region.ymin = math.min(region.ymin, m.obj.y)
-		region.xmax = math.min(region.xmax, m.obj.x + m.obj.width)
-		region.ymax = math.min(region.ymax, m.obj.y + m.obj.height)
+		-- TODO move the 'region' object in SM?
+		m.region = region
+	end
+	for _,region in ipairs(self.regions) do
+		region:calcBounds()
 	end
 
 	self:setRegionOffsets(1)
 
+	-- TODO use this for switching which state is being displayed
+	-- since roomstates can have fully different tilesets blocks etc
 	self.roomCurrentRoomStates = {}
 
+-- [[ keep track of which roomblock mapblocks are all solid, for occlusion
+	for _,roomBlockData in ipairs(self.sm.roomblocks) do
+		local w = roomBlockData.width / blocksPerRoom
+		local h = roomBlockData.height / blocksPerRoom
+		local blocks12 = roomBlockData:getBlocks12()
+		local layer2blocks = roomBlockData:getLayer2Blocks()
+		roomBlockData.roomAllSolidFlags = ffi.new('uint8_t[?]', w*h)	-- one bit per byte ... so wasteful
+		for j=0,h-1 do
+			for i=0,w-1 do
+				local index = blocksPerRoom * (i + w * blocksPerRoom * j)
+				local allSolid = 3
+				local firstTileIndex = bit.band(ffi.cast('uint16_t*', blocks12)[index], 0x3ff)
+				local firstLayer2TileIndex
+				if layer2blocks then
+					firstLayer2TileIndex = bit.band(ffi.cast('uint16_t*', layer2blocks)[index], 0x3ff)
+				end
+				for ti=0,blocksPerRoom-1 do
+					for tj=0,blocksPerRoom-1 do
+						local dx = ti + blocksPerRoom * i
+						local dy = tj + blocksPerRoom * j
+						local di = dx + blocksPerRoom * w * dy
+						
+						local tileIndex = bit.band(ffi.cast('uint16_t*', blocks12)[di], 0x3ff)
+						if tileIndex ~= firstTileIndex then
+							allSolid = bit.band(allSolid, bit.bnot(1))
+						end
+												
+						if layer2blocks then
+							local tileIndex = bit.band(ffi.cast('uint16_t*', layer2blocks)[di], 0x3ff)
+							if tileIndex ~= firstLayer2TileIndex then
+								allSolid = bit.band(allSolid, bit.bnot(2))
+							end
+						end
+						if allSolid == 0 then break end
+					end
+					if allSolid == 0 then break end
+				end
+				roomBlockData.roomAllSolidFlags[i+w*j] = allSolid
+			end
+		end
+	end
+--]]
 
 	-- graphics init
 
@@ -145,49 +223,8 @@ function App:initGL()
 	end
 	
 	for _,tileSet in ipairs(self.sm.tileSets) do
-		--[[
-		make a texture out of the tileSet graphicsTiles ... 
-		graphicsTileSizeInPixels * graphicsTileSizeInPixels packed into a higher size
-		higher size is (graphicsTileSizeInPixels * tilemapElemSizeX) * (whatever's left)
-		--]]
-		local numGraphicTiles = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
-		local tilemapElemSizeX = 16
-		local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
-		assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
-		local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
-		for i=0,numGraphicTiles-1 do
-			tilemap[i].graphicsTileIndex = i
-			tilemap[i].colorIndexHi = 0
-			tilemap[i].xflip = 0
-			tilemap[i].yflip = 0
-		end
-		local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
-		local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
-		local img = Image(imgwidth, imgheight, 1, 'unsigned char')
-		self.sm:convertTilemapToBitmap(
-			img.buffer,						-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
-			tilemap,						-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
-			tileSet.graphicsTileVec.v,		-- graphicsTiles = 
-			tilemapElemSizeX,				-- tilemapElemSizeX
-			tilemapElemSizeY,				-- tilemapElemSizeY
-			1)								-- count
-		
-		-- alright now that we have this, we can store the tilemap as a uint16 per graphicstile
-		-- instead of as a rendered bitmap
-		tileSet.graphicsTileTex = GLTex2D{
-			width = img.width,
-			height = img.height,
-			data = img.buffer,
-			format = gl.GL_RED,
-			internalFormat = gl.GL_RED,
-			type = gl.GL_UNSIGNED_BYTE,
-			magFilter = gl.GL_NEAREST,
-			minFilter = gl.GL_NEAREST,
-			generateMipmap = false,
-		}
-
 		-- make a texture out of the tileSet tilemap ... 1 uint16 per 8x8 tile
-
+		tileSet.graphicsTileTex = self:graphicsTilesToTex(tileSet.graphicsTileVec.v, tileSet.graphicsTileVec.size)
 
 		-- tileGfxBmp is from combining the common room data and the tileset data
 		if tileSet.tileGfxBmp then
@@ -259,6 +296,9 @@ function App:initGL()
 		end
 --]==]
 	end
+
+	-- make textures of the region maps
+	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseAndEquipScreenTiles.data, self.sm.pauseAndEquipScreenTiles:sizeof())
 
 	self.view.ortho = true
 	self.view.znear = -1e+4
@@ -338,17 +378,65 @@ glreport'here'
 	self.mouseViewPos = vec2f()
 end
 
+--[[
+make a texture out of the graphicsTiles ... 
+ptr = pointer to graphics tiles (32 bytes per 8x8 tile)
+size = size of buffer in bytes
+graphicsTileSizeInPixels * graphicsTileSizeInPixels packed into a higher size
+higher size is (graphicsTileSizeInPixels * tilemapElemSizeX) * (whatever's left)
+--]]
+function App:graphicsTilesToTex(ptr, size)
+	assert(size % graphicsTileSizeInBytes == 0, "size should be aligned to "..graphicsTileSizeInBytes)
+	local numGraphicTiles = size / graphicsTileSizeInBytes
+	local tilemapElemSizeX = 16
+	local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
+	assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
+	local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
+	for i=0,numGraphicTiles-1 do
+		tilemap[i].graphicsTileIndex = i
+		tilemap[i].colorIndexHi = 0
+		tilemap[i].xflip = 0
+		tilemap[i].yflip = 0
+	end
+	local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
+	local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
+	local img = Image(imgwidth, imgheight, 1, 'unsigned char')
+	self.sm:convertTilemapToBitmap(
+		img.buffer,			-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
+		tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
+		ptr,				-- graphicsTiles = 
+		tilemapElemSizeX,	-- tilemapElemSizeX
+		tilemapElemSizeY,	-- tilemapElemSizeY
+		1)					-- count
+
+	-- alright now that we have this, we can store the tilemap as a uint16 per graphicstile
+	-- instead of as a rendered bitmap
+	return GLTex2D{
+		width = img.width,
+		height = img.height,
+		data = img.buffer,
+		format = gl.GL_RED,
+		internalFormat = gl.GL_RED,
+		type = gl.GL_UNSIGNED_BYTE,
+		magFilter = gl.GL_NEAREST,
+		minFilter = gl.GL_NEAREST,
+		generateMipmap = false,
+	}
+end
+
+
+
 local predefinedRegionOffsets = {
 -- default arrangement.  too bad crateria right of wrecked ship isn't further right to fit wrecked ship in
 	{
 		name = 'Original',
 		ofs = {
 			{0, 0},
-			{-3, 19},
-			{28, 39},
-			{34, -10},
-			{25, 19},
-			{-3, 1},
+			{-3, 18},
+			{28, 37},
+			{29, -3},	--{34, -10},	-- the commented offset is where it would go if the rhs of crateria was pushed further right
+			{25, 18},
+			{-3, 0},
 			{15, -18},
 			{0, 0},
 		},
@@ -392,6 +480,19 @@ local predefinedRegionOffsets = {
 			{0,0},
 		},
 	},
+	{
+		name = 'Metroid Rotation Hack',
+		ofs = {
+			{16,0},
+			{-19,-1},
+			{-34,25},
+			{53,6},
+			{12,28},
+			{-7,2},
+			{15,-18},
+			{0,0},
+		},
+	},
 }
 
 function App:setRegionOffsets(index)
@@ -426,6 +527,20 @@ function App:update()
 			or blocksPerRoom * -region.ymin <= viewymax
 		)
 		then
+			if editorShowRegionBorders then
+				local x1, y1 = blocksPerRoom * (region.xmin + region.ofs.x), blocksPerRoom * (region.ymin + region.ofs.y)
+				local x2, y2 = blocksPerRoom * (region.xmax + region.ofs.x), blocksPerRoom * (region.ymax + region.ofs.y)
+				gl.glColor3f(1,0,1)
+				gl.glLineWidth(4)
+				gl.glBegin(gl.GL_LINE_LOOP)
+				gl.glVertex2f(x1, -y1)
+				gl.glVertex2f(x1, -y2)
+				gl.glVertex2f(x2, -y2)
+				gl.glVertex2f(x2, -y1)
+				gl.glEnd()
+				gl.glLineWidth(1)
+			end
+
 			for _,m in ipairs(rooms) do
 				local w = m.obj.width
 				local h = m.obj.height
@@ -440,6 +555,20 @@ function App:update()
 				or blocksPerRoom * -roomymax >= viewymin
 				or blocksPerRoom * -roomymin <= viewymax
 				then
+					if editorShowRoomBorders then
+						local x1, y1 = blocksPerRoom * roomxmin, blocksPerRoom * roomymin
+						local x2, y2 = blocksPerRoom * roomxmax, blocksPerRoom * roomymax
+						gl.glColor3f(1,1,0)
+						gl.glLineWidth(4)
+						gl.glBegin(gl.GL_LINE_LOOP)
+						gl.glVertex2f(x1, -y1)
+						gl.glVertex2f(x1, -y2)
+						gl.glVertex2f(x2, -y2)
+						gl.glVertex2f(x2, -y1)
+						gl.glEnd()
+						gl.glLineWidth(1)				
+					end
+
 					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
 					local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
 					local rs = m.roomStates[
@@ -459,6 +588,7 @@ function App:update()
 					and tileSet.palette
 					and roomBlockData 
 					then
+-- TODO get the tilemap shader working and then turn this off
 if useBakedLayer3Background then
 						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 						local bgTex = bgBmp and bgBmp.tex
@@ -472,10 +602,18 @@ if useBakedLayer3Background then
 							gl.glBegin(gl.GL_QUADS)
 							for j=0,h-1 do
 								for i=0,w-1 do
-									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-									or blocksPerRoom * (roomxmin + i) <= viewxmax
-									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-									or blocksPerRoom * -(roomymin + j) <= viewymax
+									if (
+										blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+										or blocksPerRoom * (roomxmin + i) <= viewxmax
+										or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+										or blocksPerRoom * -(roomymin + j) <= viewymax
+									) 
+									-- [[
+									and (
+										not editorHideFilledMapBlocks
+										or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+									)
+									--]]
 									then
 										local x1 = blocksPerRoom * (i + roomxmin)
 										local y1 = blocksPerRoom * (j + roomymin)
@@ -555,21 +693,40 @@ end
 						gl.glBegin(gl.GL_QUADS)
 						
 						local blocks12 = roomBlockData:getBlocks12()
-						local blocks3 = roomBlockData:getBlocks3()
 						local layer2blocks = roomBlockData:getLayer2Blocks()
 						for j=0,h-1 do
 							for i=0,w-1 do
-								if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-								or blocksPerRoom * (roomxmin + i) <= viewxmax
-								or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-								or blocksPerRoom * -(roomymin + j) <= viewymax
-								then
+								if (
+									blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+									or blocksPerRoom * (roomxmin + i) <= viewxmax
+									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									or blocksPerRoom * -(roomymin + j) <= viewymax
+								) then
+									
+									local drawLayer2 = 
+										editorDrawLayer2
+										and layer2blocks
+										-- [[
+										and (
+											not editorHideFilledMapBlocks
+											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
+										)
+										--]]
+
+									local drawLayer1 = 
+										editorDrawForeground 
+										and blocks12
+										-- [[
+										and (
+											not editorHideFilledMapBlocks
+											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+										)
+										--]]
+
 									for ti=0,blocksPerRoom-1 do
 										for tj=0,blocksPerRoom-1 do
 											-- draw layer2 background if it's there
-											if editorDrawLayer2
-											and layer2blocks 
-											then
+											if drawLayer2 then
 												local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
 												local pimask = bit.band(tileIndex, 0x400) ~= 0
 												local pjmask = bit.band(tileIndex, 0x800) ~= 0
@@ -600,22 +757,15 @@ end
 											end
 											
 											-- draw tile
-											if editorDrawForeground 
-											and blocks12
-											and blocks3
-											then
+											if drawLayer1 then
 												local dx = ti + blocksPerRoom * i
 												local dy = tj + blocksPerRoom * j
 												local di = dx + blocksPerRoom * w * dy
 												
-												local d1 = blocks12[0 + 2 * di]
-												local d2 = blocks12[1 + 2 * di]
-												local d3 = blocks3[di]
-													
-												local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
-												local pimask = bit.band(d2, 4) ~= 0
-												local pjmask = bit.band(d2, 8) ~= 0
-
+												local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
+												local pimask = bit.band(tileIndex, 0x400) ~= 0
+												local pjmask = bit.band(tileIndex, 0x800) ~= 0
+												tileIndex = bit.band(tileIndex, 0x3ff)
 
 												local tx1 = tileIndex % tileSetRowWidth
 												local ty1 = math.floor(tileIndex / tileSetRowWidth)
@@ -654,13 +804,13 @@ end
 						then
 							gl.glColor3f(0,1,1)
 							for _,plm in ipairs(rs.plmset.plms) do
-								local x = plm.x + blocksPerRoom * roomxmin
-								local y = -(plm.y + blocksPerRoom * roomymin)
+								local x = .5 + plm.x + blocksPerRoom * roomxmin
+								local y = .5 + (plm.y + blocksPerRoom * roomymin)
 								gl.glBegin(gl.GL_LINES)
-								gl.glVertex2f(x-.5, y)
-								gl.glVertex2f(x+.5, y)
-								gl.glVertex2f(x, y-.5)
-								gl.glVertex2f(x, y+.5)
+								gl.glVertex2f(x-.5, -y)
+								gl.glVertex2f(x+.5, -y)
+								gl.glVertex2f(x, -y-.5)
+								gl.glVertex2f(x, -y+.5)
 								gl.glEnd()
 							end
 						end
@@ -671,12 +821,12 @@ end
 							gl.glColor3f(1,0,1)
 							for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
 								local x = enemySpawn.x / 16 + blocksPerRoom * roomxmin
-								local y = -(enemySpawn.y / 16 + blocksPerRoom * roomymin)
+								local y = enemySpawn.y / 16 + blocksPerRoom * roomymin
 								gl.glBegin(gl.GL_LINES)
-								gl.glVertex2f(x-.5, y)
-								gl.glVertex2f(x+.5, y)
-								gl.glVertex2f(x, y-.5)
-								gl.glVertex2f(x, y+.5)
+								gl.glVertex2f(x-.5, -y)
+								gl.glVertex2f(x+.5, -y)
+								gl.glVertex2f(x, -y-.5)
+								gl.glVertex2f(x, -y+.5)
 								gl.glEnd()
 							end
 						end
@@ -769,48 +919,132 @@ function App:event(...)
 		(1 - self.mouse.pos.x) * viewxmin + self.mouse.pos.x * viewxmax,
 		(1 - self.mouse.pos.y) * viewymin + self.mouse.pos.y * viewymax
 	)
-	
-	if self.mouse.leftDown then
-		if not self.mouse.lastLeftDown then
-print('self.mouseViewPos', self.mouseViewPos)			
-			self.mouseDownOnRegion = nil
-			for _,region in ipairs(self.regions) do
-				for _,m in ipairs(region.rooms) do
-					local w = m.obj.width
-					local h = m.obj.height
-					
-					-- in room block units
-					local roomxmin = m.obj.x + region.ofs.x
-					local roomymin = m.obj.y + region.ofs.y
-					local roomxmax = roomxmin + w
-					local roomymax = roomymin + h
-					if self.mouseViewPos.x >= roomxmin * blocksPerRoom
-					and self.mouseViewPos.x <= roomxmax * blocksPerRoom
-					and self.mouseViewPos.y >= -roomymax * blocksPerRoom
-					and self.mouseViewPos.y <= -roomymin * blocksPerRoom
-					then
-print('clicking on region', region.index)						
-						self.mouseDownOnRegion = region
-						break
+
+	if editorMode == editorModes.pan then
+		-- just use default orbit behavior
+	elseif editorMode == editorModes.moveRegions then
+		if self.mouse.leftDown then
+			if not self.mouse.lastLeftDown then
+				self.mouseDownOnRegion = nil
+				for _,region in ipairs(self.regions) do
+					if region.show then
+						for _,m in ipairs(region.rooms) do
+							local w = m.obj.width
+							local h = m.obj.height
+							
+							-- in room block units
+							local roomxmin = m.obj.x + region.ofs.x
+							local roomymin = m.obj.y + region.ofs.y
+							local roomxmax = roomxmin + w
+							local roomymax = roomymin + h
+							if self.mouseViewPos.x >= roomxmin * blocksPerRoom
+							and self.mouseViewPos.x <= roomxmax * blocksPerRoom
+							and self.mouseViewPos.y >= -roomymax * blocksPerRoom
+							and self.mouseViewPos.y <= -roomymin * blocksPerRoom
+							then
+								self.mouseDownOnRegion = region
+								break
+							end
+						end
 					end
+					if self.mouseDownOnRegion then break end
 				end
-				if self.mouseDownOnRegion then break end
-			end
-		else
-			local mouseDeltaX = self.mouse.deltaPos.x * (viewxmax - viewxmin)
-			local mouseDeltaY = self.mouse.deltaPos.y * (viewymax - viewymin)
-			if self.mouseDownOnRegion then
-				self.mouseDownOnRegion.ofs.x = self.mouseDownOnRegion.ofs.x + mouseDeltaX / blocksPerRoom
-				self.mouseDownOnRegion.ofs.y = self.mouseDownOnRegion.ofs.y - mouseDeltaY / blocksPerRoom
-			
-				-- if we are dragging then don't let orbit control view
-				self.view.orthoSize = viewBeforeSize
-				self.view.pos.x = viewBeforeX
-				self.view.pos.y = viewBeforeY
+				if self.mouseDownOnRegion then
+					self.mouseDownX = self.mouseViewPos.x
+					self.mouseDownY = self.mouseViewPos.y
+					self.regionDownX = self.mouseDownOnRegion.ofs.x
+					self.regionDownY = self.mouseDownOnRegion.ofs.y
+				end
+			else
+				if self.mouseDownOnRegion then
+					local deltaX = math.round((self.mouseViewPos.x - self.mouseDownX) / blocksPerRoom)
+					local deltaY = math.round((self.mouseViewPos.y - self.mouseDownY) / blocksPerRoom)
+
+					self.mouseDownOnRegion.ofs.x = self.regionDownX + deltaX
+					self.mouseDownOnRegion.ofs.y = self.regionDownY - deltaY
+				
+					-- if we are dragging then don't let orbit control view
+					self.view.orthoSize = viewBeforeSize
+					self.view.pos.x = viewBeforeX
+					self.view.pos.y = viewBeforeY
+				end
 			end
 		end
-	else
-		-- TODO highlight region under mouse?
+	elseif editorMode == editorModes.moveRooms then
+		if self.mouse.leftDown then
+			if not self.mouse.lastLeftDown then
+				self.mouseDownOnRoom = nil
+				for _,region in ipairs(self.regions) do
+					if region.show then
+						for _,m in ipairs(region.rooms) do
+							local w = m.obj.width
+							local h = m.obj.height
+							
+							-- in room block units
+							local roomxmin = m.obj.x + region.ofs.x
+							local roomymin = m.obj.y + region.ofs.y
+							local roomxmax = roomxmin + w
+							local roomymax = roomymin + h
+							if self.mouseViewPos.x >= roomxmin * blocksPerRoom
+							and self.mouseViewPos.x <= roomxmax * blocksPerRoom
+							and self.mouseViewPos.y >= -roomymax * blocksPerRoom
+							and self.mouseViewPos.y <= -roomymin * blocksPerRoom
+							then
+								self.mouseDownOnRoom = m
+								break
+							end
+						end
+					end
+					if self.mouseDownOnRoom then break end
+				end
+				if self.mouseDownOnRoom then
+					self.mouseDownX = self.mouseViewPos.x
+					self.mouseDownY = self.mouseViewPos.y
+					self.roomDownX = self.mouseDownOnRoom.obj.x
+					self.roomDownY = self.mouseDownOnRoom.obj.y
+				end
+			else
+				if self.mouseDownOnRoom then
+					local deltaX = math.round((self.mouseViewPos.x - self.mouseDownX) / blocksPerRoom)
+					local deltaY = math.round((self.mouseViewPos.y - self.mouseDownY) / blocksPerRoom)
+
+					local newX = math.clamp(self.roomDownX + deltaX, 0, mapMaxWidth - self.mouseDownOnRoom.obj.width)
+					local newY = math.clamp(self.roomDownY - deltaY, 0, mapMaxHeight - self.mouseDownOnRoom.obj.height) 
+					
+					if newX ~= self.mouseDownOnRoom.obj.x
+					or newY ~= self.mouseDownOnRoom.obj.y
+					then
+						self.mouseDownOnRoom.obj.x = newX
+						self.mouseDownOnRoom.obj.y = newY
+						
+-- [[ recalc bounds while you drag					
+						self.mouseDownOnRoom.region:calcBounds()
+--]]
+					end
+
+					-- if we are dragging then don't let orbit control view
+					self.view.orthoSize = viewBeforeSize
+					self.view.pos.x = viewBeforeX
+					self.view.pos.y = viewBeforeY
+				end
+			end
+--[[ only recalc bounds on mouseup			
+		else
+			if self.mouse.lastLeftDown then
+				if self.mouseDownOnRoom then
+					self.mouseDownOnRoom.region:calcBounds()
+				end
+			end
+--]]	
+		end
+	end
+end
+
+local function hoverTooltip(name)
+	if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
+		ig.igBeginTooltip()
+		ig.igText(name)
+		ig.igEndTooltip()
 	end
 end
 
@@ -822,30 +1056,70 @@ local function checkboxTooltip(name, t, k)
 	if result then
 		t[k] = bool[0]
 	end
-	if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
-		ig.igBeginTooltip()
-		ig.igText(name)
-		ig.igEndTooltip()
-	end
+	hoverTooltip(name)
 	ig.igPopID()
 	return result
 end
 
 local float = ffi.new('float[1]')
-local function inputFloatToolkit(name, t, k)
+local function inputFloatTooltip(name, t, k)
 	ig.igPushIDStr(name)
 	float[0] = tonumber(t[k]) or 0
 	local result = ig.igInputFloat('', float)
 	if result then
 		t[k] = float[0]
 	end
+	hoverTooltip(name)
+	ig.igPopID()
+	return result
+end
+
+local function buttonTooltip(name, ...)
+	ig.igPushIDStr(name)
+	local result = ig.igButton(' ', ...)
+	hoverTooltip(name)
+	ig.igPopID()
+	return result
+end
+
+local function makeTooltipImage(name, tex, w, h, color)
+	w = w or tex.width
+	h = h or tex.height
+	ig.igButton(' ')
 	if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
 		ig.igBeginTooltip()
 		ig.igText(name)
+		local texIDPtr = ffi.cast('void*',ffi.cast('intptr_t',tex.id))
+		ig.igImage(
+			texIDPtr,
+			ig.ImVec2(w, h),
+			ig.ImVec2(0, -1),
+			ig.ImVec2(1, 0),
+			color
+		)
 		ig.igEndTooltip()
 	end
+end
+
+local int = ffi.new('int[1]', 0)
+local function radioTooltip(name, t, k, v)
+	ig.igPushIDStr(name)
+	local result = ig.igRadioButtonIntPtr('', int, v)
+	hoverTooltip(name)
 	ig.igPopID()
-	return result
+	if result then
+		t[k] = int[0]
+	end
+end
+
+local function radioTooltipsFromTable(names, t, k)
+	int[0] = t[k]
+	for v,name in ipairs(names) do
+		radioTooltip(name, t, k, v)
+		if v < #names then
+			ig.igSameLine()
+		end
+	end
 end
 
 function App:updateGUI()
@@ -858,12 +1132,32 @@ function App:updateGUI()
 	checkboxTooltip('Draw Enemy Spawns', _G, 'editorDrawEnemySpawnSets')
 	ig.igSameLine()
 	checkboxTooltip('Draw Doors', _G, 'editorDrawDoors')
+	ig.igSameLine()
+	checkboxTooltip('Hide MapBlocks Of Solid Tiles', _G, 'editorHideFilledMapBlocks')
+	ig.igSameLine()
+	checkboxTooltip('Show Region Borders', _G, 'editorShowRegionBorders')
+	ig.igSameLine()
+	checkboxTooltip('Show Room Borders', _G, 'editorShowRoomBorders')
 
-	for i,info in ipairs(predefinedRegionOffsets) do
-		if ig.igButton(info.name) then
-			self:setRegionOffsets(i)
+	radioTooltipsFromTable(editorModes, _G, 'editorMode')
+
+	if ig.igCollapsingHeader'Set Region Offsets To Predefined:' then
+		for i,info in ipairs(predefinedRegionOffsets) do
+			if buttonTooltip(info.name) then
+				self:setRegionOffsets(i)
+			end
+			if i < #predefinedRegionOffsets then
+				ig.igSameLine()
+			end
 		end
 	end
+
+	makeTooltipImage(
+		'pause screen tiles',
+		self.pauseScreenTileTex,
+		nil, nil,
+		ig.ImVec4(255,255,255,1)
+	)
 
 	if ig.igCollapsingHeader'regions' then
 		ig.igPushIDStr'regions'
@@ -871,8 +1165,8 @@ function App:updateGUI()
 			if ig.igCollapsingHeader('region '..region.index) then
 				ig.igPushIDInt(i)
 				checkboxTooltip('Show Region '..region.index, region, 'show')
-				inputFloatToolkit('xofs', region.ofs, 'x')
-				inputFloatToolkit('yofs', region.ofs, 'y')
+				inputFloatTooltip('xofs', region.ofs, 'x')
+				inputFloatTooltip('yofs', region.ofs, 'y')
 				if i < #self.regions then
 					ig.igSeparator()
 				end
@@ -885,54 +1179,28 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'tilesets' then
 		ig.igPushIDStr'tilesets'
 		for i,tileSet in ipairs(self.sm.tileSets) do
-			ig.igButton(' ')
-			if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
-				ig.igBeginTooltip()
-				ig.igText('tileset '..tileSet.index)
-				local tex = tileSet.tex
-				if tex then
-					local texIDPtr = ffi.cast('void*',ffi.cast('intptr_t',tex.id))
-					ig.igImage(
-						texIDPtr,
-						ig.ImVec2(tex.width, tex.height),
-						ig.ImVec2(0, -1),
-						ig.ImVec2(1, 0)
-					)
-				end
-				ig.igEndTooltip()
+			if tileSet.tex then 
+				makeTooltipImage(
+					'tileset '..tileSet.index,
+					tileSet.tex
+				)
+				ig.igSameLine()
 			end
-			ig.igSameLine()
-			ig.igButton(' ')
-			if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
-				ig.igBeginTooltip()
-				ig.igText('tileset '..tileSet.index..' palette')
-				local paletteTex = tileSet.palette.tex
-				if paletteTex then
-					local texIDPtr = ffi.cast('void*',ffi.cast('intptr_t',paletteTex.id))
-					ig.igImage(
-						texIDPtr,
-						ig.ImVec2(paletteTex.width, 16),
-						ig.ImVec2(0, 0),
-						ig.ImVec2(1, 1)
-					)
-				end
-				ig.igEndTooltip()
+			if tileSet.palette.tex then
+				makeTooltipImage(
+					'tileset '..tileSet.index..' palette',
+					tileSet.palette.tex,
+					palette.width, 16
+				)
+				ig.igSameLine()
 			end
-			ig.igSameLine()
-			ig.igButton(' ')
-			if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
-				ig.igBeginTooltip()
-				ig.igText('tileset '..tileSet.index..' graphicsTiles')
-				if tileSet.graphicsTileTex then
-					local texIDPtr = ffi.cast('void*',ffi.cast('intptr_t',tileSet.graphicsTileTex.id))
-					ig.igImage(
-						texIDPtr,
-						ig.ImVec2(tileSet.graphicsTileTex.width, tileSet.graphicsTileTex.height),
-						ig.ImVec2(0, -1),
-						ig.ImVec2(1, 0)
-					)			
-				end
-				ig.igEndTooltip()
+			if tileSet.graphicsTileTex then
+				makeTooltipImage(
+					'tileset '..tileSet.index..' graphicsTiles',
+					tileSet.graphicsTileTex,
+					nil, nil,
+					ig.ImVec4(255,255,255,1)
+				)
 			end
 		end
 		ig.igPopID()

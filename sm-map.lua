@@ -2382,17 +2382,7 @@ function SMMap:mapReadTileSets()
 	}
 	-- decompresesd size is 0x3000
 print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:sizeof()))
-	
-	--common room elements
-	self.commonRoomTilemaps = Blob{
-		sm = self,
-		addr = commonRoomTilemapAddr24:topc(),
-		type = 'tilemapElem_t',
-		compressed = true,
-	}
-	-- size is 0x800 ... so 256 8bit tile infos
-	-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
+
 
 	-- if this happens then your rom's code has been modified to the point that the common room tilemap loading is somewhere else, or is pointed to somewhere else
 	-- if these don't match then the rom has enough asm modifications that it probably has its common room tilemap somewhere else	
@@ -2411,6 +2401,17 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 			print(" WARNING - the value at location "..('%02x:%04x'):format(frompc(loc.bankaddr))..", is "..('%02x'):format(bankvalue)..", should be "..('%02x'):format(commonRoomTilemapAddr24.bank))
 		end	
 	end
+
+	--common room elements
+	self.commonRoomTilemaps = Blob{
+		sm = self,
+		addr = commonRoomTilemapAddr24:topc(),
+		type = 'tilemapElem_t',
+		compressed = true,
+	}
+	-- size is 0x800 ... so 256 8bit tile infos
+	-- in my 32-tiles-per-row pics, this is 8 rows
+print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
 
 	-- load all the tileset address info that is referenced by per-room stuff
 	-- do this before any mapAddRoom calls
