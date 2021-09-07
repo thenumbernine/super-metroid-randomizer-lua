@@ -934,23 +934,27 @@ end
 
 -- code is lua table, 1-based
 local function disasm(addr, ptr, maxlen)
+--[[ TODO
+	local bank, ofs = frompc(addr)
+	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
+--]]	
 	flag[0] = 0
 	local ss = table()
-	local ofs = 0
-	while ofs < maxlen do
+	local i = 0
+	while i < maxlen do
 		local str, n = getLineStr(
-			addr+ofs,
+			addr+i,
 			flag,
 			-- TODO ... how about reading over the end ...
 			-- seems like I should always pad the incoming buffer by 3 bytes
 			-- until then, i'll pad the next function
-			ptr[ofs],
-			ofs+1 < maxlen and ptr[ofs+1] or 0x00,
-			ofs+2 < maxlen and ptr[ofs+2] or 0x00,
-			ofs+3 < maxlen and ptr[ofs+3] or 0x00
+			ptr[i],
+			i+1 < maxlen and ptr[i+1] or 0x00,
+			i+2 < maxlen and ptr[i+2] or 0x00,
+			i+3 < maxlen and ptr[i+3] or 0x00
 		)
 		ss:insert(str)
-		ofs = ofs + n
+		i = i + n
 	end
 	return ss:concat'\n'
 end
@@ -959,22 +963,26 @@ end
 reads instructions, stops at RTS, returns contents in a Lua table
 (TODO return a uint8_t[] instead?)
 (TODO generate the disasm string as you go?)
+(TODO follow branches, create a jump/call graph)
 --]]
-local function readUntilRet(addr, rom, maxlen)
+local function readUntilRet(addr, rom)
+	local bank, ofs = frompc(addr)
+	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
+	
 	flag[0] = 0
 	ptr = rom + addr
-	local ofs = 0
-	while ofs < maxlen do
-		local instr = instrInfo[ptr[ofs]]
-		local _ , n = instr.eat(
-			addr+ofs,
+	local i = 0
+	while i < maxlen do
+		local instr = instrInfo[ptr[i]]
+		local _, n = instr.eat(
+			addr+i,
 			flag,
-			ptr+ofs
+			ptr+i
 		)
-		ofs = ofs + n
+		i = i + n
 		if instr.name == 'RTS' then break end
 	end
-	return byteArraySubset(rom, addr, ofs)
+	return byteArraySubset(rom, addr, i)
 end
 
 return {

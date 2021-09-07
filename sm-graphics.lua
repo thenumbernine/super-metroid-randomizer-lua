@@ -19,6 +19,9 @@ local SMGraphics = {}
 local graphicsTileSizeInPixels = 8
 local graphicsTileSizeInBytes = graphicsTileSizeInPixels * graphicsTileSizeInPixels / 2	-- 4 bits per pixel ... = 32 bytes
 
+-- let other SM traits use these
+SMGraphics.graphicsTileSizeInPixels = graphicsTileSizeInPixels 
+SMGraphics.graphicsTileSizeInBytes = graphicsTileSizeInBytes 
 
 
 function SMGraphics:graphicsSwizzleTileBitsInPlace(ptr, size)
@@ -329,23 +332,6 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- and from 0xe980 - end of page is free
 
 
-	-- samus tiles ...
-	-- where are the tilemaps?
-	self.samusDeathTiles = Blob{sm=self, addr=topc(0x9b, 0x8000), count=0x9400-0x8000}	-- and then a lot more other stuff til the end of bank
-	self.samusPalettes = range(0x9400, 0xa3c0, 0x20):mapi(function(ofs)
-		return Palette{sm=self, addr=topc(0x9b, ofs), count=0x10}
-	end)
-	-- why is the last one not 16 in size?  garbage?
-	self.samusPalettes:insert(Palette{sm=self, addr=topc(0x9b, 0xa3c0), count=6})
-	-- then more padding	
-	self.samus0Tiles = Blob{sm=self, addr=topc(0x9b, 0xe000), count=0xfda0-0xe000}	-- then padding to end of bank
-	self.samus1Tiles = Blob{sm=self, addr=topc(0x9c, 0x8000), count=0xfa80-0x8000}	-- then padding to end of bank
-	self.samus2Tiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf780-0x8000}	-- "
-	self.samus3Tiles = Blob{sm=self, addr=topc(0x9e, 0x8000), count=0xf6c0-0x8000}	-- "
-	self.samus4Tiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf740-0x8000}	-- "
-
-
-
 	-- 1-based, so -1 to get the region #
 	-- 0x1000 = 4096 = 32x64 tiles
 	-- and then the bottom half 32x32 is moved to the right of the top half
@@ -365,12 +351,6 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- and then b6:f200 on is free
 
 	for _,tiles in ipairs{
-		self.samusDeathTiles,
-		self.samus0Tiles,
-		self.samus1Tiles,
-		self.samus2Tiles,
-		self.samus3Tiles,
-		self.samus4Tiles,
 		self.itemTiles,
 		self.pauseScreenTiles,
 	} do
@@ -384,36 +364,18 @@ function SMGraphics:graphicsInit()
 end
 
 function SMGraphics:graphicsSavePauseScreenImages()
-	for _,info in ipairs(
-		table()
-		:append(
-			table{
-				{name='samusDeathTiles', palette=self.samusPalettes[3]},
-				{name='samus0Tiles', tilesWide=3},
-				{name='samus1Tiles', tilesWide=4},
-				{name='samus2Tiles', tilesWide=4},
-				{name='samus3Tiles', tilesWide=2},
-				{name='samus4Tiles', tilesWide=2},
-			}:mapi(function(info)
-				info.tiles = self[info.name]
-				info.palette = info.palette or self.samusPalettes[1]
-				return info
-			end)
-		):append{
-			{
-				name = 'itemtiles',
-				tiles = self.itemTiles,
-				palette = self.pauseScreenPalette,
-				tilesWide = 2,
-				tilesWide2 = 2,
-			},
-			{
-				name = 'pausescreentiles',
-				tiles = self.pauseScreenTiles,
-				palette = self.pauseScreenPalette,
-			},
-		}
-	) do
+	for _,info in ipairs{
+		{
+			name = 'itemtiles',
+			tiles = self.itemTiles,
+			tilesWide = 2,
+			tilesWide2 = 2,
+		},
+		{
+			name = 'pausescreentiles',
+			tiles = self.pauseScreenTiles,
+		},
+	} do
 		assert(info.tiles:sizeof() % graphicsTileSizeInBytes == 0)
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
 	
@@ -424,7 +386,7 @@ function SMGraphics:graphicsSavePauseScreenImages()
 			img = self:graphicsWrapRows(img, img.width, info.tilesWide2)
 		end
 		
-		img = self:graphicsBitmapIndexedToRGB(img, info.palette)
+		img = self:graphicsBitmapIndexedToRGB(img, self.pauseScreenPalette)
 		
 		img:save(info.name..'.png')
 	end
@@ -463,14 +425,12 @@ function SMGraphics:graphicsSavePauseScreenImages()
 		):append(
 			self.regionTilemaps:mapi(function(regionTilemap,i)
 				return {
-					destName = 'regionTilemap'..(i-1),
+					destName = 'regions/regionTilemap'..(i-1),
 					tilemap = regionTilemap,
 					tilemapWidth = 32,
 					tilemapHeight = 64,
 					palette = self.pauseScreenPalette,
-					process = function(sm, img)
-						return sm:graphicsWrapRows(img, 32*8, 2)
-					end,
+					tilesWide2 = 2,
 					tiles = self.pauseScreenTiles,
 				}
 			end)
@@ -505,8 +465,8 @@ function SMGraphics:graphicsSavePauseScreenImages()
 			img, 
 			info.palette
 		)
-		if info.process then
-			img = info.process(self, img)
+		if info.tilesWide2 then
+			img = self:graphicsWrapRows(img, img.width, info.tilesWide2)
 		end
 		img:save(info.destName..'.png')
 	end
@@ -529,19 +489,8 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 		tilemap:addMem(mem, 'scrollingSkyTilemaps')
 	end
 
-	self.samusDeathTiles:addMem(mem, 'samusDeathTiles')
-	for i,palette in ipairs(self.samusPalettes) do
-		palette:addMem(mem, 'samusPalette'..(i-1))
-	end
-	self.samus0Tiles:addMem(mem, 'samus0Tiles')
-	self.samus1Tiles:addMem(mem, 'samus1Tiles')
-	self.samus2Tiles:addMem(mem, 'samus2Tiles')
-	self.samus3Tiles:addMem(mem, 'samus3Tiles')
-	self.samus4Tiles:addMem(mem, 'samus4Tiles')
-
-
 	for i,regionTilemap in ipairs(self.regionTilemaps) do
-		regionTilemap:addMem(mem, 'regions/region '..(i-1)..' tilemap')
+		regionTilemap:addMem(mem, 'region '..(i-1)..' tilemap')
 	end
 
 	self.pauseScreenTiles:addMem(mem, 'pause and equip screen graphics tiles')
@@ -549,11 +498,6 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 	self.equipScreenTilemap:addMem(mem, 'equip screen tilemap')
 	self.pauseScreenPalette:addMem(mem, 'pause screen palette')
 end
-
-
--- let SMGraphics use these
-SMGraphics.graphicsTileSizeInPixels = graphicsTileSizeInPixels 
-SMGraphics.graphicsTileSizeInBytes = graphicsTileSizeInBytes 
 
 
 return SMGraphics 

@@ -513,8 +513,13 @@ g:
 		end)
 	end
 	if config.graphicsSavePauseScreenImages then
-		timer('write out equip screen images', function()
+		timer('write out pause screen images', function()
 			sm:graphicsSavePauseScreenImages()
+		end)
+	end
+	if config.samusSaveImages then
+		timer('write out samus images', function()
+			sm:samusSaveImages()
 		end)
 	end
 	timer('write original ROM memory map', function()
@@ -524,7 +529,6 @@ g:
 
 	if config.writeOutDisasm then
 		timer('write out disasm', function()
-			local pagelen = 0x8000
 			for _,bank in ipairs(table{
 				0x80,	-- system routines
 				0x81,	-- SRAM
@@ -538,7 +542,7 @@ g:
 			}:append(range(0x89, 0xdf))) do
 				-- you know, data could mess this up 
 				local addr = topc(bank, 0x8000)
-				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, rom+addr, pagelen, pagelen)
+				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, rom+addr, 0x8000)
 			end
 		end)
 	end

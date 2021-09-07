@@ -977,7 +977,7 @@ function Door:init(args)
 	and self.ptr.code > 0x8000 
 	then
 		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
-		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom, 0x100)
+		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom)
 	end
 end
 
@@ -2095,7 +2095,7 @@ function SMMap:mapAddLayerHandling(addr)
 	if layerHandling then return layerHandling end
 	local layerHandling = {
 		addr = addr,
-		code = disasm.readUntilRet(addr, self.rom, 0x100),
+		code = disasm.readUntilRet(addr, self.rom),
 		roomStates = table(),
 	}
 	self.layerHandlings:insert(layerHandling)
@@ -4404,7 +4404,7 @@ function SMMap:mapPrint()
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
 			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodePageOffset)
-			local code = disasm.readUntilRet(roomSelectCodeAddr, rom, 0x100)
+			local code = disasm.readUntilRet(roomSelectCodeAddr, rom)
 			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
 		end
 		for _,door in ipairs(m.doors) do
@@ -4546,7 +4546,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.select.testCodePageOffset)
-			local code = disasm.readUntilRet(addr, rom, 100)
+			local code = disasm.readUntilRet(addr, rom)
 			mem:add(addr, ffi.sizeof(code), 'room select code', m)
 		end
 		

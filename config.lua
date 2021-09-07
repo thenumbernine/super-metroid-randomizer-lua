@@ -11,7 +11,8 @@ return {
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	graphicsSavePauseScreenImages = true,
+	graphicsSavePauseScreenImages = false,
+	samusSaveImages = true,
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,

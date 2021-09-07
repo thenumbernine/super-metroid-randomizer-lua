@@ -16,8 +16,12 @@ local SM = class(
 	require 'sm-items',
 	require 'sm-map',
 	require 'sm-weapons',
-	require 'sm-graphics'
+	require 'sm-graphics',
+	require 'sm-samus'
 )
+
+local nameAddr = 0x7fc0
+local nameLen = 0x15
 
 --[[
 rom = c string of the ROM
@@ -25,10 +29,11 @@ rom = c string of the ROM
 function SM:init(rom)
 	self.rom = rom
 	
-	local name = ffi.string(rom + 0x7fc0, 0x15)
+	local name = ffi.string(rom + nameAddr, nameLen)
 	print(name)
 
 	self:graphicsInit()
+	self:samusInit()
 	self:weaponsInit()
 	self:enemiesInit()
 	self:mapInit()		-- do this before itemsInit
@@ -37,8 +42,10 @@ end
 
 function SM:buildMemoryMap()
 	local mem = MemoryMap()
+	mem:add(nameAddr, nameLen, 'game name') 
 	-- TODO make this return a 'memorymap' object that prints out
 	self:graphicsBuildMemoryMap(mem)
+	self:samusBuildMemoryMap(mem)
 	self:weaponsBuildMemoryMap(mem)
 	self:enemiesBuildMemoryMap(mem)
 	self:itemsBuildMemoryMap(mem)
