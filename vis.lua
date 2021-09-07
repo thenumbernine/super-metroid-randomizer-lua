@@ -298,7 +298,8 @@ function App:initGL()
 
 	-- make textures of the region maps
 	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseScreenTiles.data, self.sm.pauseScreenTiles:sizeof())
-
+	self.itemTileTex = self:graphicsTilesToTex(self.sm.itemTiles.data, self.sm.itemTiles:sizeof(), 8)
+	
 	self.view.ortho = true
 	self.view.znear = -1e+4
 	self.view.zfar = 1e+4
@@ -384,12 +385,18 @@ size = size of buffer in bytes
 graphicsTileSizeInPixels * graphicsTileSizeInPixels packed into a higher size
 higher size is (graphicsTileSizeInPixels * tilemapElemSizeX) * (whatever's left)
 --]]
-function App:graphicsTilesToTex(ptr, size)
+function App:graphicsTilesToTex(ptr, size, tilemapElemSizeX)
+	tilemapElemSizeX = tilemapElemSizeX or 16
 	assert(size % graphicsTileSizeInBytes == 0, "size should be aligned to "..graphicsTileSizeInBytes)
 	local numGraphicTiles = size / graphicsTileSizeInBytes
-	local tilemapElemSizeX = 16
 	local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
-	assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
+	if tilemapElemSizeX * tilemapElemSizeY ~= numGraphicTiles then
+		error(require 'ext.tolua'{
+			tilemapElemSizeX = tilemapElemSizeX,
+			tilemapElemSizeY = tilemapElemSizeY, 
+			numGraphicTiles = numGraphicTiles,
+		})
+	end
 	local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
 	for i=0,numGraphicTiles-1 do
 		tilemap[i].graphicsTileIndex = i
@@ -1222,6 +1229,14 @@ function App:updateGUI()
 		nil, nil,
 		ig.ImVec4(255,255,255,1)
 	)
+	ig.igSameLine()
+	makeTooltipImage(
+		'item tiles',
+		self.itemTileTex,
+		nil, nil,
+		ig.ImVec4(255,255,255,1)
+	)
+
 
 	if ig.igCollapsingHeader'regions' then
 		ig.igPushIDStr'regions'

@@ -287,12 +287,33 @@ end
 
 
 function SMGraphics:graphicsInitPauseScreen()
-	self.itemTiles = Blob{sm=self, addr=topc(0x89, 0x800), count=0x9100-0x8000}
+	
+	--[[
+	items (2x images of 2x2 graphicsTiles (which are 8x8 each))
+	in order:
+	bombs
+	gravity suit
+	spring ball
+	varia suit
+	hi-jump
+	screw attack
+	space jump
+	morph ball
+	grappling
+	x-ray
+	speed
+	charge
+	ice
+	wave
+	plasma
+	spazer
+	reserve
+	--]]
+	self.itemTiles = Blob{sm=self, addr=topc(0x89, 0x8000), count=0x9100-0x8000}
 	self:graphicsSwizzleTileBitsInPlace(self.itemTiles.data, self.itemTiles:sizeof())
 
 	-- what uses this?
 	self.fxTilemapPalette = Palette{sm=self, addr=topc(0x89, 0xaa02), count=(0xab02-0xaa02)/2}
-
 
 	-- 1-based, so -1 to get the region #
 	-- 0x1000 = 4096 = 
