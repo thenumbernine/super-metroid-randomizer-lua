@@ -401,7 +401,7 @@ function App:graphicsTilesToTex(ptr, size)
 	local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
 	local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
 	local img = Image(imgwidth, imgheight, 1, 'unsigned char')
-	self.sm:convertTilemapToBitmap(
+	self.sm:graphicsConvertTilemapToBitmap(
 		img.buffer,			-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
 		tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
 		ptr,				-- graphicsTiles = 

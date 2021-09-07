@@ -2145,7 +2145,7 @@ graphicsTiles should be tileSet.graphicsTileVec.v
 count should be tileSet.tilemapByteVec.size/8 for tiles (4 corner graphicsTiles x 2 bytes per graphicsTile lookup), or 1 for bg_t's, or whatever else
 
 --]]
-function SMMap:convertTilemapToBitmap(
+function SMMap:graphicsConvertTilemapToBitmap(
 	dst,
 	tilemap,
 	graphicsTiles,
@@ -2209,26 +2209,6 @@ function SMMap:convertTilemapToBitmap(
 	end
 	--]]
 end
-
-function SMMap:indexedBitmapToRGB(dstRgbBmp, srcIndexedBmp, imgwidth, imgheight, palette)
-	for y=0,imgheight-1 do
-		for x=0,imgwidth-1 do
-			local i = x + imgwidth * y
-			local paletteIndex = srcIndexedBmp[i]
-			if bit.band(paletteIndex, 0xf) > 0 then	-- is this always true?
-				local rgb = palette.data[paletteIndex]
-				dstRgbBmp[0 + 3 * i] = math.floor(rgb.r*255/31)
-				dstRgbBmp[1 + 3 * i] = math.floor(rgb.g*255/31)
-				dstRgbBmp[2 + 3 * i] = math.floor(rgb.b*255/31)
-			else
-				dstRgbBmp[0 + 3 * i] = 0
-				dstRgbBmp[1 + 3 * i] = 0
-				dstRgbBmp[2 + 3 * i] = 0
-			end
-		end
-	end
-end
-
 
 -- right now I'm un-interleaving the input data
 -- but maybe I should just leave it as is and cast it to this?
@@ -2556,7 +2536,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 
 		
 		-- TODO don't do this unless you're writing out the textured map image?
-		self:convertTilemapToBitmap(
+		self:graphicsConvertTilemapToBitmap(
 			tileSet.tileGfxBmp,
 			tilemapByteVec.v,		-- tilemapElem_t[tileGfxCount][2][2]
 			graphicsTileVec.v,		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
@@ -3320,7 +3300,7 @@ print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilema
 	bgBmp.tilemap = tilemap
 	bgBmp.dataBmp = ffi.new('uint8_t[?]', graphicsTileSizeInPixels * graphicsTileSizeInPixels * tilemap.width * tilemap.height)
 
-	self:convertTilemapToBitmap(
+	self:graphicsConvertTilemapToBitmap(
 		bgBmp.dataBmp,
 		tilemap.data,
 		tileSet.graphicsTileVec.v,
@@ -3973,32 +3953,12 @@ function SMMap:mapSaveGraphicsTileSets()
 			end
 			img:save('tileset/tileSet='..('%02x'):format(tileSet.index)..' tilegfx.png')
 			imgused:save('tileset used/tileSet='..('%02x'):format(tileSet.index)..' tilegfx used.png')
-		
+	
 			do
-				local numGraphicTiles = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
-				local tilemapElemSizeX = 16
-				local tilemapElemSizeY = math.floor(numGraphicTiles / tilemapElemSizeX)
-				assert(tilemapElemSizeX * tilemapElemSizeY == numGraphicTiles)
-				local tilemap = ffi.new('tilemapElem_t[?]', tilemapElemSizeX * tilemapElemSizeY)
-				for i=0,numGraphicTiles-1 do
-					tilemap[i].graphicsTileIndex = i
-					tilemap[i].colorIndexHi = 0
-					tilemap[i].xflip = 0
-					tilemap[i].yflip = 0
-				end
-				local imgwidth = graphicsTileSizeInPixels * tilemapElemSizeX
-				local imgheight = graphicsTileSizeInPixels * tilemapElemSizeY
-				local tilemapElemIndexedBmp = ffi.new('uint8_t[?]', imgwidth * imgheight)
-				self:convertTilemapToBitmap(
-					tilemapElemIndexedBmp,		-- dst uint8_t[graphicsTileSizeInPixels][numGraphicTiles * graphicsTileSizeInPixels]
-					tilemap,					-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
-					tileSet.graphicsTileVec.v,	-- graphicsTiles = 
-					tilemapElemSizeX,			-- tilemapElemSizeX
-					tilemapElemSizeY,			-- tilemapElemSizeY
-					1)							-- count
-				local graphicsTileimg = Image(imgwidth, imgheight, 3, 'unsigned char')
-				self:indexedBitmapToRGB(graphicsTileimg.buffer, tilemapElemIndexedBmp, imgwidth, imgheight, tileSet.palette)
-				graphicsTileimg:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
+				assert(tileSet.graphicsTileVec.size % graphicsTileSizeInBytes == 0)
+				local tilesWide = tileSet.graphicsTileVec.size / graphicsTileSizeInBytes
+				local img = self:graphicsCreateRGBBitmapForTiles(tileSet.graphicsTileVec.v, tilesWide, tileSet.palette)
+				img:save('graphictiles/graphictile='..('%02x'):format(tileSet.index)..'.png')
 			end
 		end
 	end

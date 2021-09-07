@@ -8,10 +8,10 @@ return {
 	mapSaveImageTextured = false,
 	mapSaveImageTextured_HighlightItems = false,
 	mapSaveGraphicsMode7 = false,
-	mapSaveGraphicsTileSets = false,
+	mapSaveGraphicsTileSets = true,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	graphicsSaveEquipScreenImages = false,
+	graphicsSaveEquipScreenImages = true,
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
