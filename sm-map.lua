@@ -970,7 +970,8 @@ function Door:init(args)
 	
 	self.type = ctype
 	self.ptr = ffi.cast(ctype..'*', data)
-	
+	self.obj = ffi.new(ctype, self.ptr[0])
+
 	if ctype == 'door_t' 
 	and self.ptr.code > 0x8000 
 	then
@@ -1191,7 +1192,11 @@ if done then break end
 		end
 	
 		if config.mapReadRoomBlockData then
-			rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
+			xpcall(function()
+				rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
+			end, function(err)
+				print(err..'\n'..debug.traceback())
+			end)
 		end
 	end
 
@@ -2072,17 +2077,12 @@ function SMMap:mapAddRoomBlockData(addr, m)
 		return roomBlockData 
 	end
 
-	local roomBlockData
-	xpcall(function()
-		roomBlockData = RoomBlocks{
-			sm = self,
-			addr = addr,
-			m = m,
-		}
-		self.roomblocks:insert(roomBlockData)
-	end, function(err)
-		print(err..'\n'..debug.traceback())
-	end)
+	local roomBlockData = RoomBlocks{
+		sm = self,
+		addr = addr,
+		m = m,
+	}
+	self.roomblocks:insert(roomBlockData)
 	return roomBlockData
 end
 

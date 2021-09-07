@@ -24,7 +24,8 @@ local SM = require 'sm'
 local useBakedLayer3Background = true
 
 
-local cmdline = require 'ext.cmdline'(...)
+--local cmdline = require 'ext.cmdline'(...)
+local infilename = ... or 'sm.sfc'
 
 local App = class(require 'glapp.orbit'(require 'imguiapp'))
 
@@ -40,13 +41,14 @@ local roomSizeInPixels = SM.roomSizeInPixels
 local tileSetRowWidth = 32
 
 -- global, for gui / table access
-editorDrawLayer2 = false
 editorDrawForeground = true
-editorDrawPLMs = false
-editorDrawEnemySpawnSets = false
-editorDrawDoors = false
+editorDrawLayer2 = true
+editorDrawPLMs = true
+editorDrawEnemySpawnSets = true
+editorDrawDoors = true
 
 -- [==[ can't get rid of this yet until I store the tilemaps separately as well
+-- but turns out baking the palette was the biggest slowdown
 do
 	local old = SM.mapGetBitmapForTileSetAndTileMap
 	function SM:mapGetBitmapForTileSetAndTileMap(...)
@@ -74,7 +76,7 @@ end
 function App:initGL()
 	App.super.initGL(self)
 
-	local romstr = file[cmdline['in'] or 'sm.sfc']	
+	local romstr = file[infilename]
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
 		print('skipping rom file header')
@@ -661,17 +663,17 @@ end
 								
 									-- draw an arrow or something on the map where the door drops us off at
 									-- door.destRoom is the room
-									-- draw it at door.ptr.screenX by door.ptr.screenY
+									-- draw it at door.obj.screenX by door.obj.screenY
 									-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
-									local i = door.ptr.screenX
-									local j = door.ptr.screenY
-									local dir = bit.band(door.ptr.direction, 3)	-- 0-based
+									local i = door.obj.screenX
+									local j = door.obj.screenY
+									local dir = bit.band(door.obj.direction, 3)	-- 0-based
 									local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
 										
 									local k = 2
 										
-									local pi, pj
+									local pi, pj = 0, 0
 									if dir == 0 then		-- enter from left
 										pi = k
 										pj = bit.rshift(blocksPerRoom, 1)
