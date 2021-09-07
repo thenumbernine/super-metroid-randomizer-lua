@@ -31,7 +31,9 @@ local App = class(require 'glapp.orbit'(require 'imguiapp'))
 
 App.title = 'Super Metroid Viewer'
 
+
 local blockSizeInPixels = SM.blockSizeInPixels
+local blocksPerRoom = SM.blocksPerRoom
 local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels 
 local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes 
 local roomSizeInPixels = SM.roomSizeInPixels 
@@ -111,7 +113,7 @@ function App:initGL()
 		region.ymax = math.min(region.ymax, m.obj.y + m.obj.height)
 	end
 
-	self:setRegionOffsets'original'
+	self:setRegionOffsets(1)
 
 	self.roomCurrentRoomStates = {}
 
@@ -332,35 +334,69 @@ void main() {
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 glreport'here'
+
+	self.mouseViewPos = vec2f()
 end
 
 local predefinedRegionOffsets = {
 -- default arrangement.  too bad crateria right of wrecked ship isn't further right to fit wrecked ship in
-	original = {
-		{0, 0},
-		{-3, 19},
-		{28, 39},
-		{34, -10},
-		{25, 19},
-		{-3, 1},
-		{15, -18},
-		{0, 0},
+	{
+		name = 'Original',
+		ofs = {
+			{0, 0},
+			{-3, 19},
+			{28, 39},
+			{34, -10},
+			{25, 19},
+			{-3, 1},
+			{15, -18},
+			{0, 0},
+		},
 	},
-	vitality = {
-		{21, 43},
-		{15, 23},
-		{57, 12},
-		{16, -1},
-		{-27, 28},
-		{40, 59},
-		{0, 0},
-		{0, 0},
+	{
+		name = 'Vitality',
+		ofs = {
+			{21, 43},
+			{15, 23},
+			{57, 12},
+			{16, -1},
+			{-27, 28},
+			{40, 59},
+			{0, 0},
+			{0, 0},
+		},
+	},
+	{
+		name = 'Golden Dawn',
+		ofs = {
+			{0, 0},
+			{-54, -3},
+			{4, 9},
+			{-48, -38},
+			{-33, -16},
+			{-11, -32},
+			{15, -18},
+			{-4, -32},
+		},
+	},
+	{
+		name = 'Metroid Super Zero Mission',
+		ofs = {
+			{0,0},
+			{-1,23},
+			{27,33},
+			{33,-15},
+			{47,14},
+			{-15,13},
+			{0,0},
+			{0,0},
+		},
 	},
 }
 
-function App:setRegionOffsets(which)
-	local predef = predefinedRegionOffsets[which] or predefinedRegionOffsets.original
-	for i,ofs in ipairs(predef) do
+function App:setRegionOffsets(index)
+	local predef = predefinedRegionOffsets[index]
+	for i,ofs in ipairs(predef.ofs) do
 		self.regions[i].ofs:set(ofs[1], ofs[2])
 	end
 end
@@ -369,8 +405,6 @@ end
 function App:update()
 
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
-
-	local blocksPerRoom = SM.blocksPerRoom
 
 	local view = self.view
 	local aspectRatio = self.width / self.height
@@ -715,6 +749,71 @@ end
 	App.super.update(self)
 end
 
+function App:event(...)
+	local viewBeforeSize = self.view.orthoSize
+	local viewBeforeX = self.view.pos.x
+	local viewBeforeY = self.view.pos.y
+
+	App.super.event(self, ...)
+
+
+	local view = self.view
+	local aspectRatio = self.width / self.height
+	local viewxmin, viewxmax, viewymin, viewymax = view:getBounds(aspectRatio )
+	viewxmin = view.pos.x - view.orthoSize * aspectRatio
+	viewxmax = view.pos.x + view.orthoSize * aspectRatio
+	viewymin = view.pos.y - view.orthoSize
+	viewymax = view.pos.y + view.orthoSize
+
+	self.mouseViewPos:set(
+		(1 - self.mouse.pos.x) * viewxmin + self.mouse.pos.x * viewxmax,
+		(1 - self.mouse.pos.y) * viewymin + self.mouse.pos.y * viewymax
+	)
+	
+	if self.mouse.leftDown then
+		if not self.mouse.lastLeftDown then
+print('self.mouseViewPos', self.mouseViewPos)			
+			self.mouseDownOnRegion = nil
+			for _,region in ipairs(self.regions) do
+				for _,m in ipairs(region.rooms) do
+					local w = m.obj.width
+					local h = m.obj.height
+					
+					-- in room block units
+					local roomxmin = m.obj.x + region.ofs.x
+					local roomymin = m.obj.y + region.ofs.y
+					local roomxmax = roomxmin + w
+					local roomymax = roomymin + h
+					if self.mouseViewPos.x >= roomxmin * blocksPerRoom
+					and self.mouseViewPos.x <= roomxmax * blocksPerRoom
+					and self.mouseViewPos.y >= -roomymax * blocksPerRoom
+					and self.mouseViewPos.y <= -roomymin * blocksPerRoom
+					then
+print('clicking on region', region.index)						
+						self.mouseDownOnRegion = region
+						break
+					end
+				end
+				if self.mouseDownOnRegion then break end
+			end
+		else
+			local mouseDeltaX = self.mouse.deltaPos.x * (viewxmax - viewxmin)
+			local mouseDeltaY = self.mouse.deltaPos.y * (viewymax - viewymin)
+			if self.mouseDownOnRegion then
+				self.mouseDownOnRegion.ofs.x = self.mouseDownOnRegion.ofs.x + mouseDeltaX / blocksPerRoom
+				self.mouseDownOnRegion.ofs.y = self.mouseDownOnRegion.ofs.y - mouseDeltaY / blocksPerRoom
+			
+				-- if we are dragging then don't let orbit control view
+				self.view.orthoSize = viewBeforeSize
+				self.view.pos.x = viewBeforeX
+				self.view.pos.y = viewBeforeY
+			end
+		end
+	else
+		-- TODO highlight region under mouse?
+	end
+end
+
 local bool = ffi.new('bool[1]')
 local function checkboxTooltip(name, t, k)
 	ig.igPushIDStr(name)
@@ -760,11 +859,10 @@ function App:updateGUI()
 	ig.igSameLine()
 	checkboxTooltip('Draw Doors', _G, 'editorDrawDoors')
 
-	if ig.igButton'original' then
-		self:setRegionOffsets'original'
-	end
-	if ig.igButton'vitality' then
-		self:setRegionOffsets'vitality'
+	for i,info in ipairs(predefinedRegionOffsets) do
+		if ig.igButton(info.name) then
+			self:setRegionOffsets(i)
+		end
 	end
 
 	if ig.igCollapsingHeader'regions' then
