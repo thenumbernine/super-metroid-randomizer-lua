@@ -1,8 +1,4 @@
 return {
-	
-	-- this is needed for the rest of the map room stuff 
-	mapReadRoomBlockData = true,
-
 	-- saving data in the original rom
 	mapSaveImageInformative = false,
 	mapSaveImageTextured = false,
@@ -36,7 +32,7 @@ return {
 	-- for the original rom:
 	-- whether to chop out rooms that overlap each other in the original layout
 	-- doesn't do much good for custom roms
-	mapOmitOverlappingRoomsInOriginal = true,
+	mapOmitOverlappingRoomsInOriginal = false,
 
 	-- for the original rom:
 	-- remove unused rooms, specifically 2-3d and 7-00

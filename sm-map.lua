@@ -1192,13 +1192,11 @@ if done then break end
 			rs.layerHandlingPageOffset.roomStates:insert(rs)
 		end
 	
-		if config.mapReadRoomBlockData then
-			xpcall(function()
-				rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
-			end, function(err)
-				print(err..'\n'..debug.traceback())
-			end)
-		end
+		xpcall(function()
+			rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
+		end, function(err)
+			print(err..'\n'..debug.traceback())
+		end)
 	end
 
 	-- door addrs
@@ -1536,7 +1534,6 @@ function RoomBlocks:init(args)
 	local head = byteArraySubset(self.data, ofs, 2) ofs = ofs + 2
 	
 	self.offsetToCh3 = ffi.cast('uint16_t*', head)[0]
-	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
 
 	-- offsetToCh3 is the offset to channel 3 of the blocks
 	-- and is usually = 2*w*h, sometimes >2*w*h
@@ -1544,6 +1541,8 @@ function RoomBlocks:init(args)
 
 	local w = m.obj.width * blocksPerRoom
 	local h = m.obj.height * blocksPerRoom
+	
+	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
 
 	-- this is just 16 * room's (width, height)
 	self.width = w
