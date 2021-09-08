@@ -1523,7 +1523,10 @@ RoomBlocks.compressed = true
 function RoomBlocks:init(args)
 	assert(args.compressed == nil)
 	assert(args.type == nil)
+	
 	RoomBlocks.super.init(self, args)
+	
+	local dataSize = ffi.sizeof(self.data)
 	local m = args.m
 
 	self.rooms = table()
@@ -1531,10 +1534,13 @@ function RoomBlocks:init(args)
 
 	local ofs = 0
 	local head = byteArraySubset(self.data, ofs, 2) ofs = ofs + 2
-	local headval = ffi.cast('uint16_t*', head)[0]
-	-- headval is always 2 * w * h
-	-- (except one room where it is (2+2/3) * w * h
-	-- does this mean ch3 is optional?
+	
+	self.offsetToCh3 = ffi.cast('uint16_t*', head)[0]
+	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
+
+	-- offsetToCh3 is the offset to channel 3 of the blocks
+	-- and is usually = 2*w*h, sometimes >2*w*h
+	--  in that case ... what's in the padding?
 
 	local w = m.obj.width * blocksPerRoom
 	local h = m.obj.height * blocksPerRoom
@@ -1543,10 +1549,10 @@ function RoomBlocks:init(args)
 	self.width = w
 	self.height = h
 
-	print('head', headval)
+	print('offset to ch3', self.offsetToCh3)
 	print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
-	print('head / numblocks', headval / (w * h))
-	print('decompressed / head', (ffi.sizeof(self.data) - 2) / headval)
+	print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
+	print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
 	-- decompressed / numblocks is only ever 3 or 5
 	-- what determines which?
 	if (ffi.sizeof(self.data) - 2) / (w * h) < 3 then
@@ -1554,28 +1560,22 @@ function RoomBlocks:init(args)
 		return
 	end
 
-	local ch12 = byteArraySubset(self.data, ofs, 2*w*h) ofs = ofs + 2 * w * h
-	local ch3 = byteArraySubset(self.data, ofs, w*h) ofs = ofs + w * h -- referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
-	local dataSize = ffi.sizeof(self.data)
+	-- TODO what happens when self.offsetToCh3 is > 2*w*h
+	ofs = ofs + self.offsetToCh3 / 2 * 3
+	-- channel 3 ... referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
 	if ofs > dataSize then
 		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
 	end
-	local layer2blocks
-	local tail
 	-- if there's still more to read...
 	if ofs < dataSize then
 		if dataSize - ofs < 2 * w * h then
 			print("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
 		else
 			self.hasLayer2Blocks = true
-			layer2blocks = byteArraySubset(self.data, ofs, 2*w*h) ofs=ofs+2*w*h
+			ofs = ofs + self.offsetToCh3
 		end
 	end
-	-- in all cases that there is some tailing data, there's always enough for uint16_t[width][height]
-	-- in 243 of 245 rooms this is all that's there.  in the other 2 rooms there's even more.
-	if ofs < dataSize then
-		tail = byteArraySubset(self.data, ofs, dataSize - ofs)
-	end	
+
 
 	-- keep track of doors
 	
@@ -1855,11 +1855,11 @@ function RoomBlocks:getBlocks12()
 	return self.data + 2
 end
 function RoomBlocks:getBlocks3()
-	return self.data + 2 + 2 * self.width * self.height
+	return self.data + 2 + self.offsetToCh3
 end
 function RoomBlocks:getLayer2Blocks()
 	if self.hasLayer2Blocks then
-		return self.data + 2 + 3 * self.width * self.height
+		return self.data + 2 + self.offsetToCh3 / 2 * 3
 	end
 end
 
@@ -2672,13 +2672,24 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 		end
 	end --------------------------------------------------------------------------------
 
+	
+	-- while here, sort roomBlockDatas
+	self.roomblocks:sort(function(a,b)
+		local ma = a.roomStates[1].room
+		local mb = b.roomStates[1].room
+		if ma.obj.region < mb.obj.region then return true end
+		if ma.obj.region > mb.obj.region then return false end
+		return ma.obj.index < mb.obj.index
+	end)
+
 
 	-- TODO switch to graphicsTile indexes used, per 8x8 block
 	-- collect all unique indexes of each roomblockdata	
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		roomBlockData.tileIndexesUsed = roomBlockData.tileIndexesUsed or {}
-		local blocks12 = roomBlockData:getBlocks12()
-		local blocks3 = roomBlockData:getBlocks3()
+		local blocks12 = ffi.cast('uint16_t*', roomBlockData:getBlocks12())
+		local blocks3 = ffi.cast('uint16_t*', roomBlockData:getBlocks3())
+		local layer2blocks = roomBlockData:getLayer2Blocks()
 		local w = roomBlockData.width / blocksPerRoom
 		local h = roomBlockData.height / blocksPerRoom
 		for j=0,h-1 do
@@ -2689,12 +2700,13 @@ print("loadStation addr "..('%04x'):format(addr).." failed to load room")
 						local dy = tj + blocksPerRoom * j
 						local di = dx + blocksPerRoom * w * dy
 						-- blocks is 0-based
-						local d1 = blocks12[0 + 2 * di]
-						local d2 = blocks12[1 + 2 * di]
-						local d3 = blocks3[di]
-						local tileIndex = bit.bor(d1, bit.lshift(bit.band(d2, 0x03), 8))
-						roomBlockData.tileIndexesUsed[tonumber(tileIndex)] = true
-						-- TODO convert tileIndexes into its 4 graphicsTile indexes and mark those
+						local tileIndex = bit.band(blocks12[di], 0x3ff)
+						roomBlockData.tileIndexesUsed[tileIndex] = true
+						-- TODO convert tileIndexes into its 4 graphicsTile indexes and mark the graphicsTiles used
+						if layer2blocks then
+							local tileIndex = bit.band(layer2blocks[di], 0x3ff) 
+							roomBlockData.tileIndexesUsed[tileIndex] = true
+						end
 					end
 				end
 			end
@@ -3973,7 +3985,7 @@ function SMMap:mapPrintRoomBlocks()
 		end
 		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
 
-		print' head:'
+		print' offset to ch 3:'
 		printblock(roomBlockData.data, 2, 2, 1)
 		print' blocks ch 1 2:'
 		printblock(roomBlockData:getBlocks12(), 2*w*h, 2*w, 2) 
@@ -3981,15 +3993,19 @@ function SMMap:mapPrintRoomBlocks()
 		printblock(roomBlockData:getBlocks3(), w*h, w, 1) 
 		local layer2blocks = roomBlockData:getLayer2Blocks()
 		if layer2blocks then
+			local bytesLeft = roomBlockData:iend() - layer2blocks 
 			print(' layer 2 blocks:')
-			printblock(layer2blocks, ffi.sizeof(layer2blocks), 2*w, 2)
+			printblock(layer2blocks, math.min(2*w*h, bytesLeft), 2*w, 2)
 		end
+--[=[ I don't store this anymore
 		if roomBlockData.tail then
-			print(' tail ('..('$%x'):format(ffi.sizeof(roomBlockData.tail))..' bytes) =')
-			print('\t\t'..range(0,ffi.sizeof(roomBlockData.tail)-1):mapi(function(ch)
-					return ('%02x'):format(ch)
+			local bytesLeft = roomBlockData:iend() - roomBLockData.tail
+			print(' tail ('..('$%x'):format(bytesLeft)..' bytes) =')
+			print('\t\t'..range(0,bytesLeft-1):mapi(function(ch)
+					return ('%02x'):format(roomBlockData.tail[ch])
 				end):concat' ')
 		end
+--]=]	
 		print' roomstate scrolldata:'
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			if rs.scrollData then
