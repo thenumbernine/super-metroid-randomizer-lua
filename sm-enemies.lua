@@ -173,8 +173,9 @@ local spritemap_t = struct{
 	fields = {
 		{xofs = 'uint16_t:9'},
 		{unused1 = 'uint16_t:1'},
-		{size = 'uint16_t:1'},
+		-- does size go before or after unused2?
 		{unused2 = 'uint16_t:5'},
+		{size = 'uint16_t:1'},
 		
 		{yofs = 'uint8_t'},
 	

@@ -54,6 +54,7 @@ function SM:buildMemoryMap()
 end
 
 function SM:print()
+	self:samusPrint()
 	self:enemiesPrint()
 	self:mapPrint()
 end

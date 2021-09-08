@@ -1,3 +1,35 @@
+--[==[
+page 0x92
+
+spritemap format
+
+0x8000..0x808d = code
+
+0x808d..0x90ed uint16_t samusAnimOffsetTable[];
+0x90ed..0x9263 spritemapSet_t[]
+
+0x9263..0x945d uint16_t samusAnimTopIndexes[];		//index into samusAnimOffsetTable
+0x945d..0x9657 uint16_t samusAnimBottomIndexes[];	// "
+
+0x9657..0xcbee spritemapSet_t[]
+
+0xcbee..0xd7d3 samusDMAEntry_t[] 						<- indexed into by samusTopDMASetOffset[] and samusBottomDMASetOffset[]
+0xd7d3..0xd91e spritemapSet_t[]
+0xd91e..0xd938 uint16_t samusTopDMASetOffset[]
+0xd938..0xd94e uint16_t samusBottomDMASetOffset[]
+
+-- offsets that point into animLookups[]
+0xd94e..0xdb48 uint16_t samusOffsetInfoAnimLookup[]
+
+-- first indexes into samusBottomDMASetOffset[], which is an offset to a samusDMAEntry_t*
+-- second indexes into that samusDMAEntry_t*
+--  which is in one of the spritemapSet_t[]
+0xdb48..0xed24 animLookup_t animLookups[]		 
+
+0xed24..0xedf4 code
+0xedf4..0x0000 = free
+
+--]==]
 local ffi = require 'ffi'
 local range = require 'ext.range'
 local table = require 'ext.table'
@@ -6,80 +38,146 @@ local Blob = require 'blob'
 local Palette = require 'palette'
 local topc = require 'pc'.to
 local disasm = require 'disasm'
+local struct = require 'struct'
 
 local SMGraphics = require 'sm-graphics'
 local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes 
 
+
 local SMSamus = {}
 
+SMSamus.samusSpriteBank = 0x92
+
+
+--[[
+typedef struct {
+	uint16_t count;
+	spritemap_t spritemap[count];	(see sm-enemies.lua for spritemap_t def)
+} spritemapSet_t;
+--]]
+local SpritemapSet = class()
+
+function SpritemapSet:init(addr)
+	self.addr = addr
+	self.spritemaps = table()
+end
+
+
+function SMSamus:samusAddSpritemapSet(addr)
+	for _,smset in ipairs(self.samusSpritemapSets) do
+		if smset.addr == addr then
+			return smet
+		end
+	end
+
+	local smset = SpritemapSet(addr)
+
+	local ptr = self.rom + addr
+	local count = ffi.cast('uint16_t*', ptr)[0]
+	ptr = ptr + ffi.sizeof'uint16_t'
+	ptr = ffi.cast('spritemap_t*', ptr)
+	for i=0,count-1 do
+		smset.spritemaps:insert(ffi.new('spritemap_t', ptr[i]))
+	end
+
+	self.samusSpritemapSets:insert(smset)
+	return smset
+end
+
+--[[
+ex: first entry: 9E8000,0080,0080
+referenced by ... a lot
+what does size1 and size2 mean?  number of bytes?  number of tiles?
+tiles at 9e:8000 end at 9e:f6c0, which is 950 tiles, which is 30400 bytes
+whereas 0x80 = 128
+	0x80 * 0x80 = 16384
+	0x80 * 0x80 * 32 = 524288 bytes ... hmm ...
+	0x80 * 32 = 4096 bytes ...
+--]]
+local samusDMAEntry_t = struct{
+	name = 'samusDMAEntry_t',
+	fields = {
+		{tiles = 'addr24_t'},
+		{size1 = 'uint16_t'},			-- part 1 size, 0 implies 0x10000 bytes
+		{size2 = 'uint16_t'},			-- part 2 size, 0 implies 0 bytes
+	},
+}	
+
+--[[
+typedef struct {
+} animLookup_t;
+--]]
+local animLookup_t = struct{
+	name = 'animLookup_t',
+	fields = {
+		{bottomIndex = 'uint8_t'},
+		{bottomIndexInto = 'uint8_t'},
+		{topIndex = 'uint8_t'},	
+		{topIndexInto = 'uint8_t'},
+	}
+}
+assert(ffi.sizeof'animLookup_t' == 4)
+
 function SMSamus:samusInit()
-	
-	-- animation
+
+	-- 0x8000..0x808d = code
+	self.samusAnimCodeAddr = topc(0x92, 0x8000)
+	self.samusAnimCode = disasm.readUntilRet(self.samusAnimCodeAddr, self.rom, 0x1000)
+
+	-- this is a collection of unique SpritemapSet's
+	self.samusSpritemapSets = table()
+
+	-- indexed into by samusAnimTopIndexes(/Bottom)[] + samus animation frame
 	-- offsets to spritemapSet_t's
-	self.samusAnimTable = Blob{sm=self, addr=topc(0x92, 0x808d), count=(0x90ed - 0x808d) / 2, type='uint16_t'}
+	self.samusAnimOffsetTable = Blob{sm=self, addr=topc(self.samusSpriteBank, 0x808d), count=(0x90ed - 0x808d) / 2, type='uint16_t'}
+	-- preserve 1-1 indexing with samusAnimOffsetTable, 0-based and does allow for nils (so don't use #)
+	self.samusAnimOffsetTableSpritemapSets = {}
 
-	--[==[
-	spritemap format
-	
-	typedef struct {
-		uint16_t count;
-		struct {
-			uint8_t xofs;
-			uint8_t zero : 7;
-			uint8_t sizebit : 1;
-			uint8_t yofs;
-			uint16_t tileIndex : 9;
-			uint16_t zero2 : 3;
-			uint16_t priority : 2;
-			uint16_t xflip : 1;
-			uint16_t yflip : 1;
-		} spritemap_t[count]
-	} spritemapSet_t;
+	for i=0,self.samusAnimOffsetTable.count-1 do
+		local ofs = self.samusAnimOffsetTable.data[i]
+		assert(ofs == 0 or (ofs >= 0x8000 and ofs < 0x10000))
+		if ofs == 0 then
+			-- hmm, these can be compressed out, right?
+			-- remove all indexes to them from the top and bottom index arrays
+		else
+			self.samusAnimOffsetTableSpritemapSets[i] = self:samusAddSpritemapSet(topc(self.samusSpriteBank, ofs))
+		end
+	end
 
-	0x8000..0x808d = code
-	
-	0x808d..0x90ed uint16_t samusAnimTable[];
-	0x90ed..0x9263 spritemapSet_t[]
-	0x9263..0x945d uint16_t samusAnimTopIndexes[];		//index into samusAnimTable
-	0x945d..0x9657 uint16_t samusAnimBottomIndexes[];	// "
-	0x9657..0xcbee
-	0xcbee..0xd7d3 = struct {
-		addr24_t tiles?
-		uint16_t size1;			// part 1 size, 0 implies 0x10000 bytes
-		uint16_t size2;			// part 2 size, 0 implies 0 bytes
-	} [];
-	
-		ex: first entry: 9E8000,0080,0080
-		referenced by ... a lot
-		what does size1 and size2 mean?  number of bytes?  number of tiles?
-		tiles at 9e:8000 end at 9e:f6c0, which is 950 tiles, which is 30400 bytes
-		whereas 0x80 = 128
-			0x80 * 0x80 = 16384
-			0x80 * 0x80 * 32 = 524288 bytes ... hmm ...
-			0x80 * 32 = 4096 bytes ...
+	-- indexed by "samus pose"
+	-- indexes into samusAnimOffsetTable[]
+	self.samusAnimTopIndexes = Blob{sm=self, addr=topc(0x92, 0x9263), count=(0x945d-0x9263)/2, type='uint16_t'}
+	self.samusAnimBottomIndexes = Blob{sm=self, addr=topc(0x92, 0x945d), count=(0x9657-0x945d)/2, type='uint16_t'}
 
-	0xd7d3..0xd91e spritemapSet_t[]
-	0xd91e..0xdb48 uint16_t animIndexes? page offsets?
-	
-	0xdb48..0xed24 struct {
-		uint8_t topIndex;		//	animTableIndex = samusAnimTopIndexes[topIndex]
-		uint8_t topIndexInto;	//	spriteSetOffset = samusAnimTable[animTableIndex] <- points to the pageofs of the spritemapSet_t
-								//	(spritemapSet_t*)(page + spriteSetOffset)->sprites[topIndexInto];
+	-- offset to samusDMAEntry_t's ... which I haven't loaded yet ...
+	self.samusTopDMASetOffset = Blob{sm=self, addr=topc(0x92, 0xd91e), count=13, type='uint16_t'}
+	self.samusBottomDMASetOffset = Blob{sm=self, addr=topc(0x92, 0xd938), count=11, type='uint16_t'}
+
+	self.samusAnimOfs = Blob{sm=self, addr=topc(0x92, 0xd94e), count=(0xdb48-0xd94e)/2, type='uint16_t'}
+
+	-- this points into samusTopDMASetOffset and samusBottomDMASetOffset 
+	self.samusAnimLookups = Blob{sm=self, addr=topc(0x92, 0xdb48), count=(0xed24-0xdb48)/ffi.sizeof'animLookup_t', type='animLookup_t'}
+
+	-- indexed by "samus animation frame"
+	for i=0,self.samusAnimLookups.count-1 do
+		local lookup = self.samusAnimLookups.data[i]
 		
-		uint8_t bottomIndex;	//	samusAnimBottomIndexes[indexOfAnimBottomIndexes] .. same
-		uint8_t bottomIndexInto;
-	}[][]; "Animation definitions are indexed by [Samus animation frame]"
+		local topDMAOffset = self.samusTopDMASetOffset.data[lookup.topIndex]
+		local spriteDMABase = ffi.cast('samusDMAEntry_t*', self.rom + topc(0x92, topDMAOffset))
+		local topDMA = spriteDMABase[lookup.topIndexInto]
 	
-	0xed24..0xedf4 code
-	0xedf4..0x0000 = free
-	--]==]
+		local bottomDMAOffset = self.samusBottomDMASetOffset.data[lookup.bottomIndex]
+		local spriteDMABase = ffi.cast('samusDMAEntry_t*', self.rom + topc(0x92, bottomDMAOffset))
+		local bottomDMA = spriteDMABase[lookup.bottomIndexInto]
+	
+		-- and ... now what do we do with topDMA and bottomDMA?
+	end
+
 
 	-- TODO track branches and keep reading past the first RET
 	-- also TODO use page size as the maxlen
---[==[
-	self.samusAnimCodeAddr = topc(0x92, 0xedf4)
-	self.samusAnimCode = disasm.readUntilRet(self.samusAnimCodeAddr, self.rom)
---]==]
+	self.samusAnimCode2Addr = topc(0x92, 0xedf4)
+	self.samusAnimCode2 = disasm.readUntilRet(self.samusAnimCode2Addr, self.rom, 0x1000)
 
 	-- samus tiles ...
 	-- where are the tilemaps?
@@ -88,13 +186,13 @@ function SMSamus:samusInit()
 		return Palette{sm=self, addr=topc(0x9b, ofs), count=0x10}
 	end)
 	-- why is the last one not 16 in size?  garbage?
-	self.samusPalettes:insert(Palette{sm=self, addr=topc(0x9b, 0xa3c0), count=6})
-	-- then more padding	
+	self.samusPalettes:insert(Palette{sm=self, addr=topc(0x9b, 0xa3e0), count=6})
+	-- then more padding
 	self.samus9BTiles = Blob{sm=self, addr=topc(0x9b, 0xe000), count=0xfda0-0xe000}	-- then padding to end of bank
 	self.samus9CTiles = Blob{sm=self, addr=topc(0x9c, 0x8000), count=0xfa80-0x8000}	-- then padding to end of bank
 	self.samus9DTiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf780-0x8000}	-- "
 	self.samus9ETiles = Blob{sm=self, addr=topc(0x9e, 0x8000), count=0xf6c0-0x8000}	-- "
-	self.samus9FTiles = Blob{sm=self, addr=topc(0x9d, 0x8000), count=0xf740-0x8000}	-- "
+	self.samus9FTiles = Blob{sm=self, addr=topc(0x9f, 0x8000), count=0xf740-0x8000}	-- "
 
 	
 	for _,tiles in ipairs{
@@ -143,13 +241,34 @@ function SMSamus:samusSaveImages()
 		img:save(info.name..'.png')
 	end
 end
+	
+function SMSamus:samusPrint()
+	for _,smset in ipairs(self.samusSpritemapSets) do
+		print(('%06x'):format(smset.addr))
+		for _,spritemap in ipairs(smset.spritemaps) do
+			print(' '..spritemap)
+		end
+	end
+end
 
 function SMSamus:samusBuildMemoryMap(mem)
-	self.samusAnimTable:addMem(mem, 'samusAnimTable')
-
---[==[
 	mem:add(self.samusAnimCodeAddr, ffi.sizeof(self.samusAnimCode), 'samusAnimCode')
---]==]
+	
+	self.samusAnimOffsetTable:addMem(mem, 'samusAnimOffsetTable')
+
+	for _,smset in ipairs(self.samusSpritemapSets) do
+		mem:add(smset.addr, 2 + #smset.spritemaps * ffi.sizeof'spritemap_t', 'spritemap_t')
+	end
+
+	self.samusAnimTopIndexes:addMem(mem, 'samusAnimTopIndexes')
+	self.samusAnimBottomIndexes:addMem(mem, 'samusAnimBottomIndexes')
+
+	self.samusTopDMASetOffset:addMem(mem, 'samusTopDMASetOffset')
+	self.samusBottomDMASetOffset:addMem(mem, 'samusBottomDMASetOffset')
+	self.samusAnimOfs:addMem(mem, 'samusAnimOfs')
+	self.samusAnimLookups:addMem(mem, 'samusAnimLookups')
+
+	mem:add(self.samusAnimCode2Addr, ffi.sizeof(self.samusAnimCode2), 'samusAnimCode2')
 
 	self.samusDeathTiles:addMem(mem, 'samusDeathTiles')
 	for i,palette in ipairs(self.samusPalettes) do
