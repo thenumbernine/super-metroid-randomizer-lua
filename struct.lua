@@ -65,7 +65,7 @@ end
 	
 	local metatype 
 	xpcall(function()
-		print(code)
+--print(code)
 
 		ffi.cdef(code)
 	

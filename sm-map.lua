@@ -1062,7 +1062,7 @@ function SMMap:mapAddRoom(pageofs, buildRecursively)
 		
 		ptr = mptr,
 	}	
-print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)	
+--print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)	
 	self.rooms:insert(m)
 	
 	data = data + ffi.sizeof'room_t'
@@ -1333,7 +1333,7 @@ function SMMap:mapFindRoom(region, index)
 end
 
 function SMMap:mapClearDoorColor(region, roomIndex, x,y)
-	print('searching for door to remove at '..('%02x/%02x %d,%d'):format(region, roomIndex, x,y))
+--print('searching for door to remove at '..('%02x/%02x %d,%d'):format(region, roomIndex, x,y))
 	local room = assert(self:mapFindRoom(region, roomIndex))
 	for _,rs in ipairs(room.roomStates) do
 		if rs.plmset then
@@ -1346,7 +1346,7 @@ function SMMap:mapClearDoorColor(region, roomIndex, x,y)
 					local l0 = math.abs(dx) + math.abs(dy)
 					local linf = math.max(math.abs(dx), math.abs(dy))
 					if linf < 8 then
-						print('...removing door')
+--print('...removing door')
 						rs.plmset.plms:remove(j)
 					end
 				end
@@ -1578,11 +1578,11 @@ function RoomBlocks:init(args)
 	self.width = w
 	self.height = h
 
-	print('offset to ch3', self.offsetToCh3)
-	print('numblocks', ffi.sizeof(self.data) - 2)
-	print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
-	print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
-	print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
+--print('offset to ch3', self.offsetToCh3)
+--print('numblocks', ffi.sizeof(self.data) - 2)
+--print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
+--print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
+--print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
 	-- decompressed / numblocks is only ever 3 or 5
 	-- what determines which?
 	if (ffi.sizeof(self.data) - 2) / (w * h) < 3 then
@@ -2311,7 +2311,7 @@ function SMMap:mapReadTileSets()
 		compressed = true,
 	}
 	-- decompresesd size is 0x3000
-print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:sizeof()))
+--print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphicsTiles:sizeof()))
 
 
 	-- if this happens then your rom's code has been modified to the point that the common room tilemap loading is somewhere else, or is pointed to somewhere else
@@ -2341,7 +2341,7 @@ print('self.commonRoomGraphicsTiles.size', ('$%x'):format(self.commonRoomGraphic
 	}
 	-- size is 0x800 ... so 256 8bit tile infos
 	-- in my 32-tiles-per-row pics, this is 8 rows
-print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
+--print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
 
 	-- load all the tileset address info that is referenced by per-room stuff
 	-- do this before any mapAddRoom calls
@@ -2422,7 +2422,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 		-- tileSet 0x13, 0x14 = room 06/05
 		-- for these rooms, the tileSet.tilemap.addr points to the mode7 data
 		if loadMode7 then
-			print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
+--print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
 			tileSet.mode7graphicsTiles, tileSet.mode7tilemap = self:graphicsLoadMode7(graphicsTileVec.v, graphicsTileVec.size)
 			
 			--[[ vanilla ceres ridley room layer handling, when layerHandlingPageOffset == $c97b
@@ -2479,7 +2479,7 @@ print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:siz
 		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap:iend())
 		
 		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
-		print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
+--print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
 		tileSet.tileGfxCount = bit.rshift(tilemapByteVec.size, 3)
 		-- store as 16 x 16 x index rgb
 		
@@ -2557,7 +2557,7 @@ function SMMap:mapInit()
 	-- read from 84:84ac
 	-- default is 0x8f
 	self.plmBank = rom[0x204ac]	
-print('plmBank '..('%02x'):format(self.plmBank))
+--print('plmBank '..('%02x'):format(self.plmBank))
 
 	self.loadStationsForRegion = table()
 
@@ -3257,7 +3257,7 @@ function SMMap:mapGetBitmapForTileSetAndTileMap(tileSet, tilemap)
 
 	bgBmp = {}
 
-print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilemap '..('%06x'):format(tilemap.addr))		
+--print('generating bitmap for tileSet '..('%02x'):format(tileSet.index)..' tilemap '..('%06x'):format(tilemap.addr))		
 	bgBmp.tilemap = tilemap
 
 	bgBmp.dataBmp = self:graphicsConvertTilemapToBitmap(
@@ -4805,7 +4805,7 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 			end
 		end
 	end
-print("used a total of "..doorid.." special and non-special doors")	
+--print("used a total of "..doorid.." special and non-special doors")	
 	-- notice, I only see up to 0xac used, so no promises there is even 0xff available in memory
 	if doorid > 0xff then
 		print("!!! WARNING !!! we made more doors than the save state could handle: "..doorid)

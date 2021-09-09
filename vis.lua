@@ -159,7 +159,6 @@ function App:initGL()
 			end
 			if targetoffset then break end
 		end
-		print('md5hash', self.sm.md5hash)
 		self:setRegionOffsets(targetoffset or 1)
 	end
 
@@ -1104,7 +1103,7 @@ function RoomSelector:onClick(app)
 		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
 		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
 		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
-print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex)
+print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
 	end
 end
 
