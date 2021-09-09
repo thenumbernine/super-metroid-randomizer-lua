@@ -61,8 +61,38 @@ timer('everything', function()
 	math.randomseed(seed)
 
 
-	local infilename = cmdline['in'] or 'sm.sfc'
-	local outfilename = cmdline.out or 'sm-random.sfc'
+	--[[
+	f24904a32f1f6fc40f5be39086a7fa7c  Super Metroid (JU) [!] PAL.smc
+	21f3e98df4780ee1c667b84e57d88675  Super Metroid (JU) [!].smc
+	3d64f89499a403d17d530388854a7da5  Super Metroid (E) [!].smc
+	
+	so what version is "Metroid 3" ? if it's not JU or E?
+	"Metroid 3" matches "Super Metroid (JU)" except for:
+			"Metroid 3"		"Super Metroid (JU)"
+	$60d	a9				89
+	$60e	00				10
+	<- 89 10 = BIT #$10 = set bit (this is patrickjohnston.org's)
+	<- a9 00 = LDA #$00 = clear bit 
+
+	$617	a9				89
+	$618	00				10
+	<- 89 10 = BIT #$10 = set bit (this is patrickjohnston.org's)
+	<- a9 00 = LDA #$00 = clear bit 
+	
+	$6cb	ea				d0
+	$6cc	ea				16
+	<- ea ea = NOP NOP		<- skip the check altogether
+	<- d0 16 = BNE +16		<- jump if SRAM check fails
+
+	that's it.
+	and between JU and E? a lot.
+	
+	so which does patrickjohnston.org use? 
+	
+	--]]
+	local infilename = cmdline['in'] or 'Super Metroid (JU) [!].smc'
+	
+	local outfilename = cmdline.out or 'sm-random.smc'
 
 	function exec(s)
 		print('>'..s)
@@ -473,7 +503,7 @@ g:
 
 	-- global for now
 	timer('read ROM', function()
-		sm = SM(rom)
+		sm = SM(rom, #romstr)
 	end)
 
 	-- write out unaltered stuff

@@ -26,7 +26,7 @@ local useBakedLayer3Background = true
 
 
 --local cmdline = require 'ext.cmdline'(...)
-local infilename = ... or 'sm.sfc'
+local infilename = ... or 'Super Metroid (JU) [!].smc'
 
 local App = class(require 'glapp.orbit'(require 'imguiapp'))
 
@@ -131,7 +131,7 @@ function App:initGL()
 
 	-- global so other files can see it
 	self.rom = ffi.cast('uint8_t*', romstr) 
-	self.sm = SM(self.rom)
+	self.sm = SM(self.rom, #romstr)
 
 	self.regions = range(0,7):mapi(function(index)
 		return Region(index)
@@ -147,7 +147,21 @@ function App:initGL()
 		region:calcBounds()
 	end
 
-	self:setRegionOffsets(1)
+
+	do
+		local targetoffset
+		for i,ofs in ipairs(self.predefinedRegionOffsets) do
+			for _,md5 in ipairs(ofs.md5s) do
+				if md5 == self.sm.md5hash then
+					targetoffset = i
+					break
+				end
+			end
+			if targetoffset then break end
+		end
+		print('md5hash', self.sm.md5hash)
+		self:setRegionOffsets(targetoffset or 1)
+	end
 
 	-- TODO use this for switching which state is being displayed
 	-- since roomstates can have fully different tilesets blocks etc
@@ -428,10 +442,15 @@ end
 
 
 
-local predefinedRegionOffsets = {
+App.predefinedRegionOffsets = {
 -- default arrangement.  too bad crateria right of wrecked ship isn't further right to fit wrecked ship in
 	{
 		name = 'Original',
+		md5s = {
+			'f24904a32f1f6fc40f5be39086a7fa7c',
+			'21f3e98df4780ee1c667b84e57d88675',
+			'3d64f89499a403d17d530388854a7da5',
+		},
 		ofs = {
 			{0, 0},
 			{-3, 18},
@@ -445,6 +464,9 @@ local predefinedRegionOffsets = {
 	},
 	{
 		name = 'Vitality',
+		md5s = {
+			'6092a3ea09347e1800e330ea27efbef2',
+		},
 		ofs = {
 			{21, 43},
 			{15, 23},
@@ -458,6 +480,9 @@ local predefinedRegionOffsets = {
 	},
 	{
 		name = 'Golden Dawn',
+		md5s = {
+			'083a857c6f5251762d241202e5f46808',
+		},
 		ofs = {
 			{0, 0},
 			{-54, -3},
@@ -470,7 +495,10 @@ local predefinedRegionOffsets = {
 		},
 	},
 	{
-		name = 'Metroid Super Zero Mission',
+		name = 'Metroid Super Zero Mission 2.3',
+		md5s = {
+			'8c04220c2e0f78abb9bb7cbbc7cfbbde',
+		},
 		ofs = {
 			{0,0},
 			{-1,23},
@@ -484,6 +512,9 @@ local predefinedRegionOffsets = {
 	},
 	{
 		name = 'Metroid Rotation Hack',
+		md5s = {
+			'606a6edb8826354edff97d505d478b3a',
+		},
 		ofs = {
 			{16,0},
 			{-19,-1},
@@ -498,7 +529,7 @@ local predefinedRegionOffsets = {
 }
 
 function App:setRegionOffsets(index)
-	local predef = predefinedRegionOffsets[index]
+	local predef = self.predefinedRegionOffsets[index]
 	for i,ofs in ipairs(predef.ofs) do
 		self.regions[i].ofs:set(ofs[1], ofs[2])
 	end
@@ -1213,11 +1244,11 @@ function App:updateGUI()
 	radioTooltipsFromTable(editorModes, _G, 'editorMode')
 
 	if ig.igCollapsingHeader'Set Region Offsets To Predefined:' then
-		for i,info in ipairs(predefinedRegionOffsets) do
+		for i,info in ipairs(self.predefinedRegionOffsets) do
 			if buttonTooltip(info.name) then
 				self:setRegionOffsets(i)
 			end
-			if i < #predefinedRegionOffsets then
+			if i < #self.predefinedRegionOffsets then
 				ig.igSameLine()
 			end
 		end

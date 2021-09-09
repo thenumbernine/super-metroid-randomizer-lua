@@ -104,53 +104,82 @@ local debugImageBlockSizeInPixels = 4
 local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
 
 
+local function getFullMapInfoForMD5(md5)
+	local version = ({
+		['f24904a32f1f6fc40f5be39086a7fa7c'] = 'original',	-- JU PAL
+		['21f3e98df4780ee1c667b84e57d88675'] = 'original',	-- JU NTSC
+		['3d64f89499a403d17d530388854a7da5'] = 'original',	-- E
+		['6092a3ea09347e1800e330ea27efbef2'] = 'vitality',
+	})[md5]
+
+	if version == 'original' then
+		return {
+			fullMapWidthInBlocks = 68,
+			fullMapHeightInBlocks = 58,
+			ofsPerRegion = {
+				function(m) 
+					--[[
+					special case for Crateria right of Wrecked Ship
+					ok how to generalize this?
+					one way is to recursively build the room locations in the overworld map picture
+					however you then run into trouble with lifts that can be arbitrary heights
+
+					so next , how about (certain?) doors are given arbitrary spacing
+					and then we try to adjust and minimize that spacing such that all rooms fit together?
+					--]]
+					if m.region == 0	-- Crateria
+					and m.x > 45 
+					then
+						return 6,1
+					end
+					return -1,1
+				end,	-- crateria
+				function(m) return -4,19 end,	-- brinstar
+				function(m) return 27,39 end,	-- norfair
+				function(m) return 33,-9 end,	-- wrecked ship
+				function(m) return 24,19 end,	-- maridia
+				function(m) return -4,1 end,	-- tourian
+				function(m) return -9,26 end,	-- ceres
+				function(m) return 3,48 end,	-- testing
+			},
+		}
+	elseif version == 'vitality' then
+		return {
+			fullMapWidthInBlocks = 103,
+			fullMapHeightInBlocks = 76,
+			ofsPerRegion = {
+				function(m) return 21,	43	end,		-- region 0
+				function(m) return 15,	23	end,		-- region 1
+				function(m) return 57,	12	end,		-- region 2
+				function(m) return 16,	-1	end,		-- region 3
+				function(m) return -27,	28	end,		-- region 4
+				function(m) return 40,	59	end,		-- region 5
+				function(m) return 0,	0	end,		-- region 6
+				function(m) return 0,	0	end,		-- region 7
+			},
+		}
+	else
+		return {
+			fullMapWidthInBlocks = 80,
+			fullMapHeightInBlocks = 58,
+			ofsPerRegion = range(8):mapi(function(i)
+				return function(m) 
+					return bit.rshift(i,1) * 20,
+						bit.band(i,1) * 20
+				end
+			end),
+		}
+	end
+end
+
+
 -- TODO pick by md5 of the rom?
 -- [=[ this is all used for rendering the map.png -- and is specific to the original metroid
-local fullMapWidthInBlocks = 68
-local fullMapHeightInBlocks = 58
 
--- data is sized 32*m.width x 16*m.width
-local ofsPerRegion = {
-	function(m) 
-		--[[
-		special case for Crateria right of Wrecked Ship
-		ok how to generalize this?
-		one way is to recursively build the room locations in the overworld map picture
-		however you then run into trouble with lifts that can be arbitrary heights
-
-		so next , how about (certain?) doors are given arbitrary spacing
-		and then we try to adjust and minimize that spacing such that all rooms fit together?
-		--]]
-		if m.region == 0	-- Crateria
-		and m.x > 45 
-		then
-			return 6,1
-		end
-		return -1,1
-	end,	-- crateria
-	function(m) return -4,19 end,	-- brinstar
-	function(m) return 27,39 end,	-- norfair
-	function(m) return 33,-9 end,	-- wrecked ship
-	function(m) return 24,19 end,	-- maridia
-	function(m) return -4,1 end,	-- tourian
-	function(m) return -9,26 end,	-- ceres
-	function(m) return 3,48 end,	-- testing
-}
 
 --]=]
 --[=[ how about for sm-vitality 
-local fullMapWidthInBlocks = 103
-local fullMapHeightInBlocks = 76
-local ofsPerRegion = {
-	function(m) return 21,	43	end,		-- region 0
-	function(m) return 15,	23	end,		-- region 1
-	function(m) return 57,	12	end,		-- region 2
-	function(m) return 16,	-1	end,		-- region 3
-	function(m) return -27,	28	end,		-- region 4
-	function(m) return 40,	59	end,		-- region 5
-	function(m) return 0,	0	end,		-- region 6
-	function(m) return 0,	0	end,		-- region 7
-}
+
 --]=]
 
 
@@ -1527,7 +1556,10 @@ function RoomBlocks:init(args)
 	local dataSize = ffi.sizeof(self.data)
 	local m = args.m
 
+	-- list of unique rooms that have roomstates that use this roomBlockData
+	-- don't add/remove to this list, instead use :refreshRooms()
 	self.rooms = table()
+	
 	self.roomStates = table()
 
 	local ofs = 0
@@ -2559,14 +2591,12 @@ print('plmBank '..('%02x'):format(self.plmBank))
 	--]]
 	-- [[
 	for _,lsr in ipairs(self.loadStationsForRegion) do
-print('loadStation region '..lsr.region)		
 		for _,ls in ipairs(lsr.stations) do
 			local addr = ls.obj.roomPageOffset
-print(' loadStation addr '..('%04x'):format(addr))
 			if addr > 0 then
 				local room = self:mapAddRoom(addr, true)
 				if not room then
-print("loadStation addr "..('%04x'):format(addr).." failed to load room")
+					print("WARNING - loadStation addr "..('%04x'):format(addr).." failed to load room")
 				else
 					ls.room = room
 				end
@@ -4000,8 +4030,8 @@ function SMMap:mapPrintRoomBlocks()
 		if roomBlockData.tail then
 			local bytesLeft = roomBlockData:iend() - roomBLockData.tail
 			print(' tail ('..('$%x'):format(bytesLeft)..' bytes) =')
-			print('\t\t'..range(0,bytesLeft-1):mapi(function(ch)
-					return ('%02x'):format(roomBlockData.tail[ch])
+			print('\t\t'..range(0,bytesLeft-1):mapi(function(i)
+					return ('%02x'):format(roomBlockData.tail[i])
 				end):concat' ')
 		end
 --]=]	
@@ -4496,7 +4526,7 @@ function SMMap:mapPrint()
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
 		print(': '..tileSet.obj)
-		print('  tileIndexes used = '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
+		print('  tileIndexesUsed = '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
 				return ('$%03x'):format(s)
 			end):concat', ')
 		print('  rooms used = '..tileSet.roomStates:mapi(function(rs)
@@ -5250,6 +5280,12 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 			self.tileSetGraphicsTileSets:remove(i)
 		end
 	end
+
+
+	--[[
+	compress tileIndexes used
+	we can only move a tileIndex if its destination isn't used by any other tileSets used by any roomStates used by any roomBlockData whose roomStates also use this tileSet.
+	--]]
 
 
 	-- how should I deal with the tilemapElem_t's or the graphicsTile_t's?

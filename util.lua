@@ -80,13 +80,14 @@ local function hexStrToByteArray(src)
 end
 
 local function byteArrayToHexStr(src, len, sep)
+	sep = sep or ''
 	len = len or ffi.sizeof(src)
 	src = ffi.cast('uint8_t*', src)
 	local s = ''
 	local tsep = ''
 	for i=1,len do
 		s = s .. tsep..('%02x'):format(src[i-1])
-		tsep = sep or ''
+		tsep = sep
 	end
 	return s
 end
@@ -108,7 +109,10 @@ local function mergeByteArrays(...)
 	return dest
 end
 
-
+local function strtohex(s)
+	assert(type(s) == 'string')
+	return byteArrayToHexStr(ffi.cast('char*',s), #s)
+end
 
 return {
 	byteArraySubset = byteArraySubset,
@@ -121,4 +125,5 @@ return {
 	hexStrToByteArray = hexStrToByteArray,
 	byteArrayToHexStr = byteArrayToHexStr,
 	mergeByteArrays = mergeByteArrays,
+	strtohex = strtohex,
 }

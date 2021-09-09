@@ -10,6 +10,7 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local MemoryMap = require 'memorymap'
 local config = require 'config'
+local strtohex = require 'util'.strtohex
 
 local SM = class(
 	require 'sm-enemies',
@@ -26,9 +27,13 @@ local nameLen = 0x15
 --[[
 rom = c string of the ROM
 --]]
-function SM:init(rom)
+function SM:init(rom, romlen)
 	self.rom = rom
-	
+	self.romlen = romlen
+
+	self.md5hash = strtohex(require 'md5'(rom, romlen))
+	print('md5: '..self.md5hash)
+
 	local name = ffi.string(rom + nameAddr, nameLen)
 	print(name)
 
