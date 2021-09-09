@@ -36,7 +36,6 @@ local pc = require 'pc'
 local topc = pc.to
 local frompc = pc.from
 
-local byteArraySubset = require 'util'.byteArraySubset
 local tableSubsetsEqual = require 'util'.tableSubsetsEqual
 local tablesAreEqual = require 'util'.tablesAreEqual
 local byteArraysAreEqual = require 'util'.byteArraysAreEqual
@@ -104,7 +103,7 @@ local debugImageBlockSizeInPixels = 4
 local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
 
 
-local function getFullMapInfoForMD5(md5)
+function SMMap:mapGetFullMapInfoForMD5(md5)
 	local version = ({
 		['f24904a32f1f6fc40f5be39086a7fa7c'] = 'original',	-- JU PAL
 		['21f3e98df4780ee1c667b84e57d88675'] = 'original',	-- JU NTSC
@@ -1563,9 +1562,8 @@ function RoomBlocks:init(args)
 	self.roomStates = table()
 
 	local ofs = 0
-	local head = byteArraySubset(self.data, ofs, 2) ofs = ofs + 2
 	
-	self.offsetToCh3 = ffi.cast('uint16_t*', head)[0]
+	self.offsetToCh3 = ffi.cast('uint16_t*', self.data)[0]
 
 	-- offsetToCh3 is the offset to channel 3 of the blocks
 	-- and is usually = 2*w*h, sometimes >2*w*h
@@ -1581,6 +1579,7 @@ function RoomBlocks:init(args)
 	self.height = h
 
 	print('offset to ch3', self.offsetToCh3)
+	print('numblocks', ffi.sizeof(self.data) - 2)
 	print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
 	print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
 	print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
@@ -1592,7 +1591,7 @@ function RoomBlocks:init(args)
 	end
 
 	-- TODO what happens when self.offsetToCh3 is > 2*w*h
-	ofs = ofs + self.offsetToCh3 / 2 * 3
+	ofs = ofs + 2 + self.offsetToCh3 / 2 * 3
 	-- channel 3 ... referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
 	if ofs > dataSize then
 		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
@@ -1600,10 +1599,9 @@ function RoomBlocks:init(args)
 	-- if there's still more to read...
 	if ofs < dataSize then
 		if dataSize - ofs < 2 * w * h then
-			print("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+			print("WARNING - didn't get enough tile data from decompression for layer 2 data. expected room data size "..ofs.." <= data we got "..dataSize)
 		else
 			self.hasLayer2Blocks = true
-			ofs = ofs + self.offsetToCh3
 		end
 	end
 
@@ -3004,6 +3002,8 @@ local mapDrawExcludeMapBlocks = {
 }
 
 local function drawRoomBlocks(ctx, roomBlockData, rs)
+	local fullmapinfo = ctx.sm:mapGetFullMapInfoForMD5(ctx.sm.md5hash)
+	
 	local m = rs.room
 	local debugMapImage = ctx.debugMapImage
 	local debugMapMaskImage = ctx.debugMapMaskImage
@@ -3011,7 +3011,7 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local blocks3 = roomBlockData:getBlocks3()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	local firstcoord
 	
@@ -3136,13 +3136,14 @@ local function drawline(img, x1,y1,x2,y2, r,g,b)
 end
 
 local function drawRoomBlockDoors(ctx, roomBlockData)
+	local fullmapinfo = ctx.sm:mapGetFullMapInfoForMD5(ctx.sm.md5hash)
 	local debugMapImage = ctx.debugMapImage
 	-- for all blocks in the room, if any are xx9xyy, then associate them with exit yy in the door_t list (TODO change to exit_t)	
 	-- then, cycle through exits, and draw lines from each block to the exit destination
 
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		local srcRoom = rs.room
-		local srcRoom_ofsx, srcRoom_ofsy = ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
+		local srcRoom_ofsx, srcRoom_ofsy = fullmapinfo.ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
 		local srcRoom_xofs = debugImageRoomSizeInPixels * srcRoom_ofsx
 		local srcRoom_yofs = debugImageRoomSizeInPixels * srcRoom_ofsy
 		for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
@@ -3156,7 +3157,7 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			-- TODO handle lifts?
 			else
 				local dstRoom = assert(door.destRoom)
-				local dstRoom_ofsx, dstRoom_ofsy = ofsPerRegion[dstRoom.obj.region+1](dstRoom.ptr)
+				local dstRoom_ofsx, dstRoom_ofsy = fullmapinfo.ofsPerRegion[dstRoom.obj.region+1](dstRoom.ptr)
 				local dstRoom_xofs = debugImageRoomSizeInPixels * dstRoom_ofsx
 				local dstRoom_yofs = debugImageRoomSizeInPixels * dstRoom_ofsy
 			
@@ -3202,11 +3203,13 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 	end
 end
 
-function drawRoomBlockPLMs(ctx, roomBlockData)
+local function drawRoomBlockPLMs(ctx, roomBlockData)
+	local fullmapinfo = ctx.sm:mapGetFullMapInfoForMD5(ctx.sm.md5hash)
+	
 	local debugMapImage = ctx.debugMapImage
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		local m = rs.room
-		local ofsInRoomBlocksX, ofsInRoomBlocksY = ofsPerRegion[m.obj.region+1](m.ptr)
+		local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m.ptr)
 		local xofs = debugImageRoomSizeInPixels * ofsInRoomBlocksX
 		local yofs = debugImageRoomSizeInPixels * ofsInRoomBlocksY
 		if rs.plmset then
@@ -3271,8 +3274,10 @@ end
 function SMMap:mapSaveImageInformative(filenamePrefix)
 	filenamePrefix = filenamePrefix or 'map'
 
-	local w = debugImageRoomSizeInPixels * fullMapWidthInBlocks
-	local h = debugImageRoomSizeInPixels * fullMapHeightInBlocks
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+
+	local w = debugImageRoomSizeInPixels * fullmapinfo.fullMapWidthInBlocks
+	local h = debugImageRoomSizeInPixels * fullmapinfo.fullMapHeightInBlocks
 
 	local debugMapImage = Image(w, h, 3, 'unsigned char')
 	local debugMapMaskImage = Image(w, h, 3, 'unsigned char')
@@ -3325,13 +3330,15 @@ end
 
 
 local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+	
 	local m = rs.room
 	local blocks12 = roomBlockData:getBlocks12()
 	local blocks3 = roomBlockData:getBlocks3()
 	local layer2blocks = roomBlockData:getLayer2Blocks()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	
 	local tileSet = rs.tileSet
@@ -3476,9 +3483,11 @@ end
 function SMMap:mapSaveImageTextured(filenamePrefix)
 	filenamePrefix = filenamePrefix or 'map'
 	
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+	
 	local mapTexImage = Image(
-		blockSizeInPixels * blocksPerRoom * fullMapWidthInBlocks,
-		blockSizeInPixels * blocksPerRoom * fullMapHeightInBlocks,
+		blockSizeInPixels * blocksPerRoom * fullmapinfo.fullMapWidthInBlocks,
+		blockSizeInPixels * blocksPerRoom * fullmapinfo.fullMapHeightInBlocks,
 		3, 'unsigned char')
 	mapTexImage:clear()
 
@@ -3491,7 +3500,7 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 	if config.mapSaveImageTextured_HighlightItems then
 		-- do this last, so no room tiles overlap it
 		for _,m in ipairs(self.rooms) do
-			local ofsInRoomBlocksX, ofsInRoomBlocksY = ofsPerRegion[m.obj.region+1](m.ptr)
+			local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m.ptr)
 			local xofs = roomSizeInPixels * ofsInRoomBlocksX
 			local yofs = roomSizeInPixels * ofsInRoomBlocksY
 			for _,rs in ipairs(m.roomStates) do
@@ -3529,12 +3538,14 @@ local function drawRoomBlocksDumpworld(
 	dumpworldTileFgImg,
 	dumpworldTileBgImg
 )
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+	
 	local m = rs.room
 	local blocks12 = roomBlockData:getBlocks12()
 	local blocks3 = roomBlockData:getBlocks3()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
 	
 	for j=0,h-1 do
@@ -3795,10 +3806,12 @@ end
 
 function SMMap:mapSaveDumpworldImage(filenamePrefix)
 	filenamePrefix = filenamePrefix or 'map'
+	
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
 
 	-- 1 pixel : 1 block for dumpworld
-	local dumpw = blocksPerRoom * fullMapWidthInBlocks
-	local dumph = blocksPerRoom * fullMapHeightInBlocks
+	local dumpw = blocksPerRoom * fullmapinfo.fullMapWidthInBlocks
+	local dumph = blocksPerRoom * fullmapinfo.fullMapHeightInBlocks
 
 	local dumpworldTileImg = Image(dumpw, dumph, 3, 'unsigned char')
 	local dumpworldTileFgImg = Image(dumpw, dumph, 3, 'unsigned char')
@@ -5630,6 +5643,32 @@ function SMMap:mapWriteRoomBlocks(writeRange)
 	local compressInfo = CompressInfo'rooms'
 	print()
 	for _,roomBlockData in ipairs(self.roomblocks) do
+		
+		-- readjust size based on room sizes
+		roomBlockData:refreshRooms()
+		local m1 = roomBlockData.rooms[1]
+		local w, h = m1.obj.width, m1.obj.height
+		for i=2,#roomBlockData.rooms do
+			local mi = roomBlockData.rooms[i]
+			assert(mi.obj.width == w and mi.obj.height == h)
+		end
+		local numBlocks = w * h * blocksPerRoom * blocksPerRoom
+
+		local oldOffsetToCh3 = ffi.cast('uint16_t*', roomBlockData.data)[0]
+		assert(oldOffsetToCh3 >= 2 * numBlocks)
+		if oldOffsetToCh3 ~= 2 * numBlocks then
+			local newcount = 2 + numBlocks * (roomBlockData.hasLayer2Blocks and 5 or 3)
+			local newdata = ffi.new('uint8_t[?]', newcount)
+			ffi.cast('uint16_t*', newdata)[0] = 2 * numBlocks
+			ffi.copy(newdata + 2, roomBlockData.data + 2, 3 * numBlocks)
+			if roomBlockData.hasLayer2Blocks then
+				ffi.copy(newdata + 2 + 3 * numBlocks, roomBlockData.data + 2 + 3 * oldOffsetToCh3 / 2, 2 * numBlocks)
+			end
+			roomBlockData.data = newdata
+			roomBlockData.count = newcount
+			-- and now the recompression % will also include the clipped data, so it'll not exactly be strictly recompression, but also trimmed block data
+		end
+
 		roomBlockData:recompress(writeRange, compressInfo)
 
 		-- update any roomstate_t's that point to this data

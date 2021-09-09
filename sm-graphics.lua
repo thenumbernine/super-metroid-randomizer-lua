@@ -425,7 +425,7 @@ function SMGraphics:graphicsSavePauseScreenImages()
 		):append(
 			self.regionTilemaps:mapi(function(regionTilemap,i)
 				return {
-					destName = 'regions/regionTilemap'..(i-1),
+					destName = 'mapregions/regionTilemap'..(i-1),
 					tilemap = regionTilemap,
 					tilemapWidth = 32,
 					tilemapHeight = 64,
