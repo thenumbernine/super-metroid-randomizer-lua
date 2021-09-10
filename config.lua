@@ -35,7 +35,7 @@ return {
 	mapOmitOverlappingRoomsInOriginal = false,
 
 	-- for the original rom:
-	-- remove unused rooms, specifically 2-3d and 7-00
+	-- remove unused rooms, specifically 7-00
 	removeUnusedRooms = true,
 
 	-- for the original rom:
@@ -46,7 +46,6 @@ return {
 	---------------------------------------------------------
 	----------------- some ips's / patches ------------------
 	---------------------------------------------------------
-
 
 	-- wake zebes when you go through the room to the right of the first blue brinstar room.
 	-- notice that even if zebes is asleep, you can still get the two items in the room above the first missile... but you can't get the powerbomb behind the powerbomb walls behind morph ball.
