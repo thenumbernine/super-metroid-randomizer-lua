@@ -55,6 +55,9 @@ local table = require 'ext.table'
 
 local byteArraySubset = require 'util'.byteArraySubset
 
+-- idk what this is.  should jmps turn into gotos?  or should this be emulation-equivalents where jmps assign pc?
+local tryToPrintCEquiv = false
+
 local instrsForNames = {
 	ADC = {
 		instrs = {0x69, 0x6D, 0x6F, 0x65, 0x72, 0x67, 0x7D, 0x7F, 0x79, 0x75, 0x61, 0x71, 0x77, 0x63, 0x73},
@@ -903,14 +906,17 @@ local function getLineStr(addr, flag, ...)
 		flag,	-- or maybe I just shouldn't use 'frompc' next:
 		tmpmem
 	)
-	
-	-- trying out c-like pseudocode for kicks
-	local instrcstr = instr:eatcstr(
-		addr,
-		pushflag,
-		tmpmem
-	)
-	
+
+	local instrcstr
+	if tryToPrintCEquiv then
+		-- trying out c-like pseudocode for kicks
+		instrcstr = instr:eatcstr(
+			addr,
+			pushflag,
+			tmpmem
+		)
+	end
+
 	local bank, instrofs = frompc(addr)
 	-- notice frompc is snes based so it's only using 15 bits and setting the 15th
 	-- so wrt addresses, 0x0000-1 = 0xffff, but 0x0000 will show up as address 0x8000 (15th bit goes into the bank) 
@@ -922,13 +928,13 @@ local function getLineStr(addr, flag, ...)
 			linestr = linestr .. '   '
 		end
 	end
-	linestr = linestr ..' '..instr.name
-		..' '..instrstr
-		
-		-- if we are also showing n00b c pseudocode
-		..(' '):rep(16-#instrstr)
-		..instrcstr
-	
+	linestr = linestr ..' '..instr.name ..' '..instrstr
+	if tryToPrintCEquiv then
+		linestr = linestr
+			-- if we are also showing n00b c pseudocode
+			..(' '):rep(16-#instrstr)
+			..instrcstr
+	end	
 	return linestr, n
 end
 

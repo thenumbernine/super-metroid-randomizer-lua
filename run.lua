@@ -11,6 +11,7 @@ http://deanyd.net/sm/index.php?title=List_of_rooms
 
 local file = require 'ext.file'
 local table = require 'ext.table'
+local range = require 'ext.range'
 local tolua = require 'ext.tolua'
 local cmdline = require 'ext.cmdline'(...)
 
@@ -96,7 +97,7 @@ timer('everything', function()
 		return table.unpack(results, 1, results.n)
 	end
 
-	-- [[ apply patches -- do this before removing any rom header
+	--[[ apply patches -- do this before removing any rom header (i guess that depends on the patch's requirements)
 	file.__tmp = file[infilename]
 	local function applyPatch(patchfilename)
 		exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2 show')
@@ -104,16 +105,12 @@ timer('everything', function()
 		file.__tmp2 = nil
 	end
 	
-	if config.skipItemFanfare then
-		applyPatch'itemsounds.ips'
-	end
-	
 	--applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 	
 	romstr = file.__tmp
 	file.__tmp = nil
 	--]]
-	--[[
+	-- [[
 	local romstr = file[infilename]
 	--]]
 
@@ -133,6 +130,9 @@ timer('everything', function()
 
 	local patches = require 'patches'(rom)
 
+	if config.skipItemFanfare then
+		patches:skipItemFanfare()
+	end
 	if config.skipIntro then 
 		patches:skipIntro()
 	end
