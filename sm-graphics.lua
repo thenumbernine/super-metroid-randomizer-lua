@@ -332,9 +332,16 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- and from 0xe980 - end of page is free
 
 
-	-- 1-based, so -1 to get the region #
-	-- 0x1000 = 4096 = 32x64 tiles
-	-- and then the bottom half 32x32 is moved to the right of the top half
+	-- pointers to the region tilemaps are in code here:
+	-- this maps from region# to region tilemap address
+	self.regionTilemapPointers = Blob{sm=self, addr=topc(0x82, 0x964a), count=7, type='addr24_t'}
+
+	--[[
+	Lua table is 1-based
+	notice that Brinstar is first and Crateria second.  look at the regionTilemapPointers for correct index ordering.
+	0x1000 = 4096 = 32x64 tiles
+	and then the bottom half 32x32 is moved to the right of the top half
+	--]]
 	self.regionTilemaps = range(0x8000,0xf000,0x1000):mapi(function(ofs)
 		return Blob{sm=self, addr=topc(0xb5, ofs), count=0x1000}
 	end)

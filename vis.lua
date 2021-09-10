@@ -446,9 +446,9 @@ App.predefinedRegionOffsets = {
 	{
 		name = 'Original',
 		md5s = {
-			'f24904a32f1f6fc40f5be39086a7fa7c',
-			'21f3e98df4780ee1c667b84e57d88675',
-			'3d64f89499a403d17d530388854a7da5',
+			'21f3e98df4780ee1c667b84e57d88675',		-- JU
+			'3d64f89499a403d17d530388854a7da5',		-- E
+			'f24904a32f1f6fc40f5be39086a7fa7c',		-- JU with some memcheck and pal bits changed
 		},
 		ofs = {
 			{0, 0},
@@ -525,6 +525,22 @@ App.predefinedRegionOffsets = {
 			{0,0},
 		},
 	},
+	{
+		name = 'Super Metroid - Airy - Rev 3',
+		md5s = {
+			'bce01c9dbc1be915b3abdd3af63c341a',
+		},
+		ofs = {
+			{0,0},
+			{8,5},
+			{-36,23},
+			{52,39},
+			{2,31},
+			{5,6},
+			{15,-18},
+			{0,0},
+		},
+	},
 }
 
 function App:setRegionOffsets(index)
@@ -559,10 +575,12 @@ function App:update()
 			or blocksPerRoom * -region.ymin <= viewymax
 		)
 		then
-			if editorShowRegionBorders then
+			if editorShowRegionBorders
+			or region == self.mouseOverRegion
+			then
 				local x1, y1 = blocksPerRoom * (region.xmin + region.ofs.x), blocksPerRoom * (region.ymin + region.ofs.y)
 				local x2, y2 = blocksPerRoom * (region.xmax + region.ofs.x), blocksPerRoom * (region.ymax + region.ofs.y)
-				gl.glColor3f(1,0,1)
+				gl.glColor3f(1,region==self.mouseOverRegion and 1 or 0,1)
 				gl.glLineWidth(4)
 				gl.glBegin(gl.GL_LINE_LOOP)
 				gl.glVertex2f(x1, -y1)
@@ -587,10 +605,12 @@ function App:update()
 				or blocksPerRoom * -roomymax >= viewymin
 				or blocksPerRoom * -roomymin <= viewymax
 				then
-					if editorShowRoomBorders then
+					if editorShowRoomBorders
+					or m == self.mouseOverRoom
+					then
 						local x1, y1 = blocksPerRoom * roomxmin, blocksPerRoom * roomymin
 						local x2, y2 = blocksPerRoom * roomxmax, blocksPerRoom * roomymax
-						gl.glColor3f(1,1,0)
+						gl.glColor3f(1,1,self.mouseOverRoom == m and 1 or 0)
 						gl.glLineWidth(4)
 						gl.glBegin(gl.GL_LINE_LOOP)
 						gl.glVertex2f(x1, -y1)
@@ -992,6 +1012,8 @@ function ObjectSelector:updateMouse(app)
 				m.region:calcBounds()
 			end
 --]]
+		else
+			app[self.mouseOverField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
 		end
 	end
 end
@@ -1003,6 +1025,7 @@ end
 local RegionSelector = class(ObjectSelector)
 
 RegionSelector.selectedField = 'selectedRegion'
+RegionSelector.mouseOverField = 'mouseOverRegion'
 
 RegionSelector.snap = blocksPerRoom
 
@@ -1010,18 +1033,23 @@ function RegionSelector:getObjUnderPos(app, x, y)
 	for _,region in ipairs(app.regions) do
 		if region.show then
 			for _,m in ipairs(region.rooms) do
-				local w = m.obj.width
-				local h = m.obj.height
-				local i = math.floor(x / blocksPerRoom - m.obj.x + region.ofs.x)
-				local j = math.floor(-y / blocksPerRoom - m.obj.y + region.ofs.y)
-				if i >= 0 and i < w
-				and j >= 0 and j < h
+				local xmin = m.obj.x + region.ofs.x
+				local ymin = m.obj.y + region.ofs.y
+				local xmax = xmin + m.obj.width
+				local ymax = ymin + m.obj.height
+				if x >= xmin * blocksPerRoom
+				and x <= xmax * blocksPerRoom
+				and y >= -ymax * blocksPerRoom
+				and y <= -ymin * blocksPerRoom
 				then
-					if not editorHideFilledMapBlocks
-					or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
-					then
+--					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+--					local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
+--					local rs = m.roomStates[currentRoomStateIndex]
+--					if not editorHideFilledMapBlocks
+--					or bit.band(rs.roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+--					then
 						return region
-					end
+--					end
 				end
 			end
 		end
@@ -1048,6 +1076,7 @@ local regionSelector = RegionSelector()
 local RoomSelector = class(ObjectSelector)
 
 RoomSelector.selectedField = 'selectedRoom'
+RoomSelector.mouseOverField = 'mouseOverRoom'
 
 RoomSelector.snap = blocksPerRoom
 

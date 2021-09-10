@@ -33,6 +33,7 @@ assert(ffi.new('lzcmd_t', 32+64+128).cmd == 7)
 
 -- decompresses from 'rom' to a lua table of numbers
 local function decompress(rom, addr, ctype)
+	rom = ffi.cast('uint8_t*', rom)
 	ctype = ctype or 'uint8_t'
 	local startaddr = addr
 	local result = vector'uint8_t'

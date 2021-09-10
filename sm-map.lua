@@ -105,9 +105,9 @@ local debugImageRoomSizeInPixels = blocksPerRoom * debugImageBlockSizeInPixels
 
 function SMMap:mapGetFullMapInfoForMD5(md5)
 	local version = ({
-		['f24904a32f1f6fc40f5be39086a7fa7c'] = 'original',	-- JU PAL
-		['21f3e98df4780ee1c667b84e57d88675'] = 'original',	-- JU NTSC
+		['21f3e98df4780ee1c667b84e57d88675'] = 'original',	-- JU
 		['3d64f89499a403d17d530388854a7da5'] = 'original',	-- E
+		['f24904a32f1f6fc40f5be39086a7fa7c'] = 'original',	-- JU with some memcheck and pal bits changed
 		['6092a3ea09347e1800e330ea27efbef2'] = 'vitality',
 	})[md5]
 
@@ -2350,7 +2350,6 @@ function SMMap:mapReadTileSets()
 			index = tileSetIndex,
 			sm = self,
 		}
-		self.tileSets:insert(tileSet)
 
 		tileSet:setPalette(self:mapAddTileSetPalette(tileSet.obj.paletteAddr24:topc()))
 
@@ -2385,9 +2384,7 @@ function SMMap:mapReadTileSets()
 		local loadMode7 = tileSetIndex >= 0x11 and tileSetIndex <= 0x14		-- ceres rooms 6-00 and 6-05
 		local loadCommonRoomElements = not isCeres
 			
-
 		tileSet:setGraphicsTileSet(self:mapAddTileSetGraphicsTileSet(tileSet.obj.graphicsTileAddr24:topc()))
-
 
 		--[[
 		key by address, keep track of decompressed data, so that we don't have to re-decompress them
@@ -2498,6 +2495,7 @@ function SMMap:mapReadTileSets()
 		-- this way, if a background uses a graphicsTile, then we can flag all tileIndexes that are also used
 		-- (it will have to map to multiple tileIndexes)
 		-- used for tileIndex removal/optimization
+		self.tileSets:insert(tileSet)
 	end
 
 	-- strangely, immediately *after* the tileset data, is the table into the tileset data
