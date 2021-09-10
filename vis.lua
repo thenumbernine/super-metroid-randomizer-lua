@@ -21,8 +21,10 @@ local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
 local SM = require 'sm'
 
+
 -- TODO replace this with shaders
-local useBakedLayer3Background = true
+local useBakedGraphicsTileTextures = true 
+--local useBakedGraphicsTileTextures = false
 
 
 --local cmdline = require 'ext.cmdline'(...)
@@ -67,6 +69,27 @@ for k,v in pairs(editorModes) do
 end
 editorMode = 1
 
+
+local function glMakeU8Tex(image)
+	assert(ffi.sizeof(image.format) == 1)
+	assert(image.channels == 1)
+	return GLTex2D{
+		width = image.width,
+		height = image.height,
+		data = image.buffer,
+		format = gl.GL_RED,
+		internalFormat = gl.GL_R8,	-- gl.GL_R8UI,
+		type = gl.GL_UNSIGNED_BYTE,
+		magFilter = gl.GL_NEAREST,
+		minFilter = gl.GL_NEAREST,
+		generateMipmap = false,
+		wrap = {
+			s = gl.GL_REPEAT,
+			t = gl.GL_REPEAT,
+		},
+	}
+end
+
 -- [==[ can't get rid of this yet until I store the tilemaps separately as well
 -- but turns out baking the palette was the biggest slowdown
 do
@@ -75,17 +98,7 @@ do
 		local tileSet, tilemap = ...
 		local bgBmp = old(self, ...)
 		if not bgBmp.tex then
-			bgBmp.tex = GLTex2D{
-				width = bgBmp.dataBmp.width,
-				height = bgBmp.dataBmp.height,
-				data = bgBmp.dataBmp.buffer,
-				format = gl.GL_RED,
-				internalFormat = gl.GL_RED,
-				type = gl.GL_UNSIGNED_BYTE,
-				magFilter = gl.GL_NEAREST,
-				minFilter = gl.GL_NEAREST,
-				generateMipmap = false,
-			}
+			bgBmp.tex = glMakeU8Tex(bgBmp.dataBmp)
 		end
 		return bgBmp
 	end
@@ -214,6 +227,7 @@ function App:initGL()
 
 	-- half tempted to write a shader that reads the bits as is ....
 	for _,palette in ipairs(self.sm.tileSetPalettes) do
+		-- [[ convert to RGBA8	
 		local img = Image(256, 1, 4, 'unsigned char')
 		img:clear()
 		for paletteIndex=0,math.min(palette.count,256)-1 do
@@ -224,7 +238,12 @@ function App:initGL()
 			img.buffer[3 + 4 * paletteIndex] = bit.band(paletteIndex, 0xf) > 0 and 255 or 0
 		end
 		palette.tex = GLTex2D{
-			image = img,
+			width = img.width,
+			height = img.height,
+			data = img.buffer,
+			format = gl.GL_RGBA,
+			internalFormat = gl.GL_RGBA8,
+			type = gl.GL_UNSIGNED_BYTE,
 			magFilter = gl.GL_NEAREST,
 			minFilter = gl.GL_NEAREST,
 			generateMipmap = false,
@@ -233,6 +252,36 @@ function App:initGL()
 				t = gl.GL_REPEAT,
 			},
 		}
+		--]]
+		--[[ try to upload and operate on 1555 as-is
+		local img = Image(256, 1, 4, 'uint16_t')
+		img:clear()
+		ffi.copy(img.buffer, palette.data, math.min(palette.count,256)*2)
+		palette.tex = GLTex2D{
+			width = img.width,
+			height = img.height,
+			data = img.buffer,
+			format = gl.GL_RGBA,
+			internalFormat = gl.GL_RGB5_A1_OES,
+			--internalFormat = gl.GL_RGB5_A1,			-- doesn't work:
+			--internalFormat = gl.GL_RGB5,				-- works, but no alpha:
+			--internalFormat = gl.GL_RGBA8,				-- doesn't work:
+			--internalFormat = gl.GL_RGBA,				-- doesn't work:
+			type = gl.GL_UNSIGNED_SHORT_1_5_5_5_REV,	-- doesn't work with RGB5_A1:
+			--type = gl.GL_UNSIGNED_SHORT_5_5_5_1,		-- works with RGB5_A1, but is backwards
+			magFilter = gl.GL_NEAREST,
+			minFilter = gl.GL_NEAREST,
+			generateMipmap = false,
+			wrap = {
+				s = gl.GL_REPEAT,
+				t = gl.GL_REPEAT,
+			},
+		}
+		--]]
+		-- another TODO would be to use glColorTables,
+		-- and that would mean putting the palette data inside glBuffers
+		-- as a GL_PIXEL_UNPACK_BUFFER
+		-- but then I also can't use the palette data as a texture itself
 	end
 	
 	for _,tileSet in ipairs(self.sm.tileSets) do
@@ -257,32 +306,16 @@ function App:initGL()
 					end
 				end
 			end
-			tileSet.tex = GLTex2D{
-				width = img.width,
-				height = img.height,
-				data = img.buffer,
-				format = gl.GL_RED,
-				internalFormat = gl.GL_RED,
-				type = gl.GL_UNSIGNED_BYTE,
-				magFilter = gl.GL_NEAREST,
-				minFilter = gl.GL_NEAREST,
-				generateMipmap = false,
-				wrap = {
-					s = gl.GL_REPEAT,
-					t = gl.GL_REPEAT,
-				},
-			}
+			tileSet.tex = glMakeU8Tex(img)
 		end
 	end
 
 	for _,tilemap in ipairs(self.sm.bgTilemaps) do
 		if not tilemap.tex then
-			local img = Image(tilemap.width, tilemap.height, 1, 'unsigned short')
-			ffi.copy(img.buffer, tilemap.data, tilemap:sizeof())
 			tilemap.tex = GLTex2D{
-				width = img.width,
-				height = img.height,
-				data = img.buffer,
+				width = tilemap.width,
+				height = tilemap.height,
+				data = tilemap.buffer,
 				format = gl.GL_RED,
 				internalFormat = gl.GL_R16,
 				type = gl.GL_UNSIGNED_SHORT,
@@ -293,8 +326,7 @@ function App:initGL()
 		end
 	end
 
-	if useBakedLayer3Background then
--- [==[
+	if useBakedGraphicsTileTextures then
 		-- precache all roomstate bgs
 		-- TODO indexed palette renderer so this isn't needed
 		for _,m in ipairs(self.sm.rooms) do
@@ -306,7 +338,6 @@ function App:initGL()
 				end
 			end
 		end
---]==]
 	end
 
 	-- make textures of the region maps
@@ -323,66 +354,118 @@ function App:initGL()
 	
 	self.indexShader = GLProgram{
 		vertexCode = [[
-varying vec2 tc;
+#version 460
+
+in vec4 vertex;
+in vec2 tca;
+out vec2 tcv;
+uniform mat4 pmvMat;
 void main() {
-	tc = gl_MultiTexCoord0.xy;
-	gl_Position = ftransform();
+	tcv = tca.xy;
+	gl_Position = pmvMat * vertex;
 }
 ]],
 		fragmentCode = [[
-varying vec2 tc;
+#version 460
+
+in vec2 tcv;
+out vec4 fragColor;
 uniform sampler2D tex;
-uniform sampler2D palette;
+uniform sampler2D paletteTex;
 void main() {
-	float index = texture2D(tex, tc).r * 255.;
-	gl_FragColor = texture2D(palette, vec2((index + .5)/256., .5));
+	float paletteIndex = floor(texture(tex, tcv).x * 255. + .5);
+	vec2 paletteTC;
+	paletteTC.x = (paletteIndex + .5) / 256.;
+	paletteTC.y = .5;
+	fragColor = texture(paletteTex, paletteTC);
 }
 ]],
 		uniforms = {
 			tex = 0,
-			palette = 1,
+			paletteTex = 1,
 		},
 	}
 	self.indexShader:useNone()
 
---[==[
+if not useBakedGraphicsTileTextures then
 	self.tilemapShader = GLProgram{
 		vertexCode = [[
-#version 300
+#version 460
 
-varying vec2 tc;
+in vec4 vertex;
+in vec2 tca;
+
+out vec2 tcv;
+
+uniform mat4 pmvMat;
+
 void main() {
-	tc = gl_MultiTexCoord0.xy;
-	gl_Position = ftransform();
+	tcv = tca.xy;
+	gl_Position = pmvMat * vertex;
 }
 ]],
 		fragmentCode = [[
-#version 300
+#version 460
 
-varying vec2 tc;
-uniform usampler2D tilemap;
-uniform usampler2D graphicsTiles;
-uniform usampler2D palette;
+in vec2 tcv;
+
+out vec4 fragColor;
+
+uniform sampler2D tilemap;
+
+uniform vec2 graphicsTilesTexSizeInTiles;
+uniform sampler2D graphicsTiles;
+
+uniform sampler2D paletteTex;
+
 void main() {
-	//TODO lookup uint16 plz
-	uint tileIndex = texture(tilemap, tc).r;
-	bool pimask = (value & 0x400) == 0x400;
-	bool pjmask = (value & 0x800) == 0x800;
-	tileIndex &= 0x3ff;
+	vec2 withinGraphicsTile = tcv - floor(tcv);
+	
+	float tileIndex = floor(texture(tilemap, tcv).r * 65535. + .5);
+	
+	bool flipy = false;
+	if (tileIndex >= 32768.) {
+		flipy = true;
+		tileIndex -= 32768.;
+	}
+	
+	bool flipx = false;
+	if (tileIndex >= 16384.) {
+		flipx = true;
+		tileIndex -= 16384.;
+	}
+
+	float colorIndexHi = floor(tileIndex / 1024. + .5);
+	tileIndex -= colorIndexHi * 1024.;
 
 	//1) determine which subtile 8x8 graphics tile we are in
+	//assume graphicsTiles is tiles of 8x8
+	vec2 graphicsTC;
+	graphicsTC.x = floor(mod(tileIndex, graphicsTilesTexSizeInTiles.x)) / graphicsTilesTexSizeInTiles.x;
+	graphicsTC.y = floor(tileIndex / graphicsTilesTexSizeInTiles.x) / graphicsTilesTexSizeInTiles.y;
+	if (flipx) withinGraphicsTile.x = 1. - withinGraphicsTile.x;
+	if (flipy) withinGraphicsTile.y = 1. - withinGraphicsTile.y;
+	graphicsTC += withinGraphicsTile / graphicsTilesTexSizeInTiles;
 	
+	float paletteIndex = floor(texture(graphicsTiles, graphicsTC).r * 255. + .5);
+	fragColor.a = (paletteIndex == 0.) ? 0. : 1.;
+	paletteIndex += colorIndexHi * 16.;
+
 	//2) 
+	vec2 paletteTC;
+	paletteTC.x = (paletteIndex + .5) / 256.;
+	paletteTC.y = .5;
+	fragColor.rgb = texture(paletteTex, paletteTC).rgb;
 }
 ]],
 		uniforms = {
 			tilemap = 0,
 			graphicsTiles = 1,
-			palette = 2,
+			paletteTex = 2,
 		},
 	}
 	self.tilemapShader:useNone()
---]==]
+end
 
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
@@ -426,17 +509,7 @@ function App:graphicsTilesToTex(ptr, size, tilemapElemSizeX)
 
 	-- alright now that we have this, we can store the tilemap as a uint16 per graphicstile
 	-- instead of as a rendered bitmap
-	return GLTex2D{
-		width = img.width,
-		height = img.height,
-		data = img.buffer,
-		format = gl.GL_RED,
-		internalFormat = gl.GL_RED,
-		type = gl.GL_UNSIGNED_BYTE,
-		magFilter = gl.GL_NEAREST,
-		minFilter = gl.GL_NEAREST,
-		generateMipmap = false,
-	}
+	return glMakeU8Tex(img)
 end
 
 
@@ -541,6 +614,13 @@ App.predefinedRegionOffsets = {
 			{0,0},
 		},
 	},
+--[[
+what won't load?
+- Redesigned 2.3
+- Ascent
+- Dependence 1.87
+- Ice Metal 1.24
+--]]
 }
 
 function App:setRegionOffsets(index)
@@ -549,6 +629,13 @@ function App:setRegionOffsets(index)
 		self.regions[i].ofs:set(ofs[1], ofs[2])
 	end
 end
+
+local matrix_ffi = require 'matrix.ffi'
+matrix_ffi.real = 'float'
+	
+local projMat = matrix_ffi.zeros(4,4)
+local mvMat = matrix_ffi.zeros(4,4)
+local pmvMat = matrix_ffi.zeros(4,4)
 
 -- 1 gl unit = 1 tile
 function App:update()
@@ -563,6 +650,19 @@ function App:update()
 	viewymin = view.pos.y - view.orthoSize
 	viewymax = view.pos.y + view.orthoSize
 
+
+	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, mvMat.ptr)
+	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, projMat.ptr)
+	matrix_ffi.inner(projMat, mvMat, nil, nil, nil, pmvMat)
+
+	self.indexShader:use()
+	gl.glUniformMatrix4fv(self.indexShader.uniforms.pmvMat.loc, 1, gl.GL_FALSE, pmvMat.ptr)
+	self.indexShader:useNone()
+	if self.tilemapShader then
+		self.tilemapShader:use()
+		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.pmvMat.loc, 1, gl.GL_FALSE, pmvMat.ptr)
+		self.tilemapShader:useNone()
+	end
 
 	for i,region in ipairs(self.regions) do
 		local rooms = region.rooms
@@ -633,7 +733,6 @@ function App:update()
 					-- TODO instead of finding the first, hold a current index for each room 
 					local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 					local bgTilemap = bg and bg.tilemap
-					local bgTilemapTex = bgTilemap and bgTilemap.tex
 
 					if tileSet
 					and tileSet.tex
@@ -641,12 +740,13 @@ function App:update()
 					and roomBlockData 
 					then
 -- TODO get the tilemap shader working and then turn this off
-if useBakedLayer3Background then
+if useBakedGraphicsTileTextures then
+						
+						self.indexShader:use()
+						
 						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 						local bgTex = bgBmp and bgBmp.tex
 						if bgTex then
-	
-							self.indexShader:use()
 							
 							bgTex:bind(0)
 							tileSet.palette.tex:bind(1)
@@ -677,10 +777,10 @@ if useBakedLayer3Background then
 										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
 
-										gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
-										gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
-										gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
-										gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
 									end
 								end
 							end
@@ -689,54 +789,8 @@ if useBakedLayer3Background then
 							tileSet.palette.tex:unbind(1)
 							bgTex:unbind(0)
 							
-							self.indexShader:useNone()
-					
 						end
-end
---[==[
-						if bgTilemapTex then
-							self.tilemapShader:use()
-							
-							bgTilemapTex:bind(0)
-							tileSet.graphicsTileTex:bind(1)
-							tileSet.palette.tex:bind(2)
-							
-							gl.glBegin(gl.GL_QUADS)
-							for j=0,h-1 do
-								for i=0,w-1 do
-									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-									or blocksPerRoom * (roomxmin + i) <= viewxmax
-									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-									or blocksPerRoom * -(roomymin + j) <= viewymax
-									then
-										local x1 = blocksPerRoom * (i + roomxmin)
-										local y1 = blocksPerRoom * (j + roomymin)
-										local x2 = x1 + blocksPerRoom 
-										local y2 = y1 + blocksPerRoom 
 
-										local tx1 = i * roomSizeInPixels / bgTex.width
-										local ty1 = j * roomSizeInPixels / bgTex.height
-										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
-										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
-
-										gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
-										gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
-										gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
-										gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
-									end
-								end
-							end
-							gl.glEnd()
-							
-							tileSet.palette.tex:unbind(2)
-							tileSet.graphicsTileTex:unbind(1)
-							bgTilemapTex:unbind(0)
-							
-							self.tilemapShader:useNone()
-						end
---]==]
-
-						self.indexShader:use()
 
 						local tex = tileSet.tex
 						local paletteTex = tileSet.palette.tex
@@ -802,10 +856,10 @@ end
 												local x2 = x1 + 1
 												local y2 = y1 + 1
 												
-												gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x1, -y1)
-												gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x2, -y1)
-												gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x2, -y2)
-												gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x1, -y2)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
 											end
 											
 											-- draw tile
@@ -834,10 +888,10 @@ end
 												local x = ti + blocksPerRoom * (i + roomxmin)
 												local y = tj + blocksPerRoom * (j + roomymin)
 												
-												gl.glTexCoord2f(tx1, ty1)	gl.glVertex2f(x, -y)
-												gl.glTexCoord2f(tx2, ty1)	gl.glVertex2f(x+1, -y)
-												gl.glTexCoord2f(tx2, ty2)	gl.glVertex2f(x+1, -y-1)
-												gl.glTexCoord2f(tx1, ty2)	gl.glVertex2f(x, -y-1)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x, -y)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x+1, -y)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x+1, -y-1)
+												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x, -y-1)
 											end
 										end
 									end
@@ -849,6 +903,177 @@ end
 						tex:unbind(0)
 
 						self.indexShader:useNone()
+
+else -- useBakedGraphicsTileTextures 
+							
+						self.tilemapShader:use()
+						
+						local bgTilemapTex = bgTilemap and bgTilemap.tex
+						if bgTilemapTex then
+							
+							bgTilemapTex:bind(0)
+							tileSet.graphicsTileTex:bind(1)
+							tileSet.palette.tex:bind(2)
+
+							gl.glUniform2f(
+								self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
+								tileSet.graphicsTileTex.width,
+								tileSet.graphicsTileTex.height)
+							
+							gl.glBegin(gl.GL_QUADS)
+							for j=0,h-1 do
+								for i=0,w-1 do
+									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+									or blocksPerRoom * (roomxmin + i) <= viewxmax
+									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									or blocksPerRoom * -(roomymin + j) <= viewymax
+									then
+										local x1 = blocksPerRoom * (i + roomxmin)
+										local y1 = blocksPerRoom * (j + roomymin)
+										local x2 = x1 + blocksPerRoom 
+										local y2 = y1 + blocksPerRoom 
+
+										local tx1 = i * roomSizeInPixels / bgTilemapTex.width
+										local ty1 = j * roomSizeInPixels / bgTilemapTex.height
+										local tx2 = (i+1) * roomSizeInPixels / bgTilemapTex.width
+										local ty2 = (j+1) * roomSizeInPixels / bgTilemapTex.height
+
+										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
+										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
+										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
+										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+									end
+								end
+							end
+							gl.glEnd()
+							
+							tileSet.palette.tex:unbind(2)
+							tileSet.graphicsTileTex:unbind(1)
+							bgTilemapTex:unbind(0)
+						end
+
+
+						local tex = tileSet.tex
+						tex:bind(0)
+						tileSet.graphicsTileTex:bind(1)
+						tileSet.palette.tex:bind(2)
+						
+						gl.glUniform2f(
+							self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
+							tileSet.graphicsTileTex.width / 8,
+							tileSet.graphicsTileTex.height / 8)
+
+						local blocks12 = roomBlockData:getBlocks12()
+						local layer2blocks = roomBlockData:getLayer2Blocks()
+						
+						gl.glBegin(gl.GL_QUADS)
+						for j=0,h-1 do
+							for i=0,w-1 do
+								if (
+									blocksPerRoom * (roomxmin + i + 1) >= viewxmin
+									or blocksPerRoom * (roomxmin + i) <= viewxmax
+									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
+									or blocksPerRoom * -(roomymin + j) <= viewymax
+								) then
+									
+									local drawLayer2 = 
+										editorDrawLayer2
+										and layer2blocks
+										-- [[
+										and (
+											not editorHideFilledMapBlocks
+											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
+										)
+										--]]
+
+									local drawLayer1 = 
+										editorDrawForeground 
+										and blocks12
+										-- [[
+										and (
+											not editorHideFilledMapBlocks
+											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+										)
+										--]]
+
+									for ti=0,blocksPerRoom-1 do
+										for tj=0,blocksPerRoom-1 do
+											-- draw layer2 background if it's there
+											if drawLayer2 then
+												local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
+												local pimask = bit.band(tileIndex, 0x400) ~= 0
+												local pjmask = bit.band(tileIndex, 0x800) ~= 0
+												tileIndex = bit.band(tileIndex, 0x3ff)
+											
+												
+												local tx1 = tileIndex % tileSetRowWidth
+												local ty1 = math.floor(tileIndex / tileSetRowWidth)
+
+												tx1 = tx1 / tileSetRowWidth
+												ty1 = ty1 / (tex.height / blockSizeInPixels)
+
+												local tx2 = tx1 + blockSizeInPixels/tex.width
+												local ty2 = ty1 + blockSizeInPixels/tex.height
+
+												if pimask then tx1,tx2 = tx2,tx1 end
+												if pjmask then ty1,ty2 = ty2,ty1 end
+
+												local x1 = ti + blocksPerRoom * (i + roomxmin)
+												local y1 = tj + blocksPerRoom * (j + roomymin)
+												local x2 = x1 + 1
+												local y2 = y1 + 1
+												
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+											end
+											
+											-- draw tile
+											if drawLayer1 then
+												local dx = ti + blocksPerRoom * i
+												local dy = tj + blocksPerRoom * j
+												local di = dx + blocksPerRoom * w * dy
+												
+												local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
+												local pimask = bit.band(tileIndex, 0x400) ~= 0
+												local pjmask = bit.band(tileIndex, 0x800) ~= 0
+												tileIndex = bit.band(tileIndex, 0x3ff)
+
+												local tx1 = tileIndex % tileSetRowWidth
+												local ty1 = math.floor(tileIndex / tileSetRowWidth)
+
+												tx1 = tx1 / tileSetRowWidth
+												ty1 = ty1 / (tex.height / blockSizeInPixels)
+
+												local tx2 = tx1 + blockSizeInPixels/tex.width
+												local ty2 = ty1 + blockSizeInPixels/tex.height
+
+												if pimask then tx1,tx2 = tx2,tx1 end
+												if pjmask then ty1,ty2 = ty2,ty1 end
+
+												local x = ti + blocksPerRoom * (i + roomxmin)
+												local y = tj + blocksPerRoom * (j + roomymin)
+												
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x, -y)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x+1, -y)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x+1, -y-1)
+												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x, -y-1)
+											end
+										end
+									end
+								end
+							end
+						end
+						gl.glEnd()
+						
+						tileSet.palette.tex:unbind(2)
+						tileSet.graphicsTileTex:unbind(1)
+						tex:unbind(0)
+
+						self.tilemapShader:useNone()
+
+end -- useBakedGraphicsTileTextures
 					
 						-- draw roomstate plms here
 						if editorDrawPLMs
@@ -949,6 +1174,7 @@ end
 	end
 
 	App.super.update(self)
+glreport'here'
 end
 
 
