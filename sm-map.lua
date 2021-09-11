@@ -40,7 +40,6 @@ local tableSubsetsEqual = require 'util'.tableSubsetsEqual
 local tablesAreEqual = require 'util'.tablesAreEqual
 local byteArraysAreEqual = require 'util'.byteArraysAreEqual
 local tableToByteArray = require 'util'.tableToByteArray
-local byteArrayToHexStr = require 'util'.byteArrayToHexStr
 
 
 local SMMap = {}
@@ -86,7 +85,7 @@ local commonRoomTilemapAddrLocs = table{
 }
 
 
-local blocksPerRoom = 16
+local blocksPerRoom = require 'roomblocks'.blocksPerRoom
 local blockSizeInPixels = 16
 local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
@@ -581,31 +580,20 @@ local demoRoom_t = struct{
 	},
 }
 
-local tileSetCount = 29	-- this is the # that are used in metroid.
+local tileSetCount = 29	-- this is the # that are used in metroid.  hardcoded?
 
 --[[
-the first two bytes at 0x07e6a0 are the uint16 value 0xdc8, 
-which equals 9 * 392 
-... but adding that to the tileSetBaseOffset would overlap with plm_t data
-which bank is this? $8f
---]]
-local tileSetBaseOffset = 0x07e6a2 
+just before this are the tileSets
+why are the pointers into the table stored *after* the table?
 
---[[
-this is a tilemapElem+graphicsTile+palette triplet
-so if i wanted to optimize this then i should keep track of what tiles are used per each 'tile' and 'graphicsTile'
-and that means i should try to decompress each into 16x16 bmps separately
-and store separately sets of which are being referenced, for optimizations sake
+just before that, from e68a-e6a2, are a list of offsets to door-closing PLMs
 --]]
-local tileSet_t = struct{
-	name = 'tileSet_t',
-	fields = {
-		{tileAddr24 = 'addr24_t'},
-		{graphicsTileAddr24 = 'addr24_t'},
-		{paletteAddr24 = 'addr24_t'},
-	},
-}
-assert(ffi.sizeof'tileSet_t' == 9)
+local tileSetOffsetsAddr = topc(0x8f, 0xe7a7)
+
+-- NOTICE this is just used for testing to see if it moved
+-- since this info is stored in the tileSetOffsetsAddr[] data
+local tileSetOrigBaseAddr = topc(0x8f, 0xe6a2)
+
 
 SMMap.plmCmdValueForName = table{
 	
@@ -808,156 +796,11 @@ end
 SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v end)
 
 
-local Room = class()
-function Room:init(args)
-	self.roomStates = table()
-	self.doors = table()
-	for k,v in pairs(args) do
-		self[k] = v
-	end
-end
+local Room = require 'room'
+local RoomState = require 'roomstate'
 
--- [[ TODO remove these and merge Room with Blob somehow
-function Room:setOffset(sm, ofs)
-	assert(ofs >= 0x8000 and ofs < 0xffff, "expects a 16-bit page offset, not 24-bit")
-	self.ptr = sm.rom + topc(sm.roomBank, ofs)
-end
-function Room:getOffset(sm)
-	assert(self.ptr, "you can't get the page offset if you don't know the ptr")
-	local addr = ffi.cast('uint8_t*', self.ptr) - sm.rom
-	local bank, ofs = frompc(addr)
-	assert(bank == sm.roomBank)
-	return ofs
-end
---]]
-
-function Room:findDoorTo(destRoom)
-	local _, door = self.doors:find(nil, function(door) 
-		return door.destRoom == destRoom
-	end)
-	return door
-end
-
-local RoomState = class()
-function RoomState:init(args)
-	for k,v in pairs(args) do
-		self[k] = v
-	end
-	self.fx1s = self.fx1s or table()
-	self.bgs = self.bgs or table()
-end
-
-function RoomState:setPLMSet(plmset)
-	if self.plmset then
-		self.plmset.roomStates:removeObject(self)
-	end
-	self.plmset = plmset
-	if self.plmset then
-		self.plmset.roomStates:insert(self)
-	end
-end
-function RoomState:setEnemySpawnSet(enemySpawnSet)
-	if self.enemySpawnSet then
-		self.enemySpawnSet.roomStates:removeObject(self)
-	end
-	self.enemySpawnSet = enemySpawnSet
-	if self.enemySpawnSet then
-		self.enemySpawnSet.roomStates:insert(self)
-	end
-end
-function RoomState:setEnemyGFXSet(enemyGFXSet)
-	if self.enemyGFXSet then
-		self.enemyGFXSet.roomStates:removeObject(self)
-	end
-	self.enemyGFXSet = enemyGFXSet
-	if self.enemyGFXSet then
-		self.enemyGFXSet.roomStates:insert(self)
-	end
-end
-function RoomState:setRoomBlockData(roomBlockData)
-	if self.roomBlockData then
-		self.roomBlockData.roomStates:removeObject(self)
-		self.roomBlockData:refreshRooms()
-	end
-	self.roomBlockData = roomBlockData
-	if self.roomBlockData then
-		self.roomBlockData.roomStates:insert(self)
-		self.roomBlockData:refreshRooms()
-	end
-end
-function RoomState:setTileSet(tileSet)
-	if self.tileSet then
-		self.tileSet.roomStates:removeObject(self)
-	end
-	self.tileSet = tileSet
-	if self.tileSet then
-		self.tileSet.roomStates:insert(self)
-	end
-end
-
-
---[[
-alright, I'm just going to make plms as pure lua objects
-so I can add optional extra data loke scrollmod directly to the plm
-expected fields (from plm_t, so just use plm_t:toLua()):
-	cmd
-	x
-	y
-	args
-	ptr
-	scrollmod (optional)
---]]
-local PLM = class()
+local PLM = require 'plm'
 SMMap.PLM = PLM
-
-function PLM:init(args)
-	for k,v in pairs(args) do
-		self[k] = v
-	end
-	assert(self.cmd)
-	assert(self.x)
-	assert(self.y)
-	assert(self.args)
-end
-
-function PLM:getName()
-	return sm.plmCmdNameForValue[self.cmd]
-end
-
-function PLM:toC()
-	--return ffi.new('plm_t', self)
-	return ffi.new('plm_t', {
-		cmd = self.cmd,
-		x = self.x,
-		y = self.y,
-		args = self.args,
-	})
-end
-
-function PLM.__eq(a,b)
-	--return a:toC() == b:toC()
-	return a.cmd == b.cmd
-		and a.x == b.x
-		and a.y == b.y
-		and a.args == b.args
-end
-
-function PLM.__concat(a,b) 
-	return tostring(a) .. tostring(b) 
-end
-
-function PLM:__tostring()
-	local s = '{'
-		..('cmd=%04x'):format(self.cmd)
-		..(', x=%02x'):format(self.x)
-		..(', y=%02x'):format(self.y)
-		..(', args=%04x'):format(self.args)
-	if self.scrollmod then
-		s = s .. ', scrollmod='.. tolua(self.scrollmod)
-	end
-	s = s .. '}'
-	return s
-end
 
 
 local PLMSet = class()
@@ -969,53 +812,9 @@ function PLMSet:init(args)
 end
 
 
-local Door = class()
-
+local Door = require 'door'
 SMMap.Door = Door
 
---[[
-args: 
-	sm = for the super metroid hack global info
-	addr = right now - points to the door structure
-
-looks like right now I am not rearranging any of the door_t or lift_t's
---]]
-function Door:init(args)
-	args = table(args):setmetatable(nil)
-	
-	local sm = args.sm
-	local rom = sm.rom
-	
-	local addr = assert(args.addr)
-	local data = rom + addr 
-	local destRoomPageOffset = ffi.cast('uint16_t*', data)[0]
-	-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
-	local ctype = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
-
-	self.addr = addr
-	--local addr = topc(sm.doorBank, self.addr)
-	
-	-- derived fields:
-	
-	self.type = ctype
-	self.ptr = ffi.cast(ctype..'*', data)
-	self.obj = ffi.new(ctype, self.ptr[0])
-
-	if ctype == 'door_t' 
-	and self.ptr.code > 0x8000 
-	then
-		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
-		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom)
-	end
-end
-
-function Door:setDestRoom(room)
-	self.destRoom = room
-	-- TODO don't bother do this until writing
-	local bank, ofs = frompc(room.addr)
-	assert(bank == self.roomBank)
-	self.ptr.destRoomPageOffset = ofs
-end
 
 -- TODO make common with mapAddTileSetTilemap
 function SMMap:mapAddBGTilemap(addr)
@@ -1541,557 +1340,8 @@ function SMMap:mapAddFX1(addr)
 end
 
 
-local RoomBlocks = class(Blob)
+local RoomBlocks = require 'roomblocks'
 SMMap.RoomBlocks = RoomBlocks
-
-RoomBlocks.compressed = true
-
-function RoomBlocks:init(args)
-	assert(args.compressed == nil)
-	assert(args.type == nil)
-	
-	RoomBlocks.super.init(self, args)
-	
-	local dataSize = ffi.sizeof(self.data)
-	local m = args.m
-
-	-- list of unique rooms that have roomstates that use this roomBlockData
-	-- don't add/remove to this list, instead use :refreshRooms()
-	self.rooms = table()
-	
-	self.roomStates = table()
-
-	local ofs = 0
-	
-	self.offsetToCh3 = ffi.cast('uint16_t*', self.data)[0]
-
-	-- offsetToCh3 is the offset to channel 3 of the blocks
-	-- and is usually = 2*w*h, sometimes >2*w*h
-	--  in that case ... what's in the padding?
-
-	local w = m.obj.width * blocksPerRoom
-	local h = m.obj.height * blocksPerRoom
-	
-	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
-
-	-- this is just 16 * room's (width, height)
-	self.width = w
-	self.height = h
-
---print('offset to ch3', self.offsetToCh3)
---print('numblocks', ffi.sizeof(self.data) - 2)
---print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
---print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
---print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
-	-- decompressed / numblocks is only ever 3 or 5
-	-- what determines which?
-	if (ffi.sizeof(self.data) - 2) / (w * h) < 3 then
-		print("WARNING - room has not enough blocks to fill the room")
-		return
-	end
-
-	-- TODO what happens when self.offsetToCh3 is > 2*w*h
-	ofs = ofs + 2 + self.offsetToCh3 / 2 * 3
-	-- channel 3 ... referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
-	if ofs > dataSize then
-		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
-	end
-	-- if there's still more to read...
-	if ofs < dataSize then
-		if dataSize - ofs < 2 * w * h then
-			print("WARNING - didn't get enough tile data from decompression for layer 2 data. expected room data size "..ofs.." <= data we got "..dataSize)
-		else
-			self.hasLayer2Blocks = true
-		end
-	end
-
-
-	-- keep track of doors
-	
-	-- ok, this correlates with the door plms, so it is useful
-	--  but it isn't general to all exits
-	self.doors = table()	-- x,y,w,h
-	-- so that's where this comes in.  it is general to all exits.
-	-- 	key is the exit, value is a list of all positions of each exit xx9xyy block
-	self.blocksForExit = table()
-	local blocks12 = self:getBlocks12()
-	local blocks3 = self:getBlocks3()
-	for j=0,h-1 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
-		for i=0,w-1 do
-			local index = i + w * j
-			local a = blocks12[0 + 2 * index]
-			local b = blocks12[1 + 2 * index]
-			local c = blocks3[index]
-
--- [[
--- look for 0x9x in ch2 of of self.blocks
-			if bit.band(b, 0xf0) == 0x90 then
-				local exitIndex = c
-				self.blocksForExit[exitIndex] = self.blocksForExit[exitIndex] or table()
-				self.blocksForExit[exitIndex]:insert{i,j}
-			end
---]]
-
---[[
-doors are 40 through 43, followed by ff, fe, fd, either horizontally or vertically
- and then next to the 4 numbers, offset based on the door dir 40-43 <-> x+1,x-1,y+2,y-2, 
- will be the door_t index, repeated 4 times.
- for non-blue doors, this will match up with a plm in the roomstate that has x,y matching the door's location
- for blue doors, no plm is needed
-however exits with no doors: 
- 	* 00/0d the room to the right of the ship, exits 0 & 1 
- 	* 01/09 the tall pink brinstar room, exit 5
- 	* 04/01 maridia tube room, exits 1 & 2
- 	* 04/0e maridia broken tube crab room, exits 0 & 1
- 	* between maridia tall room 04/04 (exit 4) and maridia balloon room 04/08 (exit 4)
-		-- this one is really unique, since the rest of them would always be 4 indexes in a row, and always at the same offsets %16 depending on their direction, (not always on the map edge)
-			but 04/04 is only a single 04 on the edge of the map surrounded by 0's
-			and 04/08 is two 0404's in a row, in the middle of the map, surrounded by 0's
-	* 04/19 maridia upper right sandpit start
-	* 04/1a maridia where sand pit #1 falls into. there's a third door_t for the sand entrance, 
-			but no 02's in ch3 
-	* 04/1d maridia sand pit #1.  has two door_t's.  only one is seen in the ch3's: exit 1 in the floor
-	* 04/1e maridia sand pit #2.  same as #1 
-	* 04/1f maridia sandfall room #1 ... has no up exit, but the bottom is all 01 tiles for exit #1
-	* 04/20 maridia sandfall room #2 same.  interesting that there is no exit #0 used, only exit #1.
-		the roomstate says there are two doors though, but no door for index 0 can be seen.
-	* 04/21 maridia big pink room with two sand exits to 04/1f (exit 1) and 04/20 (exit 2)
-		-- these are a row of 80 tiles over a row of exit # tiles 
-	* 04/22 maridia upper right sandpit end
- 	* 04/27 where sand pit 04/2b ends up
- 	* 04/2b maridia room after botwoon, has 4 doors, two are doors, two are sandpit exits (#1 & #2)
-	* 04/2e maridia upper right sandpit middle
-	* 04/2f sandpit down from room after botwoon 
- will only have their dest door_t number and a door_t entry ... no plm even
-so how does the map know when to distinguish those tiles from ordinary 00,01,etc shot tiles, especially with no plm there?
- and esp when the destination door_t structure doesn't say anything about the location from where the door is?
---]]			
-			if i >= 1 and i <= w-2 
-			and j >= 2 and j <= h-3
-			and c >= 0x40 and c <= 0x43 
-			then
-				-- here's the upper-left of a door.  now, which way is it facing
-				if i<w-3
-				and (c == 0x42 or c == 0x43)
-				and blocks3[(i+1) + w * j] == 0xff 
-				and blocks3[(i+2) + w * j] == 0xfe 
-				and blocks3[(i+3) + w * j] == 0xfd 
-				then
-					-- if c == 0x42 then it's down, if c == 0x43 then it's up 
-					local doorIndex = c == 0x42 
-						and blocks3[i + w * (j+2)]
-						or blocks3[i + w * (j-2)]
-					self.doors:insert{
-						x = i,
-						y = j,
-						w = 4,
-						h = 1,
-						dir = bit.band(3, c),
-						index = doorIndex,
-					}
-				elseif j < h-3	-- TODO assert this
-				and (c == 0x40 or c == 0x41)
-				and blocks3[i + w * (j+1)] == 0xff 
-				and blocks3[i + w * (j+2)] == 0xfe 
-				and blocks3[i + w * (j+3)] == 0xfd 
-				then
-					-- if c == 0x41 then it's left, if c == 0x40 then it's right
-					local doorIndex = c == 0x40 
-						and blocks3[(i+1) + w * j]
-						or blocks3[(i-1) + w * j]
-					self.doors:insert{
-						x = i,
-						y = j,
-						w = 1,
-						h = 4, 
-						dir = bit.band(3, c),
-						index = doorIndex,
-					}
-				else
-					-- nothing, there's lots of other 40..43's out there
-				end
-			end
-		end
-	end
-end
-
-function RoomBlocks:refreshRooms()
-	self.rooms = table()
-	for _,rs in ipairs(self.roomStates) do
-		self.rooms:insertUnique(assert(rs.room))
-	end
-end
-
---[[ for the room tile data:
-looks like this is channel 2:
-lower nibble channel 2 bits:
-bit 0
-bit 1 = foreground (not background)
-bit 2 = flip up/down
-bit 3 = flip left/right
-
-upper-nibble channel 2 values:
-0 = empty
-1 = slope
-2 = spikes
-	channel 3 lo:
-		0000b = 0 = 1x1 spike solid
-		0010b = 2 = 1x1 spike non-solid 
-3 = push
-	channel 3 lo:
-		0000b = 0 = down force x1 (maridia quicksand top of two secrets)
-		0001b = 1 = down force x2 (maridia quicksand in bottom of two secret rooms)
-		0010b = 2 = down force x3 (maridia quicksand)
-		0011b = 3 = down force x4 - can't jump up from (maridia sand downward shafts)
-		0101b = 5 = down force x.5 - (maridia sand falling from ceiling)
-		1000b = 8 = right
-		1001b = 9 = left
-4 =
-5 = copy what's to the left
-6 =
-7 =
-8 = solid
-9 = door
-a = spikes / invis blocks
-	channel 3:
-		0000b = 0 = spikes solid 
-		0011b = 3 = spikes non-solid destroyed by walking chozo statue
-		1110b = e = invis blocks
-		1111b = f = spikes non-solid destroyed by walking chozo statue
-				  = also solid sand blocks destroyed by that thing in maridia
-b = crumble / speed
-	channel 3 lo:
-		0000b = 0 = 1x1 crumble regen
-		0001b = 1 = 2x1 crumble regen
-		0010b = 2 = 1x2 crumble regen
-		0011b = 3 = 2x2 crumble regen
-		
-		0100b = 4 = 1x1 crumble noregen
-		0101b = 5 = 2x1 crumble noregen
-		0110b = 6 = 1x1 crumble noregen
-		0111b = 7 = 2x2 crumble noregen
-		
-		1110b = e = 1x1 speed regen
-		1111b = f = 1x1 speed noregen
-c = break by beam / supermissile / powerbomb
-	channel 3 lo:
-		0000b = 0 = 1x1 beam regen
-		0001b = 1 = 1x2 beam regen
-		0010b = 2 = 2x1 beam regen
-		0011b = 3 = 2x2 beam regen
-		
-		0100b = 4 = 1x1 beam noregen
-		0101b = 5 = 2x1 beam noregen
-		0110b = 6 = 1x2 beam noregen
-		0111b = 7 = 2x2 beam noregen
-		
-		1001b = 9 = 1x1 power bomb noregen
-		1010b = a = 1x1 super missile regen
-		1011b = b = 1x1 super missile noregen
-d = copy what's above 
-e = grappling
-	channel 3 bit 1:
-		0000b = 0 = 1x1 grappling
-		0001b = 1 = 1x1 grappling breaking regen
-		0010b = 2 = 1x1 grappling breaking noregen
-f = bombable 
-	channel 3 lo:
-		0000b = 0 = 1x1 bomb regen
-		0001b = 1 = 2x1 bomb regen
-		0010b = 2 = 1x2 bomb regen
-		0011b = 3 = 2x2 bomb regen
-		
-		0100b = 4 = 1x1 bomb noregen
-		0101b = 5 = 2x1 bomb noregen
-		0110b = 6 = 1x2 bomb noregen
-		0111b = 7 = 2x2 bomb noregen
---]]
-
--- this is ch2hi
-RoomBlocks.tileTypes = {
-	empty 				= 0x0,
-	slope				= 0x1,
-	spikes				= 0x2,
-	push				= 0x3,
-	copy_left 	 	 	= 0x5,
-	solid 				= 0x8,
-	door				= 0x9,
-	spikes_or_invis		= 0xa,
-	crumble_or_speed	= 0xb,
-	breakable 			= 0xc,
-	copy_up 			= 0xd,
-	grappling			= 0xe,
-	bombable			= 0xf,
-}
--- this is ch2hi:ch3lo
-RoomBlocks.extTileTypes = {
-	spike_solid_1x1			= 0x20,
-	spike_notsolid_1x1		= 0x22,
-	push_quicksand1			= 0x30,
-	push_quicksand2			= 0x31,
-	push_quicksand3			= 0x32,
-	push_quicksand4			= 0x33,
-	push_quicksand1_2		= 0x35,
-	push_conveyor_right		= 0x38,
-	push_conveyor_left		= 0x39,
-	spike_solid2_1x1		= 0xa0,
-	spike_solid3_1x1		= 0xa1,	-- used in the hallway to kraid
-	spike_notsolid2_1x1		= 0xa3,
-	invisble_solid			= 0xae,
-	spike_notsolid3_1x1		= 0xaf,
-	crumble_1x1_regen		= 0xb0,
-	crumble_2x1_regen		= 0xb1,
-	crumble_1x2_regen		= 0xb2,
-	crumble_2x2_regen		= 0xb3,
-	crumble_1x1				= 0xb4,
-	crumble_2x1				= 0xb5,
-	crumble_1x2				= 0xb6,
-	crumble_2x2				= 0xb7,
-	speed_regen				= 0xbe,
-	speed					= 0xbf,
-	beam_1x1_regen			= 0xc0,
-	beam_2x1_regen			= 0xc1,
-	beam_1x2_regen			= 0xc2,
-	beam_2x2_regen			= 0xc3,
-	beam_1x1				= 0xc4,
-	beam_2x1				= 0xc5,
-	beam_1x2				= 0xc6,
-	beam_2x2				= 0xc7,
-	--powerbomb_1x1_regen	= 0xc8,
-	powerbomb_1x1			= 0xc9,
-	supermissile_1x1_regen	= 0xca,
-	supermissile_1x1		= 0xcb,
-	beam_door				= 0xcf,
-	grappling				= 0xe0,
-	grappling_break_regen 	= 0xe1,
-	grappling_break			= 0xe2,
-	grappling2				= 0xe3,		-- \_ these two alternate in the roof of the room before the wave room
-	grappling3				= 0xef,		-- /
-	bombable_1x1_regen		= 0xf0,
-	bombable_2x1_regen		= 0xf1,
-	bombable_1x2_regen		= 0xf2,
-	bombable_2x2_regen		= 0xf3,
-	bombable_1x1			= 0xf4,
-	bombable_2x1			= 0xf5,
-	bombable_1x2			= 0xf6,
-	bombable_2x2			= 0xf7,
-}
-RoomBlocks.extTileTypeNameForValue = setmetatable(table.map(RoomBlocks.extTileTypes, function(v,k) return k,v end), nil)
-
-RoomBlocks.oobType = RoomBlocks.tileTypes.solid -- consider the outside to be solid
-
-function RoomBlocks:getBlocks12()
-	return self.data + 2
-end
-function RoomBlocks:getBlocks3()
-	return self.data + 2 + self.offsetToCh3
-end
-function RoomBlocks:getLayer2Blocks()
-	if self.hasLayer2Blocks then
-		return self.data + 2 + self.offsetToCh3 / 2 * 3
-	end
-end
-
-function RoomBlocks:getTileData(x,y)
-	assert(x >= 0 and x < self.width)
-	assert(y >= 0 and y < self.height)
-	local bi = x + self.width * y
-	local ch1 = self:getBlocks12()[0 + 2 * bi]
-	local ch2 = self:getBlocks12()[1 + 2 * bi]
-	local ch3 = self:getBlocks3()[bi]
-	return ch1, ch2, ch3
-end
-
-function RoomBlocks:setTileData(x,y,ch1,ch2,ch3)
-	assert(x >= 0 and x < self.width)
-	assert(y >= 0 and y < self.height)
-	local bi = x + self.width * y
-	self:getBlocks12()[0 + 2 * bi] = ch1
-	self:getBlocks12()[1 + 2 * bi] = ch2
-	self:getBlocks3()[bi] = ch3
-end
-
-
--- for position x,y, returns the real x,y that the tile type is determined by
-function RoomBlocks:getCopySource(x,y)
-	while true do
-		if x < 0 or x >= self.width
-		or y < 0 or y >= self.height
-		then 
-			return x,y
-		end
-	
-		local ch1, ch2, ch3 = self:getTileData(x,y)
-		local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
-		-- TODO the next channel states how far to copy
-		-- so we really have to scan the whole map (up front)
-		-- and then make a list keyed by the copy-source position, listing all blocks which do copy that copy-source position
-		if ch2hi == self.tileTypes.copy_up then
-			y = y - 1
-		elseif ch2hi == self.tileTypes.copy_left then
-			x = x - 1
-		else
-			return x,y
-		end
-	end
-	error'here'
-end
-
--- returns true if this is a 'is copy up / left' tile
-function RoomBlocks:isCopy(x,y)
-	-- don't use getTileType because this uses the copy_*
-	local _, ch2 = self:getTileData(x,y)
-	local ch2hi = bit.band(0xf, bit.rshift(ch2, 4))
-	return ch2hi == self.tileTypes.copy_left 
-		or ch2hi == self.tileTypes.copy_up
-end
-
--- returns true if this is targetted by a 'copy up / left' tile
-function RoomBlocks:isCopied(x,y)
-	local copiedRight = false
-	local copiedUp = false
-	if x < self.width-1 then
-		local _, ch2R = self:getTileData(x+1,y)
-		local ch2Rhi = bit.band(0xf, bit.rshift(ch2R, 4))
-		copiedRight = ch2Rhi == self.tileTypes.copy_left
-	end
-	if y < self.height-1 then
-		local _, ch2U = self:getTileData(x,y+1)
-		local ch2Uhi = bit.band(0xf, bit.rshift(ch2U, 4))
-		copiedUp = ch2Uhi == self.tileTypes.copy_up
-	end
-	return copiedRight and copiedUp, copiedRight, copiedUp
-end
-
--- run this from a copied tile
--- returns a quick span right then a quick span down of all copies 
-function RoomBlocks:getAllCopyLocs(x,y)
-	local locs = table{x,y}
-	local checked = table{x,y}
-	while #checked > 0 do
-		local ch = checked:remove()
-		local _, ch2R = self:getTileData(x+1,y)
-error'finish me - but you might have to redo all copies'
-	end
-end
-
--- if a block is a copy or is copied then replace it and all copies with its copy source
-function RoomBlocks:splitCopies(x,y)
-print'finish me plz'
-do return end
-	if self:isCopy(x,y) or self:isCopied(x,y) then
-		local sx,sy = self:getCopySource(x,y)
-		local _, ett = self:getTileType(sx,sy)
-		for _,pos in ipairs(self:getAllCopyLocs(sx,sy)) do
-			self:setTileType(pos[1], pos[2], ett)
-		end
-	end
-end
-
-
-
---[[
-returns the tile type (ch2 hi) and the extended tile type (ch2 hi:ch3 lo)
-considers copies
---]]
-function RoomBlocks:getTileType(x,y)
-	x,y = self:getCopySource(x,y)
-	if x < 0 or x >= self.width
-	or y < 0 or y >= self.height
-	then 
-		return self.oobType
-	end
-	assert(not self:isCopy(x,y))
-	local ch1, ch2, ch3 = self:getTileData(x,y)
-	local ch2hi = bit.band(0xf0, ch2)
-	local ch3lo = bit.band(0x0f, ch3)
-	local ett = bit.bor(ch3lo, ch2hi)
-	return bit.rshift(ch2hi, 4), ett
-end
-
-function RoomBlocks:getExtTileType(x,y)
-	return select(2, self:getTileType(x,y))
-end
-
--- set the 'ett' 
-function RoomBlocks:setExtTileType(x,y,ett)
-	assert(x >= 0 and x < self.width)
-	assert(y >= 0 and y < self.height)
-	local bi = x + self.width * y
-	local b = self:getBlocks12()[1 + 2 * bi]
-	local c = self:getBlocks3()[bi]
-
-	-- TODO if it is a copy tile then break whatever it is copying from
-	local ch3lo = bit.band(0x0f, ett)
-	local ch2hi = bit.band(0xf0, ett)
---print('setting '..x..', '..y..' ett '..('%x (%x, %x)'):format(ett, bit.rshift(ch2hi, 4), ch3lo))
-	local a,b,c = self:getTileData(x,y)
---print(' data was '..('%02x %02x %02x'):format(a,b,c))	
-	b = bit.bor(bit.band(b, 0x0f), ch2hi)
-	c = bit.bor(bit.band(c, 0xf0), ch3lo)
---print(' data now '..('%02x %02x %02x'):format(a,b,c))	
-
-	self:getBlocks12()[1 + 2 * bi] = b
-	self:getBlocks3()[bi] = c
-end
-
--- notice this asks 'is is the 'solid' type?'
--- it does not ask 'is it a solid collidable block?'
-function RoomBlocks:isSolid(x,y) 
-	return self:getTileType(x,y) == self.tileTypes.solid
-end
-
-function RoomBlocks:isAccessible(x,y) 
-	local tt, ett = self:getTileType(x,y)
-	return tt == self.tileTypes.empty 
-		or tt == self.tileTypes.crumble_or_speed
-		or tt == self.tileTypes.breakable
-		or ett == self.extTileTypes.grappling_break
-		or ett == self.extTileTypes.grappling_break_regen
-		or tt == self.tileTypes.bombable
-end
-
---[[
-TODO there's a small # of borders inaccessible
-how to determine them?
-1) flood fill per-room, starting at all doors
-2) just manually excise them
-they are:
-landing room, left side of the room
-first missile ever, under the floor
-vertical of just about all the lifts in the game
-top left of maridia's big room in the top left of the map
-the next room over, the crab room, has lots of internal borders
-the next room over from that, the hermit crab room, has lots of internal borders
-the speed room before the mocktroids has a few internal borders
---]]
-function RoomBlocks:isBorder(x,y, incl, excl)
-	incl = incl or self.isSolid
-	excl = excl or self.isAccessible
-	
-	--if x == 0 or y == 0 or x == self.width-1 or y == self.height-1 then return false end
-	if incl(self,x,y) then
-		for i,offset in ipairs{
-			{1,0},
-			{-1,0},
-			{0,1},
-			{0,-1},
-		} do
-			if excl(self,x+offset[1], y+offset[2]) then 
-				return true
-			end
-		end
-	end
-	return false
-end
-
-function RoomBlocks:isBorderAndNotCopy(x,y)
-	return self:isBorder(x,y) 
-		and not self:isCopy(x,y) 
-		and not self:isCopied(x,y)
-end
-
-
 
 -- this is the block data of the rooms
 function SMMap:mapAddRoomBlockData(addr, m)
@@ -2225,44 +1475,7 @@ function SMMap:mapAddTileSetTilemap(addr)
 	return tilemap
 end
 
-local TileSet = class()
-function TileSet:init(args)
-	local rom = args.sm.rom
-	self.index = args.index
-	self.addr = tileSetBaseOffset + self.index * ffi.sizeof'tileSet_t'
-	self.ptr = ffi.cast('tileSet_t*', rom + self.addr)
-	self.obj = ffi.new('tileSet_t', self.ptr[0])
-
-	-- have each room write keys here coinciding blocks
-	self.roomStates = table()	-- which roomStates use this tileset
-end
-function TileSet:setPalette(palette)
-	if self.palette then
-		self.palette.tileSets:removeObject(self)
-	end
-	self.palette = palette
-	if self.palette then
-		self.palette.tileSets:insert(self)
-	end
-end
-function TileSet:setGraphicsTileSet(graphicsTileSet)
-	if self.graphicsTileSet then
-		self.graphicsTileSet.tileSets:removeObject(self)
-	end
-	self.graphicsTileSet = graphicsTileSet
-	if self.graphicsTileSet then
-		self.graphicsTileSet.tileSets:insert(self)
-	end
-end
-function TileSet:setTilemap(tilemap)
-	if self.tilemap then
-		self.tilemap.tileSets:removeObject(self)
-	end
-	self.tilemap = tilemap
-	if self.tilemap then
-		self.tilemap.tileSets:insert(self)
-	end
-end
+local TileSet = require 'tileset'
 
 ffi.cdef(template([[
 typedef struct {
@@ -2339,9 +1552,37 @@ function SMMap:mapReadTileSets()
 		type = 'tilemapElem_t',
 		compressed = true,
 	}
+	
 	-- size is 0x800 ... so 256 8bit tile infos
 	-- in my 32-tiles-per-row pics, this is 8 rows
 --print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
+
+	--[[
+	before loading any tileSets, find out the tileSet bank 
+	where's the tileSet offsets read / bank set in code?
+	82:def4 == 0x8f
+	where's the tileSet themselves bank set in code?
+	--]]
+	self.tileSetBank = 0x8f
+	local newTileSetBank = self.rom[topc(0x82, 0xdef4)]
+	if self.tileSetBank ~= newTileSetBank then
+		print("WARNING - tileSet offsets bank has changed from "..("%02x"):format(self.tileSetBank).." to "..('%02x'):format(newTileSetBank))
+		self.tileSetBank = newTileSetBank 
+	end
+
+	-- offsets in the tileSetBank where	to find the tileSet_t data
+	self.tileSetOffsets = Blob{
+		sm=self,
+		addr=tileSetOffsetsAddr,
+		count=tileSetCount,
+		type='uint16_t',
+	}
+	for i=0,tileSetCount-1 do
+		local origOffset = select(2, frompc(tileSetOrigBaseAddr + 9 * i))
+		if self.tileSetOffsets.data[i] ~= origOffset then
+			print('WARNING - tileSet #'..('$%02x'):format(i)..' has moved from '..('%04x'):format(origOffset)..' to '..('%04x'):format(self.tileSetOffsets.data[i]))
+		end
+	end
 
 	-- load all the tileset address info that is referenced by per-room stuff
 	-- do this before any mapAddRoom calls
@@ -2350,152 +1591,6 @@ function SMMap:mapReadTileSets()
 			index = tileSetIndex,
 			sm = self,
 		}
-
-		tileSet:setPalette(self:mapAddTileSetPalette(tileSet.obj.paletteAddr24:topc()))
-
-		--[[
-		region 6 tilesets used:
-		room $00: $11 $12
-		room $01: $0f $10
-		room $02: $0f $10
-		room $03: $0f $10
-		room $04: $0f $10
-		room $05: $13 $14
-		... all are only used in region 6
-	
-		rooms used:
-		tileSet index $0f: 06/01, 06/02, 06/03, 06/04
-		tileSet index $10: 06/01, 06/02, 06/03, 06/04
-		tileSet index $11: 06/00
-		tileSet index $12: 06/00
-		tileSet index $13: 06/05
-		tileSet index $14: 06/05
-		
-		so there you have it,
-		ceres rooms is 1:1 with tileSets 0f-14
-		and specifically
-			ceres room 6-01 thru 6-04 is 1:1 with tileSets 0f-10
-			ceres room 6-00 is 1:1 with tileSets 11-12
-			ceres room 6-05 is 1:1 with tileSets 13-14
-		--]]
-		--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7graphicsTiles == 0
-		local isCeres = tileSetIndex >= 0x0f and tileSetIndex <= 0x14		-- all ceres
-		local isCeresRidleyRoom = tileSetIndex == 0x13 or tileSetIndex == 0x14
-		local loadMode7 = tileSetIndex >= 0x11 and tileSetIndex <= 0x14		-- ceres rooms 6-00 and 6-05
-		local loadCommonRoomElements = not isCeres
-			
-		tileSet:setGraphicsTileSet(self:mapAddTileSetGraphicsTileSet(tileSet.obj.graphicsTileAddr24:topc()))
-
-		--[[
-		key by address, keep track of decompressed data, so that we don't have to re-decompress them
-		and so I can keep track of tilesets used per decompressed region (so I can remove unused ones)
-
-		EXCEPT for ceres space station (tileSet 0f-14)
-		 all tileSet_t tileAddr24's match with graphicsTileAddr24's
-		for tileSets 0f-14 we find that 0f & 10, 11 & 12, and 13 & 14 have graphicsTileAddr24 matching each other but separate of the rest of 0f-14
-		... and of those, rooms 11-12 are all black, and 13-14 are garbage
-
-		which means that for the rest, which do use common tilesets, i can save this
-		--]]
-
-
-		--[[
-		tileSet_t has 3 pointers in it: palette, tile, and graphicsTile
-		paletteAddr24 is independent of roomstate_t
-		but the other two are not, so, load them with the roomstate_t
-
-		here in the roomstate_t, load the tile data that coincides with the 
-		TODO instead of determining by roomstate info, determine by which tileSet_t it is
-		that way we don't get so many multiples of the same tileSet_t's
-
-		funny thing, these only seem to be writing for ceres space station anyways
-		so I wonder if that mode7 tileSetIndex if condition is even needed
-		--]]
-		local graphicsTileVec = vector'uint8_t'
-		graphicsTileVec:insert(graphicsTileVec:iend(), tileSet.graphicsTileSet.data, tileSet.graphicsTileSet:iend())
-
-		-- for tileSet 0x11-0x14
-		-- tileSet 0x11, 0x12 = room 06/00
-		-- tileSet 0x13, 0x14 = room 06/05
-		-- for these rooms, the tileSet.tilemap.addr points to the mode7 data
-		if loadMode7 then
---print('mode7 graphicsTileVec.size '..('%x'):format(graphicsTileVec.size))			
-			tileSet.mode7graphicsTiles, tileSet.mode7tilemap = self:graphicsLoadMode7(graphicsTileVec.v, graphicsTileVec.size)
-			
-			--[[ vanilla ceres ridley room layer handling, when layerHandlingPageOffset == $c97b
-			used with roomstate_t's $07dd95, $07dd7b
-			which are only for room_t $07dd69 06/05 -- and they are the only roomstates_t's of that room, so I can check via room
-			roomstate_t $07dd95 => tileSet $14 ... used by no one else
-			roomstate_t $07dd7b => tileSet $13 ... used by no one else
-			so we can instead test by tileSetIndex here
-			
-			room 06/05's block tileIndex data is all value $1f anyways,
-			so regardless of fixing this tileset, we still have nothing to display.
-			--]]
-			--if rs.layerHandlingPageOffset == 0xc97b then
-			graphicsTileVec:resize(0x5000)
-			ffi.fill(graphicsTileVec.v, graphicsTileVec.size, 0)
-			if isCeresRidleyRoom then
-				ffi.copy(graphicsTileVec.v, rom + 0x182000, 0x2000)
-				-- TODO mem:add for this ... once I get these Ceres rooms to even show up, to verify this is even right			
-			end
-		else
-			--get graphicsTiles
-			-- also notice that the tileSets used for mode7 are not used for this (unless 06/05 happens to also be)
-			--[[
-			dansSuperMetroidLibrary has this resize, for tileSets other than $26 
-			... which is interseting because it means that, for tileSet $11 and $12 (only used in Ceres) we are sizing down from 0x8000 to 0x5000
-			otherwise, for tileSets $0-$10, $13-$19, $1b, $1c  this is resized up from 0x4800 to 0x5000
-			so ... should $11 and $12 be resized down?
-			--]]
-			-- all (except for $11-$14 above) tileSets are 0x4800 in size, except Kraid's room that alone uses tileSet $0a, which is 0x8000 in size
-			-- so the rest have to be sized up the extra 0x200 bytes ... how many 16x16 blocks is that?
-			--[[
-			TODO if this does go here then there should be an equivalent resizing of the tilemapByteVec
-			... however I'm not seeing it
-			... and as a result of the mismatch, you see the commonRoomElements get lost
-			but on the flip side, with the mismatch and garbled tileset texture,
-			the room does decode correctly
-			--]]	
-			if graphicsTileVec.size < 0x5000 then
-				graphicsTileVec:resize(0x5000)
-			end
-		end
-		if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
-			graphicsTileVec:insert(graphicsTileVec:iend(), self.commonRoomGraphicsTiles.data, self.commonRoomGraphicsTiles:iend())
-		end
-	
-		self:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
-		
-		tileSet:setTilemap(self:mapAddTileSetTilemap(tileSet.obj.tileAddr24:topc()))
-
-		local tilemapByteVec = vector'uint8_t'
-		if loadCommonRoomElements then
-			tilemapByteVec:insert(tilemapByteVec:iend(), self.commonRoomTilemaps.data, self.commonRoomTilemaps:iend())
-		end
-		tilemapByteVec:insert(tilemapByteVec:iend(), tileSet.tilemap.data, tileSet.tilemap:iend())
-		
-		-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
---print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
-		tileSet.tileGfxCount = bit.rshift(tilemapByteVec.size, 3)
-		-- store as 16 x 16 x index rgb
-		
-		-- TODO don't do this unless you're writing out the textured map image?
-		tileSet.tileGfxBmp = self:graphicsConvertTilemapToBitmap(
-			tilemapByteVec.v,		-- tilemapElem_t[tileGfxCount][2][2]
-			2,
-			2 * tileSet.tileGfxCount,
-			graphicsTileVec.v)		-- each 32 bytes is a distinct 8x8 graphics tile, each pixel is a nibble
-
-		-- bg_t's need this
-		-- ... will they need this, or just the non-common portion of it?
-		tileSet.graphicsTileVec = graphicsTileVec
-
-		-- TODO here - map from the graphicsTile address (should be 32-byte-aligned) to the tileIndex
-		-- this way, if a background uses a graphicsTile, then we can flag all tileIndexes that are also used
-		-- (it will have to map to multiple tileIndexes)
-		-- used for tileIndex removal/optimization
-		self.tileSets:insert(tileSet)
 	end
 
 	-- strangely, immediately *after* the tileset data, is the table into the tileset data
@@ -4736,21 +3831,6 @@ end
 function SMMap:mapWritePLMs(roomBankWriteRanges)
 	local rom = self.rom
 
-	-- [inclusive, exclusive)
-	local plmWriteRanges = WriteRange({
-		{0x78000, 0x79194},
-		-- then comes 100 bytes of layer handling code
-		-- then rooms (see roomWriteRanges {0x791f8, 0x7b76a})
-		-- then comes door codes 0x7b971 to end of 0x7c0fa routine
-		{0x7c215, 0x7c8c7},
-		-- next comes 199 bytes of layer handling code, which is L12 data, and then more mdb's
-		-- then comes door codes 0x7e1d8 to end of 0x7e513 routine
---		{0x7e87f, 0x7e880},     -- a single plm_t 2-byte terminator ... why do I think this is overlapping with some other data?
-		
-		-- free space: 
-		{0x7e99b, 0x80000},     
-	}, 'plm_t')
-
 	-- [[ re-indexing the doors
 	--[=[
 	notes on doors:
@@ -4946,7 +4026,7 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 	print()
 	for _,plmset in ipairs(self.plmsets) do
 		local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
-		local addr, endaddr = plmWriteRanges:get(bytesToWrite)
+		local addr, endaddr = roomBankWriteRanges:get(bytesToWrite)
 		plmset.addr = addr
 
 		-- write
@@ -5002,7 +4082,7 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 			-- pick a memory region
 			-- write the scrollmod
 			-- update the address of all plms
-			addr, endaddr = plmWriteRanges:get(n)
+			addr, endaddr = roomBankWriteRanges:get(n)
 			-- write
 			ffi.copy(rom+addr, tableToByteArray(scrollmod), #scrollmod)
 		end
@@ -5020,8 +4100,6 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 		end
 	end
 	--]]
-
-	plmWriteRanges:print()
 end
 
 function SMMap:mapWriteEnemySpawnSets()
@@ -5179,22 +4257,6 @@ function SMMap:mapWriteEnemyGFXSets()
 end
 
 
--- used in Blob:recompress()
-local CompressInfo = class()
-
-function CompressInfo:init(name)
-	self.name = name
-	self.totalOriginalCompressedSize = 0
-	self.totalRecompressedSize = 0
-end
-
-function CompressInfo:__tostring()
-	return self.name..' recompressed from '..self.totalOriginalCompressedSize..' to '..self.totalRecompressedSize..
-		', saving '..(self.totalOriginalCompressedSize - self.totalRecompressedSize)..' bytes '
-		..'(new data is '..math.floor(self.totalRecompressedSize/self.totalOriginalCompressedSize*100)..'% of original size)'
-end
-
-
 function SMMap:mapWriteTileSets(tileSetAndRoomBlockWriteRange)
 	local rom = self.rom
 
@@ -5313,7 +4375,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		{0x1d4629, 0x2142bb},		-- the end of this is the beginning of a roomblock lz data range, soo ... combine?
 	}, 'tileSet tilemap+graphicsTileSet+palette lz data')
 --]=]
-	local compressInfo = CompressInfo'tileSet tilemap + graphicsTileSet + palettes'
+	local compressInfo = Blob.CompressInfo'tileSet tilemap + graphicsTileSet + palettes'
 
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
 		tilemap:recompress(tileSetAndRoomBlockWriteRange, compressInfo)
@@ -5357,7 +4419,9 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 	print()
 	print(compressInfo)
 
+--[[
 	-- remove duplicate tileSet_t's 
+	-- TODO why is this always saying true?
 	for i=#self.tileSets,2,-1 do
 		local ti = self.tileSets[i]
 		for j=1,#self.tileSets-1 do
@@ -5368,11 +4432,13 @@ print("tileSet_t "..('%02x'):format(tj.index)..' and '..('%02x'):format(ti.index
 			end
 		end
 	end
+--]]
 
 --[[
 tileSet memory ranges [incl,excl)
 
-[0x07e6a2, 0x07e7a7) = tileSet_t's
+[0x07e6a2, 0x07e7a7) = default tileSet_t dense array location
+[0x07e7a7, 0x07e7e1) = offsets to each tileSet_t
 
 [0x1c8000, 0x1ca09d) = common room graphicsTile_t lz data
 [0x1ca09d, 0x1ca634) = common room tilemapElem_t lz data
@@ -5384,44 +4450,6 @@ end
 
 function SMMap:mapWriteRooms(roomBankWriteRanges)
 	local rom = self.rom
-
-	local roomWriteRanges = WriteRange({
-		 {0x0791f8, 0x07b76a},     -- rooms of regions 0-2
-		 
-		 -- {0x07b76a, 0x07b971}, 	-- bg_t's (all padding in here isn't used)
-		 -- {0x07b971, 0x07ba37},	-- door codes
-		 -- {0x07ba37, 0x07bd07},	-- bg_t's (all padding in here isn't used)
-		 -- {0x07bd07, 0x07be3f},	-- door code
-		 -- {0x07be3f, 0x07bf9e}	-- bg_t's.  within this is a 54 bytes padding, 27 of these bytes is a set of bg_t's that points from room 02/3d, which is unfinished
-		 -- {0x07bf9e, 0x07c116},	-- door code
-		 -- {0x07c116, 0x07c215},	-- 255 bytes of main asm routines
-		 -- {0x07c215, 0x07c8c7},	-- plm_t's
-		 -- {0x07c8c7, 0x07c8f6},	-- layer handling code
-		 
-		 -- these two functions are not pointed to by any rooms
-		 --  but their functions are referenced by the code at c8dd, 
-		 -- so this is reserved, can't be moved (without updating the code of c8dd as well)
-		 --  which is the layerHandlingPageOffset of room 04/37, draygon's room
-		 -- in other words, without some deep code introspection (and maybe some sentience)
-		 --  this can't be automatically moved around and updated
-		 -- {0x07c8f6, 0x07c8fc},	-- 6 bytes of draygon's room pausing code
-		 -- {0x07c8fc, 0x07c90a,	-- 14 bytes of draygon's room unpausing code 
-		 
-		 -- {0x07c90a, 0x07c98e},	-- layer handling code
-		 	{0x07c98e, 0x07e0fd},   -- rooms of regions 3-6
--- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
-		 -- {0x07e0fd, 0x07e1d8},	-- bg_t's TODO verifying padding at 0x07e132 isn't used
-		 -- {0x07e1d8, 0x07e248},	-- door code
-		 -- {0x07e248, 0x07e26c},	-- bg_t
-		 -- {0x07e26c, 0x07e3e8},	-- door code (with padding at a few places)
-		 -- {0x07e3e8, 0x07e4c0},	-- bg_t
-		 -- {0x07e4c0, 0x07e51f},	-- door code
-		 -- {0x07e51f, 0x07e5e6},	-- 199 bytes of padding
-		 -- {0x07e5e6, 0x07e6a2},	-- room select code (with some padding)
-		 -- {0x07e6a2, 0x07e7a7},	-- tileSet_t's
-		 {0x07e82c, 0x07e85a},     -- single mdb of region 7
-		 -- then comes door code
-	}, 'room_t')
 
 
 	-- compress roomstates ...
@@ -5440,19 +4468,19 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	end)
 	-- grab and write new regions
 	for _,m in ipairs(self.rooms) do
-		print('room size '..('0x%x'):format(ffi.sizeof'room_t'))	
+--print('room size '..('0x%x'):format(ffi.sizeof'room_t'))	
 		local totalSize = ffi.sizeof'room_t'
 		for _,rs in ipairs(m.roomStates) do
-			print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
+--print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
 			totalSize = totalSize + ffi.sizeof(rs.select_ctype)
-			print('roomstate_t size '..('0x%x'):format(ffi.sizeof'roomstate_t'))	
+--print('roomstate_t size '..('0x%x'):format(ffi.sizeof'roomstate_t'))	
 			totalSize = totalSize + ffi.sizeof'roomstate_t'
 		end
-		print('dooraddr size '..('0x%x'):format(2 * #m.doors))	
+--print('dooraddr size '..('0x%x'):format(2 * #m.doors))	
 		totalSize = totalSize + 2 * #m.doors
 		for _,rs in ipairs(m.roomStates) do
 			if rs.roomvar then
-				print('roomvar size '..('0x%x'):format(#rs.roomvar))	
+--print('roomvar size '..('0x%x'):format(#rs.roomvar))	
 				totalSize = totalSize + #rs.roomvar
 			end
 		end
@@ -5467,7 +4495,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 					end
 				end
 				if not matches then
-					print('scroll size '..('0x%x'):format(m.obj.width * m.obj.height))	
+--print('scroll size '..('0x%x'):format(m.obj.width * m.obj.height))	
 					totalSize = totalSize + m.obj.width * m.obj.height
 				end
 			end
@@ -5477,7 +4505,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		local reqAddr
 --		if m.obj.region == 0 and m.obj.index == 0 then reqAddr = 0x0791f8 end
 --		if m.obj.region == 6 and m.obj.index == 0 then reqAddr = 0x07c96e end
-		local addr, endaddr = roomWriteRanges:get(totalSize, reqAddr)
+		local addr, endaddr = roomBankWriteRanges:get(totalSize, reqAddr)
 		local ptr = rom + addr
 		m.ptr = ffi.cast('room_t*', ptr)
 		m.ptr[0] = m.obj
@@ -5604,8 +4632,6 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			assert(m.ptr.region == m.obj.region, "regions dont match for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
 		end
 	end
-	
-	roomWriteRanges:print()
 end
 
 function SMMap:mapWriteRoomBlocks(writeRange)
@@ -5638,7 +4664,7 @@ function SMMap:mapWriteRoomBlocks(writeRange)
 --]==]	
 	-- ... reduces to 56% of the original compressed data
 	-- but goes slow
-	local compressInfo = CompressInfo'rooms'
+	local compressInfo = Blob.CompressInfo'rooms'
 	print()
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		
@@ -5700,28 +4726,59 @@ function SMMap:mapWrite()
 	-- 2) update all addrs in all objs based on the ptrs
 	-- 3) write last
 
-
-	-- not being used at the moment...
+	-- I'm combining plm_t and room_t writeranges:
+	-- [inclusive, exclusive)
 	local roomBankWriteRanges = WriteRange({
-		{0x78000, 0x79194},		-- plms
-		-- 9194-91f7 = asm
+		{0x78000, 0x79194},		-- plm_t's
+		--{0x79194, 0x0791f8},  -- 100 bytes of layer handling code
 		{0x791f8, 0x7b76a},		-- rooms of regions 0-2
-		-- b76a-b970 = 'library backgrounds'
-		-- b971-c116 = door asm
-		-- c117-c214 = asm
-		{0x7c215, 0x7c8c7},
-		-- c8c7-c98d = layer asm, which is L12 data
+		-- {0x07b76a, 0x07b971}, 	-- bg_t's (all padding in here isn't used)
+		-- {0x07b971, 0x07ba37},	-- door code's
+		-- {0x07ba37, 0x07bd07},	-- bg_t's (all padding in here isn't used)
+		-- {0x07bd07, 0x07be3f},	-- door code's
+		-- {0x07be3f, 0x07bf9e}		-- bg_t's.  within this is a 54 bytes padding, 27 of these bytes is a set of bg_t's that points from room 02/3d, which is unfinished
+		-- {0x07bf9e, 0x07c116},	-- door code's
+		-- {0x07c116, 0x07c215},	-- 255 bytes of main asm routines
+		{0x7c215, 0x7c8c7},		-- plm_t's
+		-- {0x07c8c7, 0x07c8f6},	-- layer handling code, which is L12 data
+		
+		-- these two functions are not pointed to by any rooms
+		--  but their functions are referenced by the code at c8dd, 
+		-- so this is reserved, can't be moved (without updating the code of c8dd as well)
+		--  which is the layerHandlingPageOffset of room 04/37, draygon's room
+		-- in other words, without some deep code introspection (and maybe some sentience)
+		--  this can't be automatically moved around and updated
+		-- {0x07c8f6, 0x07c8fc},	-- 6 bytes of draygon's room pausing code
+		-- {0x07c8fc, 0x07c90a,	-- 14 bytes of draygon's room unpausing code 
+		
+		-- {0x07c90a, 0x07c98e},	-- layer handling code
 		{0x7c98e, 0x7e0fd},	-- rooms of regions 3-6
-		-- e1d8-e513 = door asm 
+
+		-- {0x07e0fd, 0x07e1d8},	-- bg_t's TODO verifying padding at 0x07e132 isn't used
+		-- {0x07e1d8, 0x07e248},	-- door code
+		-- {0x07e248, 0x07e26c},	-- bg_t
+		-- {0x07e26c, 0x07e3e8},	-- door code (with padding at a few places)
+		-- {0x07e3e8, 0x07e4c0},	-- bg_t
+		-- {0x07e4c0, 0x07e51f},	-- door code
+		-- {0x07e51f, 0x07e5e6},	-- 199 bytes of padding
+		-- {0x07e5e6, 0x07e6a2},	-- room select code (with some padding)
+		-- {0x07e6a2, 0x07e7a7},	-- tileSet_t's
+
+		-- (TODO double check:) 
 		-- e514-e689 = room select asm.  notice these call one another, so you can't just move them around willy nilly
 		-- e68a-e82b = more tables and stuff
-		{0x7e82c, 0x7e881},	-- within this region is e85b-e87e, which is assumed to be unused ...
+		
+		--{0x07e82c, 0x07e85b},     -- single mdb of region 7
+		-- then comes door code
+		-- {0x7e87f, 0x7e880},     -- a single plm_t 2-byte terminator ... why do I think this is overlapping with some other data?
+		
+		{0x7e82c, 0x7e881},	-- within this region is e85b-e87e, which is assumed to be unused ... (assumed/used by what?)
 		-- e88f-e99a = setup asm
 		{0x7e99b, 0x80000},	-- free space: 
 	
 -- TODO make sure 06/00 is at $07c96e, or update whatever points to Ceres
 		-- then comes door code
-	})
+	}, 'plm_t+room_t')
 	
 
 
@@ -5742,7 +4799,7 @@ function SMMap:mapWrite()
 			-- and with recompressiong only up to 0x23a02d is being used
 		}, 'common room graphics tiles + tilemaps + bg tilemaps + tileSet tilemap+graphicsTileSet+palette lz data, and roomblocks lz data')
 		
-		local compressInfo = CompressInfo'common room graphics tiles + tilemaps + bg tilemaps'
+		local compressInfo = Blob.CompressInfo'common room graphics tiles + tilemaps + bg tilemaps'
 		
 		-- write back the common graphics tiles/tilemaps
 		-- recompress them and see how well that works
@@ -5795,15 +4852,12 @@ function SMMap:mapWrite()
 	end
 
 
-	roomBankWriteRanges.name = 'plm_t'
 	self:mapWritePLMs(roomBankWriteRanges)
 
 	-- do this before writing anything that uses enemy spawn sets
 	self:mapWriteEnemyGFXSets()
 	self:mapWriteEnemySpawnSets()
 
-
-	roomBankWriteRanges.name = 'room_t'
 	self:mapWriteRooms(roomBankWriteRanges)
 
 	

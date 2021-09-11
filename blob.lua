@@ -85,6 +85,26 @@ function Blob:addMem(mem, ...)
 	end
 end
 
+
+-- used in Blob:recompress()
+local CompressInfo = class()
+
+function CompressInfo:init(name)
+	self.name = name
+	self.totalOriginalCompressedSize = 0
+	self.totalRecompressedSize = 0
+end
+
+function CompressInfo:__tostring()
+	return self.name..' recompressed from '..self.totalOriginalCompressedSize..' to '..self.totalRecompressedSize..
+		', saving '..(self.totalOriginalCompressedSize - self.totalRecompressedSize)..' bytes '
+		..'(new data is '..math.floor(self.totalRecompressedSize/self.totalOriginalCompressedSize*100)..'% of original size)'
+end
+
+Blob.CompressInfo = CompressInfo
+
+
+
 function Blob:recompress(writeRange, compressInfo)
 	assert(self.compressed)
 

@@ -36,7 +36,7 @@ App.title = 'Super Metroid Viewer'
 
 
 local blockSizeInPixels = SM.blockSizeInPixels
-local blocksPerRoom = SM.blocksPerRoom
+local blocksPerRoom = require 'roomblocks'.blocksPerRoom
 local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels 
 local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes 
 local roomSizeInPixels = SM.roomSizeInPixels 
