@@ -814,7 +814,7 @@ function SMMap:mapAddBGTilemap(addr)
 	return tilemap
 end
 
-function SMMap:mapAddRoom(addr, buildRecursively)
+function SMMap:mapAddRoom(addr)
 	assert(frompc(addr) == self.roomBank)
 	for _,m in ipairs(self.rooms) do
 		if m.addr == addr then return m end
@@ -1042,14 +1042,9 @@ if done then break end
 		rs:setTileSet(tileSet)
 	end
 
-	if buildRecursively then
-		for _,door in ipairs(m.doors) do
-			-- TODO make this a Door function?
-			-- maybe same as 'setDestRoom' ?
-			if door.type == 'door_t' then
-				door.destRoom = self:mapAddRoom(topc(self.roomBank, door.ptr.destRoomPageOffset), true)
-			end
-		end
+	-- TODO make sure the room is added to sm.rooms before doing this
+	for _,door in ipairs(m.doors) do
+		door:buildRoom(self)
 	end
 
 	return m
@@ -1652,17 +1647,45 @@ function SMMap:mapInit()
 	-- [[
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
-			local roomAddr = ls.obj.roomPageOffset
-			if ls.obj.roomPageOffset > 0 then
-				-- only keep track of this until after we load all doors
-				-- in fact, ... why not just load the door here?
-				-- and then have loading the door a recursive function, so that mapAddRoom does it too?
-				ls.room = self:mapAddRoom(topc(self.roomBank, ls.obj.roomPageOffset), true)
-				if not ls.room then
+			if ls.obj.doorPageOffset > 0 then
+				ls.door = self:mapAddDoor(topc(self.doorBank, ls.obj.doorPageOffset))
+				ls.door:buildRoom(self)
+			end
+		end
+	end
+	
+	for _,lsr in ipairs(self.loadStationsForRegion) do
+		for _,ls in ipairs(lsr.stations) do
+			--[[
+			most these doors are referenced by rooms
+			but occasionally (one per region?) you'll find a loadStation door not used except by loadStations
+			
+			two out of the loadstation doors don't match
+			the 21st loadstation of region 2
+			the 17th loadstation of region 5
+			so i'm thinking these aren't used
+			I think patrickjohnston's notes say that only save stations 0-7 are used for save points
+			and region=0 index=12h is used for landing from ceres
+			--]]
+			if not ls.door then
+				assert(ls.obj.roomPageOffset == 0)
+			else
+				local room = select(2, self.rooms:find(nil, function(m)
+					return m.addr == topc(self.roomBank, ls.obj.roomPageOffset)
+				end))
+				if not room then
 					print("WARNING - loadStation "
 						..('%06x'):format(ls.addr)
 						.." has roomPageOffset "..('%04x'):format(ls.obj.roomPageOffset)
 						.." failed to add room")
+				elseif room ~= ls.door.destRoom then
+					print("WARNING - loadStation "
+						..('%06x'):format(ls.addr)
+						.." room "
+						..('%02x/%02x'):format(room.obj.region, room.obj.index)
+						.." does not match door's room "
+						..('%02x/%02x'):format(ls.door.destRoom.obj.region, ls.door.destRoom.obj.index)
+					)
 				end
 			end
 		end
@@ -1690,57 +1713,6 @@ function SMMap:mapInit()
 	assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
 	self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
 	assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
-
-
-	-- do this after loading all rooms
-	-- most these doors have already been loaded, 
-	-- but occasionally (one per region?) you'll find a loadStation door not used anywhere else
-	for _,lsr in ipairs(self.loadStationsForRegion) do
-		for _,ls in ipairs(lsr.stations) do
-			if ls.obj.doorPageOffset > 0x8000 then
-				ls.door = self:mapAddDoor(topc(self.doorBank, ls.obj.doorPageOffset))
-				if ls.door then
-					print("WARNING - loadStation "
-						..('%06x'):format(ls.addr)
-						.." has doorPageOffset "..('%04x'):format(ls.obj.doorPageOffset)
-						.." but failed to load door")
-				else
-					-- if the door is that one per region that needs to be loaded then its room pointer needs to be assigned too
-					-- TODO just make this part of Door ctor?
-					-- because this matches mapAddRoom()
-					if ls.door.type == 'door_t' then
-						if not ls.door.destRoom then
-							ls.door.destRoom = select(2, self.rooms:find(nil, function(m)
-								return m.addr == topc(self.roomBank, ls.door.ptr.destRoomPageOffset)
-							end))
-						end
-						
-						-- two out of the loadstation doors don't match
-						-- the 21st loadstation of region 2
-						-- the 17th loadstation of region 5
-						-- so i'm thinking these aren't used
-						-- I think patrickjohnston's notes say that only save stations 0-7 are used for save points
-						-- and region=0 index=12h is used for landing from ceres
-						if ls.door.destRoom ~= ls.room then
-							print("WARNING - loadStation "
-								..('%06x'):format(ls.addr)
-								.." room "
-								..('%02x/%02x'):format(ls.room.obj.region, ls.room.obj.index)
-								.." does not match door's room "
-								..('%02x/%02x'):format(ls.door.destRoom.obj.region, ls.door.destRoom.obj.index)
-							)
-							-- TODO do we even need to store ls.room?
-							-- why not just use ls.door.destRoom?
-							---ls.room = door.destRoom
-						end
-					end
-				end
-			end
-			-- just use ls.door.destRoom
-			ls.room = nil
-		end
-	end
-
 
 
 	if config.mapAssertStructure then

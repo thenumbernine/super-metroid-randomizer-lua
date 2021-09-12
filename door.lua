@@ -92,7 +92,7 @@ function Door:init(args)
 end
 
 function Door:setDestRoom(room)
-	if not self.type == 'door_t' then return false end
+	if not self.type ~= 'door_t' then return false end
 		
 	self.destRoom = room
 	-- TODO don't bother do this until writing
@@ -100,6 +100,15 @@ function Door:setDestRoom(room)
 	assert(bank == self.roomBank)
 	self.ptr.destRoomPageOffset = ofs
 	return true
+end
+
+function Door:buildRoom(sm)
+	-- TODO make sure the door is added to sm.doors before doing this
+	if self.type ~= 'door_t' then return false end
+	if not self.destRoom then
+		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self.ptr.destRoomPageOffset))
+	end
+	return true 
 end
 
 return Door
