@@ -17,7 +17,7 @@ function RoomBlocks:init(args)
 	RoomBlocks.super.init(self, args)
 	
 	local dataSize = ffi.sizeof(self.v)
-	local m = args.m
+	local room = args.room
 
 	-- list of unique rooms that have roomstates that use this roomBlockData
 	-- don't add/remove to this list, instead use :refreshRooms()
@@ -33,8 +33,8 @@ function RoomBlocks:init(args)
 	-- and is usually = 2*w*h, sometimes >2*w*h
 	--  in that case ... what's in the padding?
 
-	local w = m:obj().width * self.blocksPerRoom
-	local h = m:obj().height * self.blocksPerRoom
+	local w = room:obj().width * self.blocksPerRoom
+	local h = room:obj().height * self.blocksPerRoom
 	
 	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
 

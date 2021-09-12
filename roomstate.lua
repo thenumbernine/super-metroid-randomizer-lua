@@ -69,7 +69,7 @@ function RoomState:init(args)
 	
 	local sm = self.sm
 	local rom = sm.rom
-	local m = self.room
+	local room = self.room
 	
 	self.fx1s = self.fx1s or table()
 	self.bgs = self.bgs or table()
@@ -79,14 +79,14 @@ function RoomState:init(args)
 	and self:obj().scrollPageOffset ~= 0x8000 
 	then
 		local addr = topc(sm.scrollBank, self:obj().scrollPageOffset)
-		local size = m:obj().width * m:obj().height
+		local size = room:obj().width * room:obj().height
 		self.scrollData = range(size):map(function(i)
 			return rom[addr+i-1]
 		end)
 	end
 
 	if self:obj().plmPageOffset ~= 0 then
-		self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset), m))
+		self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset), room))
 	end
 	
 	self:setEnemySpawnSet(sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, self:obj().enemySpawnPageOffset)))
@@ -117,14 +117,14 @@ function RoomState:init(args)
 			end
 			
 			--if cmd == 0
-			-- TODO this condition was in smlib, but m.doors won't be complete until after all doors have been loaded
-			--or m.doors:find(nil, function(door) return door.addr == cmd end)
+			-- TODO this condition was in smlib, but room.doors won't be complete until after all doors have been loaded
+			--or room.doors:find(nil, function(door) return door.addr == cmd end)
 			--then
 			if true then
 				local fx1 = sm:mapAddFX1(addr)
 -- this misses 5 fx1_t's
 local done = fx1.ptr.doorPageOffset == 0 
-				fx1.rooms:insert(m)
+				fx1.rooms:insert(room)
 				self.fx1s:insert(fx1)
 				
 				addr = addr + ffi.sizeof'fx1_t'
@@ -154,7 +154,7 @@ if done then break end
 		end
 
 		xpcall(function()
-			self:setRoomBlockData(sm:mapAddRoomBlockData(self:obj().roomBlockAddr24:topc(), sm))
+			self:setRoomBlockData(sm:mapAddRoomBlockData(self:obj().roomBlockAddr24:topc(), room))
 		end, function(err)
 			print(err..'\n'..debug.traceback())
 		end)

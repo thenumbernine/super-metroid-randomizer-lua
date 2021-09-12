@@ -5,9 +5,9 @@ local frompc = require 'pc'.from
 local topc = require 'pc'.to
 local disasm = require 'disasm'
 local struct = require 'struct'
+local Blob = require 'blob'
 
-
-local Door = class()
+local Door = class(Blob)
 
 -- described in section 12 of metroidconstruction.com/SMMM
 -- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
@@ -53,7 +53,8 @@ Door.lift_t = struct{
 	},
 }
 
-
+-- Blob vector size
+Door.count = 1
 
 --[[
 args: 
@@ -70,23 +71,21 @@ function Door:init(args)
 	local rom = sm.rom
 	
 	local addr = assert(args.addr)
+
 	local data = rom + addr 
 	local destRoomPageOffset = ffi.cast('uint16_t*', data)[0]
 	-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
-	local ctype = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
+	-- TODO isn't that just a terminator?  how is it a lift_t?
 
-	self.addr = addr
+	args = table(args):setmetatable(nil)
+	args.type = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
 	
-	-- derived fields:
-	
-	self.type = ctype
-	self.ptr = ffi.cast(ctype..'*', data)
-	self.obj = ffi.new(ctype, self.ptr[0])
+	Door.super.init(self, args)
 
-	if ctype == 'door_t' 
-	and self.ptr.code > 0x8000 
+	if self.type == 'door_t' 
+	and self:ptr().code > 0x8000 
 	then
-		self.doorCodeAddr = topc(sm.doorCodeBank, self.ptr.code)
+		self.doorCodeAddr = topc(sm.doorCodeBank, self:ptr().code)
 		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom)
 	end
 end
@@ -100,7 +99,7 @@ function Door:setDestRoom(room)
 	-- store .obj or .data or whatever
 	local bank, ofs = frompc(room.addr)
 	assert(bank == self.roomBank)
-	self.ptr.destRoomPageOffset = ofs
+	self:ptr().destRoomPageOffset = ofs
 	return true
 end
 
@@ -108,7 +107,7 @@ function Door:buildRoom(sm)
 	-- TODO make sure the door is added to sm.doors before doing this
 	if self.type ~= 'door_t' then return false end
 	if not self.destRoom then
-		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self.ptr.destRoomPageOffset))
+		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:ptr().destRoomPageOffset))
 	end
 	return true 
 end

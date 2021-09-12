@@ -1381,12 +1381,12 @@ end -- useBakedGraphicsTileTextures
 								
 									-- draw an arrow or something on the map where the door drops us off at
 									-- door.destRoom is the room
-									-- draw it at door.obj.screenX by door.obj.screenY
+									-- draw it at door:obj().screenX by door:obj().screenY
 									-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
-									local i = door.obj.screenX
-									local j = door.obj.screenY
-									local dir = bit.band(door.obj.direction, 3)	-- 0-based
+									local i = door:obj().screenX
+									local j = door:obj().screenY
+									local dir = bit.band(door:obj().direction, 3)	-- 0-based
 									local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
 										
 									local k = 2
@@ -1409,8 +1409,8 @@ end -- useBakedGraphicsTileTextures
 									--]]
 									-- TODO how to deal with capX capY and distToSpawnSamus ...
 									--[[
-									local pi = door.obj.capX / 16
-									local pj = door.obj.capY / 16
+									local pi = door:obj().capX / 16
+									local pj = door:obj().capY / 16
 									--]]
 
 									-- here's the pixel x & y of the door destination

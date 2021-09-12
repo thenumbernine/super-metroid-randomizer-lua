@@ -976,7 +976,7 @@ local RoomBlocks = require 'roomblocks'
 SMMap.RoomBlocks = RoomBlocks
 
 -- this is the block data of the rooms
-function SMMap:mapAddRoomBlockData(addr, m)
+function SMMap:mapAddRoomBlockData(addr, room)
 	local _,roomBlockData = self.roomblocks:find(nil, function(roomBlockData) 
 		return roomBlockData.addr == addr 
 	end)
@@ -984,15 +984,15 @@ function SMMap:mapAddRoomBlockData(addr, m)
 		-- rooms can come from separate room_t's
 		-- which means they can have separate widths & heights
 		-- so here, assert that their width & height matches
-		assert(16 * m:obj().width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..m:obj().width)
-		assert(16 * m:obj().height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..m:obj().height)
+		assert(16 * room:obj().width == roomBlockData.width, "expected room width "..roomBlockData.width.." but got "..room:obj().width)
+		assert(16 * room:obj().height == roomBlockData.height, "expected room height "..roomBlockData.height.." but got "..room:obj().height)
 		return roomBlockData 
 	end
 
 	local roomBlockData = RoomBlocks{
 		sm = self,
 		addr = addr,
-		m = m,
+		room = room,
 	}
 	self.roomblocks:insert(roomBlockData)
 	return roomBlockData
@@ -1925,12 +1925,12 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			
 				-- draw an arrow or something on the map where the door drops us off at
 				-- door.destRoom is the room
-				-- draw it at door.ptr.screenX by door.ptr.screenY
+				-- draw it at door:ptr().screenX by door:ptr().screenY
 				-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
-				local i = door.ptr.screenX
-				local j = door.ptr.screenY
-				local dir = bit.band(door.ptr.direction, 3)	-- 0-based
+				local i = door:ptr().screenX
+				local j = door:ptr().screenY
+				local dir = bit.band(door:ptr().direction, 3)	-- 0-based
 				local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
 					
 				local k=debugImageBlockSizeInPixels*3-1 
@@ -3230,7 +3230,7 @@ function SMMap:mapPrint()
 		for _,door in ipairs(m.doors) do
 			print('  '..door.type..': '
 				..('$%02x:%04x'):format(frompc(door.addr))
-				..' '..door.ptr[0])
+				..' '..door:obj())
 			if door.doorCode then
 				print('   code: '..range(0,ffi.sizeof(door.doorCode)-1):mapi(function(i) 
 						return ('%02x'):format(door.doorCode[i])
@@ -3284,7 +3284,7 @@ function SMMap:mapPrint()
 	local doorcodes = table()
 	for _,door in ipairs(self.doors) do
 		if door.type == 'door_t' then
-			doorcodes[door.ptr.code] = true
+			doorcodes[door:ptr().code] = true
 		end
 	end
 	print('unique door codes:')
@@ -3371,7 +3371,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 		mem:add(topc(self.doorAddrBank, m:obj().doorPageOffset), #m.doors * 2, 'dooraddrs', m)
 		for _,door in ipairs(m.doors) do
-			mem:add(ffi.cast('uint8_t*',door.ptr)-rom, ffi.sizeof(door.type), door.type, m)
+			mem:add(door.addr, ffi.sizeof(door.type), door.type, m)
 			if door.doorCode then
 				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', m)
 			end
@@ -4214,7 +4214,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			local bank, ofs = frompc(door.addr)
 			assert(bank == self.doorBank)
 			ffi.cast('uint16_t*', ptr)[0] = ofs
-			-- right now door.ptr points to the door_t object elsewhere, not to the ptr of the ptr to the door_t
+			-- right now door:ptr() points to the door_t object elsewhere, not to the ptr of the ptr to the door_t
 			ptr = ptr + ffi.sizeof'uint16_t'
 		end
 		
@@ -4278,7 +4278,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			if door.type == 'door_t' then
 				local bank, ofs = frompc(door.destRoom.addr)
 				assert(bank == self.roomBank)
-				door.ptr.destRoomPageOffset = ofs
+				door:ptr().destRoomPageOffset = ofs
 			end
 		end
 	end
