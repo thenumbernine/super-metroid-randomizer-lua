@@ -21,6 +21,8 @@ local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
 local SM = require 'sm'
 
+local topc = require 'pc'.to
+local frompc = require 'pc'.from
 
 -- TODO replace this with shaders
 local useBakedGraphicsTileTextures = true 
@@ -60,14 +62,247 @@ editorShowRegionBorders = false
 editorShowRoomBorders = false
 
 local editorModes = {
-	'pan',
-	'moveRegions',
-	'moveRooms',
+	'Pan',
+	'Regions',
+	'Rooms',
+	'Doors',
 }
 for k,v in pairs(editorModes) do
 	editorModes[v] = k
 end
 editorMode = 1
+
+
+
+local ObjectSelector = class()
+
+ObjectSelector.snap = 1 
+
+function ObjectSelector:init()
+	self.selectedObjDown = vec2f()
+end
+
+function ObjectSelector:updateMouse(app)
+	if app.mouse.leftDown then
+		if not app.mouse.lastLeftDown then
+			self.dragging = false
+
+			app[self.selectedField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
+			if app[self.selectedField] then
+				app.mouseDownX = app.mouseViewPos.x
+				app.mouseDownY = app.mouseViewPos.y
+				self.selectedObjDown:set(self:getObjPos(app[self.selectedField]))
+			else
+				-- TODO here - start a selection rectangle
+				-- then on mouseup, select all touching rooms
+			end
+		else
+			local obj = app[self.selectedField]
+			if obj then
+				local deltaX = app.mouseViewPos.x - app.mouseDownX
+				local deltaY = app.mouseViewPos.y - app.mouseDownY
+				
+				if math.abs(deltaX) > 5
+				or math.abs(deltaY) > 5
+				then
+					self.dragging = true
+				end
+				
+
+				deltaX = math.round(deltaX / self.snap) * self.snap
+				deltaY = math.round(deltaY / self.snap) * self.snap
+
+				self:setObjPos(
+					obj,
+					self.selectedObjDown.x + deltaX,
+					self.selectedObjDown.y - deltaY
+				)
+			
+				-- if we are dragging then don't let orbit control view
+				app.view.orthoSize = app.viewBeforeSize
+				app.view.pos.x = app.viewBeforeX
+				app.view.pos.y = app.viewBeforeY
+			end
+		end
+	else
+		if app.mouse.lastLeftDown then
+			if not self.dragging then
+				self:onClick(app)
+			end
+--[[ only recalc bounds on mouseup			
+			if m then
+				m.region:calcBounds()
+			end
+--]]
+		else
+			app[self.mouseOverField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
+		end
+	end
+end
+
+function ObjectSelector:onClick(app)
+end
+
+
+local RegionSelector = class(ObjectSelector)
+
+RegionSelector.selectedField = 'selectedRegion'
+RegionSelector.mouseOverField = 'mouseOverRegion'
+
+RegionSelector.snap = blocksPerRoom
+
+function RegionSelector:getObjUnderPos(app, x, y)
+	for _,region in ipairs(app.regions) do
+		if region.show then
+			for _,m in ipairs(region.rooms) do
+				local xmin = m.obj.x + region.ofs.x
+				local ymin = m.obj.y + region.ofs.y
+				local xmax = xmin + m.obj.width
+				local ymax = ymin + m.obj.height
+				if x >= xmin * blocksPerRoom
+				and x <= xmax * blocksPerRoom
+				and y >= -ymax * blocksPerRoom
+				and y <= -ymin * blocksPerRoom
+				then
+--					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+--					local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
+--					local rs = m.roomStates[currentRoomStateIndex]
+--					if not editorHideFilledMapBlocks
+--					or bit.band(rs.roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+--					then
+					return region
+--					end
+				end
+			end
+		end
+	end
+end
+
+function RegionSelector:getObjPos(region)
+	return 
+		region.ofs.x * blocksPerRoom,
+		region.ofs.y * blocksPerRoom
+end
+
+function RegionSelector:setObjPos(region, x,y)
+	region.ofs:set(
+		x / blocksPerRoom,
+		y / blocksPerRoom
+	)
+end
+
+
+
+
+local RoomSelector = class(ObjectSelector)
+
+RoomSelector.selectedField = 'selectedRoom'
+RoomSelector.mouseOverField = 'mouseOverRoom'
+
+RoomSelector.snap = blocksPerRoom
+
+function RoomSelector:getObjUnderPos(app, x, y)
+	for _,region in ipairs(app.regions) do
+		if region.show then
+			for _,m in ipairs(region.rooms) do
+				local xmin = m.obj.x + region.ofs.x
+				local ymin = m.obj.y + region.ofs.y
+				local xmax = xmin + m.obj.width
+				local ymax = ymin + m.obj.height
+				if x >= xmin * blocksPerRoom
+				and x <= xmax * blocksPerRoom
+				and y >= -ymax * blocksPerRoom
+				and y <= -ymin * blocksPerRoom
+				then
+					return m
+				end
+			end
+		end
+	end
+end
+
+function RoomSelector:getObjPos(m)
+	return
+		(m.obj.x + m.region.ofs.x) * blocksPerRoom,
+		(m.obj.y + m.region.ofs.y) * blocksPerRoom
+end
+
+function RoomSelector:setObjPos(m, x, y)
+	x = x / blocksPerRoom
+    y = y / blocksPerRoom
+	x = x - m.region.ofs.x
+	y = y - m.region.ofs.y
+	x = math.clamp(x, 0, mapMaxWidth - m.obj.width)
+	y = math.clamp(y, 0, mapMaxHeight - m.obj.height) 
+	if x ~= m.obj.x
+	or y ~= m.obj.y
+	then
+		m.obj.x = x
+		m.obj.y = y
+		
+-- [[ recalc bounds while you drag					
+		m.region:calcBounds()
+--]]
+	end
+end
+
+function RoomSelector:onClick(app)
+	local m = app.selectedRoom
+	if m then
+		local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
+		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
+		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
+print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
+	end
+end
+
+
+
+local DoorSelector = class(ObjectSelector)
+
+DoorSelector.selectedField = 'selectedDoor'
+DoorSelector.mouseOverField = 'mouseOverDoor'
+
+-- TODO snap function vs snap value
+DoorSelector.snap = 1
+
+function DoorSelector:getObjUnderPos(app, x, y)
+	for _,region in ipairs(app.regions) do
+		if region.show then
+			for _,m in ipairs(region.rooms) do
+				local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+				local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
+				local rs = m.roomStates[((currentRoomStateIndex - 1) % #m.roomStates) + 1]
+		
+				for exitIndex,blockpos in pairs(rs.roomBlockData.blocksForExit) do
+					local door = m.doors[exitIndex+1]
+					for _,pos in ipairs(blockpos) do
+						local adx = math.abs(x - pos[1])
+						local ady = math.abs(y - pos[2])
+						if adx < .5 and ady < .5 then
+							return {m=m, door=door, pos=pos}
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+function DoorSelector:getObjPos(roomAndDoor)
+	local m, door, pos = roomAndDoor.m, roomAndDoor.door, room.pos
+	return
+		(m.obj.x + m.region.ofs.x) * blocksPerRoom + pos[1],
+		(m.obj.y + m.region.ofs.y) * blocksPerRoom + pos[2]
+end
+
+function DoorSelector:setObjPos(roomAndDoor, x, y)
+	-- TODO ... this shouldn't be dragging
+	-- doors are associated with tile positions
+end
+
+
 
 
 local function glMakeU8Tex(image)
@@ -1116,9 +1351,31 @@ end -- useBakedGraphicsTileTextures
 							for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
 								-- TODO lifts will mess up the order of this, maybe?
 								local door = m.doors[exitIndex+1]
-								if not door then
-								elseif door.type ~= 'door_t' then
+								
+								if self.mouseOverDoor and door == self.mouseOverDoor.door
+								or self.selectedDoor and door == self.selectedDoor.door
+								then
+									gl.glLineWidth(3)
+								end
+								gl.glColor3f(1,1, self.selectedDoor and door == self.selectedDoor.door and 0 or 1)
+
+								if not door 
+								or door.type ~= 'door_t' 
+								then
 									-- TODO handle lifts?
+									-- are they lifts, or are they loadStation debug destinations that have no exit, only an entrance?
+									
+									for _,pos in ipairs(blockpos) do
+										-- now for src block pos
+										local x = .5 + pos[1] + blocksPerRoom * roomxmin
+										local y = .5 + pos[2] + blocksPerRoom * roomymin
+										gl.glBegin(gl.GL_LINES)
+										gl.glVertex2f(x-.5,-y)
+										gl.glVertex2f(x+.5,-y)
+										gl.glVertex2f(x,-y-.5)
+										gl.glVertex2f(x,-y+.5)
+										gl.glEnd()
+									end
 								else
 									local dstRoom = assert(door.destRoom)
 								
@@ -1134,6 +1391,7 @@ end -- useBakedGraphicsTileTextures
 										
 									local k = 2
 										
+									-- [[
 									local pi, pj = 0, 0
 									if dir == 0 then		-- enter from left
 										pi = k
@@ -1148,7 +1406,13 @@ end -- useBakedGraphicsTileTextures
 										pi = bit.rshift(blocksPerRoom, 1)
 										pj = blocksPerRoom - k
 									end
-								
+									--]]
+									-- TODO how to deal with capX capY and distToSpawnSamus ...
+									--[[
+									local pi = door.obj.capX / 16
+									local pj = door.obj.capY / 16
+									--]]
+
 									-- here's the pixel x & y of the door destination
 									local dstregion = self.regions[dstRoom.obj.region+1]
 									local x1 = pi + ti + blocksPerRoom * (i + dstRoom.obj.x + dstregion.ofs.x)
@@ -1158,13 +1422,14 @@ end -- useBakedGraphicsTileTextures
 										-- now for src block pos
 										local x2 = .5 + pos[1] + blocksPerRoom * roomxmin
 										local y2 = .5 + pos[2] + blocksPerRoom * roomymin
-										gl.glColor3f(1,1,1)
 										gl.glBegin(gl.GL_LINES)
 										gl.glVertex2f(x1,-y1)
 										gl.glVertex2f(x2,-y2)
 										gl.glEnd()
 									end
 								end
+								
+								gl.glLineWidth(1)
 							end
 						end
 					end
@@ -1178,191 +1443,12 @@ glreport'here'
 end
 
 
-local ObjectSelector = class()
 
-ObjectSelector.snap = 1 
-
-function ObjectSelector:init()
-	self.selectedObjDown = vec2f()
-end
-
-function ObjectSelector:updateMouse(app)
-	if app.mouse.leftDown then
-		if not app.mouse.lastLeftDown then
-			self.dragging = false
-
-			app[self.selectedField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
-			if app[self.selectedField] then
-				app.mouseDownX = app.mouseViewPos.x
-				app.mouseDownY = app.mouseViewPos.y
-				self.selectedObjDown:set(self:getObjPos(app[self.selectedField]))
-			else
-				-- TODO here - start a selection rectangle
-				-- then on mouseup, select all touching rooms
-			end
-		else
-			local obj = app[self.selectedField]
-			if obj then
-				local deltaX = app.mouseViewPos.x - app.mouseDownX
-				local deltaY = app.mouseViewPos.y - app.mouseDownY
-				
-				if math.abs(deltaX) > 5
-				or math.abs(deltaY) > 5
-				then
-					self.dragging = true
-				end
-				
-
-				deltaX = math.round(deltaX / self.snap) * self.snap
-				deltaY = math.round(deltaY / self.snap) * self.snap
-
-				self:setObjPos(
-					obj,
-					self.selectedObjDown.x + deltaX,
-					self.selectedObjDown.y - deltaY
-				)
-			
-				-- if we are dragging then don't let orbit control view
-				app.view.orthoSize = app.viewBeforeSize
-				app.view.pos.x = app.viewBeforeX
-				app.view.pos.y = app.viewBeforeY
-			end
-		end
-	else
-		if app.mouse.lastLeftDown then
-			if not self.dragging then
-				self:onClick(app)
-			end
---[[ only recalc bounds on mouseup			
-			if m then
-				m.region:calcBounds()
-			end
---]]
-		else
-			app[self.mouseOverField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
-		end
-	end
-end
-
-function ObjectSelector:onClick(app)
-end
-
-
-local RegionSelector = class(ObjectSelector)
-
-RegionSelector.selectedField = 'selectedRegion'
-RegionSelector.mouseOverField = 'mouseOverRegion'
-
-RegionSelector.snap = blocksPerRoom
-
-function RegionSelector:getObjUnderPos(app, x, y)
-	for _,region in ipairs(app.regions) do
-		if region.show then
-			for _,m in ipairs(region.rooms) do
-				local xmin = m.obj.x + region.ofs.x
-				local ymin = m.obj.y + region.ofs.y
-				local xmax = xmin + m.obj.width
-				local ymax = ymin + m.obj.height
-				if x >= xmin * blocksPerRoom
-				and x <= xmax * blocksPerRoom
-				and y >= -ymax * blocksPerRoom
-				and y <= -ymin * blocksPerRoom
-				then
---					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
---					local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
---					local rs = m.roomStates[currentRoomStateIndex]
---					if not editorHideFilledMapBlocks
---					or bit.band(rs.roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
---					then
-						return region
---					end
-				end
-			end
-		end
-	end
-end
-
-function RegionSelector:getObjPos(region)
-	return 
-		region.ofs.x * blocksPerRoom,
-		region.ofs.y * blocksPerRoom
-end
-
-function RegionSelector:setObjPos(region, x,y)
-	region.ofs:set(
-		x / blocksPerRoom,
-		y / blocksPerRoom
-	)
-end
-
-
-local regionSelector = RegionSelector()
-
-
-local RoomSelector = class(ObjectSelector)
-
-RoomSelector.selectedField = 'selectedRoom'
-RoomSelector.mouseOverField = 'mouseOverRoom'
-
-RoomSelector.snap = blocksPerRoom
-
-function RoomSelector:getObjUnderPos(app, x, y)
-	for _,region in ipairs(app.regions) do
-		if region.show then
-			for _,m in ipairs(region.rooms) do
-				local xmin = m.obj.x + region.ofs.x
-				local ymin = m.obj.y + region.ofs.y
-				local xmax = xmin + m.obj.width
-				local ymax = ymin + m.obj.height
-				if x >= xmin * blocksPerRoom
-				and x <= xmax * blocksPerRoom
-				and y >= -ymax * blocksPerRoom
-				and y <= -ymin * blocksPerRoom
-				then
-					return m
-				end
-			end
-		end
-	end
-end
-
-function RoomSelector:getObjPos(m)
-	return
-		(m.obj.x + m.region.ofs.x) * blocksPerRoom,
-		(m.obj.y + m.region.ofs.y) * blocksPerRoom
-end
-
-function RoomSelector:setObjPos(m, x, y)
-	x = x / blocksPerRoom
-    y = y / blocksPerRoom
-	x = x - m.region.ofs.x
-	y = y - m.region.ofs.y
-	x = math.clamp(x, 0, mapMaxWidth - m.obj.width)
-	y = math.clamp(y, 0, mapMaxHeight - m.obj.height) 
-	if x ~= m.obj.x
-	or y ~= m.obj.y
-	then
-		m.obj.x = x
-		m.obj.y = y
-		
--- [[ recalc bounds while you drag					
-		m.region:calcBounds()
---]]
-	end
-end
-
-function RoomSelector:onClick(app)
-	local m = app.selectedRoom
-	if m then
-		local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
-		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
-		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
-		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
-print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
-	end
-end
-
+-- TODO how come when I make these member variables it goes incredibly slow?
 local roomSelector = RoomSelector()
+local regionSelector = RegionSelector()
+local doorSelector = DoorSelector()
+
 
 
 function App:event(...)
@@ -1387,12 +1473,14 @@ function App:event(...)
 	)
 
 
-	if editorMode == editorModes.pan then
+	if editorMode == editorModes.Pan then
 		-- just use default orbit behavior
-	elseif editorMode == editorModes.moveRegions then
+	elseif editorMode == editorModes.Regions then
 		regionSelector:updateMouse(self)
-	elseif editorMode == editorModes.moveRooms then
+	elseif editorMode == editorModes.Rooms then
 		roomSelector:updateMouse(self)
+	elseif editorMode == editorModes.Doors then
+		doorSelector:updateMouse(self)
 	end
 end
 
@@ -1460,17 +1548,17 @@ end
 local int = ffi.new('int[1]', 0)
 local function radioTooltip(name, t, k, v)
 	ig.igPushIDStr(name)
-	local result = ig.igRadioButtonIntPtr('', int, v)
-	hoverTooltip(name)
-	ig.igPopID()
-	if result then
+	if ig.igRadioButtonIntPtr('', int, v) then
 		t[k] = int[0]
 	end
+	hoverTooltip(name)
+	ig.igPopID()
 end
 
 local function radioTooltipsFromTable(names, t, k)
 	int[0] = t[k]
 	for v,name in ipairs(names) do
+		-- TODO int and t[k] crosses over here ... hmm
 		radioTooltip(name, t, k, v)
 		if v < #names then
 			ig.igSameLine()
@@ -1478,7 +1566,23 @@ local function radioTooltipsFromTable(names, t, k)
 	end
 end
 
+
+local function comboTooltip(name, t, k, values)
+	ig.igPushIDStr(name)
+	int[0] = t[k]
+	local result = ig.igCombo(name, int, values) 
+	if result then
+		t[k] = int[0]
+	end
+	hoverTooltip(name)
+	ig.igPopID()
+	return result
+end
+
+
 function App:updateGUI()
+	local sm = self.sm
+
 	checkboxTooltip('Draw Foreground', _G, 'editorDrawForeground')
 	ig.igSameLine()
 	checkboxTooltip('Draw Layer 2 Background', _G, 'editorDrawLayer2')
@@ -1523,26 +1627,71 @@ function App:updateGUI()
 	)
 
 
+	ig.igPushIDStr"why isn't this working?"
 	if ig.igCollapsingHeader'regions' then
-		ig.igPushIDStr'regions'
-		for i,region in ipairs(self.regions) do
-			if ig.igCollapsingHeader('region '..region.index) then
-				ig.igPushIDInt(i)
-				checkboxTooltip('Show Region '..region.index, region, 'show')
-				inputFloatTooltip('xofs', region.ofs, 'x')
-				inputFloatTooltip('yofs', region.ofs, 'y')
-				if i < #self.regions then
-					ig.igSeparator()
+		if not self.selectedRegion then self.selectedRegion = self.regions[1] end
+		local tmp = {self.selectedRegion.index}
+		if comboTooltip('region', tmp, 1, self.regions:mapi(function(region)
+			return 'region '..region.index
+		end)) then
+			self.selectedRegion = self.regions[tmp[1]+1]
+		end
+		
+		local region = self.selectedRegion
+		if region then
+			checkboxTooltip('Show Region '..region.index, region, 'show')
+			inputFloatTooltip('xofs', region.ofs, 'x')
+			inputFloatTooltip('yofs', region.ofs, 'y')
+
+			local lsr = sm.loadStationsForRegion[region.index+1]
+			if not lsr then
+				error("couldn't find loadStations for region "..region.index)
+			end
+
+			if not self.currentLoadStationIndex then self.currentLoadStationIndex = 0 end
+			comboTooltip('loadStation', self, 'currentLoadStationIndex', lsr.stations:mapi(function(ls)
+				return ('%02x:%04x'):format(frompc(ls.addr))
+			end))
+			
+			local ls = lsr.stations[self.currentLoadStationIndex+1]
+			if ls then
+				if ig.igButton('room '
+					..(ls.room and ('%02x:%04x'):format(frompc(ls.room.addr)) or '')
+				) then
+					-- should this click to highlight the room?
+					-- what about remapping rooms? 
+					-- click, then the next map room click assigns?
+					-- mouseover to highlight?
 				end
-				ig.igPopID()
+				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) 
+				and ls.room
+				then
+					self.mouseOverRoom = ls.room
+				end
+
+				if ig.igButton('door '
+					..(ls.door and ('%02x:%04x'):format(frompc(ls.door.addr)) or '')
+				) then
+					-- redirect door
+				end
+				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) 
+				and ls.door
+				then
+					self.mouseOverRoom = {door=ls.door}
+				end
+
+				for _,field in ipairs(sm.loadStation_t.fields) do
+					local name,ctype = next(field)
+					ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
+				end
 			end
 		end
-		ig.igPopID()
 	end	
+	ig.igPopID()
 
 	if ig.igCollapsingHeader'tilesets' then
 		ig.igPushIDStr'tilesets'
-		for i,tileSet in ipairs(self.sm.tileSets) do
+		for i,tileSet in ipairs(sm.tileSets) do
 			if tileSet.tex then 
 				makeTooltipImage(
 					'tileset '..tileSet.index,

@@ -504,52 +504,6 @@ local bgCTypeForHeader = {
 }
 
 
-
--- described in section 12 of metroidconstruction.com/SMMM
--- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
--- This isn't the door so much as the information associated with its destination.
--- This doesn't reference the in-room door object so much as vice-versa.
--- I'm tempted to call this 'exit_t' ... since you don't need a door
-local door_t = struct{
-	name = 'door_t',
-	fields = {
-		{destRoomPageOffset = 'uint16_t'},				-- 0: points to the room_t to transition into
-		
-	--[[
-	0x40 = change regions
-	0x80 = elevator
-	--]]
-		{flags = 'uint8_t'},				-- 2
-
-	--[[
-	0 = right
-	1 = left
-	2 = down
-	3 = up
-	| 0x04 flag = door closes behind samus
-	--]]
-		{direction = 'uint8_t'},			-- 3
-		
-		{capX = 'uint8_t'},					-- 4	target room x offset lo to place you at
-		{capY = 'uint8_t'},					-- 5	target room y offset lo
-		{screenX = 'uint8_t'},				-- 6	target room x offset hi
-		{screenY = 'uint8_t'},				-- 7	target room y offset hi
-		{distToSpawnSamus = 'uint16_t'},	-- 9	distance from door to spawn samus
-		{code = 'uint16_t'},				-- A	custom asm for the door
-	},
-}
-
--- this is what the metroid ROM map says ... "Elevator thing"
--- two dooraddrs point to a uint16_t of zero, at $0188fc and $01a18a, and they point to structs that only take up 2 bytes
--- you find it trailing the door_t corresponding with the lift
-local lift_t = struct{
-	name = 'lift_t',
-	fields = {
-		{zero = 'uint16_t'},
-	},
-}
-
-
 -- http://patrickjohnston.org/bank/80
 local loadStation_t = struct{
 	name = 'loadStation_t',
@@ -563,6 +517,7 @@ local loadStation_t = struct{
 		{offsetY = 'uint16_t'},
 	},
 }
+SMMap.loadStation_t = loadStation_t
 
 -- http://patrickjohnston.org/bank/82
 local demoRoom_t = struct{
@@ -844,24 +799,24 @@ function SMMap:mapAddBGTilemap(addr)
 	return tilemap
 end
 
-function SMMap:mapAddRoom(pageofs, buildRecursively)
-	local _,m = self.rooms:find(nil, function(m) return m.addr == pageofs end)
+function SMMap:mapAddRoom(addr, buildRecursively)
+	assert(frompc(addr) == self.roomBank)
+	local _,m = self.rooms:find(nil, function(m) return m.addr == addr end)
 	if m then return m end
 
-	local absaddr = topc(self.roomBank, pageofs)
 
 	local rom = self.rom
-	local data = rom + absaddr
+	local data = rom + addr
 	local mptr = ffi.cast('room_t*', data)
 	local m = Room{
-		addr = pageofs,
+		addr = addr,
 		
 		-- switch over to this from ptr, and then to pure lua from this
 		obj = ffi.new('room_t', mptr[0]),
 		
 		ptr = mptr,
 	}	
---print('adding room '..('$%04x'):format(pageofs)..' '..m.obj)	
+--print('adding room '..('$%02x:%04x'):format(frompc(addr))..' '..m.obj)	
 	self.rooms:insert(m)
 	
 	data = data + ffi.sizeof'room_t'
@@ -1080,7 +1035,7 @@ if done then break end
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
 			if door.type == 'door_t' then
-				door.destRoom = self:mapAddRoom(door.ptr.destRoomPageOffset, true)
+				door.destRoom = self:mapAddRoom(topc(self.roomBank, door.ptr.destRoomPageOffset), true)
 			end
 		end
 	end
@@ -1634,6 +1589,7 @@ function SMMap:mapReadLoadStations()
 		local ptr = ffi.cast('loadStation_t*', rom + topc(loadStationBank, addr))
 		for i=0,count-1 do
 			local ls = {}
+			ls.addr = ffi.cast('uint8_t*', ptr) - rom
 			ls.ptr = ptr
 			ls.obj = ffi.new('loadStation_t', ptr[0])
 			lsr.stations:insert(ls)
@@ -1677,26 +1633,25 @@ function SMMap:mapInit()
 
 	
 	--[[ load fixed rooms	
-	assert(self:mapAddRoom(0x91f8, true))	-- Zebes
-	assert(self:mapAddRoom(0xdf45, true))	-- Ceres
+	assert(self:mapAddRoom(topc(self.roomBank, 0x91f8), true))	-- Zebes
+	assert(self:mapAddRoom(topc(self.roomBank, 0xdf45), true))	-- Ceres
 	--]]
 	-- [[
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
-			local addr = ls.obj.roomPageOffset
-			if addr > 0 then
-				local room = self:mapAddRoom(addr, true)
-				if not room then
-					print("WARNING - loadStation addr "..('%04x'):format(addr).." failed to load room")
-				else
-					ls.room = room
+			local roomAddr = ls.obj.roomPageOffset
+			if ls.obj.roomPageOffset > 0 then
+				ls.room = self:mapAddRoom(topc(self.roomBank, ls.obj.roomPageOffset), true)
+				if not ls.room then
+					print("WARNING - loadStation "
+						..('%06x'):format(ls.addr)
+						.." has roomPageOffset "..('%04x'):format(ls.obj.bgPageOffset).." failed to find room")
 				end
 			end
-			-- TODO what about the doorPageOffset? what does this point to?
 		end
 	end
 	--]]
-
+	
 	--[[ get a table of doors based on their plm arg low byte
 	self.doorPLMForID = table()
 	for _,plmset in ipairs(self.plmsets) do
@@ -1718,6 +1673,41 @@ function SMMap:mapInit()
 	assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
 	self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
 	assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
+
+
+	-- do this after loading all rooms
+	for _,lsr in ipairs(self.loadStationsForRegion) do
+		for _,ls in ipairs(lsr.stations) do
+			-- TODO what about the doorPageOffset? what does this point to?
+			-- seems loadStation_t.doorPageOffset == bg_*_t.doorPageOffset
+			-- but these don't seem to be door_t's
+			if ls.obj.doorPageOffset > 0x8000 then
+				local doorAddr = topc(self.doorBank, ls.obj.doorPageOffset)
+				ls.door = nil
+				for _,m in ipairs(self.rooms) do
+					for _,door in ipairs(m.doors) do
+						if 
+						--door.type == 'door_t' and 
+						door.addr == doorAddr
+						then
+							ls.door = door
+						end
+					end
+					if ls.door == door then break end
+				end
+				if not ls.door then
+					print("WARNING - loadStation "
+						..('%06x'):format(ls.addr)
+						-- WHY DOES THIS VARY
+						.." has doorPageOffset "..('%06x'):format(ls.obj.doorPageOffset)
+						-- WHEN THIS STAYS THE SAME
+						.." and doorAddr "..('%02x:%04x'):format(self.doorBank, ls.obj.doorPageOffset)
+						.." failed to find bg")
+				end
+			end	
+		end
+	end
+
 
 
 	if config.mapAssertStructure then
@@ -2201,7 +2191,7 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	end
 
 	drawstr(debugMapImage, firstcoord[1], firstcoord[2], ('%x-%02x'):format(m.obj.region, m.obj.index))
-	drawstr(debugMapImage, firstcoord[1], firstcoord[2]+6, ('$%04x'):format(m.addr))
+	drawstr(debugMapImage, firstcoord[1], firstcoord[2]+6, ('$%02x:%04x'):format(frompc(m.addr)))
 end
 
 local function drawline(img, x1,y1,x2,y2, r,g,b)
@@ -3506,7 +3496,7 @@ function SMMap:mapPrint()
 	print("all bg_t's:")
 	self.bgs:sort(function(a,b) return a.addr < b.addr end)
 	for _,bg in ipairs(self.bgs) do
-		print(' '..('$%06x'):format(bg.addr)..': '..bg.ptr[0])
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.type.name..' '..bg.ptr[0])
 		print('  rooms: '..bg.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room.obj.region, rs.room.obj.index)
 			end):concat' ')
@@ -3681,8 +3671,7 @@ end
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
 	for _,m in ipairs(self.rooms) do
-		local addr = topc(self.roomBank, m.addr)	
-		mem:add(addr, ffi.sizeof'room_t', 'room_t', m)
+		mem:add(m.addr, ffi.sizeof'room_t', 'room_t', m)
 		for _,rs in ipairs(m.roomStates) do
 			assert(rs.select_ptr)
 			mem:add(ffi.cast('uint8_t*', rs.select_ptr) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
@@ -4512,7 +4501,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		do
 			local bank, ofs = frompc(addr)
 			assert(bank == self.roomBank)
-			m.addr = ofs
+			m.addr = addr
 		end
 		ptr = ptr + ffi.sizeof'room_t'
 
@@ -4881,7 +4870,9 @@ function SMMap:mapWrite()
 				end
 				ls.ptr = ptr
 				if ls.room then
-					ls.obj.roomPageOffset = assert(ls.room.addr)
+					local bank, pageofs = frompc(ls.room.addr)
+					assert(bank == self.roomBank)
+					ls.obj.roomPageOffset = pageofs
 				else
 					if ls.obj.roomPageOffset ~= 0 then
 						print("WARNING - loadStation doesn't have a room, but does have a nonzero roomPageOffset")
