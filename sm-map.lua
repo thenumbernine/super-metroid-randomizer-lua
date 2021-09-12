@@ -140,6 +140,59 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 				function(m) return -9,26 end,	-- ceres
 				function(m) return 3,48 end,	-- testing
 			},
+			-- to prevent overlap
+			-- honestly, excluding the empty background tiles below fixes most of this
+			-- but for the solid tile output, I still want to see those types, so that's why I added this code 
+			-- what regions on the map to exclude
+			mapDrawExcludeMapBlocks = {
+				[0x000] = {
+					{0, 0, 1, 2},	-- crateria intro, out of bounds backgrounds
+					{0, 3, 1, 1},	-- "
+				},
+				[0x002] = {
+					{0, 4, 1, 1},
+					{2, 4, 3, 1},
+				},
+				[0x009] = {{0, 0, 7, 4}},
+				[0x012] = {{2, 8, 1, 1}},	-- crateria down hall to mother brain overlapping mother brain 1st room
+				[0x108] = {{0, 1, 4, 5}},	-- brinstar pink speed fall room
+				[0x109] = {
+					{0, 0, 1, 1},	-- brinstar pink big room
+					{0, 1, 2, 2},	-- "
+				},
+				[0x10e] = {{0, 0, 5, 2}},	-- brinstar blue first room
+				[0x113] = {{2, 0, 3, 1}},	-- brinstar bottom flea room
+				[0x124] = {{1, 4, 1, 1}},	-- red room ascending to lift to brinstar, blocks save to the right
+				[0x12c] = {{0, 1, 1, 1}},	-- brinstar kraid fly room
+				[0x204] = {
+					{0, 0, 3, 3},	-- norfair speed room to ice
+					{4, 3, 3, 1},	-- "
+				},
+				[0x207] = {
+					{1, 0, 1, 1},	-- norfair room before ice
+					{1, 2, 1, 1},	-- "
+				},
+				[0x214] = {{5, 0, 3, 2}},	-- norfair room before grappling
+				[0x221] = {{0, 0, 2, 2}},	-- norfair lava rise room run to wave
+				[0x225] = {{3, 2, 1, 1}},	-- norfair entrance to lower norfair lava swim, lower right corner occuldes room 2-3c, even though there are gfx tiles here
+				[0x235] = {{2, 0, 1, 1}},	-- chozo morph to lower acid room, upper right overlaps with room to the right
+				[0x236] = {{5, 0, 3, 2}},	-- norfair lower first room, occludes lava jump entrance to lower norfair
+				[0x23e] = {{0, 0, 2, 3}},	-- norfair lower return from gold chozo loop
+				[0x245] = {{1, 0, 2, 4}},	-- norfair room after acid raise run room, upper right blocks room to the right
+				[0x248] = {{0, 0, 1, 2}},	-- norfair lower escape last room
+				[0x24b] = {{0, 1, 1, 5}},	-- norfair lower escape first room
+				[0x300] = {
+					{0, 0, 2, 1},	-- wrecked ship bowling chozo room
+					{0, 2, 1, 1},	-- "
+				},
+				[0x304] = {
+					{0, 0, 4, 5},	-- wrecked ship main shaft
+					{5, 0, 1, 6},	-- "
+				},
+				[0x403] = {{1, 1, 3, 1}},	-- maridia fly and yellow blob room at the bottom
+				[0x404] = {{2, 7, 1, 1}},	-- maridia big climb upper left room, block over its door right to crabs 
+				[0x431] = {{1, 0, 4, 2}},	-- maridia mocktroid and big shell guy area
+			},
 		}
 	elseif version == 'vitality' then
 		return {
@@ -155,6 +208,7 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 				function(m) return 0,	0	end,		-- region 6
 				function(m) return 0,	0	end,		-- region 7
 			},
+			mapDrawExcludeMapBlocks = {},
 		}
 	else
 		return {
@@ -166,6 +220,7 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 						bit.band(i,1) * 20
 				end
 			end),
+			mapDrawExcludeMapBlocks = {},
 		}
 	end
 end
@@ -319,87 +374,6 @@ local fx1_t = struct{
 		{paletteBlend = 'uint8_t'},				-- 0xf
 	},											-- 0x10
 }
-
---[[
-now using http://patrickjohnston.org/bank/8F#fB76A
-bg headers:
-0000 = 2 bytes = terminator
-0002 = 9 bytes
-0004 = 7 bytes
-0006 = 2 bytes (not used?)
-0008 = 9 bytes
-000a = 2 bytes
-000c = 2 bytes (only used once)
-000e = 11 bytes
-
-explanation here: https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures
---]]
-
---[[
-used by 0, a, c
-header==0x0 => terminator
-header==0x6 => clear layer 3 (is this used?)
-header==0xa => clear layer 2
-header==0xc => clear kraid's layer 2
---]]
-local bg_header_t = struct{
-	name = 'bg_header_t',
-	fields = {
-		{header = 'uint16_t'},
-	},
-}
-
---[[
-header==0x2 => copy len bytes from .addr24 to VRAM:.dstOfs
-header==0x8 => copy len bytes from .addr24 to VRAM:.dstOfs ... and set bg3 tile base addr to $2000
---]]
-local bg_2_8_t = struct{
-	name = 'bg_2_8_t',
-	fields = {
-		{header = 'uint16_t'},
-		{addr24 = 'addr24_t'},
-		{dstOfs = 'uint16_t'},
-		{len = 'uint16_t'},
-	},
-}
-
---[[
-header==0x4 => decompress from .addr24 to $7e:.dstOfs
---]]
-local bg_4_t = struct{
-	name = 'bg_4_t',
-	fields = {
-		{header = 'uint16_t'},
-		{addr24 = 'addr24_t'},
-		{dstOfs = 'uint16_t'},
-	},
-}
-
---[[
-header==0xe => copy len bytes from .addr24 to VRAM:.dstOfs if the current doorPageOffset == .doorPageOffset
---]]
-local bg_e_t = struct{
-	name = 'bg_e_t',
-	fields = {
-		{header = 'uint16_t'},
-		{doorPageOffset = 'uint16_t'},
-		{addr24 = 'addr24_t'},
-		{dstOfs = 'uint16_t'},
-		{len = 'uint16_t'},
-	},
-}
-
-local bgCTypeForHeader = {
-	[0x0] = bg_header_t,
-	[0x2] = bg_2_8_t,
-	[0x4] = bg_4_t,
-	[0x6] = bg_header_t,
-	[0x8] = bg_2_8_t,
-	[0xa] = bg_header_t,
-	[0xc] = bg_header_t,
-	[0xe] = bg_e_t,
-}
-
 
 -- http://patrickjohnston.org/bank/80
 local loadStation_t = struct{
@@ -650,6 +624,9 @@ SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v
 
 
 local Room = require 'room'
+SMMap.Room = Room
+
+SMMap.RoomState = require 'roomstate'
 
 local PLM = require 'plm'
 SMMap.PLM = PLM
@@ -916,6 +893,7 @@ function SMMap:mapAddEnemyGFXSet(addr)
 	return enemyGFXSet
 end
 
+local MapBG = require 'mapbg'
 
 --[[
 table of all unique bgs.
@@ -925,36 +903,11 @@ doesn't create duplicates -- returns a previous copy if it exists
 b9:a634 -> $1ca634
 --]]
 function SMMap:mapAddBG(addr, rom)
-	local _,bg = self.bgs:find(nil, function(bg) return bg.addr == addr end)
-	if bg then return bg end
-	
-	local header = ffi.cast('uint16_t*', rom + addr)[0]
-	local ctype = bgCTypeForHeader[header]
-	if not ctype then
-		error("failed to find ctype for bg_t header "..('%x'):format(header)..' addr '..('%06x'):format(addr))
+	for _,bg in ipairs(self.bgs) do
+		if bg.addr == addr then return bg end
 	end
-	local ptr = ffi.cast(ctype.name..'*', rom + addr)
-
-	bg = {
-		addr = addr,
-		type = ctype,
-		ptr = ptr,
-		-- list of all m's that use this bg
-		roomStates = table(),
-	}
-	bg.obj = ffi.new(ctype.name, bg.ptr[0])
-	
+	local bg = MapBG{sm=self, addr=addr}
 	self.bgs:insert(bg)
-
-	if header == 4 then
---print('decoding bg addr '..('%06x'):format(addr)..' tileset '..('%06x'):format(ptr.addr24:topc()))
-		bg.tilemap = self:mapAddBGTilemap(ptr.addr24:topc())
-		-- don't overwrite?  and if we do then make this bg.tilemap.bgs:insert(bg)
-		-- but nope, seems bg tilemaps are 1:1 with bgs
-		assert(not bg.tilemap.bg)
-		bg.tilemap.bg = bg	-- is this 1:1?
-	end
-
 	return bg
 end
 
@@ -1726,43 +1679,6 @@ local debugImageColorMap = range(254)
 debugImageColorMap[0] = 0
 debugImageColorMap[255] = 255
 
--- to prevent overlap
--- honestly, excluding the empty background tiles below fixes most of this
--- but for the solid tile output, I still want to see those types, so that's why I added this code 
--- what regions on the map to exclude
-local mapDrawExcludeMapBlocks = {
-	{0, 0x00, 0, 0, 1, 2},	-- crateria intro, out of bounds backgrounds
-	{0, 0x00, 0, 3, 1, 1},	-- "
-	{0, 0x12, 2, 8, 1, 1},	-- crateria down hall to mother brain overlapping mother brain 1st room
-	{1, 0x08, 0, 1, 4, 5},	-- brinstar pink speed fall room
-	{1, 0x09, 0, 0, 1, 1},	-- brinstar pink big room
-	{1, 0x09, 0, 1, 2, 2},	-- "
-	{1, 0x0e, 0, 0, 5, 2},	-- brinstar blue first room
-	{1, 0x13, 2, 0, 3, 1},	-- brinstar bottom flea room
-	{1, 0x24, 1, 4, 1, 1},	-- red room ascending to lift to brinstar, blocks save to the right
-	{1, 0x2c, 0, 1, 1, 1},	-- brinstar kraid fly room
-	{2, 0x04, 0, 0, 3, 3},	-- norfair speed room to ice
-	{2, 0x04, 4, 3, 3, 1},	-- "
-	{2, 0x07, 1, 0, 1, 1},	-- norfair room before ice
-	{2, 0x07, 1, 2, 1, 1},	-- "
-	{2, 0x14, 5, 0, 3, 2},	-- norfair room before grappling
-	{2, 0x21, 0, 0, 2, 2},	-- norfair lava rise room run to wave
-	{2, 0x25, 3, 2, 1, 1},	-- norfair entrance to lower norfair lava swim, lower right corner occuldes room 2-3c, even though there are gfx tiles here
-	{2, 0x35, 2, 0, 1, 1},	-- chozo morph to lower acid room, upper right overlaps with room to the right
---	{2, 0x36, 5, 0, 3, 2},	-- norfair lower first room ... i guess this would overlap with the norfair entrance to lower norfair, but i'm not seeing it now ...
-	{2, 0x3e, 0, 0, 2, 3},	-- norfair lower return from gold chozo loop
-	{2, 0x45, 1, 0, 2, 4},	-- norfair room after acid raise run room, upper right blocks room to the right
-	{2, 0x48, 0, 0, 1, 2},	-- norfair lower escape last room
-	{2, 0x4b, 0, 1, 1, 5},	-- norfair lower escape first room
-	{3, 0x00, 0, 0, 2, 1},	-- wrecked ship bowling chozo room
-	{3, 0x00, 0, 2, 1, 1},	-- "
-	{3, 0x04, 0, 0, 4, 5},	-- wrecked ship main shaft
-	{3, 0x04, 5, 0, 1, 6},	-- "
-	{4, 0x03, 1, 1, 3, 1},	-- maridia fly and yellow blob room at the bottom
-	{4, 0x04, 2, 7, 1, 1},	-- maridia big climb upper left room, block over its door right to crabs 
-	{4, 0x31, 1, 0, 4, 2},	-- maridia mocktroid and big shell guy area
-}
-
 local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local fullmapinfo = ctx.sm:mapGetFullMapInfoForMD5(ctx.sm.md5hash)
 	
@@ -1781,15 +1697,18 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 		for i=0,w-1 do
 			local ignore
 			if config.mapOmitOverlappingRoomsInOriginal then
-				for _,info in ipairs(mapDrawExcludeMapBlocks) do
-					local region, index, mx, my, mw, mh = table.unpack(info)
-					if region == m:obj().region
-					and index == m:obj().index
-					and i >= mx and i < mx + mw 
-					and j >= my and j < my + mh
-					then
-						ignore = true
-						break
+				local region, index = m:obj().region, m:obj().index
+				local roomKey = bit.bor(bit.lshift(region, 8), index)
+				local infos = fullmapinfo.mapDrawExcludeMapBlocks[roomKey]
+				if infos then
+					for _,info in ipairs(infos) do
+						local mx, my, mw, mh = table.unpack(info)
+						if i >= mx and i < mx + mw 
+						and j >= my and j < my + mh
+						then
+							ignore = true
+							break
+						end
 					end
 				end
 			end
@@ -2092,7 +2011,7 @@ end
 
 
 local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
-	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+	local fullmapinfo = sm:mapGetFullMapInfoForMD5(sm.md5hash)
 	
 	local m = rs.room
 	local blocks12 = roomBlockData:getBlocks12()
@@ -2117,15 +2036,18 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 		for i=0,w-1 do
 			local ignore
 			if config.mapOmitOverlappingRoomsInOriginal then
-				for _,info in ipairs(mapDrawExcludeMapBlocks) do
-					local region, index, mx, my, mw, mh = table.unpack(info)
-					if region == m:obj().region
-					and index == m:obj().index
-					and i >= mx and i < mx + mw 
-					and j >= my and j < my + mh
-					then
-						ignore = true
-						break
+				local region, index = m:obj().region, m:obj().index
+				local roomKey = bit.bor(bit.lshift(region, 8), index)
+				local infos = fullmapinfo.mapDrawExcludeMapBlocks[roomKey]
+				if infos then
+					for _,info in ipairs(infos) do
+						local mx, my, mw, mh = table.unpack(info)
+						if i >= mx and i < mx + mw 
+						and j >= my and j < my + mh
+						then
+							ignore = true
+							break
+						end
 					end
 				end
 			end
@@ -2255,7 +2177,8 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 
 	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		for _,rs in ipairs(roomBlockData.roomStates) do
+		local rs = roomBlockData.roomStates[1]
+		if rs then
 			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
 		end
 	end
@@ -2296,11 +2219,12 @@ end
 local function drawRoomBlocksDumpworld(
 	roomBlockData,
 	rs,
+	sm,
 	dumpworldTileImg,
 	dumpworldTileFgImg,
 	dumpworldTileBgImg
 )
-	local fullmapinfo = self:mapGetFullMapInfoForMD5(self.md5hash)
+	local fullmapinfo = self:mapGetFullMapInfoForMD5(sm.md5hash)
 	
 	local m = rs.room
 	local blocks12 = roomBlockData:getBlocks12()
@@ -2314,15 +2238,18 @@ local function drawRoomBlocksDumpworld(
 		for i=0,w-1 do
 			local ignore
 			if config.mapOmitOverlappingRoomsInOriginal then
-				for _,info in ipairs(mapDrawExcludeMapBlocks) do
-					local region, index, mx, my, mw, mh = table.unpack(info)
-					if region == m:obj().region
-					and index == m:obj().index
-					and i >= mx and i < mx + mw 
-					and j >= my and j < my + mh
-					then
-						ignore = true
-						break
+				local region, index = m:obj().region, m:obj().index
+				local roomKey = bit.bor(bit.lshift(region, 8), index)
+				local infos = fullmapinfo.mapDrawExcludeMapBlocks[roomKey]
+				if infos then
+					for _,info in ipairs(infos) do
+						local mx, my, mw, mh = table.unpack(info)
+						if i >= mx and i < mx + mw 
+						and j >= my and j < my + mh
+						then
+							ignore = true
+							break
+						end
 					end
 				end
 			end
@@ -2584,6 +2511,7 @@ function SMMap:mapSaveDumpworldImage(filenamePrefix)
 			drawRoomBlocksDumpworld(
 				roomBlockData,
 				rs,
+				sm,
 				dumpworldTileImg,
 				dumpworldTileFgImg,
 				dumpworldTileBgImg
@@ -3175,7 +3103,7 @@ function SMMap:mapPrint()
 	print("all bg_t's:")
 	self.bgs:sort(function(a,b) return a.addr < b.addr end)
 	for _,bg in ipairs(self.bgs) do
-		print(' '..('$%06x'):format(bg.addr)..': '..bg.type.name..' '..bg.ptr[0])
+		print(' '..('$%06x'):format(bg.addr)..': '..bg.type..' '..bg:obj())
 		print('  rooms: '..bg.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
 			end):concat' ')
@@ -3219,7 +3147,7 @@ function SMMap:mapPrint()
 				print('   fx1_t: '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
 			end
 			for _,bg in ipairs(rs.bgs) do
-				print('   bg_t: '..('$%06x'):format( ffi.cast('uint8_t*',bg.ptr)-rom )..': '..bg.ptr[0])
+				print('   '..bg.type..': '..('$%06x'):format(bg.addr)..': '..bg:obj())
 			end
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
@@ -3349,31 +3277,31 @@ end
 
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
-	for _,m in ipairs(self.rooms) do
-		mem:add(m.addr, ffi.sizeof'room_t', 'room_t', m)
-		for _,rs in ipairs(m.roomStates) do
+	for _,room in ipairs(self.rooms) do
+		mem:add(room.addr, ffi.sizeof'room_t', 'room_t', room)
+		for _,rs in ipairs(room.roomStates) do
 			assert(rs.roomSelect:obj())
-			mem:add(rs.roomSelect.addr, rs.roomSelect:sizeof(), 'roomselect', m)
-			mem:add(rs.addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+			mem:add(rs.roomSelect.addr, rs.roomSelect:sizeof(), 'roomselect', room)
+			mem:add(rs.addr, ffi.sizeof'roomstate_t', 'roomstate_t', room)
 			if rs.scrollData then
 				-- sized room width x height
 				local addr = topc(self.scrollBank, rs:obj().scrollPageOffset)
-				mem:add(addr, #rs.scrollData, 'scrolldata', m)
+				mem:add(addr, #rs.scrollData, 'scrolldata', room)
 			end
 			
-			mem:add(topc(self.fx1Bank, rs:obj().fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(topc(self.fx1Bank, rs:obj().fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', room)
 		
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
 			local code = disasm.readUntilRet(addr, rom)
-			mem:add(addr, ffi.sizeof(code), 'room select code', m)
+			mem:add(addr, ffi.sizeof(code), 'room select code', room)
 		end
 		
-		mem:add(topc(self.doorAddrBank, m:obj().doorPageOffset), #m.doors * 2, 'dooraddrs', m)
-		for _,door in ipairs(m.doors) do
-			mem:add(door.addr, ffi.sizeof(door.type), door.type, m)
+		mem:add(topc(self.doorAddrBank, room:obj().doorPageOffset), #room.doors * 2, 'dooraddrs', room)
+		for _,door in ipairs(room.doors) do
+			mem:add(door.addr, ffi.sizeof(door.type), door.type, room)
 			if door.doorCode then
-				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', m)
+				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', room)
 			end
 		end
 	end
@@ -3391,28 +3319,28 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	for _,plmset in ipairs(self.plmsets) do
-		local m = plmset.roomStates[1].room
+		local room = plmset.roomStates[1].room
 		--[[ entry-by-entry
 		local addr = plmset.addr
 		for _,plm in ipairs(plmset.plms) do
 			mem:add(addr, ffi.sizeof'plm_t', 
 				'plm_t',
 				--'plm '..ffi.cast('plm_t*',rom+addr)[0], 
-				m)
+				room)
 			addr = addr + ffi.sizeof'plm_t'
 		end
 		mem:add(addr, 2, 
 			'plm_t term',
 			--'plm '..ffi.cast('uint16_t*',rom+addr)[0], 
-			m)
+			room)
 		--]]
 		-- [[ all at once
 		local len = 2 + #plmset.plms * ffi.sizeof'plm_t'
-		mem:add(plmset.addr, len, 'plm_t', m)
+		mem:add(plmset.addr, len, 'plm_t', room)
 		--]]
 		for _,plm in ipairs(plmset.plms) do
 			if plm.scrollmod then
-				mem:add(topc(self.plmBank, plm.args), #plm.scrollmod, 'plm scrollmod', m)
+				mem:add(topc(self.plmBank, plm.args), #plm.scrollmod, 'plm scrollmod', room)
 			end
 		end
 	end
@@ -3422,8 +3350,8 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	for _,bg in ipairs(self.bgs) do
-		local m = bg.roomStates[1].room
-		mem:add(bg.addr, ffi.sizeof(bg.type.name), 'bg_t', m)
+		local room = bg.roomStates[1].room
+		mem:add(bg.addr, ffi.sizeof(bg.type), bg.type, room)
 	end
 
 	for _,tilemap in ipairs(self.bgTilemaps) do
@@ -4481,7 +4409,8 @@ function SMMap:mapWrite()
 			tilemap:recompress(writeRange, compressInfo)
 
 			-- update bgTilemap pointers within the bg_t's
-			tilemap.bg.ptr.addr24:frompc(tilemap.addr)
+			tilemap.bg:ptr().addr24:frompc(tilemap.addr)
+			tilemap.bg:obj().addr24:frompc(tilemap.addr)
 		end
 
 		-- update the kraid code that points to the kraid bg tilemaps

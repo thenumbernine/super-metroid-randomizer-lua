@@ -58,8 +58,8 @@ local roomstate_t = struct{
 local RoomState = class(Blob)
 
 RoomState.type = 'roomstate_t'
-
 RoomState.count = 1
+RoomState.roomstate_t = roomstate_t 
 
 function RoomState:init(args)
 	RoomState.super.init(self, args)
@@ -141,8 +141,8 @@ if done then break end
 			local bg = sm:mapAddBG(addr, rom)
 			bg.roomStates:insert(self)
 			self.bgs:insert(bg)
-			addr = addr + ffi.sizeof(bg.type.name)
-			if bg.obj.header == 0 then break end
+			addr = addr + ffi.sizeof(bg.type)
+			if bg:obj().header == 0 then break end
 		end
 	end
 

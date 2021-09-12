@@ -8,7 +8,7 @@ return {
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
 	graphicsSavePauseScreenImages = false,
-	samusSaveImages = true,
+	samusSaveImages = false,
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
@@ -20,6 +20,11 @@ return {
 	writeOutModifiedMapImage = true,
 	
 
+	-- for the original rom:
+	-- whether to chop out rooms that overlap each other in the original layout
+	-- doesn't do much good for custom roms
+	mapOmitOverlappingRoomsInOriginal = true,
+	
 --[==[
 	-- whether to write out disasm
 	writeOutDisasm = true,
@@ -28,11 +33,6 @@ return {
 	-- asserts the order of map data is packed in the same way the original rom packs it.
 	-- I'm betting a lot of custom roms won't play by these rules
 	mapAssertStructure = false,
-
-	-- for the original rom:
-	-- whether to chop out rooms that overlap each other in the original layout
-	-- doesn't do much good for custom roms
-	mapOmitOverlappingRoomsInOriginal = false,
 
 	-- for the original rom:
 	-- remove unused rooms, specifically 7-00

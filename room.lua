@@ -62,7 +62,7 @@ RoomSelect.count = 1
 local Room = class(Blob)
 
 Room.type = 'room_t'
-
+Room.room_t = room_t
 Room.count = 1
 
 function Room:init(args)

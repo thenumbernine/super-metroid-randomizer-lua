@@ -108,16 +108,18 @@ function ObjectSelector:updateMouse(app)
 					self.dragging = true
 				end
 				
+				
+				if self.dragging then
+					deltaX = math.round(deltaX / self.snap) * self.snap
+					deltaY = math.round(deltaY / self.snap) * self.snap
 
-				deltaX = math.round(deltaX / self.snap) * self.snap
-				deltaY = math.round(deltaY / self.snap) * self.snap
+					self:setObjPos(
+						obj,
+						self.selectedObjDown.x + deltaX,
+						self.selectedObjDown.y - deltaY
+					)
+				end
 
-				self:setObjPos(
-					obj,
-					self.selectedObjDown.x + deltaX,
-					self.selectedObjDown.y - deltaY
-				)
-			
 				-- if we are dragging then don't let orbit control view
 				app.view.orthoSize = app.viewBeforeSize
 				app.view.pos.x = app.viewBeforeX
@@ -164,9 +166,9 @@ function RegionSelector:getObjUnderPos(app, x, y)
 				and y >= -ymax * blocksPerRoom
 				and y <= -ymin * blocksPerRoom
 				then
---					local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
---					local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
---					local rs = m.roomStates[currentRoomStateIndex]
+--					local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
+--					local currentRoomStateIndex = app.roomCurrentRoomStates[roomKey] or 0
+--					local rs = m.roomStates[currentRoomStateIndex+1]
 --					if not editorHideFilledMapBlocks
 --					or bit.band(rs.roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
 --					then
@@ -249,11 +251,12 @@ end
 function RoomSelector:onClick(app)
 	local m = app.selectedRoom
 	if m then
-		local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
-		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
-		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
-		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
-print('room '..('%04x'):format(roomIndex)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
+		app.selectedRoomIndex = (app.sm.rooms:find(m) or 1)-1
+		local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
+		local currentRoomStateIndex = app.roomCurrentRoomStates[roomKey] or 0
+		currentRoomStateIndex = (currentRoomStateIndex+1) % #m.roomStates
+		app.roomCurrentRoomStates[roomKey] = currentRoomStateIndex 
+print('room '..('%04x'):format(roomKey)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
 	end
 end
 
@@ -271,9 +274,9 @@ function DoorSelector:getObjUnderPos(app, x, y)
 	for _,region in ipairs(app.regions) do
 		if region.show then
 			for _,m in ipairs(region.rooms) do
-				local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
-				local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
-				local rs = m.roomStates[((currentRoomStateIndex - 1) % #m.roomStates) + 1]
+				local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
+				local currentRoomStateIndex = app.roomCurrentRoomStates[roomKey] or 0
+				local rs = m.roomStates[currentRoomStateIndex+1]
 		
 				for exitIndex,blockpos in pairs(rs.roomBlockData.blocksForExit) do
 					local door = m.doors[exitIndex+1]
@@ -942,6 +945,7 @@ function App:update()
 				then
 					if editorShowRoomBorders
 					or m == self.mouseOverRoom
+					or m == self.selectedRoom
 					then
 						local x1, y1 = blocksPerRoom * roomxmin, blocksPerRoom * roomymin
 						local x2, y2 = blocksPerRoom * roomxmax, blocksPerRoom * roomymax
@@ -956,11 +960,9 @@ function App:update()
 						gl.glLineWidth(1)				
 					end
 
-					local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
-					local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
-					local rs = m.roomStates[
-						((currentRoomStateIndex - 1) % #m.roomStates) + 1
-					]
+					local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
+					local currentRoomStateIndex = self.roomCurrentRoomStates[roomKey] or 0
+					local rs = m.roomStates[currentRoomStateIndex+1]
 						
 					local tileSet = rs.tileSet
 					local roomBlockData = rs.roomBlockData
@@ -1627,7 +1629,6 @@ function App:updateGUI()
 	)
 
 
-	ig.igPushIDStr"why isn't this working?"
 	if ig.igCollapsingHeader'regions' then
 		if not self.selectedRegion then self.selectedRegion = self.regions[1] end
 		local tmp = {self.selectedRegion.index}
@@ -1669,19 +1670,56 @@ function App:updateGUI()
 
 				for _,field in ipairs(sm.loadStation_t.fields) do
 					local name,ctype = next(field)
-					if name ~= 'doorPageOffset'
-					then
-						ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
-					end
+					ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
 				end
 			end
 		end
 	end	
-	ig.igPopID()
+
+	if ig.igCollapsingHeader'rooms' then
+		if not self.selectedRoomIndex then self.selectedRoomIndex = 0 end
+		local tmp = {self.selectedRoomIndex}
+		local changed = comboTooltip('room', tmp, 1, self.sm.rooms:mapi(function(room)
+			return ('%02x/%02x'):format(room:obj().region, room:obj().index)
+		end)) 
+		if changed then
+			self.selectedRoomIndex = tmp[1]
+		end
+		local room = self.sm.rooms[self.selectedRoomIndex+1]
+		if room then
+			for _,field in ipairs(sm.Room.room_t.fields) do
+				local name,ctype = next(field)
+				ig.igText(name..' = '..room:obj():fieldToString(name,ctype))
+			end
+		
+			if ig.igCollapsingHeader'roomstates' then
+				-- roomstates ...
+				-- roomblocks ...
+				local roomKey = bit.bor(bit.lshift(room:obj().region, 8), room:obj().index)
+				self.roomCurrentRoomStates[roomKey] = self.roomCurrentRoomStates[roomKey] or 0
+				comboTooltip('roomstate', self.roomCurrentRoomStates, roomKey, room.roomStates:mapi(function(roomState)
+					return (('%02x:%04x'):format(frompc(roomState.addr)))
+				end))
+
+				local rs = room.roomStates[self.roomCurrentRoomStates[roomKey]+1]
+				if rs then
+					for _,field in ipairs(sm.RoomState.roomstate_t.fields) do
+						local name,ctype = next(field)
+						ig.igText(name..' = '..rs:obj():fieldToString(name,ctype))
+					end
+				end
+			end
+		end
+	end
 
 	if ig.igCollapsingHeader'tilesets' then
-		ig.igPushIDStr'tilesets'
-		for i,tileSet in ipairs(sm.tileSets) do
+		self.currentTileSetIndex = self.currentTileSetIndex or 0
+		comboTooltip('tileset', self, 'currentTileSetIndex', sm.tileSets:mapi(function(tileSet)
+			return 'tileset '..tileSet.index
+		end))
+	
+		local tileSet = sm.tileSets[self.currentTileSetIndex+1]
+		if tileSet then
 			if tileSet.tex then 
 				makeTooltipImage(
 					'tileset '..tileSet.index,
@@ -1693,7 +1731,7 @@ function App:updateGUI()
 				makeTooltipImage(
 					'tileset '..tileSet.index..' palette',
 					tileSet.palette.tex,
-					tileSet.palette.width, 16
+					tileSet.palette.count * 8, 16
 				)
 				ig.igSameLine()
 			end
@@ -1706,7 +1744,6 @@ function App:updateGUI()
 				)
 			end
 		end
-		ig.igPopID()
 	end
 end
 

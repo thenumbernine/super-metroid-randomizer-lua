@@ -64,20 +64,12 @@ args:
 looks like right now I am not rearranging any of the door_t or lift_t's
 --]]
 function Door:init(args)
-	-- TODO Blob subclass?
-	--args = table(args):setmetatable(nil)
+	args = table(args):setmetatable(nil)
 	
-	local sm = args.sm
-	local rom = sm.rom
-	
-	local addr = assert(args.addr)
-
-	local data = rom + addr 
-	local destRoomPageOffset = ffi.cast('uint16_t*', data)[0]
+	local destRoomPageOffset = ffi.cast('uint16_t*', args.sm.rom + assert(args.addr))[0]
 	-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
 	-- TODO isn't that just a terminator?  how is it a lift_t?
 
-	args = table(args):setmetatable(nil)
 	args.type = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
 	
 	Door.super.init(self, args)
@@ -85,8 +77,8 @@ function Door:init(args)
 	if self.type == 'door_t' 
 	and self:ptr().code > 0x8000 
 	then
-		self.doorCodeAddr = topc(sm.doorCodeBank, self:ptr().code)
-		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, rom)
+		self.doorCodeAddr = topc(self.sm.doorCodeBank, self:ptr().code)
+		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, self.sm.rom)
 	end
 end
 
@@ -103,9 +95,10 @@ function Door:setDestRoom(room)
 	return true
 end
 
-function Door:buildRoom(sm)
+function Door:buildRoom()
 	-- TODO make sure the door is added to sm.doors before doing this
 	if self.type ~= 'door_t' then return false end
+	local sm = self.sm
 	if not self.destRoom then
 		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:ptr().destRoomPageOffset))
 	end
