@@ -96,6 +96,8 @@ function Door:setDestRoom(room)
 		
 	self.destRoom = room
 	-- TODO don't bother do this until writing
+	-- TODO TODO treat Door like all other Blobs
+	-- store .obj or .data or whatever
 	local bank, ofs = frompc(room.addr)
 	assert(bank == self.roomBank)
 	self.ptr.destRoomPageOffset = ofs

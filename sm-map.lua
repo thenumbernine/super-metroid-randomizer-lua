@@ -510,7 +510,7 @@ local loadStation_t = struct{
 	fields = {
 		{roomPageOffset = 'uint16_t'},
 		{doorPageOffset = 'uint16_t'},
-		{doorBTS = 'uint16_t'},	-- this is the door index I bet
+		{doorID = 'uint16_t'},	-- index when saving door open flags 
 		{screenX = 'uint16_t'},
 		{screenY = 'uint16_t'},
 		-- TODO do door_t and demoRoom_t match this structure?
@@ -526,7 +526,7 @@ local demoRoom_t = struct{
 	fields = {
 		{roomPageOffset = 'uint16_t'},
 		{doorPageOffset = 'uint16_t'},
-		{doorSlot = 'uint16_t'},
+		{doorID = 'uint16_t'},	-- index when saving door open flags
 		{screenX = 'uint16_t'},
 		{screenY = 'uint16_t'},
 		{offsetX = 'uint16_t'},
@@ -1644,7 +1644,11 @@ function SMMap:mapInit()
 	assert(self:mapAddRoom(topc(self.roomBank, 0x91f8), true))	-- Zebes
 	assert(self:mapAddRoom(topc(self.roomBank, 0xdf45), true))	-- Ceres
 	--]]
-	-- [[
+	-- [[ load via loadstations
+	-- loadstations 0-7 are used for save points
+	-- beyond that are used for lifts 
+	-- and region=0 index=12h is used for landing from ceres
+	
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
 			if ls.obj.doorPageOffset > 0 then
@@ -1653,20 +1657,20 @@ function SMMap:mapInit()
 			end
 		end
 	end
+
+	--[[
+	this is just validation since the doors are all we need
+
+	most these doors are already loaded from room loading
+	but occasionally (one per region?) you'll find a loadStation door not used except by loadStations - these are for debug world map selection entrances 
 	
+	two out of the loadstation doors don't match
+	the 21st loadstation of region 2
+	the 17th loadstation of region 5
+	so i'm thinking these aren't used
+	--]]
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
-			--[[
-			most these doors are referenced by rooms
-			but occasionally (one per region?) you'll find a loadStation door not used except by loadStations
-			
-			two out of the loadstation doors don't match
-			the 21st loadstation of region 2
-			the 17th loadstation of region 5
-			so i'm thinking these aren't used
-			I think patrickjohnston's notes say that only save stations 0-7 are used for save points
-			and region=0 index=12h is used for landing from ceres
-			--]]
 			if not ls.door then
 				assert(ls.obj.roomPageOffset == 0)
 			else

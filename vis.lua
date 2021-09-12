@@ -272,7 +272,7 @@ function DoorSelector:getObjUnderPos(app, x, y)
 		if region.show then
 			for _,m in ipairs(region.rooms) do
 				local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
-				local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
+				local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
 				local rs = m.roomStates[((currentRoomStateIndex - 1) % #m.roomStates) + 1]
 		
 				for exitIndex,blockpos in pairs(rs.roomBlockData.blocksForExit) do
