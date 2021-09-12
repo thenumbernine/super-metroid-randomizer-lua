@@ -510,11 +510,12 @@ local loadStation_t = struct{
 	fields = {
 		{roomPageOffset = 'uint16_t'},
 		{doorPageOffset = 'uint16_t'},
-		{doorBTS = 'uint16_t'},
+		{doorBTS = 'uint16_t'},	-- this is the door index I bet
 		{screenX = 'uint16_t'},
 		{screenY = 'uint16_t'},
-		{offsetX = 'uint16_t'},
-		{offsetY = 'uint16_t'},
+		-- TODO do door_t and demoRoom_t match this structure?
+		{offsetY = 'uint16_t'},	-- relative to top
+		{offsetX = 'uint16_t'},	-- relative to center
 	},
 }
 SMMap.loadStation_t = loadStation_t
@@ -770,6 +771,20 @@ end
 local Door = require 'door'
 SMMap.Door = Door
 
+function SMMap:mapAddDoor(addr)
+	for _,door in ipairs(self.doors) do
+		if door.addr == addr then return door end
+	end
+
+	local door = Door{
+		sm = self,
+		addr = addr,
+	}
+
+	self.doors:insert(door)
+	return door
+end
+
 
 -- TODO make common with mapAddTileSetTilemap
 function SMMap:mapAddBGTilemap(addr)
@@ -801,9 +816,9 @@ end
 
 function SMMap:mapAddRoom(addr, buildRecursively)
 	assert(frompc(addr) == self.roomBank)
-	local _,m = self.rooms:find(nil, function(m) return m.addr == addr end)
-	if m then return m end
-
+	for _,m in ipairs(self.rooms) do
+		if m.addr == addr then return m end
+	end
 
 	local rom = self.rom
 	local data = rom + addr
@@ -981,22 +996,17 @@ if done then break end
 		end)
 	end
 
-	-- door addrs
+	-- list of door offsets
 	local startaddr = topc(self.doorAddrBank, m.obj.doorPageOffset)
 	local addr = startaddr
 	local doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 	addr = addr + 2
+	-- TODO should this test be > or >= ?
 	while doorPageOffset > 0x8000 do
-		m.doors:insert(Door{
-			sm = self,
-			addr = topc(self.doorBank, doorPageOffset),
-		})
+		m.doors:insert(self:mapAddDoor(topc(self.doorBank, doorPageOffset)))
 		doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 		addr = addr + 2
 	end
-	-- exclude terminator
-	addr = addr - 2
-	local len = addr - startaddr
 	
 
 	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
@@ -1034,6 +1044,8 @@ if done then break end
 
 	if buildRecursively then
 		for _,door in ipairs(m.doors) do
+			-- TODO make this a Door function?
+			-- maybe same as 'setDestRoom' ?
 			if door.type == 'door_t' then
 				door.destRoom = self:mapAddRoom(topc(self.roomBank, door.ptr.destRoomPageOffset), true)
 			end
@@ -1616,7 +1628,8 @@ function SMMap:mapInit()
 	self.bgTilemaps = table()
 	self.fx1s = table()
 	self.layerHandlings = table()
-	
+
+	self.doors = table()	-- most doors are added by rooms, but some are added by loadStations
 	self.plmsets = table()
 	self.enemySpawnSets = table()
 	self.enemyGFXSets = table()
@@ -1641,11 +1654,15 @@ function SMMap:mapInit()
 		for _,ls in ipairs(lsr.stations) do
 			local roomAddr = ls.obj.roomPageOffset
 			if ls.obj.roomPageOffset > 0 then
+				-- only keep track of this until after we load all doors
+				-- in fact, ... why not just load the door here?
+				-- and then have loading the door a recursive function, so that mapAddRoom does it too?
 				ls.room = self:mapAddRoom(topc(self.roomBank, ls.obj.roomPageOffset), true)
 				if not ls.room then
 					print("WARNING - loadStation "
 						..('%06x'):format(ls.addr)
-						.." has roomPageOffset "..('%04x'):format(ls.obj.bgPageOffset).." failed to find room")
+						.." has roomPageOffset "..('%04x'):format(ls.obj.roomPageOffset)
+						.." failed to add room")
 				end
 			end
 		end
@@ -1676,35 +1693,51 @@ function SMMap:mapInit()
 
 
 	-- do this after loading all rooms
+	-- most these doors have already been loaded, 
+	-- but occasionally (one per region?) you'll find a loadStation door not used anywhere else
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
-			-- TODO what about the doorPageOffset? what does this point to?
-			-- seems loadStation_t.doorPageOffset == bg_*_t.doorPageOffset
-			-- but these don't seem to be door_t's
 			if ls.obj.doorPageOffset > 0x8000 then
-				local doorAddr = topc(self.doorBank, ls.obj.doorPageOffset)
-				ls.door = nil
-				for _,m in ipairs(self.rooms) do
-					for _,door in ipairs(m.doors) do
-						if 
-						--door.type == 'door_t' and 
-						door.addr == doorAddr
-						then
-							ls.door = door
-						end
-					end
-					if ls.door == door then break end
-				end
-				if not ls.door then
+				ls.door = self:mapAddDoor(topc(self.doorBank, ls.obj.doorPageOffset))
+				if ls.door then
 					print("WARNING - loadStation "
 						..('%06x'):format(ls.addr)
-						-- WHY DOES THIS VARY
-						.." has doorPageOffset "..('%06x'):format(ls.obj.doorPageOffset)
-						-- WHEN THIS STAYS THE SAME
-						.." and doorAddr "..('%02x:%04x'):format(self.doorBank, ls.obj.doorPageOffset)
-						.." failed to find bg")
+						.." has doorPageOffset "..('%04x'):format(ls.obj.doorPageOffset)
+						.." but failed to load door")
+				else
+					-- if the door is that one per region that needs to be loaded then its room pointer needs to be assigned too
+					-- TODO just make this part of Door ctor?
+					-- because this matches mapAddRoom()
+					if ls.door.type == 'door_t' then
+						if not ls.door.destRoom then
+							ls.door.destRoom = select(2, self.rooms:find(nil, function(m)
+								return m.addr == topc(self.roomBank, ls.door.ptr.destRoomPageOffset)
+							end))
+						end
+						
+						-- two out of the loadstation doors don't match
+						-- the 21st loadstation of region 2
+						-- the 17th loadstation of region 5
+						-- so i'm thinking these aren't used
+						-- I think patrickjohnston's notes say that only save stations 0-7 are used for save points
+						-- and region=0 index=12h is used for landing from ceres
+						if ls.door.destRoom ~= ls.room then
+							print("WARNING - loadStation "
+								..('%06x'):format(ls.addr)
+								.." room "
+								..('%02x/%02x'):format(ls.room.obj.region, ls.room.obj.index)
+								.." does not match door's room "
+								..('%02x/%02x'):format(ls.door.destRoom.obj.region, ls.door.destRoom.obj.index)
+							)
+							-- TODO do we even need to store ls.room?
+							-- why not just use ls.door.destRoom?
+							---ls.room = door.destRoom
+						end
+					end
 				end
-			end	
+			end
+			-- just use ls.door.destRoom
+			ls.room = nil
 		end
 	end
 
@@ -3603,11 +3636,9 @@ function SMMap:mapPrint()
 
 	--[[ debugging: print all unique door codes
 	local doorcodes = table()
-	for _,m in ipairs(self.rooms) do
-		for _,door in ipairs(m.doors) do
-			if door.type == 'door_t' then
-				doorcodes[door.ptr.code] = true
-			end
+	for _,door in ipairs(self.doors) do
+		if door.type == 'door_t' then
+			doorcodes[door.ptr.code] = true
 		end
 	end
 	print('unique door codes:')
@@ -3663,7 +3694,9 @@ function SMMap:mapPrint()
 	for i,lsr in ipairs(self.loadStationsForRegion) do
 		print(' region='..lsr.region..' addr='..('%04x'):format(lsr.addr))
 		for _,ls in ipairs(lsr.stations) do
-			print('  '..ls.obj)
+			print('  '
+				..('%06x'):format(ls.addr)
+				..' '..ls.obj)
 		end
 	end
 end
@@ -3811,7 +3844,7 @@ function SMMap:mapBuildMemoryMap(mem)
 				topc(loadStationBank, lsr.addr) + ffi.sizeof'loadStation_t' * (i-1),
 				ffi.sizeof'loadStation_t',
 				'loadStation_t',
-				ls.room
+				ls.door and ls.door.destRoom
 			)
 		end
 	end
@@ -4869,14 +4902,21 @@ function SMMap:mapWrite()
 					break
 				end
 				ls.ptr = ptr
-				if ls.room then
-					local bank, pageofs = frompc(ls.room.addr)
+
+				-- refresh the room from the door
+
+				-- refresh the room
+				if ls.door then
+					local bank, pageofs = frompc(ls.door.destRoom.addr)
 					assert(bank == self.roomBank)
 					ls.obj.roomPageOffset = pageofs
+				
+					local bank, pageofs = frompc(ls.door.addr)
+					assert(bank == self.doorBank)
+					ls.obj.doorPageOffset = pageofs
 				else
-					if ls.obj.roomPageOffset ~= 0 then
-						print("WARNING - loadStation doesn't have a room, but does have a nonzero roomPageOffset")
-					end
+					ls.obj.roomPageOffset = 0
+					ls.obj.doorPageOffset = 0
 				end
 				ptr[0] = ls.obj
 				ptr = ptr + 1

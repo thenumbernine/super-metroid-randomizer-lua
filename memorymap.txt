@@ -43,7 +43,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/3b: $0047d5..$0047e2 : $80:c7d5..$80:c7e2 (loadStation_t)
 02/0e: $0047e3..$0047f0 : $80:c7e3..$80:c7f0 (loadStation_t)
 02/36: $0047f1..$0047fe : $80:c7f1..$80:c7fe (loadStation_t)
-02/37: $0047ff..$00481a : $80:c7ff..$80:c81a (loadStation_t x2)
+02/4a: $0047ff..$00480c : $80:c7ff..$80:c80c (loadStation_t)
+02/37: $00480d..$00481a : $80:c80d..$80:c81a (loadStation_t)
 03/0f: $00481b..$004828 : $80:c81b..$80:c828 (loadStation_t)
      : $004829..$0048fa : $80:c829..$80:c8fa (loadStation_t x15)
 03/01: $0048fb..$004908 : $80:c8fb..$80:c908 (loadStation_t)
@@ -64,7 +65,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
      : $004a4b..$004a9e : $80:ca4b..$80:ca9e (loadStation_t x6)
 05/00: $004a9f..$004aac : $80:ca9f..$80:caac (loadStation_t)
      : $004aad..$004b0e : $80:caad..$80:cb0e (loadStation_t x7)
-05/0c: $004b0f..$004b2a : $80:cb0f..$80:cb2a (loadStation_t x2)
+05/0c: $004b0f..$004b1c : $80:cb0f..$80:cb1c (loadStation_t)
+05/06: $004b1d..$004b2a : $80:cb1d..$80:cb2a (loadStation_t)
 06/00: $004b2b..$004c18 : $80:cb2b..$80:cc18 (loadStation_t x17)
 07/00: $004c19..$004d06 : $80:cc19..$80:cd06 (loadStation_t x17) ... 12985 bytes of padding ...
      : $007fc0..$007fd4 : $80:ffc0..$80:ffd4 (game name) ... 65579 bytes of padding ...

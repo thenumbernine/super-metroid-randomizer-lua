@@ -1655,20 +1655,6 @@ function App:updateGUI()
 			
 			local ls = lsr.stations[self.currentLoadStationIndex+1]
 			if ls then
-				if ig.igButton('room '
-					..(ls.room and ('%02x:%04x'):format(frompc(ls.room.addr)) or '')
-				) then
-					-- should this click to highlight the room?
-					-- what about remapping rooms? 
-					-- click, then the next map room click assigns?
-					-- mouseover to highlight?
-				end
-				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) 
-				and ls.room
-				then
-					self.mouseOverRoom = ls.room
-				end
-
 				if ig.igButton('door '
 					..(ls.door and ('%02x:%04x'):format(frompc(ls.door.addr)) or '')
 				) then
@@ -1677,12 +1663,16 @@ function App:updateGUI()
 				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) 
 				and ls.door
 				then
-					self.mouseOverRoom = {door=ls.door}
+					self.mouseOverDoor = {door=ls.door}
+					self.mouseOverRoom = ls.door and ls.door.destRoom
 				end
 
 				for _,field in ipairs(sm.loadStation_t.fields) do
 					local name,ctype = next(field)
-					ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
+					if name ~= 'doorPageOffset'
+					then
+						ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
+					end
 				end
 			end
 		end

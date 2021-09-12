@@ -14,7 +14,7 @@ return {
 	mapSaveDumpworldImage = false,
 	
 	-- rearrange and recompress data in the map
-	mapRecompress = true,
+	mapRecompress = false,
 
 	-- write the informative image of the randomized rom 
 	writeOutModifiedMapImage = true,

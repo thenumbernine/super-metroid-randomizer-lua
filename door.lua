@@ -63,7 +63,8 @@ args:
 looks like right now I am not rearranging any of the door_t or lift_t's
 --]]
 function Door:init(args)
-	args = table(args):setmetatable(nil)
+	-- TODO Blob subclass?
+	--args = table(args):setmetatable(nil)
 	
 	local sm = args.sm
 	local rom = sm.rom
@@ -91,11 +92,14 @@ function Door:init(args)
 end
 
 function Door:setDestRoom(room)
+	if not self.type == 'door_t' then return false end
+		
 	self.destRoom = room
 	-- TODO don't bother do this until writing
 	local bank, ofs = frompc(room.addr)
 	assert(bank == self.roomBank)
 	self.ptr.destRoomPageOffset = ofs
+	return true
 end
 
 return Door
