@@ -125,8 +125,8 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 					so next , how about (certain?) doors are given arbitrary spacing
 					and then we try to adjust and minimize that spacing such that all rooms fit together?
 					--]]
-					if m.region == 0	-- Crateria
-					and m.x > 45 
+					if m.obj.region == 0	-- Crateria
+					and m.obj.x > 45 
 					then
 						return 6,1
 					end
@@ -775,14 +775,26 @@ function SMMap:mapAddDoor(addr)
 	for _,door in ipairs(self.doors) do
 		if door.addr == addr then return door end
 	end
-
-	local door = Door{
-		sm = self,
-		addr = addr,
-	}
-
+	local door = Door{sm=self, addr=addr}
 	self.doors:insert(door)
 	return door
+end
+
+
+--[[
+bg tilemap.size is 0x800 / 2048 or 0x1000 / 4096
+with 2 bytes per tilemapElem_t's, that means
+most are tilemap.size==0x800 <=> uint16_t tilemapElem[height=32][width=32]
+some are tilemap.size==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
+--]]
+local BGTilemap = class(Blob)
+BGTilemap.type = 'tilemapElem_t'
+BGTilemap.compressed = true
+BGTilemap.width = 32
+function BGTilemap:init(args)
+	BGTilemap.super.init(self, args)
+	self.height = self.count / self.width
+	assert(self.width * self.height * ffi.sizeof(self.type) == self:sizeof())
 end
 
 
@@ -791,48 +803,30 @@ function SMMap:mapAddBGTilemap(addr)
 	for _,tilemap in ipairs(self.bgTilemaps) do
 		if tilemap.addr == addr then return tilemap end
 	end
-
-	--[[
-	bg tilemap.size is 0x800 / 2048 or 0x1000 / 4096
-	with 2 bytes per tilemapElem_t's, that means
-	most are tilemap.size==0x800 <=> uint16_t tilemapElem[height=32][width=32]
-	some are tilemap.size==0x1000 <=> uint16_t tilemapElem[height=64][width=32]
-	--]]
-	
-	local tilemap = Blob{
-		sm = self,
-		addr = addr,
-		type = 'tilemapElem_t',
-		compressed = true,
-	}
-	
-	tilemap.width = 32
-	tilemap.height = tilemap.count / tilemap.width
-	assert(tilemap.width * tilemap.height * ffi.sizeof(tilemap.type) == tilemap:sizeof())
-
+	local tilemap = BGTilemap{sm=self, addr=addr}
 	self.bgTilemaps:insert(tilemap)
 	return tilemap
 end
 
 function SMMap:mapAddRoom(addr)
-	assert(frompc(addr) == self.roomBank)
 	for _,m in ipairs(self.rooms) do
 		if m.addr == addr then return m end
 	end
 
-	local rom = self.rom
+	assert(frompc(addr) == self.roomBank)
+	local sm = self
+	local rom = sm.rom
 	local data = rom + addr
-	local mptr = ffi.cast('room_t*', data)
+	local ptr = ffi.cast('room_t*', data)
 	local m = Room{
 		addr = addr,
 		
 		-- switch over to this from ptr, and then to pure lua from this
-		obj = ffi.new('room_t', mptr[0]),
-		
-		ptr = mptr,
+		obj = ffi.new('room_t', ptr[0]),
+	
+		rom = rom,
+		ptr = function(self) return ffi.cast('room_t*', self.rom + self.addr) end,--  = ptr,
 	}	
---print('adding room '..('$%02x:%04x'):format(frompc(addr))..' '..m.obj)	
-	self.rooms:insert(m)
 	
 	data = data + ffi.sizeof'room_t'
 
@@ -877,7 +871,7 @@ function SMMap:mapAddRoom(addr)
 	for _,rs in ipairs(m.roomStates) do
 		if rs.select_ctype ~= 'roomselect1_t' then
 			assert(not rs.ptr)
-			local addr = topc(self.roomStateBank, rs.select.roomStatePageOffset)
+			local addr = topc(sm.roomStateBank, rs.select.roomStatePageOffset)
 			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
 			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
 		end
@@ -897,7 +891,7 @@ function SMMap:mapAddRoom(addr)
 
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.scrollPageOffset > 0x0001 and rs.obj.scrollPageOffset ~= 0x8000 then
-			local addr = topc(self.scrollBank, rs.obj.scrollPageOffset)
+			local addr = topc(sm.scrollBank, rs.obj.scrollPageOffset)
 			local size = m.obj.width * m.obj.height
 			rs.scrollData = range(size):map(function(i)
 				return rom[addr+i-1]
@@ -911,7 +905,7 @@ function SMMap:mapAddRoom(addr)
 	for i=#m.roomStates,1,-1 do
 		local rs = m.roomStates[i]
 		if rs.obj.plmPageOffset ~= 0 then
-			local plmset = self:mapAddPLMSetFromAddr(topc(self.plmBank, rs.obj.plmPageOffset), m)
+			local plmset = sm:mapAddPLMSetFromAddr(topc(sm.plmBank, rs.obj.plmPageOffset), m)
 			rs:setPLMSet(plmset)
 		end
 	end
@@ -919,12 +913,12 @@ function SMMap:mapAddRoom(addr)
 	-- enemySpawnSet
 	-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
 	for _,rs in ipairs(m.roomStates) do
-		local enemySpawnSet = self:mapAddEnemySpawnSet(topc(self.enemySpawnBank, rs.obj.enemySpawnPageOffset))
+		local enemySpawnSet = sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, rs.obj.enemySpawnPageOffset))
 		rs:setEnemySpawnSet(enemySpawnSet)
 	end
 	
 	for _,rs in ipairs(m.roomStates) do
-		rs:setEnemyGFXSet(self:mapAddEnemyGFXSet(topc(self.enemyGFXBank, rs.obj.enemyGFXPageOffset)))
+		rs:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, rs.obj.enemyGFXPageOffset)))
 	end
 
 	-- some rooms use the same fx1 ptr
@@ -934,7 +928,7 @@ function SMMap:mapAddRoom(addr)
 	-- then make one set and just put the subset's at the end
 	-- (unless the order matters...)
 	for _,rs in ipairs(m.roomStates) do
-		local startaddr = topc(self.fx1Bank, rs.obj.fx1PageOffset)
+		local startaddr = topc(sm.fx1Bank, rs.obj.fx1PageOffset)
 		local addr = startaddr
 		local retry
 		while true do
@@ -955,7 +949,7 @@ function SMMap:mapAddRoom(addr)
 			--or m.doors:find(nil, function(door) return door.addr == cmd end)
 			--then
 			if true then
-				local fx1 = self:mapAddFX1(addr)
+				local fx1 = sm:mapAddFX1(addr)
 -- this misses 5 fx1_t's
 local done = fx1.ptr.doorPageOffset == 0 
 				fx1.rooms:insert(m)
@@ -971,9 +965,9 @@ if done then break end
 
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.bgPageOffset > 0x8000 then
-			local addr = topc(self.bgBank, rs.obj.bgPageOffset)
+			local addr = topc(sm.bgBank, rs.obj.bgPageOffset)
 			while true do
-				local bg = self:mapAddBG(addr, rom)
+				local bg = sm:mapAddBG(addr, rom)
 				bg.roomStates:insert(rs)
 				rs.bgs:insert(bg)
 				addr = addr + ffi.sizeof(bg.type.name)
@@ -984,26 +978,26 @@ if done then break end
 
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.layerHandlingPageOffset > 0x8000 then
-			local addr = topc(self.layerHandlingBank, rs.obj.layerHandlingPageOffset)
-			rs.layerHandlingPageOffset = self:mapAddLayerHandling(addr)
+			local addr = topc(sm.layerHandlingBank, rs.obj.layerHandlingPageOffset)
+			rs.layerHandlingPageOffset = sm:mapAddLayerHandling(addr)
 			rs.layerHandlingPageOffset.roomStates:insert(rs)
 		end
 	
 		xpcall(function()
-			rs:setRoomBlockData(self:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
+			rs:setRoomBlockData(sm:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), m))
 		end, function(err)
 			print(err..'\n'..debug.traceback())
 		end)
 	end
 
 	-- list of door offsets
-	local startaddr = topc(self.doorAddrBank, m.obj.doorPageOffset)
+	local startaddr = topc(sm.doorAddrBank, m.obj.doorPageOffset)
 	local addr = startaddr
 	local doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 	addr = addr + 2
 	-- TODO should this test be > or >= ?
 	while doorPageOffset > 0x8000 do
-		m.doors:insert(self:mapAddDoor(topc(self.doorBank, doorPageOffset)))
+		m.doors:insert(sm:mapAddDoor(topc(sm.doorBank, doorPageOffset)))
 		doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 		addr = addr + 2
 	end
@@ -1017,7 +1011,7 @@ if done then break end
 	--if roomPageOffset == 0x79804 then
 	for _,rs in ipairs(m.roomStates) do
 		if rs.obj.roomvarPageOffset ~= 0 then
-			local d = rom + topc(self.plmBank, rs.obj.roomvarPageOffset)
+			local d = rom + topc(sm.plmBank, rs.obj.roomvarPageOffset)
 			local roomvar = table()
 			repeat
 				roomvar:insert(d[0])	-- x
@@ -1037,14 +1031,19 @@ if done then break end
 	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
 	for _,rs in ipairs(m.roomStates) do
 		local tileSetIndex = rs.obj.tileSet
-		local tileSet = assert(self.tileSets[tileSetIndex+1])
+		local tileSet = assert(sm.tileSets[tileSetIndex+1])
 		assert(tileSet.index == tileSetIndex)
 		rs:setTileSet(tileSet)
 	end
 
+
+-- make sure you do this before building more rooms through the doors
+--print('adding room '..('$%02x:%04x'):format(frompc(addr))..' '..m.obj)	
+	sm.rooms:insert(m)
+
 	-- TODO make sure the room is added to sm.rooms before doing this
 	for _,door in ipairs(m.doors) do
-		door:buildRoom(self)
+		door:buildRoom(sm)
 	end
 
 	return m
@@ -1729,7 +1728,7 @@ function SMMap:mapInit()
 		-- then 100 bytes of something
 		assert(self.rooms)
 		for j,m in ipairs(self.rooms) do
-			local d = ffi.cast('uint8_t*',m.ptr)
+			local d = ffi.cast('uint8_t*', m:ptr())
 			local roomaddr = d - rom
 			d = d + ffi.sizeof'room_t'
 			-- last roomselect should always be 2 byte term
@@ -2103,8 +2102,8 @@ local function drawRoomBlocks(ctx, roomBlockData, rs)
 	local blocks3 = roomBlockData:getBlocks3()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
-	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room: "..m.obj)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m)
 	local firstcoord
 	
 	for j=0,h-1 do
@@ -2235,7 +2234,7 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		local srcRoom = rs.room
-		local srcRoom_ofsx, srcRoom_ofsy = fullmapinfo.ofsPerRegion[srcRoom.obj.region+1](srcRoom.ptr)
+		local srcRoom_ofsx, srcRoom_ofsy = fullmapinfo.ofsPerRegion[srcRoom.obj.region+1](srcRoom)
 		local srcRoom_xofs = debugImageRoomSizeInPixels * srcRoom_ofsx
 		local srcRoom_yofs = debugImageRoomSizeInPixels * srcRoom_ofsy
 		for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
@@ -2249,7 +2248,7 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			-- TODO handle lifts?
 			else
 				local dstRoom = assert(door.destRoom)
-				local dstRoom_ofsx, dstRoom_ofsy = fullmapinfo.ofsPerRegion[dstRoom.obj.region+1](dstRoom.ptr)
+				local dstRoom_ofsx, dstRoom_ofsy = fullmapinfo.ofsPerRegion[dstRoom.obj.region+1](dstRoom)
 				local dstRoom_xofs = debugImageRoomSizeInPixels * dstRoom_ofsx
 				local dstRoom_yofs = debugImageRoomSizeInPixels * dstRoom_ofsy
 			
@@ -2301,7 +2300,7 @@ local function drawRoomBlockPLMs(ctx, roomBlockData)
 	local debugMapImage = ctx.debugMapImage
 	for _,rs in ipairs(roomBlockData.roomStates) do
 		local m = rs.room
-		local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m.ptr)
+		local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m)
 		local xofs = debugImageRoomSizeInPixels * ofsInRoomBlocksX
 		local yofs = debugImageRoomSizeInPixels * ofsInRoomBlocksY
 		if rs.plmset then
@@ -2401,9 +2400,9 @@ function SMMap:mapSaveImageInformative(filenamePrefix)
 			end
 		end
 	end
-	for region,range in pairs(regionRanges) do
-		print('region '..tolua(range))
-	end
+--	for region,range in pairs(regionRanges) do
+--		print('region ranges '..tolua(range))
+--	end
 
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
@@ -2430,8 +2429,8 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 	local layer2blocks = roomBlockData:getLayer2Blocks()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
-	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\n "..m.obj)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m)
 	
 	local tileSet = rs.tileSet
 	if not tileSet then return end
@@ -2592,7 +2591,7 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 	if config.mapSaveImageTextured_HighlightItems then
 		-- do this last, so no room tiles overlap it
 		for _,m in ipairs(self.rooms) do
-			local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m.ptr)
+			local ofsInRoomBlocksX, ofsInRoomBlocksY = fullmapinfo.ofsPerRegion[m.obj.region+1](m)
 			local xofs = roomSizeInPixels * ofsInRoomBlocksX
 			local yofs = roomSizeInPixels * ofsInRoomBlocksY
 			for _,rs in ipairs(m.roomStates) do
@@ -2637,8 +2636,8 @@ local function drawRoomBlocksDumpworld(
 	local blocks3 = roomBlockData:getBlocks3()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
-	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m.ptr)
+	local ofscalc = assert(fullmapinfo.ofsPerRegion[m.obj.region+1], "couldn't get offset calc func for room:\n "..m.obj)
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m)
 	
 	for j=0,h-1 do
 		for i=0,w-1 do
@@ -3176,8 +3175,8 @@ function SMMap:mapWriteGraphDot()
 	--local levelsep = ''
 	local function getRoomName(m)
 		return 
-			--('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)
---			('%04x'):format(bit.band(0xffff, ffi.cast('uint8_t*', m.ptr) - rom))..nl..
+			--('$%06x'):format(m.addr)
+			--('%04x'):format(select(2, frompc(m.addr)))
 			('%02x'..levelsep..'%02x'):format(m.obj.region, m.obj.index)
 	end
 	local function getClusterName(roomName)
@@ -3519,7 +3518,7 @@ function SMMap:mapPrint()
 	print()
 	print("all room_t's:")
 	for _,m in ipairs(self.rooms) do
-		print(' room_t '..('$%06x'):format(ffi.cast('uint8_t*', m.ptr) - rom)..' '..m.ptr[0])
+		print(' room_t '..('$%06x'):format(m.addr)..' '..m:ptr()[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
 			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select_ptr) - rom)..' '..tostring(rs.select))
@@ -4455,14 +4454,9 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 
 	-- sort rooms by region and by index
 	self.rooms:sort(function(a,b)
-		-- [[
 		if a.obj.region < b.obj.region then return true end
 		if a.obj.region > b.obj.region then return false end
 		return a.obj.index < b.obj.index
-		--]]
-		--[[
-		return a.addr < b.addr
-		--]]
 	end)
 	-- grab and write new regions
 	for _,m in ipairs(self.rooms) do
@@ -4504,14 +4498,11 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 --		if m.obj.region == 0 and m.obj.index == 0 then reqAddr = 0x0791f8 end
 --		if m.obj.region == 6 and m.obj.index == 0 then reqAddr = 0x07c96e end
 		local addr, endaddr = roomBankWriteRanges:get(totalSize, reqAddr)
+		
 		local ptr = rom + addr
-		m.ptr = ffi.cast('room_t*', ptr)
-		m.ptr[0] = m.obj
-		do
-			local bank, ofs = frompc(addr)
-			assert(bank == self.roomBank)
-			m.addr = addr
-		end
+		assert(frompc(addr) == self.roomBank)
+		m.addr = addr
+		m:ptr()[0] = m.obj
 		ptr = ptr + ffi.sizeof'room_t'
 
 		-- write m.roomStates[1..n].select
@@ -4541,11 +4532,14 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			end
 			ptr = ptr + ffi.sizeof'roomstate_t'
 		end
-		
+	
+		-- I am not writing doors yet so this doesn't matter
+		-- but when I do, do it before writing rooms, or these offsets will go bad.
 		-- write the dooraddrs: m.doors[i].addr.  terminator: 00 80.  reuse matching dooraddr sets between rooms.
 		--		update m.obj.doorPageOffset
+		-- TODO maybe write back the room_t last? so we don't have to reupdate its fields
 		m.obj.doorPageOffset = select(2, frompc(ptr - rom))
-		m.ptr.doorPageOffset = m.obj.doorPageOffset
+		m:ptr().doorPageOffset = m.obj.doorPageOffset
 		for _,door in ipairs(m.doors) do
 			local bank, ofs = frompc(door.addr)
 			assert(bank == self.doorBank)
@@ -4612,8 +4606,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	for _,m in ipairs(self.rooms) do
 		for _,door in ipairs(m.doors) do
 			if door.type == 'door_t' then
-				local addr = ffi.cast('uint8_t*', door.destRoom.ptr) - rom
-				local bank, ofs = frompc(addr)
+				local bank, ofs = frompc(door.destRoom.addr)
 				assert(bank == self.roomBank)
 				door.ptr.destRoomPageOffset = ofs
 			end
@@ -4621,13 +4614,13 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	end
 
 	for _,m in ipairs(self.rooms) do
-		assert(m.ptr.region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
+		assert(m:ptr().region == m.obj.region, "regions dont match for room "..('%02x/%02x'):format(m.obj.region, m.obj.index))
 	end
 	-- if you remove rooms but forget to remove them from rooms then you could end up here ... 
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			local m = rs.room
-			assert(m.ptr.region == m.obj.region, "regions dont match for room:\nptr "..m.ptr[0].."\nobj "..m.obj)
+			assert(m:ptr().region == m.obj.region, "ptr vs obj regions dont match for room:\nptr "..m:ptr()[0].."\nobj "..m.obj)
 		end
 	end
 end

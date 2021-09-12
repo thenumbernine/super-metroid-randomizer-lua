@@ -77,6 +77,12 @@ function Blob:ptr()
 	return self.sm.rom + self.addr
 end
 
+-- TODO ... how about changing .data to .v ?
+-- then get rid of this, and just use .v[0]
+function Blob:obj()
+	return self.data[0]
+end
+
 function Blob:addMem(mem, ...)
 	if self.compressed then
 		mem:add(self.addr, self.compressedSize, ...)

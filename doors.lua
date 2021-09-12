@@ -59,7 +59,7 @@ for _,roomBlockData in ipairs(sm.roomblocks) do
 			local i,j = door.x, door.y
 			for k=0,3 do
 				if door.dir == 2 or door.dir == 3 then	-- left/right
-					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." room "..roomBlockData.roomStates[1].room.ptr[0])
+					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." room "..roomBlockData.roomStates[1].room.obj)
 					assert(j >= 0 and j < h)
 					local index = (i+k) + w * j
 					blocks12[0 + 2 * index] = 0xff

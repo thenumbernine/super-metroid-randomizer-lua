@@ -243,6 +243,7 @@ function SMSamus:samusSaveImages()
 end
 	
 function SMSamus:samusPrint()
+	print'all samus spritemapSets'
 	for _,smset in ipairs(self.samusSpritemapSets) do
 		print(('%06x'):format(smset.addr))
 		for _,spritemap in ipairs(smset.spritemaps) do

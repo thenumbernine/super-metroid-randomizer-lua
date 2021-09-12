@@ -182,7 +182,7 @@ local allRooms = sm.rooms:filter(function(m)
 
 	return true
 end)
--- TODO use m.ptr instead?
+-- TODO use m:ptr() instead?
 local allRoomSet = allRooms:mapi(function(m) return true, m end)
 
 local function getRoomBlocksForRooms(rooms)
