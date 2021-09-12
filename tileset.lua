@@ -4,7 +4,7 @@ local table = require 'ext.table'
 local struct = require 'struct'
 local topc = require 'pc'.to
 local vector = require 'ffi.cpp.vector'
-
+local Blob = require 'blob'
 --[[
 this is a tilemapElem+graphicsTile+palette triplet
 so if i wanted to optimize this then i should keep track of what tiles are used per each 'tile' and 'graphicsTile'
@@ -21,22 +21,26 @@ local tileSet_t = struct{
 }
 assert(ffi.sizeof'tileSet_t' == 9)
 
-local TileSet = class()
+local TileSet = class(Blob)
+
+TileSet.type = 'tileSet_t'
+TileSet.count = 1
 
 function TileSet:init(args)
 	local sm = args.sm
 	local rom = sm.rom
 	self.index = args.index
 	assert(self.index >= 0 and self.index < sm.tileSetOffsets.count)
-	self.addr = topc(sm.tileSetBank, sm.tileSetOffsets.v[self.index])
-	self.ptr = ffi.cast('tileSet_t*', rom + self.addr)
-	self.obj = ffi.new('tileSet_t', self.ptr[0])
+	
+	args = table(args):setmetatable(nil)
+	args.addr = topc(sm.tileSetBank, sm.tileSetOffsets.v[self.index])
+
+	TileSet.super.init(self, args)
 
 	-- have each room write keys here coinciding blocks
 	self.roomStates = table()	-- which roomStates use this tileset
 
-
-	self:setPalette(sm:mapAddTileSetPalette(self.obj.paletteAddr24:topc()))
+	self:setPalette(sm:mapAddTileSetPalette(self:obj().paletteAddr24:topc()))
 
 	--[[
 	region 6 tilesets used:
@@ -69,7 +73,7 @@ function TileSet:init(args)
 	local loadMode7 = self.index >= 0x11 and self.index <= 0x14		-- ceres rooms 6-00 and 6-05
 	local loadCommonRoomElements = not isCeres
 		
-	self:setGraphicsTileSet(sm:mapAddTileSetGraphicsTileSet(self.obj.graphicsTileAddr24:topc()))
+	self:setGraphicsTileSet(sm:mapAddTileSetGraphicsTileSet(self:obj().graphicsTileAddr24:topc()))
 
 	--[[
 	key by address, keep track of decompressed data, so that we don't have to re-decompress them
@@ -152,7 +156,7 @@ function TileSet:init(args)
 
 	sm:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
 	
-	self:setTilemap(sm:mapAddTileSetTilemap(self.obj.tileAddr24:topc()))
+	self:setTilemap(sm:mapAddTileSetTilemap(self:obj().tileAddr24:topc()))
 
 	local tilemapByteVec = vector'uint8_t'
 	if loadCommonRoomElements then

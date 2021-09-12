@@ -1184,21 +1184,31 @@ function SMMap:mapReadTileSets()
 	-- which is where the music pointers begin
 end
 
+
+local LoadStation = class(Blob)
+LoadStation.type = 'loadStation_t'
+LoadStation.count = 1
+
 function SMMap:mapReadLoadStations()
 	local rom = self.rom
 
-	-- TODO is this what I should be using as entry points to loading rooms?
 	-- load stations
-	-- http://patrickjohnston.org/bank/82
-	local ptr = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableOffset))
+	-- I'm using this as entry points to loading rooms
+	self.loadStationOffsetTable = Blob{
+		sm = self,
+		addr = topc(loadStationBank, loadStationRegionTableOffset),
+		type = 'uint16_t',
+		count = loadStationRegionCount,
+	}
+	
 	for region=0,loadStationRegionCount-1 do
 		self.loadStationsForRegion:insert{
 			region = region,
-			addr = ptr[0],
+			pageOffset = self.loadStationOffsetTable.v[region],
 			stations = table(),
 		}
-		ptr = ptr + 1
 	end
+	
 	-- how do you tell how many entries each one has?
 	-- one way is to just not overrun the next address
 	-- but what about the last address?
@@ -1206,24 +1216,20 @@ function SMMap:mapReadLoadStations()
 	-- but TODO how do you determine the debug region loadStation count?
 	for region=0,#self.loadStationsForRegion-1 do
 		local lsr = self.loadStationsForRegion[region+1]
-		local addr = lsr.addr
-		local nextAddr
+		local pageOffset = lsr.pageOffset
+		local nextPageOffset
 		if region < #self.loadStationsForRegion-1 then
-			nextAddr = self.loadStationsForRegion[region+2].addr
+			nextPageOffset = self.loadStationsForRegion[region+2].pageOffset
 		else
-			nextAddr = loadStationEndOffset
+			nextPageOffset = loadStationEndOffset
 		end
-		assert((nextAddr - addr) % ffi.sizeof'loadStation_t' == 0)
-		local count = (nextAddr - addr) / ffi.sizeof'loadStation_t'
-		
-		local ptr = ffi.cast('loadStation_t*', rom + topc(loadStationBank, addr))
+		assert((nextPageOffset - pageOffset) % ffi.sizeof'loadStation_t' == 0)
+		local count = (nextPageOffset - pageOffset) / ffi.sizeof'loadStation_t'
+	
+		local addr = topc(loadStationBank, pageOffset)
 		for i=0,count-1 do
-			local ls = {}
-			ls.addr = ffi.cast('uint8_t*', ptr) - rom
-			ls.ptr = ptr
-			ls.obj = ffi.new('loadStation_t', ptr[0])
-			lsr.stations:insert(ls)
-			ptr = ptr + 1
+			lsr.stations:insert(LoadStation{sm=self, addr=addr})
+			addr = addr + ffi.sizeof'loadStation_t'
 		end
 	end
 end
@@ -1274,8 +1280,8 @@ function SMMap:mapInit()
 	
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
-			if ls.obj.doorPageOffset > 0 then
-				ls.door = self:mapAddDoor(topc(self.doorBank, ls.obj.doorPageOffset))
+			if ls:obj().doorPageOffset > 0 then
+				ls.door = self:mapAddDoor(topc(self.doorBank, ls:obj().doorPageOffset))
 				ls.door:buildRoom(self)
 			end
 		end
@@ -1295,15 +1301,15 @@ function SMMap:mapInit()
 	for _,lsr in ipairs(self.loadStationsForRegion) do
 		for _,ls in ipairs(lsr.stations) do
 			if not ls.door then
-				assert(ls.obj.roomPageOffset == 0)
+				assert(ls:obj().roomPageOffset == 0)
 			else
 				local room = select(2, self.rooms:find(nil, function(m)
-					return m.addr == topc(self.roomBank, ls.obj.roomPageOffset)
+					return m.addr == topc(self.roomBank, ls:obj().roomPageOffset)
 				end))
 				if not room then
 					print("WARNING - loadStation "
 						..('%06x'):format(ls.addr)
-						.." has roomPageOffset "..('%04x'):format(ls.obj.roomPageOffset)
+						.." has roomPageOffset "..('%04x'):format(ls:obj().roomPageOffset)
 						.." failed to add room")
 				elseif room ~= ls.door.destRoom then
 					print("WARNING - loadStation "
@@ -3226,7 +3232,7 @@ function SMMap:mapPrint()
 	for _,tileSet in ipairs(self.tileSets) do
 		io.write(' index='..('%02x'):format(tileSet.index))
 		io.write(' addr='..('$%06x'):format(tileSet.addr))
-		print(': '..tileSet.obj)
+		print(': '..tileSet:obj())
 		print('  tileIndexesUsed = '..table.keys(tileSet.tileIndexesUsed):sort():mapi(function(s)
 				return ('$%03x'):format(s)
 			end):concat', ')
@@ -3266,11 +3272,9 @@ function SMMap:mapPrint()
 	print()
 	print"all loadStation_t's:"
 	for i,lsr in ipairs(self.loadStationsForRegion) do
-		print(' region='..lsr.region..' addr='..('%04x'):format(lsr.addr))
+		print(' region='..lsr.region..' pageOffset='..('%04x'):format(lsr.pageOffset))
 		for _,ls in ipairs(lsr.stations) do
-			print('  '
-				..('%06x'):format(ls.addr)
-				..' '..ls.obj)
+			print('  '..('%06x'):format(ls.addr)..' '..ls:obj())
 		end
 	end
 end
@@ -3278,18 +3282,25 @@ end
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
 	for _,room in ipairs(self.rooms) do
-		mem:add(room.addr, ffi.sizeof'room_t', 'room_t', room)
+		room:addMem(mem, nil, room)
 		for _,rs in ipairs(room.roomStates) do
 			assert(rs.roomSelect:obj())
-			mem:add(rs.roomSelect.addr, rs.roomSelect:sizeof(), 'roomselect', room)
-			mem:add(rs.addr, ffi.sizeof'roomstate_t', 'roomstate_t', room)
+			rs.roomSelect:addMem(mem, nil, room)
+			rs:addMem(mem, nil, room)
 			if rs.scrollData then
 				-- sized room width x height
-				local addr = topc(self.scrollBank, rs:obj().scrollPageOffset)
-				mem:add(addr, #rs.scrollData, 'scrolldata', room)
+				mem:add(
+					topc(self.scrollBank, rs:obj().scrollPageOffset),
+					#rs.scrollData,
+					'scrolldata',
+					room)
 			end
 			
-			mem:add(topc(self.fx1Bank, rs:obj().fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', room)
+			mem:add(
+				topc(self.fx1Bank, rs:obj().fx1PageOffset),
+				#rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0),
+				'fx1_t',
+				room)
 		
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
@@ -3299,7 +3310,7 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 		mem:add(topc(self.doorAddrBank, room:obj().doorPageOffset), #room.doors * 2, 'dooraddrs', room)
 		for _,door in ipairs(room.doors) do
-			mem:add(door.addr, ffi.sizeof(door.type), door.type, room)
+			door:addMem(mem, nil, room)
 			if door.doorCode then
 				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', room)
 			end
@@ -3350,8 +3361,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 
 	for _,bg in ipairs(self.bgs) do
-		local room = bg.roomStates[1].room
-		mem:add(bg.addr, ffi.sizeof(bg.type), bg.type, room)
+		bg:addMem(mem, nil, bg.roomStates[1].room)
 	end
 
 	for _,tilemap in ipairs(self.bgTilemaps) do
@@ -3368,13 +3378,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	-- should I do this for used palettes, not just my fixed maximum?
 	-- and TODO how about declaring this write range and only writing back the tileSets used
 	for _,tileSet in ipairs(self.tileSets) do
-		local room = #tileSet.roomStates > 0 and tileSet.roomStates[1].room or nil
-		mem:add(
-			tileSet.addr,
-			ffi.sizeof'tileSet_t',
-			'tileSet_t',
-			room
-		)
+		tileSet:addMem(mem, nil, #tileSet.roomStates > 0 and tileSet.roomStates[1].room or nil)
 	end
 
 	for _,palette in ipairs(self.tileSetPalettes) do
@@ -3383,7 +3387,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			rs = tileSet.roomStates[1]
 			if rs then break end
 		end
-		palette:addMem(mem, 'tileSet palette rgb_t lz data', rs and rs.room or nil)
+		palette:addMem(mem, 'tileSet palette lz data', rs and rs.room or nil)
 	end
 
 	for _,tilemap in ipairs(self.tileSetTilemaps) do
@@ -3414,12 +3418,7 @@ function SMMap:mapBuildMemoryMap(mem)
 	for i,lsr in ipairs(self.loadStationsForRegion) do
 		local region = lsr.region
 		for i,ls in ipairs(lsr.stations) do
-			mem:add(
-				topc(loadStationBank, lsr.addr) + ffi.sizeof'loadStation_t' * (i-1),
-				ffi.sizeof'loadStation_t',
-				'loadStation_t',
-				ls.door and ls.door.destRoom
-			)
+			ls:addMem(mem, nil, ls.door and ls.door.destRoom)
 		end
 	end
 end
@@ -3869,7 +3868,7 @@ print("palettes "..('%04x'):format(pj.addr)..' and '..('%04x'):format(pi.addr)..
 				for _,tileSet in ipairs(self.tileSets) do
 					if tileSet.palette == pi then
 						tileSet:setPalette(pj)
-						-- tileSet.obj and tileSet.ptr's paletteAddr24 are dangling here, but rewritten after the recompress
+						-- tileSet:obj() and tileSet:ptr()'s paletteAddr24 are dangling here, but rewritten after the recompress
 					end
 				end
 
@@ -3900,7 +3899,7 @@ print("tilemaps "..('%04x'):format(tj.addr)..' and '..('%04x'):format(ti.addr)..
 				for _,tileSet in ipairs(self.tileSets) do
 					if tileSet.tilemap == ti then
 						tileSet:setTilemap(tj)
-						-- tileSet.obj and tileSet.ptr's tileAddr24 are dangling here, but rewritten after the recompress
+						-- tileSet:obj() and tileSet:ptr()'s tileAddr24 are dangling here, but rewritten after the recompress
 					end
 				end
 
@@ -3931,7 +3930,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 				for _,tileSet in ipairs(self.tileSets) do
 					if tileSet.graphicsTileSet == gi then
 						tileSet:setGraphicsTileSet(gj)
-						-- tileSet.obj and tileSet.ptr's graphicsTileAddr24 are dangling here, but rewritten after the recompress
+						-- tileSet:obj() and tileSet:ptr()'s graphicsTileAddr24 are dangling here, but rewritten after the recompress
 					end
 				end
 
@@ -3978,11 +3977,11 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		
 		-- update anything dependent on this tilemap
 		for _,tileSet in ipairs(tilemap.tileSets) do
-			tileSet.obj.tileAddr24:frompc(tilemap.addr)
+			tileSet:obj().tileAddr24:frompc(tilemap.addr)
 
 			-- TODO don't do this here, do this on write later
-			tileSet.ptr.tileAddr24.bank = tileSet.obj.tileAddr24.bank
-			tileSet.ptr.tileAddr24.ofs = tileSet.obj.tileAddr24.ofs
+			tileSet:ptr().tileAddr24.bank = tileSet:obj().tileAddr24.bank
+			tileSet:ptr().tileAddr24.ofs = tileSet:obj().tileAddr24.ofs
 		end
 	end
 
@@ -3991,11 +3990,11 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		
 		-- update anything dependent on this graphicsTileSet
 		for _,tileSet in ipairs(graphicsTileSet.tileSets) do
-			tileSet.obj.graphicsTileAddr24:frompc(graphicsTileSet.addr)
+			tileSet:obj().graphicsTileAddr24:frompc(graphicsTileSet.addr)
 
 			-- TODO don't do this here, do this on write later
-			tileSet.ptr.graphicsTileAddr24.bank = tileSet.obj.graphicsTileAddr24.bank
-			tileSet.ptr.graphicsTileAddr24.ofs = tileSet.obj.graphicsTileAddr24.ofs
+			tileSet:ptr().graphicsTileAddr24.bank = tileSet:obj().graphicsTileAddr24.bank
+			tileSet:ptr().graphicsTileAddr24.ofs = tileSet:obj().graphicsTileAddr24.ofs
 		end
 	end
 
@@ -4004,11 +4003,11 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		
 		-- update anything dependent on this palette
 		for _,tileSet in ipairs(palette.tileSets) do
-			tileSet.obj.paletteAddr24:frompc(palette.addr)
+			tileSet:obj().paletteAddr24:frompc(palette.addr)
 
 			-- TODO don't do this here, do this on write later
-			tileSet.ptr.paletteAddr24.bank = tileSet.obj.paletteAddr24.bank
-			tileSet.ptr.paletteAddr24.ofs = tileSet.obj.paletteAddr24.ofs
+			tileSet:ptr().paletteAddr24.bank = tileSet:obj().paletteAddr24.bank
+			tileSet:ptr().paletteAddr24.ofs = tileSet:obj().paletteAddr24.ofs
 		end
 	end
 
@@ -4022,7 +4021,7 @@ print("graphicsTileSets "..('%04x'):format(gj.addr)..' and '..('%04x'):format(gi
 		local ti = self.tileSets[i]
 		for j=1,#self.tileSets-1 do
 			local tj = self.tileSets[j]
-			if byteArraysAreEqual(ti.obj.ptr, tj.obj.ptr, ffi.sizeof'tileSet_t') then
+			if byteArraysAreEqual(ti.v, tj.v, ffi.sizeof'tileSet_t') then
 print("tileSet_t "..('%02x'):format(tj.index)..' and '..('%02x'):format(ti.index)..' are matching -- removing '..('%02x'):format(ti.index))
 				-- TODO
 			end
@@ -4111,7 +4110,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			rs.roomSelect.addr = ptr - rom
 			ptr = ptr + ffi.sizeof(rs.roomSelect.type)
 		end
-		-- write m.roomStates[n..1].obj (reverse order ... last roomselect matches first roomstate, and that's why last roomselect has no pointer.  the others do have roomstate addrs, but maybe keep the roomstates reverse-sequential just in case) 
+		-- write m.roomStates[n..1] (reverse order ... last roomselect matches first roomstate, and that's why last roomselect has no pointer.  the others do have roomstate addrs, but maybe keep the roomstates reverse-sequential just in case) 
 		--		update roomstate2_t's and roomstate3_t's as you do this
 		for i=#m.roomStates,1,-1 do
 			local rs = m.roomStates[i]
@@ -4165,7 +4164,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		end
 		
 		-- write m.roomStates[1..n].scrollData
-		--		update m.roomStates[1..n].obj.scrollPageOffset
+		--		update m.roomStates[1..n]:obj().scrollPageOffset
 		for i,rs in ipairs(m.roomStates) do
 			if rs.scrollData then
 				assert(rs:obj().scrollPageOffset > 1 and rs:obj().scrollPageOffset ~= 0x8000)
@@ -4371,8 +4370,6 @@ function SMMap:mapWrite()
 	}, 'plm_t+room_t')
 	
 
-
-
 	do
 		local rom = self.rom
 		local writeRange = WriteRange({
@@ -4458,19 +4455,18 @@ function SMMap:mapWrite()
 	assert(#self.loadStationsForRegion <= loadStationRegionCount)
 	do
 		local rom = self.rom
-		local loadStationEndPtr = rom + topc(loadStationBank, loadStationEndOffset)
-		local rt = ffi.cast('uint16_t*', rom + topc(loadStationBank, loadStationRegionTableOffset))
-		local ptr = ffi.cast('loadStation_t*', rt + loadStationRegionCount)
+		local loadStationEndPtr = topc(loadStationBank, loadStationEndOffset)
+		local addr = topc(loadStationBank, loadStationRegionTableOffset) + 2 * loadStationRegionCount
 		for _,lsr in ipairs(self.loadStationsForRegion) do
-			lsr.addr = select(2, frompc(ffi.cast('uint8_t*', ptr) - rom))
-			rt[0] = lsr.addr
-			rt = rt + 1
+			lsr.pageOffset = select(2, frompc(addr))
+			self.loadStationOffsetTable.v[lsr.region] = lsr.pageOffset
+
 			for _,ls in ipairs(lsr.stations) do
-				if ffi.cast('uint8_t*', ptr) >= loadStationEndPtr then
+				if addr >= loadStationEndPtr then
 					print'WARNING - ran out of room writing the loadStations!'
 					break
 				end
-				ls.ptr = ptr
+				ls.addr = addr
 
 				-- refresh the room from the door
 
@@ -4478,20 +4474,21 @@ function SMMap:mapWrite()
 				if ls.door then
 					local bank, pageofs = frompc(ls.door.destRoom.addr)
 					assert(bank == self.roomBank)
-					ls.obj.roomPageOffset = pageofs
+					ls:obj().roomPageOffset = pageofs
 				
 					local bank, pageofs = frompc(ls.door.addr)
 					assert(bank == self.doorBank)
-					ls.obj.doorPageOffset = pageofs
+					ls:obj().doorPageOffset = pageofs
 				else
-					ls.obj.roomPageOffset = 0
-					ls.obj.doorPageOffset = 0
+					ls:obj().roomPageOffset = 0
+					ls:obj().doorPageOffset = 0
 				end
-				ptr[0] = ls.obj
-				ptr = ptr + 1
+				ls:writeToROM()
+				addr = addr + ffi.sizeof'loadStation_t'
 			end
-			if ffi.cast('uint8_t*',ptr) >= loadStationEndPtr then break end
+			if addr >= loadStationEndPtr then break end
 		end
+		self.loadStationOffsetTable:writeToROM()
 	end
 
 	roomBankWriteRanges:print()

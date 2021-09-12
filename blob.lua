@@ -82,11 +82,12 @@ function Blob:obj()
 	return self.v[0]
 end
 
-function Blob:addMem(mem, ...)
+function Blob:addMem(mem, name, ...)
+	name = self.type..(name and (' '..name) or '')
 	if self.compressed then
-		mem:add(self.addr, self.compressedSize, ...)
+		mem:add(self.addr, self.compressedSize, name, ...)
 	else
-		mem:add(self.addr, self:sizeof(), ...)
+		mem:add(self.addr, self:sizeof(), name, ...)
 	end
 end
 
@@ -109,7 +110,7 @@ end
 Blob.CompressInfo = CompressInfo
 
 
-
+-- TODO rename this more to 'alloc' and 'writeToROM'
 function Blob:recompress(writeRange, compressInfo)
 	assert(self.compressed)
 
@@ -120,6 +121,12 @@ function Blob:recompress(writeRange, compressInfo)
 	local fromaddr, toaddr = writeRange:get(self.compressedSize)
 	ffi.copy(self.sm.rom + fromaddr, recompressed, self.compressedSize)
 	self.addr = fromaddr
+end
+
+-- copy .v[] data back to rom[]
+function Blob:writeToROM()
+	assert(not self.compressed)
+	ffi.copy(self.sm.rom + self.addr, self.v, self:sizeof())
 end
 
 return Blob
