@@ -59,7 +59,7 @@ for _,roomBlockData in ipairs(sm.roomblocks) do
 			local i,j = door.x, door.y
 			for k=0,3 do
 				if door.dir == 2 or door.dir == 3 then	-- left/right
-					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." room "..roomBlockData.roomStates[1].room.obj)
+					assert(i+k >= 0 and i+k < w, "oob door at "..tolua(door).." room "..roomBlockData.roomStates[1].room:obj())
 					assert(j >= 0 and j < h)
 					local index = (i+k) + w * j
 					blocks12[0 + 2 * index] = 0xff
@@ -83,7 +83,7 @@ end
 
 -- remove all tourian and ceres doors
 oldDoors = oldDoors:filter(function(od)
-	return od.rs.room.obj.region < 5
+	return od.rs.room:obj().region < 5
 end)
 
 print('old # non-special non-blue doors: '..oldNumDoors)
@@ -111,8 +111,8 @@ for i=0,numDoorsToMake-1 do
 		rs.plmset.plms:insert(plm)
 		newNumDoors = newNumDoors + 1
 		
-		local region = rs.room.obj.region
-		local index = rs.room.obj.index
+		local region = rs.room:obj().region
+		local index = rs.room:obj().index
 		print('making new '..color..' door at '..door.x..', '..door.y..' region/room: '..('%02x/%02x'):format(region, index))
 	end
 end

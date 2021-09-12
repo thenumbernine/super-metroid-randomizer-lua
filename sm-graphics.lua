@@ -92,7 +92,7 @@ tilemapElemSizeX = 8*8 graphicsTiles wide
 tilemapElemSizeY = 8*8 graphicsTiles high
 
 dst should be the destination indexed bitmap
-tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.data (sets of 32x32), or whatever else
+tilemapElem is read from tileSet.tilemapByteVec.v (sets of 2x2), bg.tilemap.v (sets of 32x32), or whatever else
 graphicsTiles should be tileSet.graphicsTileVec.v
 
 --]]
@@ -205,7 +205,7 @@ function SMGraphics:graphicsBitmapIndexedToRGB(srcIndexedBmp, palette)
 			local i = x + srcIndexedBmp.width * y
 			local paletteIndex = srcIndexedBmp.buffer[i]
 			if bit.band(paletteIndex, 0xf) > 0 then	-- is this always true?
-				local rgb = palette.data[paletteIndex]
+				local rgb = palette.v[paletteIndex]
 				dstRgbBmp.buffer[0 + 3 * i] = math.floor(rgb.r*255/31)
 				dstRgbBmp.buffer[1 + 3 * i] = math.floor(rgb.g*255/31)
 				dstRgbBmp.buffer[2 + 3 * i] = math.floor(rgb.b*255/31)
@@ -362,7 +362,7 @@ function SMGraphics:graphicsInitPauseScreen()
 		self.pauseScreenTiles,
 	} do
 		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-		self:graphicsSwizzleTileBitsInPlace(tiles.data, tiles:sizeof())
+		self:graphicsSwizzleTileBitsInPlace(tiles.v, tiles:sizeof())
 	end
 end
 
@@ -387,7 +387,7 @@ function SMGraphics:graphicsSavePauseScreenImages()
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
 	
 		-- TODO this function can just make 8 x (8*numTiles) and just use graphicsWrapRows twice?
-		local img = self:graphicsCreateIndexedBitmapForTiles(info.tiles.data, numTiles, info.tilesWide)
+		local img = self:graphicsCreateIndexedBitmapForTiles(info.tiles.v, numTiles, info.tilesWide)
 
 		if info.tilesWide2 then
 			img = self:graphicsWrapRows(img, img.width, info.tilesWide2)
@@ -463,10 +463,10 @@ function SMGraphics:graphicsSavePauseScreenImages()
 		assert(info.tilemapWidth * info.tilemapHeight * 2 == info.tilemap:sizeof())
 
 		local img = self:graphicsConvertTilemapToBitmap(
-			info.tilemap.data,
+			info.tilemap.v,
 			info.tilemapWidth,
 			info.tilemapHeight,
-			info.tiles.data)
+			info.tiles.v)
 
 		img = self:graphicsBitmapIndexedToRGB(
 			img, 

@@ -16,7 +16,7 @@ function RoomBlocks:init(args)
 	
 	RoomBlocks.super.init(self, args)
 	
-	local dataSize = ffi.sizeof(self.data)
+	local dataSize = ffi.sizeof(self.v)
 	local m = args.m
 
 	-- list of unique rooms that have roomstates that use this roomBlockData
@@ -27,14 +27,14 @@ function RoomBlocks:init(args)
 
 	local ofs = 0
 	
-	self.offsetToCh3 = ffi.cast('uint16_t*', self.data)[0]
+	self.offsetToCh3 = ffi.cast('uint16_t*', self.v)[0]
 
 	-- offsetToCh3 is the offset to channel 3 of the blocks
 	-- and is usually = 2*w*h, sometimes >2*w*h
 	--  in that case ... what's in the padding?
 
-	local w = m.obj.width * self.blocksPerRoom
-	local h = m.obj.height * self.blocksPerRoom
+	local w = m:obj().width * self.blocksPerRoom
+	local h = m:obj().height * self.blocksPerRoom
 	
 	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
 
@@ -43,13 +43,13 @@ function RoomBlocks:init(args)
 	self.height = h
 
 --print('offset to ch3', self.offsetToCh3)
---print('numblocks', ffi.sizeof(self.data) - 2)
---print('decompressed / numblocks', (ffi.sizeof(self.data) - 2) / (w * h))
+--print('numblocks', ffi.sizeof(self.v) - 2)
+--print('decompressed / numblocks', (ffi.sizeof(self.v) - 2) / (w * h))
 --print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
---print('decompressed / offset to ch 3', (ffi.sizeof(self.data) - 2) / self.offsetToCh3)
+--print('decompressed / offset to ch 3', (ffi.sizeof(self.v) - 2) / self.offsetToCh3)
 	-- decompressed / numblocks is only ever 3 or 5
 	-- what determines which?
-	if (ffi.sizeof(self.data) - 2) / (w * h) < 3 then
+	if (ffi.sizeof(self.v) - 2) / (w * h) < 3 then
 		print("WARNING - room has not enough blocks to fill the room")
 		return
 	end
@@ -345,14 +345,14 @@ RoomBlocks.extTileTypeNameForValue = setmetatable(table.map(RoomBlocks.extTileTy
 RoomBlocks.oobType = RoomBlocks.tileTypes.solid -- consider the outside to be solid
 
 function RoomBlocks:getBlocks12()
-	return self.data + 2
+	return self.v + 2
 end
 function RoomBlocks:getBlocks3()
-	return self.data + 2 + self.offsetToCh3
+	return self.v + 2 + self.offsetToCh3
 end
 function RoomBlocks:getLayer2Blocks()
 	if self.hasLayer2Blocks then
-		return self.data + 2 + self.offsetToCh3 / 2 * 3
+		return self.v + 2 + self.offsetToCh3 / 2 * 3
 	end
 end
 

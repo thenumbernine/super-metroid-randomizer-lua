@@ -134,7 +134,7 @@ function SMSamus:samusInit()
 	self.samusAnimOffsetTableSpritemapSets = {}
 
 	for i=0,self.samusAnimOffsetTable.count-1 do
-		local ofs = self.samusAnimOffsetTable.data[i]
+		local ofs = self.samusAnimOffsetTable.v[i]
 		assert(ofs == 0 or (ofs >= 0x8000 and ofs < 0x10000))
 		if ofs == 0 then
 			-- hmm, these can be compressed out, right?
@@ -160,13 +160,13 @@ function SMSamus:samusInit()
 
 	-- indexed by "samus animation frame"
 	for i=0,self.samusAnimLookups.count-1 do
-		local lookup = self.samusAnimLookups.data[i]
+		local lookup = self.samusAnimLookups.v[i]
 		
-		local topDMAOffset = self.samusTopDMASetOffset.data[lookup.topIndex]
+		local topDMAOffset = self.samusTopDMASetOffset.v[lookup.topIndex]
 		local spriteDMABase = ffi.cast('samusDMAEntry_t*', self.rom + topc(0x92, topDMAOffset))
 		local topDMA = spriteDMABase[lookup.topIndexInto]
 	
-		local bottomDMAOffset = self.samusBottomDMASetOffset.data[lookup.bottomIndex]
+		local bottomDMAOffset = self.samusBottomDMASetOffset.v[lookup.bottomIndex]
 		local spriteDMABase = ffi.cast('samusDMAEntry_t*', self.rom + topc(0x92, bottomDMAOffset))
 		local bottomDMA = spriteDMABase[lookup.bottomIndexInto]
 	
@@ -204,7 +204,7 @@ function SMSamus:samusInit()
 		self.samus9FTiles,
 	} do
 		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
-		self:graphicsSwizzleTileBitsInPlace(tiles.data, tiles:sizeof())
+		self:graphicsSwizzleTileBitsInPlace(tiles.v, tiles:sizeof())
 	end
 end
 
@@ -230,7 +230,7 @@ function SMSamus:samusSaveImages()
 		local numTiles = info.tiles:sizeof() / graphicsTileSizeInBytes
 	
 		-- TODO this function can just make 8 x (8*numTiles) and just use graphicsWrapRows twice?
-		local img = self:graphicsCreateIndexedBitmapForTiles(info.tiles.data, numTiles, info.tilesWide)
+		local img = self:graphicsCreateIndexedBitmapForTiles(info.tiles.v, numTiles, info.tilesWide)
 
 		if info.tilesWide2 then
 			img = self:graphicsWrapRows(img, img.width, info.tilesWide2)

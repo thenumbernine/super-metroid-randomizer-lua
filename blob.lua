@@ -47,19 +47,19 @@ function Blob:init(args)
 		-- TODO for some ill-formatted rooms, some old dangling rooms will still be accessible by room door pointers in the data (even if they are not in the game)
 		-- and that will lead us to this function crashing
 		--xpcall(function()
-		self.data, self.compressedSize = lz.decompress(self.sm.rom, self.addr, self.type)
+		self.v, self.compressedSize = lz.decompress(self.sm.rom, self.addr, self.type)
 		--end, function(err)
 		--	print(err..'\n'..debug.traceback())
 		--end)
-		local size = ffi.sizeof(self.data)
+		local size = ffi.sizeof(self.v)
 --print('data decompressed from size '..self.compressedSize..' to size '..size)
 		
 		assert(size % sizetype == 0)
 		self.count = size / sizetype
 	else
-		self.count = assert(args.count)
-		self.data = ffi.new(self.type..'[?]', self.count)
-		ffi.copy(self.data, self.sm.rom + self.addr, self.count * sizetype)
+		self.count = args.count
+		self.v = ffi.new(self.type..'[?]', self.count)
+		ffi.copy(self.v, self.sm.rom + self.addr, self.count * sizetype)
 	end
 end
 
@@ -70,17 +70,16 @@ end
 
 -- it's looking more and more like a vector...
 function Blob:iend()
-	return self.data + self.count
+	return self.v + self.count
 end
 
 function Blob:ptr()
-	return self.sm.rom + self.addr
+	return ffi.cast(self.type..'*', self.sm.rom + self.addr)
 end
 
--- TODO ... how about changing .data to .v ?
--- then get rid of this, and just use .v[0]
+-- TODO get rid of this, and just use .v[0]
 function Blob:obj()
-	return self.data[0]
+	return self.v[0]
 end
 
 function Blob:addMem(mem, ...)
@@ -114,7 +113,7 @@ Blob.CompressInfo = CompressInfo
 function Blob:recompress(writeRange, compressInfo)
 	assert(self.compressed)
 
-	local recompressed = lz.compress(self.data)
+	local recompressed = lz.compress(self.v)
 	compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + self.compressedSize
 	self.compressedSize = ffi.sizeof(recompressed)
 	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + self.compressedSize

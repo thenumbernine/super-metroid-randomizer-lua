@@ -155,16 +155,16 @@ function RegionSelector:getObjUnderPos(app, x, y)
 	for _,region in ipairs(app.regions) do
 		if region.show then
 			for _,m in ipairs(region.rooms) do
-				local xmin = m.obj.x + region.ofs.x
-				local ymin = m.obj.y + region.ofs.y
-				local xmax = xmin + m.obj.width
-				local ymax = ymin + m.obj.height
+				local xmin = m:obj().x + region.ofs.x
+				local ymin = m:obj().y + region.ofs.y
+				local xmax = xmin + m:obj().width
+				local ymax = ymin + m:obj().height
 				if x >= xmin * blocksPerRoom
 				and x <= xmax * blocksPerRoom
 				and y >= -ymax * blocksPerRoom
 				and y <= -ymin * blocksPerRoom
 				then
---					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+--					local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 --					local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
 --					local rs = m.roomStates[currentRoomStateIndex]
 --					if not editorHideFilledMapBlocks
@@ -205,10 +205,10 @@ function RoomSelector:getObjUnderPos(app, x, y)
 	for _,region in ipairs(app.regions) do
 		if region.show then
 			for _,m in ipairs(region.rooms) do
-				local xmin = m.obj.x + region.ofs.x
-				local ymin = m.obj.y + region.ofs.y
-				local xmax = xmin + m.obj.width
-				local ymax = ymin + m.obj.height
+				local xmin = m:obj().x + region.ofs.x
+				local ymin = m:obj().y + region.ofs.y
+				local xmax = xmin + m:obj().width
+				local ymax = ymin + m:obj().height
 				if x >= xmin * blocksPerRoom
 				and x <= xmax * blocksPerRoom
 				and y >= -ymax * blocksPerRoom
@@ -223,8 +223,8 @@ end
 
 function RoomSelector:getObjPos(m)
 	return
-		(m.obj.x + m.region.ofs.x) * blocksPerRoom,
-		(m.obj.y + m.region.ofs.y) * blocksPerRoom
+		(m:obj().x + m.region.ofs.x) * blocksPerRoom,
+		(m:obj().y + m.region.ofs.y) * blocksPerRoom
 end
 
 function RoomSelector:setObjPos(m, x, y)
@@ -232,13 +232,13 @@ function RoomSelector:setObjPos(m, x, y)
     y = y / blocksPerRoom
 	x = x - m.region.ofs.x
 	y = y - m.region.ofs.y
-	x = math.clamp(x, 0, mapMaxWidth - m.obj.width)
-	y = math.clamp(y, 0, mapMaxHeight - m.obj.height) 
-	if x ~= m.obj.x
-	or y ~= m.obj.y
+	x = math.clamp(x, 0, mapMaxWidth - m:obj().width)
+	y = math.clamp(y, 0, mapMaxHeight - m:obj().height) 
+	if x ~= m:obj().x
+	or y ~= m:obj().y
 	then
-		m.obj.x = x
-		m.obj.y = y
+		m:obj().x = x
+		m:obj().y = y
 		
 -- [[ recalc bounds while you drag					
 		m.region:calcBounds()
@@ -249,7 +249,7 @@ end
 function RoomSelector:onClick(app)
 	local m = app.selectedRoom
 	if m then
-		local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+		local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 		local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
 		currentRoomStateIndex = (currentRoomStateIndex % #m.roomStates) + 1
 		app.roomCurrentRoomStates[roomIndex] = currentRoomStateIndex 
@@ -271,7 +271,7 @@ function DoorSelector:getObjUnderPos(app, x, y)
 	for _,region in ipairs(app.regions) do
 		if region.show then
 			for _,m in ipairs(region.rooms) do
-				local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+				local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 				local currentRoomStateIndex = app.roomCurrentRoomStates[roomIndex] or 1
 				local rs = m.roomStates[((currentRoomStateIndex - 1) % #m.roomStates) + 1]
 		
@@ -293,8 +293,8 @@ end
 function DoorSelector:getObjPos(roomAndDoor)
 	local m, door, pos = roomAndDoor.m, roomAndDoor.door, room.pos
 	return
-		(m.obj.x + m.region.ofs.x) * blocksPerRoom + pos[1],
-		(m.obj.y + m.region.ofs.y) * blocksPerRoom + pos[2]
+		(m:obj().x + m.region.ofs.x) * blocksPerRoom + pos[1],
+		(m:obj().y + m.region.ofs.y) * blocksPerRoom + pos[2]
 end
 
 function DoorSelector:setObjPos(roomAndDoor, x, y)
@@ -356,10 +356,10 @@ function Region:calcBounds()
 	self.xmax = -math.huge
 	self.ymax = -math.huge
 	for _,m in ipairs(self.rooms) do
-		self.xmin = math.min(self.xmin, m.obj.x)
-		self.ymin = math.min(self.ymin, m.obj.y)
-		self.xmax = math.max(self.xmax, m.obj.x + m.obj.width)
-		self.ymax = math.max(self.ymax, m.obj.y + m.obj.height)
+		self.xmin = math.min(self.xmin, m:obj().x)
+		self.ymin = math.min(self.ymin, m:obj().y)
+		self.xmax = math.max(self.xmax, m:obj().x + m:obj().width)
+		self.ymax = math.max(self.ymax, m:obj().y + m:obj().height)
 	end
 end
 
@@ -385,7 +385,7 @@ function App:initGL()
 		return Region(index)
 	end)
 	for _,m in ipairs(self.sm.rooms) do
-		local index = m.obj.region+1
+		local index = m:obj().region+1
 		local region = self.regions[index]
 		region.rooms:insert(m)
 		-- TODO move the 'region' object in SM?
@@ -466,7 +466,7 @@ function App:initGL()
 		local img = Image(256, 1, 4, 'unsigned char')
 		img:clear()
 		for paletteIndex=0,math.min(palette.count,256)-1 do
-			local src = palette.data[paletteIndex]
+			local src = palette.v[paletteIndex]
 			img.buffer[0 + 4 * paletteIndex] = math.floor(src.r*255/31)
 			img.buffer[1 + 4 * paletteIndex] = math.floor(src.g*255/31)
 			img.buffer[2 + 4 * paletteIndex] = math.floor(src.b*255/31)
@@ -491,7 +491,7 @@ function App:initGL()
 		--[[ try to upload and operate on 1555 as-is
 		local img = Image(256, 1, 4, 'uint16_t')
 		img:clear()
-		ffi.copy(img.buffer, palette.data, math.min(palette.count,256)*2)
+		ffi.copy(img.buffer, palette.v, math.min(palette.count,256)*2)
 		palette.tex = GLTex2D{
 			width = img.width,
 			height = img.height,
@@ -576,8 +576,8 @@ function App:initGL()
 	end
 
 	-- make textures of the region maps
-	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseScreenTiles.data, self.sm.pauseScreenTiles:sizeof())
-	self.itemTileTex = self:graphicsTilesToTex(self.sm.itemTiles.data, self.sm.itemTiles:sizeof(), 8)
+	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseScreenTiles.v, self.sm.pauseScreenTiles:sizeof())
+	self.itemTileTex = self:graphicsTilesToTex(self.sm.itemTiles.v, self.sm.itemTiles:sizeof(), 8)
 	
 	self.view.ortho = true
 	self.view.znear = -1e+4
@@ -927,12 +927,12 @@ function App:update()
 			end
 
 			for _,m in ipairs(rooms) do
-				local w = m.obj.width
-				local h = m.obj.height
+				local w = m:obj().width
+				local h = m:obj().height
 				
 				-- in room block units
-				local roomxmin = m.obj.x + region.ofs.x
-				local roomymin = m.obj.y + region.ofs.y
+				local roomxmin = m:obj().x + region.ofs.x
+				local roomymin = m:obj().y + region.ofs.y
 				local roomxmax = roomxmin + w
 				local roomymax = roomymin + h
 				if blocksPerRoom * roomxmax >= viewxmin
@@ -956,7 +956,7 @@ function App:update()
 						gl.glLineWidth(1)				
 					end
 
-					local roomIndex = bit.bor(bit.lshift(m.obj.region, 8), m.obj.index)
+					local roomIndex = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 					local currentRoomStateIndex = self.roomCurrentRoomStates[roomIndex] or 1
 					local rs = m.roomStates[
 						((currentRoomStateIndex - 1) % #m.roomStates) + 1
@@ -1414,9 +1414,9 @@ end -- useBakedGraphicsTileTextures
 									--]]
 
 									-- here's the pixel x & y of the door destination
-									local dstregion = self.regions[dstRoom.obj.region+1]
-									local x1 = pi + ti + blocksPerRoom * (i + dstRoom.obj.x + dstregion.ofs.x)
-									local y1 = pj + tj + blocksPerRoom * (j + dstRoom.obj.y + dstregion.ofs.y)
+									local dstregion = self.regions[dstRoom:obj().region+1]
+									local x1 = pi + ti + blocksPerRoom * (i + dstRoom:obj().x + dstregion.ofs.x)
+									local y1 = pj + tj + blocksPerRoom * (j + dstRoom:obj().y + dstregion.ofs.y)
 
 									for _,pos in ipairs(blockpos) do
 										-- now for src block pos

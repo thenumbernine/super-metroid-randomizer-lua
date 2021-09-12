@@ -28,7 +28,7 @@ function TileSet:init(args)
 	local rom = sm.rom
 	self.index = args.index
 	assert(self.index >= 0 and self.index < sm.tileSetOffsets.count)
-	self.addr = topc(sm.tileSetBank, sm.tileSetOffsets.data[self.index])
+	self.addr = topc(sm.tileSetBank, sm.tileSetOffsets.v[self.index])
 	self.ptr = ffi.cast('tileSet_t*', rom + self.addr)
 	self.obj = ffi.new('tileSet_t', self.ptr[0])
 
@@ -63,7 +63,7 @@ function TileSet:init(args)
 		ceres room 6-00 is 1:1 with tileSets 11-12
 		ceres room 6-05 is 1:1 with tileSets 13-14
 	--]]
-	--local loadCommonRoomElements = rs.room.obj.region ~= 6 and #mode7graphicsTiles == 0
+	--local loadCommonRoomElements = rs.room:obj().region ~= 6 and #mode7graphicsTiles == 0
 	local isCeres = self.index >= 0x0f and self.index <= 0x14		-- all ceres
 	local isCeresRidleyRoom = self.index == 0x13 or self.index == 0x14
 	local loadMode7 = self.index >= 0x11 and self.index <= 0x14		-- ceres rooms 6-00 and 6-05
@@ -97,7 +97,7 @@ function TileSet:init(args)
 	so I wonder if that mode7 self.index if condition is even needed
 	--]]
 	local graphicsTileVec = vector'uint8_t'
-	graphicsTileVec:insert(graphicsTileVec:iend(), self.graphicsTileSet.data, self.graphicsTileSet:iend())
+	graphicsTileVec:insert(graphicsTileVec:iend(), self.graphicsTileSet.v, self.graphicsTileSet:iend())
 
 	-- for self 0x11-0x14
 	-- self 0x11, 0x12 = room 06/00
@@ -147,7 +147,7 @@ function TileSet:init(args)
 		end
 	end
 	if loadCommonRoomElements then-- this is going after the graphicsTile 0x5000 / 0x8000
-		graphicsTileVec:insert(graphicsTileVec:iend(), sm.commonRoomGraphicsTiles.data, sm.commonRoomGraphicsTiles:iend())
+		graphicsTileVec:insert(graphicsTileVec:iend(), sm.commonRoomGraphicsTiles.v, sm.commonRoomGraphicsTiles:iend())
 	end
 
 	sm:graphicsSwizzleTileBitsInPlace(graphicsTileVec.v, graphicsTileVec.size)
@@ -156,9 +156,9 @@ function TileSet:init(args)
 
 	local tilemapByteVec = vector'uint8_t'
 	if loadCommonRoomElements then
-		tilemapByteVec:insert(tilemapByteVec:iend(), sm.commonRoomTilemaps.data, sm.commonRoomTilemaps:iend())
+		tilemapByteVec:insert(tilemapByteVec:iend(), sm.commonRoomTilemaps.v, sm.commonRoomTilemaps:iend())
 	end
-	tilemapByteVec:insert(tilemapByteVec:iend(), self.tilemap.data, self.tilemap:iend())
+	tilemapByteVec:insert(tilemapByteVec:iend(), self.tilemap.v, self.tilemap:iend())
 	
 	-- 0x2000 size means 32*32*16*16 pixel sprites, so 8 bytes per 16x16 tile
 --print('tilemapByteVec.size', ('$%x'):format(tilemapByteVec.size))
