@@ -4,9 +4,54 @@ local table = require 'ext.table'
 local range = require 'ext.range'
 local frompc = require 'pc'.from
 local topc = require 'pc'.to
+local struct = require 'struct'
 local RoomState = require 'roomstate'
 local Blob = require 'blob'
 
+
+-- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
+local room_t = struct{
+	name = 'room_t',
+	fields = {	-- aka mdb, aka mdb_header
+		{index = 'uint8_t'},
+		{region = 'uint8_t'},
+		{x = 'uint8_t'},
+		{y = 'uint8_t'},
+		{width = 'uint8_t'},
+		{height = 'uint8_t'},
+		{upScroller = 'uint8_t'},
+		{downScroller = 'uint8_t'},
+		{gfxFlags = 'uint8_t'},
+		{doorPageOffset = 'uint16_t'},
+	},
+}
+
+-- roomselect testCodePageOffset is stored from $e5e6 to $e689 (inclusive)
+
+local roomselect1_t = struct{
+	name = 'roomselect1_t',
+	fields = {
+		{testCodePageOffset = 'uint16_t'},
+	},
+}
+
+local roomselect2_t = struct{
+	name = 'roomselect2_t',
+	fields = {
+		{testCodePageOffset = 'uint16_t'},
+		{roomStatePageOffset = 'uint16_t'},
+	},
+}
+
+-- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
+local roomselect3_t = struct{
+	name = 'roomselect3_t',
+	fields = {
+		{testCodePageOffset = 'uint16_t'},		-- ptr to test code in bank $8f
+		{testvalue = 'uint8_t'},
+		{roomStatePageOffset = 'uint16_t'},		-- ptr to roomstate in bank $8f
+	},
+}
 
 
 -- these are 1-1 with RoomState's
@@ -24,7 +69,6 @@ Room.count = 1
 function Room:init(args)
 	Room.super.init(self, args)
 		
-	self.roomStates = table()
 	self.doors = table()
 	
 	local sm = self.sm
@@ -34,6 +78,7 @@ function Room:init(args)
 	local data = rom + self.addr + ffi.sizeof'room_t'
 
 	-- roomstates
+	local roomSelects = table()
 	while true do
 		local codepageofs = ffi.cast('uint16_t*',data)[0]
 		
@@ -49,44 +94,32 @@ function Room:init(args)
 			select_ctype = 'roomselect2_t'
 		end
 
-		local roomSelect = RoomSelect{
+		roomSelects:insert(RoomSelect{
 			sm = sm,
 			addr = data - rom,
 			type = select_ctype,
-		}
-		
-		local rs = RoomState{
-			room = self,
-			roomSelect = roomSelect,
-		}
-		self.roomStates:insert(rs)
+		})
 		
 		data = data + ffi.sizeof(select_ctype)
 
 		if select_ctype == 'roomselect1_t' then break end	-- term
 	end
 
-	-- after the last roomselect is the first roomstate_t
-	local rs = self.roomStates:last()
-	-- uint16_t select means a terminator
-	if rs.roomSelect.type ~= 'roomselect1_t' then
-		error("expected rs.roomSelect.type==roomselect1_t, found "..rs.roomSelect.type)
-	end
-	rs.ptr = ffi.cast('roomstate_t*', data)
-	rs.obj = ffi.new('roomstate_t', rs.ptr[0])
-	data = data + ffi.sizeof'roomstate_t'
-
-	-- then the rest of the roomstates come
-	for _,rs in ipairs(self.roomStates) do
-		if rs.roomSelect.type ~= 'roomselect1_t' then
-			assert(not rs.ptr)
-			local addr = topc(sm.roomStateBank, rs.roomSelect:obj().roomStatePageOffset)
-			rs.ptr = ffi.cast('roomstate_t*', rom + addr)
-			rs.obj = ffi.new('roomstate_t', rs.ptr[0])
-		end
-
-		assert(rs.ptr)
-	end
+	self.roomStates = roomSelects:mapi(function(roomSelect)
+		return RoomState{
+			sm = sm,
+			room = self,
+			roomSelect = roomSelect,
+			
+			-- terminator - use end of roomselects for the roomstate pointer
+			-- after the last roomselect is the first roomstate_t
+			-- ... pointed to by the roomselect?  nah, since the last roomselect / terminator roomselect1_t has no roomStatePageOffset
+			-- uint16_t select means a terminator
+			addr = roomSelect.type == 'roomselect1_t'
+				and data - rom
+				or topc(sm.roomStateBank, roomSelect:obj().roomStatePageOffset),
+		}
+	end)
 
 	-- I wonder if I can assert that all the roomstate_t's are in contiguous memory after the roomselect's ... 
 	-- they sure aren't sequential
@@ -94,13 +127,13 @@ function Room:init(args)
 	-- sure enough, YES.  roomstates are contiguous and reverse-sequential from roomselect's
 	--[[
 	for i=1,#self.roomStates-1 do
-		assert(self.roomStates[i+1].ptr + 1 == self.roomStates[i].ptr)
+		assert(self.roomStates[i+1]:ptr() + 1 == self.roomStates[i]:ptr())
 	end
 	--]]
 
 	for _,rs in ipairs(self.roomStates) do
-		if rs.obj.scrollPageOffset > 0x0001 and rs.obj.scrollPageOffset ~= 0x8000 then
-			local addr = topc(sm.scrollBank, rs.obj.scrollPageOffset)
+		if rs:obj().scrollPageOffset > 0x0001 and rs:obj().scrollPageOffset ~= 0x8000 then
+			local addr = topc(sm.scrollBank, rs:obj().scrollPageOffset)
 			local size = self:obj().width * self:obj().height
 			rs.scrollData = range(size):map(function(i)
 				return rom[addr+i-1]
@@ -113,8 +146,8 @@ function Room:init(args)
 	-- so now, when writing them out, they will be in the same order in memory as they were when being read in
 	for i=#self.roomStates,1,-1 do
 		local rs = self.roomStates[i]
-		if rs.obj.plmPageOffset ~= 0 then
-			local plmset = sm:mapAddPLMSetFromAddr(topc(sm.plmBank, rs.obj.plmPageOffset), self)
+		if rs:obj().plmPageOffset ~= 0 then
+			local plmset = sm:mapAddPLMSetFromAddr(topc(sm.plmBank, rs:obj().plmPageOffset), self)
 			rs:setPLMSet(plmset)
 		end
 	end
@@ -122,12 +155,12 @@ function Room:init(args)
 	-- enemySpawnSet
 	-- but notice, for writing back enemy spawn sets, sometimes there's odd padding in there, like -1, 3, etc
 	for _,rs in ipairs(self.roomStates) do
-		local enemySpawnSet = sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, rs.obj.enemySpawnPageOffset))
+		local enemySpawnSet = sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, rs:obj().enemySpawnPageOffset))
 		rs:setEnemySpawnSet(enemySpawnSet)
 	end
 	
 	for _,rs in ipairs(self.roomStates) do
-		rs:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, rs.obj.enemyGFXPageOffset)))
+		rs:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, rs:obj().enemyGFXPageOffset)))
 	end
 
 	-- some rooms use the same fx1 ptr
@@ -137,7 +170,7 @@ function Room:init(args)
 	-- then make one set and just put the subset's at the end
 	-- (unless the order matters...)
 	for _,rs in ipairs(self.roomStates) do
-		local startaddr = topc(sm.fx1Bank, rs.obj.fx1PageOffset)
+		local startaddr = topc(sm.fx1Bank, rs:obj().fx1PageOffset)
 		local addr = startaddr
 		local retry
 		while true do
@@ -173,8 +206,8 @@ if done then break end
 	end
 
 	for _,rs in ipairs(self.roomStates) do
-		if rs.obj.bgPageOffset > 0x8000 then
-			local addr = topc(sm.bgBank, rs.obj.bgPageOffset)
+		if rs:obj().bgPageOffset > 0x8000 then
+			local addr = topc(sm.bgBank, rs:obj().bgPageOffset)
 			while true do
 				local bg = sm:mapAddBG(addr, rom)
 				bg.roomStates:insert(rs)
@@ -186,14 +219,14 @@ if done then break end
 	end
 
 	for _,rs in ipairs(self.roomStates) do
-		if rs.obj.layerHandlingPageOffset > 0x8000 then
-			local addr = topc(sm.layerHandlingBank, rs.obj.layerHandlingPageOffset)
+		if rs:obj().layerHandlingPageOffset > 0x8000 then
+			local addr = topc(sm.layerHandlingBank, rs:obj().layerHandlingPageOffset)
 			rs.layerHandlingPageOffset = sm:mapAddLayerHandling(addr)
 			rs.layerHandlingPageOffset.roomStates:insert(rs)
 		end
 	
 		xpcall(function()
-			rs:setRoomBlockData(sm:mapAddRoomBlockData(rs.obj.roomBlockAddr24:topc(), self))
+			rs:setRoomBlockData(sm:mapAddRoomBlockData(rs:obj().roomBlockAddr24:topc(), self))
 		end, function(err)
 			print(err..'\n'..debug.traceback())
 		end)
@@ -214,13 +247,13 @@ if done then break end
 
 	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
 	-- pointed to by room[00/15].roomstate_t[#1].roomvarPageOffset
-	-- has data @$986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
+	-- has data $986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
 	-- this is the rescue animals roomstate
 	-- so this data has to do with the destructable wall on the right side
 	--if roomPageOffset == 0x79804 then
 	for _,rs in ipairs(self.roomStates) do
-		if rs.obj.roomvarPageOffset ~= 0 then
-			local d = rom + topc(sm.plmBank, rs.obj.roomvarPageOffset)
+		if rs:obj().roomvarPageOffset ~= 0 then
+			local d = rom + topc(sm.plmBank, rs:obj().roomvarPageOffset)
 			local roomvar = table()
 			repeat
 				roomvar:insert(d[0])	-- x
@@ -239,7 +272,7 @@ if done then break end
 	-- try to load tile graphics from rs.tileSet
 	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
 	for _,rs in ipairs(self.roomStates) do
-		local tileSetIndex = rs.obj.tileSet
+		local tileSetIndex = rs:obj().tileSet
 		local tileSet = assert(sm.tileSets[tileSetIndex+1])
 		assert(tileSet.index == tileSetIndex)
 		rs:setTileSet(tileSet)

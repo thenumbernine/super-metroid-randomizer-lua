@@ -171,109 +171,6 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 end
 
 
--- TODO pick by md5 of the rom?
--- [=[ this is all used for rendering the map.png -- and is specific to the original metroid
-
-
---]=]
---[=[ how about for sm-vitality 
-
---]=]
-
-
-
-
-
--- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM
-local room_t = struct{
-	name = 'room_t',
-	fields = {	-- aka mdb, aka mdb_header
-		{index = 'uint8_t'},
-		{region = 'uint8_t'},
-		{x = 'uint8_t'},
-		{y = 'uint8_t'},
-		{width = 'uint8_t'},
-		{height = 'uint8_t'},
-		{upScroller = 'uint8_t'},
-		{downScroller = 'uint8_t'},
-		{gfxFlags = 'uint8_t'},
-		{doorPageOffset = 'uint16_t'},
-	},
-}
-
--- roomselect testCodePageOffset is stored from $e5e6 to $e689 (inclusive)
-
-local roomselect1_t = struct{
-	name = 'roomselect1_t',
-	fields = {
-		{testCodePageOffset = 'uint16_t'},
-	},
-}
-
-local roomselect2_t = struct{
-	name = 'roomselect2_t',
-	fields = {
-		{testCodePageOffset = 'uint16_t'},
-		{roomStatePageOffset = 'uint16_t'},
-	},
-}
-
--- this is how the mdb_format.txt describes it, but it looks like the structure might be a bit more conditional...
-local roomselect3_t = struct{
-	name = 'roomselect3_t',
-	fields = {
-		{testCodePageOffset = 'uint16_t'},		-- ptr to test code in bank $8f
-		{testvalue = 'uint8_t'},
-		{roomStatePageOffset = 'uint16_t'},		-- ptr to roomstate in bank $8f
-	},
-}
-
-local roomstate_t = struct{
-	name = 'roomstate_t',
-	fields = {
-		{roomBlockAddr24 = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
-		{tileSet = 'uint8_t'},				-- tile graphics data
-		{musicTrack = 'uint8_t'},
-		{musicControl = 'uint8_t'},
-		{fx1PageOffset = 'uint16_t'},				-- $83
-		{enemySpawnPageOffset = 'uint16_t'},		-- TODO "enemySpawnSetAddr". points to an array of enemySpawn_t
-		{enemyGFXPageOffset = 'uint16_t'},		-- holds palette info on the enemies used?  points to an array of enemyGFX_t's ... which are just pairs of enemyClass_t's + palettes
-	
-		--[[
-		From https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures:
-				
-			The layer 2 scroll X/Y is a value that determines whether or not custom layer 2 is used, and how fast layer 2 scrolls compared to layer 1 (parallax effect)
-				In binary, let layer 2 scroll X/Y = sssssssb
-				If b = 1, then the library background is used, otherwise custom layer 2 (defined in level data) is used
-				s = 0 is a special case that depends on b
-					If b = 0 (custom layer 2), then layer 2 and layer 1 scroll together at the same speed (like an extension of layer 1)
-					If b = 1 (library background), then layer 2 does not scroll at all (static image background)
-				Otherwise (if s != 0), layer 2 scroll speed = (layer 1 scroll speed) * (s / 0x80)
-		
-		... I'm really not sure what this means.  Not sure if the 'sssb' means 'b' is bit0 or bit7 ... or bit15 since it's referering to a uint16_t .... smh 
-		--]]
-		{layer2scrollXY = 'uint16_t'},	-- TODO
-		
-		--[[
-		scroll is either a constant, or an offset in bank $8f to 1 byte per map block
-		if scroll is 0 or 1 then it is a constant -- to fill all map blocks with that scroll value
-		otherwise it is a ptr to an array of scroll values for each map block.
-		0 = don't scroll up/down, or past the scroll==0 boundaries at all
-		1 = scroll anywhere, but clip the top & bottom 2 blocks (which will hide vertical exits)
-		2 = scroll anywhere at all ... but keeps samus in the middle, which makes it bad for hallways
-		--]]
-		{scrollPageOffset = 'uint16_t'},
-		
-		--[[
-		this is only used by the grey torizo room, and points to the extra data after room_t
-		--]]
-		{roomvarPageOffset = 'uint16_t'},				
-		{fx2PageOffset = 'uint16_t'},					-- TODO - aka 'main asm ptr'
-		{plmPageOffset = 'uint16_t'},
-		{bgPageOffset = 'uint16_t'},				-- offset to bg_t's
-		{layerHandlingPageOffset = 'uint16_t'},
-	},
-}
 
 -- plm = 'post-load modification'
 -- this is a non-enemy object in a map.
@@ -1543,7 +1440,7 @@ function SMMap:mapInit()
 			-- now expect all scrolldatas of all rooms of this room_t
 			-- the # of unique scrolldatas is either 0 or 1
 			local scrolls = m.roomStates:map(function(rs)
-				return true, rs.obj.scrollPageOffset
+				return true, rs:obj().scrollPageOffset
 			end):keys():filter(function(scroll)
 				return scroll > 1 and scroll ~= 0x8000
 			end):sort()
@@ -2916,7 +2813,7 @@ function SMMap:mapPrintRoomBlocks()
 		print' roomstate scrolldata:'
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			if rs.scrollData then
-				print(('  $%06x'):format(ffi.cast('uint8_t*',rs.ptr)-sm.rom))
+				print(('  $%06x'):format(rs.addr))
 				printblock(tableToByteArray(rs.scrollData), #rs.scrollData, w/blocksPerRoom, 1)
 			end
 		end
@@ -2958,7 +2855,7 @@ function SMMap:mapWriteGraphDot()
 		return 'cluster_'..roomName
 	end
 	local function getRoomStateName(rs)
-		local bank, ofs = frompc(ffi.cast('uint8_t*',rs.ptr)-rom)
+		local bank, ofs = frompc(rs.addr)
 		return ('%04x'):format(ofs)
 	end
 --print'building graph'			
@@ -3032,7 +2929,7 @@ function SMMap:mapWriteGraphDot()
 						--for _,rs in ipairs(roomBlockData.roomStates) do
 						for _,rs in ipairs(m.roomStates) do	
 							local rsName = getRoomStateName(rs)
---print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+--print('  roomstate_t: '..('$%06x'):format(rs.addr)..' '..rs:obj()) 
 						
 							local color
 							local doorarg = 0
@@ -3294,7 +3191,7 @@ function SMMap:mapPrint()
 	for _,m in ipairs(self.rooms) do
 		print(' room_t '..('$%06x'):format(m.addr)..' '..m:ptr()[0])
 		for _,rs in ipairs(m.roomStates) do
-			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+			print('  roomstate_t: '..('$%06x'):format(rs.addr)..' '..rs:obj()) 
 			print('  '..rs.roomSelect.type..': '..('$%06x'):format(rs.roomSelect.addr)..' '..tostring(rs.roomSelect:obj()))
 			-- [[
 			if rs.plmset then
@@ -3350,7 +3247,7 @@ function SMMap:mapPrint()
 	for i,plmset in ipairs(self.plmsets) do
 		print(' plmset '..('$%06x'):format(plmset.addr))
 		for _,rs in ipairs(plmset.roomStates) do
-			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
+			print('  roomstate_t: '..('$%06x'):format(rs.addr)..' '..rs:obj()) 
 		end
 		for _,plm in ipairs(plmset.plms) do
 			io.write('  plm_t: ')
@@ -3457,14 +3354,14 @@ function SMMap:mapBuildMemoryMap(mem)
 		for _,rs in ipairs(m.roomStates) do
 			assert(rs.roomSelect:obj())
 			mem:add(rs.roomSelect.addr, rs.roomSelect:sizeof(), 'roomselect', m)
-			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
+			mem:add(rs.addr, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized room width x height
-				local addr = topc(self.scrollBank, rs.obj.scrollPageOffset)
+				local addr = topc(self.scrollBank, rs:obj().scrollPageOffset)
 				mem:add(addr, #rs.scrollData, 'scrolldata', m)
 			end
 			
-			mem:add(topc(self.fx1Bank, rs.obj.fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
+			mem:add(topc(self.fx1Bank, rs:obj().fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 		
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
@@ -3687,7 +3584,7 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 		if #plmset.plms == 0 then
 			for j=#plmset.roomStates,1,-1 do
 				local rs = plmset.roomStates[j]
-				rs.obj.plmPageOffset = 0
+				rs:obj().plmPageOffset = 0
 				rs:setPLMSet(nil)
 			end
 		end
@@ -3765,8 +3662,8 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 					local bank, ofs = frompc(pi.addr)
 					assert(bank == self.plmBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs.obj.plmPageOffset = ofs
-						rs.ptr.plmPageOffset = ofs
+						rs:obj().plmPageOffset = ofs
+						rs:ptr().plmPageOffset = ofs
 						rs:setPLMSet(pi)
 					end
 					self.plmsets:remove(j)
@@ -3815,10 +3712,10 @@ function SMMap:mapWritePLMs(roomBankWriteRanges)
 		local bank, ofs = frompc(plmset.addr)
 		assert(bank == self.plmBank)
 		for _,rs in ipairs(plmset.roomStates) do
-			if ofs ~= rs.obj.plmPageOffset then
-				--print('updating roomstate plm from '..('%04x'):format(rs.ptr.plmPageOffset)..' to '..('%04x'):format(ofs))
-				rs.obj.plmPageOffset = ofs
-				rs.ptr.plmPageOffset = ofs
+			if ofs ~= rs:obj().plmPageOffset then
+				--print('updating roomstate plm from '..('%04x'):format(rs:ptr().plmPageOffset)..' to '..('%04x'):format(ofs))
+				rs:obj().plmPageOffset = ofs
+				rs:ptr().plmPageOffset = ofs
 			end
 		end
 	end
@@ -3910,12 +3807,12 @@ function SMMap:mapWriteEnemySpawnSets()
 					local piaddr = ('$%06x'):format(pi.addr)
 					local pjaddr = ('$%06x'):format(pj.addr)
 					--print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
-					--print('updating roomState '..('%06x'):format(ffi.cast('unsigned char*',rs.ptr)-rom))
+					--print('updating roomState '..('%06x'):format(rs.addr))
 					local bank, ofs = frompc(pi.addr)
 					assert(bank == self.enemySpawnBank)
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs.obj.enemySpawnPageOffset = ofs
-						rs.ptr.enemySpawnPageOffset = ofs
+						rs:obj().enemySpawnPageOffset = ofs
+						rs:ptr().enemySpawnPageOffset = ofs
 						rs:setEnemySpawnSet(pi)
 					end
 					self.enemySpawnSets:remove(j)
@@ -3952,10 +3849,10 @@ function SMMap:mapWriteEnemySpawnSets()
 		local bank, ofs = frompc(enemySpawnSet.addr)
 		assert(bank == self.enemySpawnBank)
 		for _,rs in ipairs(enemySpawnSet.roomStates) do
-			if ofs ~= rs.obj.enemySpawnPageOffset then
-				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs.ptr.enemySpawnPageOffset)..' to '..('%04x'):format(ofs))
-				rs.obj.enemySpawnPageOffset = ofs
-				rs.ptr.enemySpawnPageOffset = ofs
+			if ofs ~= rs:obj().enemySpawnPageOffset then
+				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs:ptr().enemySpawnPageOffset)..' to '..('%04x'):format(ofs))
+				rs:obj().enemySpawnPageOffset = ofs
+				rs:ptr().enemySpawnPageOffset = ofs
 			end
 		end
 	end
@@ -4016,10 +3913,10 @@ function SMMap:mapWriteEnemyGFXSets()
 		local bank, ofs = frompc(enemyGFXSet.addr)
 		assert(bank == self.enemyGFXBank)
 		for _,rs in ipairs(enemyGFXSet.roomStates) do
-			if ofs ~= rs.obj.enemyGFXPageOffset then
-				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs.obj.enemyGFXPageOffset)..' to '..('%04x'):format(ofs))
-				rs.obj.enemyGFXPageOffset = ofs
-				rs.ptr.enemyGFXPageOffset = ofs
+			if ofs ~= rs:obj().enemyGFXPageOffset then
+				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs:obj().enemyGFXPageOffset)..' to '..('%04x'):format(ofs))
+				rs:obj().enemyGFXPageOffset = ofs
+				rs:ptr().enemyGFXPageOffset = ofs
 			end
 		end
 	end
@@ -4291,16 +4188,15 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		for i=#m.roomStates,1,-1 do
 			local rs = m.roomStates[i]
 			
-			local roomStatePageOffset = ptr - rom
-			local bank, ofs = frompc(roomStatePageOffset)
+			local roomStateAddr = ptr - rom
+			local bank, ofs = frompc(roomStateAddr)
 			assert(bank == self.roomStateBank)
 			
-			local rsptr = ffi.cast('roomstate_t*', ptr)
-			rsptr[0] = rs.obj
-			rs.ptr = rsptr
+			rs.addr = roomStateAddr
+			rs:ptr()[0] = rs:obj()
 			if rs.roomSelect.type ~= 'roomselect1_t' then
 				rs.roomSelect:ptr().roomStatePageOffset = ofs	-- update previous write in rom
-				rs.roomSelect:obj().roomStatePageOffset = ofs		-- update POD
+				rs.roomSelect:obj().roomStatePageOffset = ofs	-- update POD
 			else
 				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m:obj().region, m:obj().index))
 			end
@@ -4331,8 +4227,8 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 				if bank ~= self.plmBank then
 					print('DANGER DANGER - you are writing roomvar data outside the PLM bank')
 				end
-				rs.obj.roomvarPageOffset = ofs
-				rs.ptr.roomvarPageOffset = rs.obj.roomvarPageOffset
+				rs:obj().roomvarPageOffset = ofs
+				rs:ptr().roomvarPageOffset = rs:obj().roomvarPageOffset
 				for _,c in ipairs(rs.roomvar) do
 					ptr[0] = c
 					ptr = ptr + 1
@@ -4344,27 +4240,27 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		--		update m.roomStates[1..n].obj.scrollPageOffset
 		for i,rs in ipairs(m.roomStates) do
 			if rs.scrollData then
-				assert(rs.obj.scrollPageOffset > 1 and rs.obj.scrollPageOffset ~= 0x8000)
+				assert(rs:obj().scrollPageOffset > 1 and rs:obj().scrollPageOffset ~= 0x8000)
 				assert(#rs.scrollData == m:obj().width * m:obj().height)
 				local matches
 				for j=1,i-1 do
 					local rs2 = m.roomStates[j]
 					if rs2.scrollData then
 						if tablesAreEqual(rs.scrollData, rs2.scrollData) then
-							matches = rs2.obj.scrollPageOffset
+							matches = rs2:obj().scrollPageOffset
 							break
 						end
 					end	
 				end
 				if matches then
-					rs.obj.scrollPageOffset = matches
-					rs.ptr.scrollPageOffset = matches
+					rs:obj().scrollPageOffset = matches
+					rs:ptr().scrollPageOffset = matches
 				else
 					local addr = ptr - rom
 					local bank, ofs = frompc(addr)
 					assert(bank == self.scrollBank)
-					rs.obj.scrollPageOffset = ofs
-					rs.ptr.scrollPageOffset = rs.obj.scrollPageOffset
+					rs:obj().scrollPageOffset = ofs
+					rs:ptr().scrollPageOffset = rs:obj().scrollPageOffset
 					for i=1,m:obj().width * m:obj().height do
 						ptr[0] = rs.scrollData[i]
 						ptr = ptr + 1
@@ -4463,9 +4359,9 @@ function SMMap:mapWriteRoomBlocks(writeRange)
 
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			rs.obj.roomBlockAddr24:frompc(roomBlockData.addr)
-			rs.ptr.roomBlockAddr24.bank = rs.obj.roomBlockAddr24.bank
-			rs.ptr.roomBlockAddr24.ofs = rs.obj.roomBlockAddr24.ofs
+			rs:obj().roomBlockAddr24:frompc(roomBlockData.addr)
+			rs:ptr().roomBlockAddr24.bank = rs:obj().roomBlockAddr24.bank
+			rs:ptr().roomBlockAddr24.ofs = rs:obj().roomBlockAddr24.ofs
 		end
 
 	--[=[ verify that compression works by decompressing and re-compressing
