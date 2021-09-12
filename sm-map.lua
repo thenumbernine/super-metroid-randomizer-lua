@@ -813,10 +813,7 @@ function SMMap:mapAddRoom(addr)
 	end
 	assert(frompc(addr) == self.roomBank)
 	
-	local m = Room{
-		sm = self,
-		addr = addr,
-	}
+	local m = Room{sm=self, addr=addr}
 	self.rooms:insert(m)
 	-- TODO only do this after room is added to self.rooms or else you'll get an infinite loop
 	for _,door in ipairs(m.doors) do
@@ -829,9 +826,6 @@ end
 function SMMap:mapRemoveRoom(m)
 	if not m then return end
 	
-	local i = self.rooms:find(m)
-	assert(i, "tried to remove a room that I couldn't find")
-	
 	-- TODO in theory a room state could be pointed to by more than one room (if its roomselect's point to the same one), but in practice this is not true so I don't need to consider it
 	for _,rs in ipairs(m.roomStates) do
 		rs:setPLMSet(nil)
@@ -840,6 +834,7 @@ function SMMap:mapRemoveRoom(m)
 		rs:setEnemyGFXSet(nil)
 		rs:setRoomBlockData(nil)
 	end
+	
 	-- TODO do the occluding in mapWrite, and just clear the pointers here?
 	for j=#self.bgs,1,-1 do
 		local bg = self.bgs[j]
@@ -859,6 +854,8 @@ function SMMap:mapRemoveRoom(m)
 	end
 	
 	-- TODO remove all doors targetting this room?
+	local i = self.rooms:find(m)
+	assert(i, "tried to remove a room that I couldn't find")
 	self.rooms:remove(i)
 end
 
@@ -1509,11 +1506,11 @@ function SMMap:mapInit()
 			local roomaddr = d - rom
 			d = d + ffi.sizeof'room_t'
 			-- last roomselect should always be 2 byte term
-			--assert(m.roomStates:last().select_ctype == 'roomselect1_t')
+			--assert(m.roomStates:last().roomSelect.type == 'roomselect1_t')
 			-- if there's only 1 roomState then it is a term, and
 			for i=1,#m.roomStates do
-				assert(d == ffi.cast('uint8_t*', m.roomStates[i].select_ptr))
-				d = d + ffi.sizeof(m.roomStates[i].select_ctype)
+				assert(d == ffi.cast('uint8_t*', m.roomStates[i].roomSelect:ptr()))
+				d = d + ffi.sizeof(m.roomStates[i].roomSelect.type)
 			end
 			-- next should always match the last room
 			for i=#m.roomStates,1,-1 do
@@ -3298,7 +3295,7 @@ function SMMap:mapPrint()
 		print(' room_t '..('$%06x'):format(m.addr)..' '..m:ptr()[0])
 		for _,rs in ipairs(m.roomStates) do
 			print('  roomstate_t: '..('$%06x'):format(ffi.cast('uint8_t*',rs.ptr)-rom)..' '..rs.ptr[0]) 
-			print('  '..rs.select_ctype..': '..('$%06x'):format(ffi.cast('uint8_t*', rs.select_ptr) - rom)..' '..tostring(rs.select))
+			print('  '..rs.roomSelect.type..': '..('$%06x'):format(rs.roomSelect.addr)..' '..tostring(rs.roomSelect:obj()))
 			-- [[
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
@@ -3329,7 +3326,7 @@ function SMMap:mapPrint()
 			end
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
-			local roomSelectCodeAddr = topc(self.roomBank, rs.select.testCodePageOffset)
+			local roomSelectCodeAddr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
 			local code = disasm.readUntilRet(roomSelectCodeAddr, rom)
 			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
 		end
@@ -3377,7 +3374,7 @@ function SMMap:mapPrint()
 	local testCodeAddrs = table()
 	for _,m in ipairs(self.rooms) do
 		for _,rs in ipairs(m.roomStates) do
-			testCodeAddrs[rs.select.testCodePageOffset] = true
+			testCodeAddrs[rs.roomSelect:obj().testCodePageOffset] = true
 		end
 	end
 	print('unique test code addrs:')
@@ -3458,8 +3455,8 @@ function SMMap:mapBuildMemoryMap(mem)
 	for _,m in ipairs(self.rooms) do
 		mem:add(m.addr, ffi.sizeof'room_t', 'room_t', m)
 		for _,rs in ipairs(m.roomStates) do
-			assert(rs.select_ptr)
-			mem:add(ffi.cast('uint8_t*', rs.select_ptr) - rom, ffi.sizeof(rs.select_ctype), 'roomselect', m)
+			assert(rs.roomSelect:obj())
+			mem:add(rs.roomSelect.addr, rs.roomSelect:sizeof(), 'roomselect', m)
 			mem:add(ffi.cast('uint8_t*', rs.ptr) - rom, ffi.sizeof'roomstate_t', 'roomstate_t', m)
 			if rs.scrollData then
 				-- sized room width x height
@@ -3470,7 +3467,7 @@ function SMMap:mapBuildMemoryMap(mem)
 			mem:add(topc(self.fx1Bank, rs.obj.fx1PageOffset), #rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0), 'fx1_t', m)
 		
 			-- TODO possible to relocate?
-			local addr = topc(self.roomBank, rs.select.testCodePageOffset)
+			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
 			local code = disasm.readUntilRet(addr, rom)
 			mem:add(addr, ffi.sizeof(code), 'room select code', m)
 		end
@@ -4240,8 +4237,8 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 --print('room size '..('0x%x'):format(ffi.sizeof'room_t'))	
 		local totalSize = ffi.sizeof'room_t'
 		for _,rs in ipairs(m.roomStates) do
---print(rs.select_ctype..' size '..('0x%x'):format(ffi.sizeof(rs.select_ctype)))	
-			totalSize = totalSize + ffi.sizeof(rs.select_ctype)
+--print(rs.roomSelect.type..' size '..('0x%x'):format(ffi.sizeof(rs.roomSelect.type)))	
+			totalSize = totalSize + rs.roomSelect:sizeof()
 --print('roomstate_t size '..('0x%x'):format(ffi.sizeof'roomstate_t'))	
 			totalSize = totalSize + ffi.sizeof'roomstate_t'
 		end
@@ -4282,12 +4279,12 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		m:ptr()[0] = m:obj()
 		ptr = ptr + ffi.sizeof'room_t'
 
-		-- write m.roomStates[1..n].select
+		-- write m.roomStates[1..n].roomSelect:obj()
 		for _,rs in ipairs(m.roomStates) do
-			local selptr = ffi.cast(rs.select_ctype..'*', ptr)
-			selptr[0] = rs.select
-			rs.select_ptr = selptr
-			ptr = ptr + ffi.sizeof(rs.select_ctype)
+			local selptr = ffi.cast(rs.roomSelect.type..'*', ptr)
+			selptr[0] = rs.roomSelect:obj()
+			rs.roomSelect.addr = ptr - rom
+			ptr = ptr + ffi.sizeof(rs.roomSelect.type)
 		end
 		-- write m.roomStates[n..1].obj (reverse order ... last roomselect matches first roomstate, and that's why last roomselect has no pointer.  the others do have roomstate addrs, but maybe keep the roomstates reverse-sequential just in case) 
 		--		update roomstate2_t's and roomstate3_t's as you do this
@@ -4301,9 +4298,9 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 			local rsptr = ffi.cast('roomstate_t*', ptr)
 			rsptr[0] = rs.obj
 			rs.ptr = rsptr
-			if rs.select_ctype ~= 'roomselect1_t' then
-				rs.select_ptr.roomStatePageOffset = ofs	-- update previous write in rom
-				rs.select.roomStatePageOffset = ofs		-- update POD
+			if rs.roomSelect.type ~= 'roomselect1_t' then
+				rs.roomSelect:ptr().roomStatePageOffset = ofs	-- update previous write in rom
+				rs.roomSelect:obj().roomStatePageOffset = ofs		-- update POD
 			else
 				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m:obj().region, m:obj().index))
 			end
