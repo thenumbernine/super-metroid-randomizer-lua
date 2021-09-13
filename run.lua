@@ -363,30 +363,30 @@ timer('everything', function()
 		
 		-- clear the code on the door in 04/24 that points back to itself?
 		local door = assert(m4_24:findDoorTo(m4_24))
-		local doorToSelfDoorCode = door:ptr().code
-		door:ptr().code = 0
+		local doorToSelfDoorCode = door:obj().code
+		door:obj().code = 0
 		
 		local door = assert(m4_24:findDoorTo(m4_24))
-		door:ptr().code = 0
+		door:obj().code = 0
 		
 		for _,m in ipairs{m4_24, m4_30} do
 			-- find the door that points to 4/25, redirect it to 4/24
 			local door = assert(m:findDoorTo(m4_25))
 			door:setDestRoom(m4_24)
-	--		door:ptr().code = doorToSelfDoorCode -- this is in the other door that points to itself in this room
-			door:ptr().code = 0
+	--		door:obj().code = doorToSelfDoorCode -- this is in the other door that points to itself in this room
+			door:obj().code = 0
 			if m == m4_24 then
-				assert(door:ptr().screenX == 0)
-				assert(door:ptr().screenY == 2)
-				door:ptr().screenX = 1
-				door:ptr().screenY = 3
-				assert(door:ptr().capY == 0x26)
-				door:ptr().capY = 0x36
+				assert(door:obj().screenX == 0)
+				assert(door:obj().screenY == 2)
+				door:obj().screenX = 1
+				door:obj().screenY = 3
+				assert(door:obj().capY == 0x26)
+				door:obj().capY = 0x36
 			elseif m == m4_30 then
-				assert(door:ptr().screenX == 0)
-				assert(door:ptr().screenY == 1)
-				door:ptr().screenX = 1
-				door:ptr().screenY = 2
+				assert(door:obj().screenX == 0)
+				assert(door:obj().screenY == 1)
+				door:obj().screenX = 1
+				door:obj().screenY = 2
 			else
 				error'here'
 			end

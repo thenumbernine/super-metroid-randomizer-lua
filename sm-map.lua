@@ -327,7 +327,7 @@ local fx1_t = struct{
 	name = 'fx1_t',
 	fields = {
 		-- bank $83, ptr to door data.  0 means no door-specific fx
-		{doorPageOffset = 'uint16_t'},				-- 0
+		{doorPageOffset = 'uint16_t'},			-- 0
 		-- starting height of water/lava/acid
 		-- aka "base y position"
 		{liquidStarHeight = 'uint16_t'},		-- 2
@@ -703,6 +703,7 @@ function SMMap:mapRemoveRoom(m)
 	-- TODO in theory a room state could be pointed to by more than one room (if its roomselect's point to the same one), but in practice this is not true so I don't need to consider it
 	for _,rs in ipairs(m.roomStates) do
 		rs:setPLMSet(nil)
+		rs:setFX1Set(nil)
 		-- technically these should never be nil, so only do this if we're getting rid of the roomstate
 		rs:setEnemySpawnSet(nil)
 		rs:setEnemyGFXSet(nil)
@@ -717,13 +718,6 @@ function SMMap:mapRemoveRoom(m)
 		end
 		if #bg.roomStates == 0 then
 			self.bgs:remove(j)
-		end
-	end
-	for j=#self.fx1s,1,-1 do
-		local fx1 = self.fx1s[j]
-		fx1.rooms:removeObject(m)
-		if #fx1.rooms == 0 then
-			self.fx1s:remove(j)
 		end
 	end
 	
@@ -764,7 +758,8 @@ function SMMap:mapClearDoorColor(region, roomIndex, x,y)
 end
 
 
-function SMMap:newPLMSet(args)
+-- use this for manually adding a PLMSet without reading it from the ROM
+function SMMap:mapAddPLMSet(args)
 	local plmset = PLMSet(args)
 	self.plmsets:insert(plmset)
 	return plmset
@@ -772,11 +767,11 @@ end
 
 -- table of all unique plm regions
 -- m is only used for MemoryMap.  you have to add to plmset.rooms externally
-function SMMap:mapAddPLMSetFromAddr(addr, m)
+function SMMap:mapAddPLMSetFromAddr(addr)
 	local rom = self.rom
-	local startaddr = addr
-	local _,plmset = self.plmsets:find(nil, function(plmset) return plmset.addr == addr end)
-	if plmset then return plmset end
+	for _,plmset in ipairs(self.plmsets) do
+		if plmset.addr == addr then return plmset end
+	end
 
 	local startaddr = addr
 
@@ -801,7 +796,7 @@ function SMMap:mapAddPLMSetFromAddr(addr, m)
 	-- nil plmset for no plms
 	--if #plms == 0 then return end
 
-	local plmset = self:newPLMSet{
+	local plmset = self:mapAddPLMSet{
 		addr = startaddr,
 		plms = plms,
 	}
@@ -912,16 +907,62 @@ function SMMap:mapAddBG(addr, rom)
 end
 
 
-function SMMap:mapAddFX1(addr)
-	local _,fx1 = self.fx1s:find(nil, function(fx1) return fx1.addr == addr end)
-	if fx1 then return fx1 end
-	fx1 = {
+local FX1Set = class()
+
+-- like PLMSet, not quite a Blob, mabye could be, but then couldn't be resized dynamically as easily
+--  (unless I merge Blob with ffi.cpp.vector ... )
+function FX1Set:init(args)
+	local sm = args.sm
+	local rom = sm.rom
+	local addr = assert(args.addr)
+	
+	self.addr = addr
+	self.fx1s = table(args.fx1s)
+	self.roomStates = table()
+
+	-- some rooms use the same fx1 ptr
+	-- and from there they are read in contiguous blocks until a term is encountered
+	-- so I should make these fx1sets (like plmsets)
+	-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
+	-- then make one set and just put the subset's at the end
+	-- (unless the order matters...)
+	local startaddr = addr
+	local retry
+	while true do
+		local cmd = ffi.cast('uint16_t*', rom+addr)[0]
+		
+		-- null sets are represented as an immediate ffff
+		-- whereas sets of more than 1 value use 0000 as a term ...
+		-- They can also be used to terminate a set of fx1_t
+		if cmd == 0xffff then
+			assert(#self.fx1s == 0)
+			break
+		end
+		
+		local fx1 = ffi.new('fx1_t', ffi.cast('fx1_t*', rom+addr)[0])
+		
+		self.fx1s:insert(fx1)
+		
+		addr = addr + ffi.sizeof'fx1_t'
+
+		-- if doorPageOffset == 0 then this is a non-specific fx1
+		-- which means it is the last, general-case fx1 for the room
+		-- and there only can be one
+		-- so break
+		if fx1.doorPageOffset == 0 then break end
+	end
+end
+
+function SMMap:mapAddFX1Set(addr)
+	for _,fx1set in ipairs(self.fx1sets) do
+		if fx1set.addr == addr then return fx1set end
+	end
+	local fx1set = FX1Set{
+		sm = self,
 		addr = addr,
-		ptr = ffi.cast('fx1_t*', self.rom + addr),
-		rooms = table(),
 	}
-	self.fx1s:insert(fx1)
-	return fx1
+	self.fx1sets:insert(fx1set)
+	return fx1set
 end
 
 
@@ -1250,7 +1291,7 @@ function SMMap:mapInit()
 	self.roomblocks = table()
 	self.bgs = table()
 	self.bgTilemaps = table()
-	self.fx1s = table()
+	self.fx1sets = table()
 	self.layerHandlings = table()
 
 	self.doors = table()	-- most doors are added by rooms, but some are added by loadStations
@@ -1850,12 +1891,12 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 			
 				-- draw an arrow or something on the map where the door drops us off at
 				-- door.destRoom is the room
-				-- draw it at door:ptr().screenX by door:ptr().screenY
+				-- draw it at door:obj().screenX by door:obj().screenY
 				-- and offset it according to direciton&3 and distToSpawnSamus (maybe)
 
-				local i = door:ptr().screenX
-				local j = door:ptr().screenY
-				local dir = bit.band(door:ptr().direction, 3)	-- 0-based
+				local i = door:obj().screenX
+				local j = door:obj().screenY
+				local dir = bit.band(door:obj().direction, 3)	-- 0-based
 				local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
 					
 				local k=debugImageBlockSizeInPixels*3-1 
@@ -3080,16 +3121,14 @@ function SMMap:mapPrint()
 	end
 
 	-- print fx1 info
+	--[[ just do this in room
 	print()
 	print("all fx1_t's:")
 	self.fx1s:sort(function(a,b) return a.addr < b.addr end)
 	for _,fx1 in ipairs(self.fx1s) do
-		print(' '..('$%06x'):format(fx1.addr)..': '..fx1.ptr[0]
-			..' rooms: '..fx1.rooms:map(function(m)
-				return ('%02x/%02x'):format(m:obj().region, m:obj().index)
-			end):concat' '
-		)
+		print(' '..('$%06x'):format(fx1.addr)..': '..fx1:obj())
 	end
+	--]]
 
 	print()
 	print"all layerHandling's:"
@@ -3149,8 +3188,10 @@ function SMMap:mapPrint()
 					..tolua((self.enemyForPageOffset[enemyGFX.enemyPageOffset] or {}).name or '')
 					..': '..enemyGFX)
 			end
-			for _,fx1 in ipairs(rs.fx1s) do
-				print('   fx1_t: '..('$%06x'):format( ffi.cast('uint8_t*',fx1.ptr)-rom )..': '..fx1.ptr[0])
+			if rs.fx1set then
+				for _,fx1 in ipairs(rs.fx1set.fx1s) do
+					print('   fx1_t: '..fx1)
+				end
 			end
 			for _,bg in ipairs(rs.bgs) do
 				print('   '..bg.type..': '..('$%06x'):format(bg.addr)..': '..bg:obj())
@@ -3218,7 +3259,7 @@ function SMMap:mapPrint()
 	local doorcodes = table()
 	for _,door in ipairs(self.doors) do
 		if door.type == 'door_t' then
-			doorcodes[door:ptr().code] = true
+			doorcodes[door:obj().code] = true
 		end
 	end
 	print('unique door codes:')
@@ -3295,13 +3336,10 @@ function SMMap:mapBuildMemoryMap(mem)
 					'scrolldata',
 					room)
 			end
-			
-			mem:add(
-				topc(self.fx1Bank, rs:obj().fx1PageOffset),
-				#rs.fx1s * ffi.sizeof'fx1_t' + (rs.fx1term and 2 or 0),
-				'fx1_t',
-				room)
 		
+			-- add plmset later
+			-- add fx1set later
+
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
 			local code = disasm.readUntilRet(addr, rom)
@@ -3309,11 +3347,20 @@ function SMMap:mapBuildMemoryMap(mem)
 		end
 		
 		mem:add(topc(self.doorAddrBank, room:obj().doorPageOffset), #room.doors * 2, 'dooraddrs', room)
-		for _,door in ipairs(room.doors) do
-			door:addMem(mem, nil, room)
-			if door.doorCode then
-				mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', room)
-			end
+	end
+
+	for _,fx1set in ipairs(self.fx1sets) do
+		local count = #fx1set.fx1s
+		local size = count == 0 and 2 or count * ffi.sizeof'fx1_t'
+		local rs = fx1set.roomStates[1]	
+		mem:add(fx1set.addr, size, 'fx1_t', rs and rs.room)
+	end
+
+	-- loop through self.doors so we get room's and loadStation's
+	for _,door in ipairs(self.doors) do
+		door:addMem(mem, nil, door.destRoom)
+		if door.doorCode then
+			mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', door.destRoom)
 		end
 	end
 
@@ -3423,7 +3470,47 @@ function SMMap:mapBuildMemoryMap(mem)
 	end
 end
 
-function SMMap:mapWritePLMs(roomBankWriteRanges)
+
+function SMMap:mapWriteDoorsAndFX1Sets()
+	local writeRanges = WriteRange({
+		{0x018000, 0x01abf0},	-- door_t's and fx1_t's
+	}, "door_t's and fx1_t's")
+
+	-- remove duplicates 
+	
+
+	-- TODO remove unlinked/unused *here*
+
+	-- TODO should I do this in mapWriteRooms()
+	-- in the original, fx1 writes first, then door, (then fx1, then door)
+	-- I'm not sure if door pageofs has a test for > or >= 0x8000 so I'll write fx1 first
+	-- also, like PLM, FX1 are grouped per roomstate ...
+	for _,room in ipairs(self.rooms) do
+		for _,rs in ipairs(room.roomStates) do
+			
+		end
+	end
+	for _,fx in ipairs(self.fx1s) do
+		local addr, endaddr = writeRanges:get(fx:sizeof())
+		fx.addr = addr
+		fx:writeToROM()
+		
+		-- TODO update all objects (rooms?) that reference this fx1
+	end
+
+	for _,door in ipairs(self.doors) do
+		local addr, endaddr = writeRanges:get(door:sizeof())
+		door.addr = addr
+		door:writeToROM()
+	
+		-- TODO update
+	end
+
+
+	writeRanges:print()
+end
+
+function SMMap:mapWritePLMSets(roomBankWriteRanges)
 	local rom = self.rom
 
 	-- [[ re-indexing the doors
@@ -3786,7 +3873,7 @@ function SMMap:mapWriteEnemySpawnSets()
 	enemySpawnWriteRanges:print()
 	--]]
 end
-	
+
 function SMMap:mapWriteEnemyGFXSets()
 	local rom = self.rom
 	
@@ -4199,14 +4286,12 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		assert(endaddr == ptr - rom)
 	end
 
-	-- update m.doors[1..n].ptr.destRoomPageOffset
-	for _,m in ipairs(self.rooms) do
-		for _,door in ipairs(m.doors) do
-			if door.type == 'door_t' then
-				local bank, ofs = frompc(door.destRoom.addr)
-				assert(bank == self.roomBank)
-				door:ptr().destRoomPageOffset = ofs
-			end
+	-- update door.destRoomPageOffset
+	for _,door in ipairs(self.doors) do
+		if door.destRoom then
+			local bank, ofs = frompc(door.destRoom.addr)
+			door:obj().destRoomPageOffset = ofs
+			door:ptr().destRoomPageOffset = ofs
 		end
 	end
 
@@ -4222,7 +4307,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	end
 end
 
-function SMMap:mapWriteRoomBlocks(writeRange)
+function SMMap:mapWriteRoomBlocks(writeRanges)
 	local rom = self.rom
 	
 	-- remove any roomblocks that no one is using
@@ -4282,7 +4367,7 @@ function SMMap:mapWriteRoomBlocks(writeRange)
 			-- and now the recompression % will also include the clipped data, so it'll not exactly be strictly recompression, but also trimmed block data
 		end
 
-		roomBlockData:recompress(writeRange, compressInfo)
+		roomBlockData:recompress(writeRanges, compressInfo)
 
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
@@ -4314,6 +4399,8 @@ function SMMap:mapWrite()
 	-- 1) request all ranges up front
 	-- 2) update all addrs in all objs based on the ptrs
 	-- 3) write last
+
+--	self:mapWriteDoorsAndFX1Sets()
 
 	-- I'm combining plm_t and room_t writeranges:
 	-- [inclusive, exclusive)
@@ -4372,7 +4459,7 @@ function SMMap:mapWrite()
 
 	do
 		local rom = self.rom
-		local writeRange = WriteRange({
+		local writeRanges = WriteRange({
 			--{0x1c8000, 0x1ca634},	-- common room graphics tiles + tilemaps
 			--{0x1ca634, 0x1d4629},	-- bg tilemapElem_t lz data ... have random padding but doesn't seem to be used 
 			--{0x1d4629, 0x20b6f6},	-- tileSet graphicsTile_t lz data
@@ -4391,8 +4478,8 @@ function SMMap:mapWrite()
 		-- write back the common graphics tiles/tilemaps
 		-- recompress them and see how well that works
 
-		self.commonRoomGraphicsTiles:recompress(writeRange, compressInfo)
-		self.commonRoomTilemaps:recompress(writeRange, compressInfo)
+		self.commonRoomGraphicsTiles:recompress(writeRanges, compressInfo)
+		self.commonRoomTilemaps:recompress(writeRanges, compressInfo)
 	
 		-- now update the common room tilemap ptrs
 		for _,loc in ipairs(commonRoomTilemapAddrLocs) do
@@ -4403,7 +4490,7 @@ function SMMap:mapWrite()
 
 		-- now recompress bgTilemaps
 		for _,tilemap in ipairs(self.bgTilemaps) do
-			tilemap:recompress(writeRange, compressInfo)
+			tilemap:recompress(writeRanges, compressInfo)
 
 			-- update bgTilemap pointers within the bg_t's
 			tilemap.bg:ptr().addr24:frompc(tilemap.addr)
@@ -4432,15 +4519,15 @@ function SMMap:mapWrite()
 		print(compressInfo)
 	
 		-- write these before writing roomstates
-		self:mapWriteTileSets(writeRange)		-- tileSet_t's...
-		self:mapWriteRoomBlocks(writeRange)		-- roomBlockData ...
+		self:mapWriteTileSets(writeRanges)		-- tileSet_t's...
+		self:mapWriteRoomBlocks(writeRanges)		-- roomBlockData ...
 		
 		-- output memory ranges
-		writeRange:print()
+		writeRanges:print()
 	end
 
 
-	self:mapWritePLMs(roomBankWriteRanges)
+	self:mapWritePLMSets(roomBankWriteRanges)
 
 	-- do this before writing anything that uses enemy spawn sets
 	self:mapWriteEnemyGFXSets()

@@ -71,7 +71,6 @@ function RoomState:init(args)
 	local rom = sm.rom
 	local room = self.room
 	
-	self.fx1s = self.fx1s or table()
 	self.bgs = self.bgs or table()
 
 	-- TODO > 0x8000 ?
@@ -86,55 +85,15 @@ function RoomState:init(args)
 	end
 
 	if self:obj().plmPageOffset ~= 0 then
-		self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset), room))
+		self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset)))
 	end
 	
 	self:setEnemySpawnSet(sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, self:obj().enemySpawnPageOffset)))
 	
 	self:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, self:obj().enemyGFXPageOffset)))
 
-	-- some rooms use the same fx1 ptr
-	-- and from there they are read in contiguous blocks until a term is encountered
-	-- so I should make these fx1sets (like plmsets)
-	-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
-	-- then make one set and just put the subset's at the end
-	-- (unless the order matters...)
-	do
-		local startaddr = topc(sm.fx1Bank, self:obj().fx1PageOffset)
-		local addr = startaddr
-		local retry
-		while true do
-			local cmd = ffi.cast('uint16_t*', rom+addr)[0]
-			
-			-- null sets are represented as an immediate ffff
-			-- whereas sets of more than 1 value use 0000 as a term ...
-			-- They can also be used to terminate a set of fx1_t
-			if cmd == 0xffff then
-				-- include terminator bytes in block length:
-				self.fx1term = true
-				addr = addr + 2
-				break
-			end
-			
-			--if cmd == 0
-			-- TODO this condition was in smlib, but room.doors won't be complete until after all doors have been loaded
-			--or room.doors:find(nil, function(door) return door.addr == cmd end)
-			--then
-			if true then
-				local fx1 = sm:mapAddFX1(addr)
--- this misses 5 fx1_t's
-local done = fx1.ptr.doorPageOffset == 0 
-				fx1.rooms:insert(room)
-				self.fx1s:insert(fx1)
-				
-				addr = addr + ffi.sizeof'fx1_t'
-
--- term of 0 past the first entry
-if done then break end
-			end
-		end
-	end
-
+	self:setFX1Set(sm:mapAddFX1Set(topc(sm.fx1Bank, self:obj().fx1PageOffset)))
+	
 	if self:obj().bgPageOffset > 0x8000 then
 		local addr = topc(sm.bgBank, self:obj().bgPageOffset)
 		while true do
@@ -200,6 +159,16 @@ function RoomState:setPLMSet(plmset)
 	self.plmset = plmset
 	if self.plmset then
 		self.plmset.roomStates:insert(self)
+	end
+end
+
+function RoomState:setFX1Set(fx1set)
+	if self.fx1set then
+		self.fx1set.roomStates:removeObject(self)
+	end
+	self.fx1set = fx1set
+	if self.fx1set then
+		self.fx1set.roomStates:insert(self)
 	end
 end
 

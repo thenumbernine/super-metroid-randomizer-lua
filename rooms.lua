@@ -201,7 +201,7 @@ doorptr.screenY = 3
 --[[ make the first room have every item in the game
 local startRoom = assert(sm:mapFindRoom(0, 0x00))
 --start room's states 2,3,4 all have plm==0x8000, which is null, so give it a new one
-local newPLMSet = sm:newPLMSet{
+local newPLMSet = sm:mapAddPLMSet{
 	-- make a PLM of each item in the game
 	plms = sm.plmCmdValueForName:map(function(cmd,name,t)
 		if name:match'^item_' 
