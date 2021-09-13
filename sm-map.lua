@@ -907,6 +907,11 @@ function SMMap:mapAddBG(addr, rom)
 end
 
 
+local MapFX1 = class(Blob)
+MapFX1.type = 'fx1_t' 
+MapFX1.count = 1
+
+
 local FX1Set = class()
 
 -- like PLMSet, not quite a Blob, mabye could be, but then couldn't be resized dynamically as easily
@@ -939,7 +944,7 @@ function FX1Set:init(args)
 			break
 		end
 		
-		local fx1 = ffi.new('fx1_t', ffi.cast('fx1_t*', rom+addr)[0])
+		local fx1 = MapFX1{sm=sm, addr=addr}
 		
 		self.fx1s:insert(fx1)
 		
@@ -949,7 +954,7 @@ function FX1Set:init(args)
 		-- which means it is the last, general-case fx1 for the room
 		-- and there only can be one
 		-- so break
-		if fx1.doorPageOffset == 0 then break end
+		if fx1:obj().doorPageOffset == 0 then break end
 	end
 end
 
@@ -1511,6 +1516,22 @@ function SMMap:mapInit()
 			if rs.roomBlockData then
 				for tileIndex,_ in pairs(rs.roomBlockData.tileIndexesUsed) do
 					rs.tileSet.tileIndexesUsed[tileIndex] = true
+				end
+			end
+		end
+	end
+
+	-- all fx1's that point to doors, update the pointers here
+	-- TODO should I keep track of a list of fx1s per-door?
+	for _,fx1set in ipairs(self.fx1sets) do
+		for _,fx1 in ipairs(fx1set.fx1s) do
+			if fx1:obj().doorPageOffset > 0 then
+				local addr = topc(self.doorBank, fx1:obj().doorPageOffset)
+				fx1.door = select(2, self.doors:find(nil, function(door)
+					return door.addr == addr
+				end))
+				if not fx1.door then
+					print("WARNING - fx1 has nonzero door offset but couldn't find the door at "..('%06x'):format(addr))
 				end
 			end
 		end
@@ -3224,7 +3245,7 @@ function SMMap:mapPrint()
 			end
 			if rs.fx1set then
 				for _,fx1 in ipairs(rs.fx1set.fx1s) do
-					print('   fx1_t: '..fx1)
+					print('   fx1_t: '..fx1:obj())
 				end
 			end
 			for _,bg in ipairs(rs.bgs) do
@@ -3508,18 +3529,9 @@ end
 function SMMap:mapWriteDoorsAndFX1Sets()
 	local rom = self.rom
 
-	-- [[
 	local writeRanges = WriteRange({
 		{0x018000, 0x01abf0},	-- door_t's and fx1_t's
 	}, "door_t's and fx1_t's")
-	--]]
-	--[[
-	local writeRanges = WriteRange({
-		{0x018000, 0x0188fc},	-- fx1_t's
-		{0x019ac2, 0x01a18a},	-- fx1_t's
-	}, "fx1_t's")
-	--]]
-
 
 	--[[
 	with lift_t then you can point many offsets to one object 
@@ -3530,13 +3542,15 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 	-- TODO rooms point to a list of doorOffsets
 	-- these can be grouped and uniquely reduced as well
 
-	local fx1sForDoorOffsets = {}
+	local fx1sForDoor = {}
 	for _,fx1set in ipairs(self.fx1sets) do
 		for _,fx1 in ipairs(fx1set.fx1s) do
-			if not fx1sForDoorOffsets[fx1.doorPageOffset] then
-				fx1sForDoorOffsets[fx1.doorPageOffset] = table()
+			if fx1.door then
+				if not fx1sForDoor[fx1.door] then
+					fx1sForDoor[fx1.door] = table()
+				end
+				fx1sForDoor[fx1.door]:insert(fx1)
 			end
-			fx1sForDoorOffsets[fx1.doorPageOffset]:insert(fx1)
 		end
 	end
 
@@ -3555,10 +3569,11 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 				
 				-- do this here since i'm not tracking .door within the .fx1 (since it's a POD)
 				-- so TODO make fx1 a Lua object and do a :toC() or do a Blob?
-				local fx1sForDj = fx1sForDoorOffsets[dj.addr]
+				local fx1sForDj = fx1sForDoor[dj]
 				if fx1sForDj then
 					for _,fx1 in ipairs(fx1sForDj) do
-						fx1.doorPageOffset = select(2, frompc(di.addr))
+						fx1:obj().doorPageOffset = select(2, frompc(di.addr))
+						fx1sForDoor[di]:append(fx1sForDj)
 					end
 				end
 
@@ -3657,8 +3672,8 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			addr = addr + 2
 		else
 			for _,fx1 in ipairs(fx1set.fx1s) do
-				local ptr = ffi.cast('fx1_t*', rom + addr)
-				ptr[0] = fx1
+				fx1.addr = addr
+				fx1:writeToROM()
 				addr = addr + ffi.sizeof'fx1_t'
 			end
 		end
