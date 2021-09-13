@@ -1972,7 +1972,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/4c: $07b74c..$07b74d : $8f:b74c..$8f:b74d (roomselect1_t)
 02/4c: $07b74e..$07b767 : $8f:b74e..$8f:b767 (roomstate_t)
 02/4c: $07b768..$07b769 : $8f:b768..$8f:b769 (dooraddrs)
-00/00: $07b76a..$07b7ab : $8f:b76a..$8f:b7ab (bg_e_t x6)
+00/00: $07b76a..$07b7a0 : $8f:b76a..$8f:b7a0 (bg_e_t x5) ... 11 bytes of padding ...
 00/00: $07b7ac..$07b7ad : $8f:b7ac..$8f:b7ad (bg_header_t)
 00/05: $07b7ae..$07b7ef : $8f:b7ae..$8f:b7ef (bg_e_t x6)
 00/05: $07b7f0..$07b7f1 : $8f:b7f0..$8f:b7f1 (bg_header_t)

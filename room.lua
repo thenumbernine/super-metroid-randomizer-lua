@@ -135,15 +135,15 @@ function Room:init(args)
 	--]]
 
 	do -- list of door offsets
-		local startaddr = topc(sm.doorAddrBank, self:obj().doorPageOffset)
-		local addr = startaddr
-		local doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
-		addr = addr + 2
-		-- TODO should this test be > or >= ?
-		while doorPageOffset > 0x8000 do
-			self.doors:insert(sm:mapAddDoor(topc(sm.doorBank, doorPageOffset)))
-			doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
+		local addr = topc(sm.doorAddrBank, self:obj().doorPageOffset)
+		while true do
+			local doorPageOffset = ffi.cast('uint16_t*', rom + addr)[0]
 			addr = addr + 2
+
+			-- TODO should this test be < or <= ?
+			if doorPageOffset <= 0x8000 then break end
+
+			self.doors:insert(sm:mapAddDoor(topc(sm.doorBank, doorPageOffset)))
 		end
 	end
 end

@@ -682,19 +682,19 @@ function SMMap:mapAddBGTilemap(addr)
 end
 
 function SMMap:mapAddRoom(addr)
-	for _,m in ipairs(self.rooms) do
-		if m.addr == addr then return m end
+	for _,room in ipairs(self.rooms) do
+		if room.addr == addr then return room end
 	end
 	assert(frompc(addr) == self.roomBank)
 	
-	local m = Room{sm=self, addr=addr}
-	self.rooms:insert(m)
+	local room = Room{sm=self, addr=addr}
+	self.rooms:insert(room)
 	-- TODO only do this after room is added to self.rooms or else you'll get an infinite loop
-	for _,door in ipairs(m.doors) do
+	for _,door in ipairs(room.doors) do
 		door:buildRoom(self)
 	end
 
-	return m
+	return room
 end
 
 function SMMap:mapRemoveRoom(m)
@@ -1515,7 +1515,41 @@ function SMMap:mapInit()
 			end
 		end
 	end
-	
+
+	-- [=[
+	-- now that all rooms are loaded, and all bg_t's are loaded, 
+	-- assign door pointers to all bg_e_t's
+	-- BUT since this is a bg_t, if it points to a dangling door, don't try to load it, and don't try to build rooms from it
+	for i=#self.bgs,1,-1 do
+		local bg = self.bgs[i]
+		if bg.type == 'bg_e_t' then
+			-- TODO separate class per bg_*_t
+			-- and with the bg_e_t, you must have a door
+			assert(bg:obj().doorPageOffset >= 0x8000)
+			local addr = topc(self.doorBank, bg:obj().doorPageOffset)
+			bg.door = select(2, self.doors:find(nil, function(door) 
+				return door.addr == addr 
+			end))
+			if not bg.door then
+				--[[
+				in room 0-00 there is a background that only activates when entering from the debug room ... 
+				but I'm not loading the debug room ...
+				so ...
+				should I be?
+				--]]
+				print(
+					"WARNING failed to find door at "..('%06x'):format(addr)
+					..'\n used by roomstates '..bg.roomStates:mapi(function(rs)
+						return ('%06x'):format(rs.addr)
+					end):concat' '..' ... removing'
+				)
+				-- remove it?
+				self.bgs:remove(i)
+			end
+		end
+	end
+	--]=]
+
 	--[[
 	ok here
 	we can compress away the tile indexes
@@ -3472,40 +3506,197 @@ end
 
 
 function SMMap:mapWriteDoorsAndFX1Sets()
+	local rom = self.rom
+
+	-- [[
 	local writeRanges = WriteRange({
 		{0x018000, 0x01abf0},	-- door_t's and fx1_t's
 	}, "door_t's and fx1_t's")
+	--]]
+	--[[
+	local writeRanges = WriteRange({
+		{0x018000, 0x0188fc},	-- fx1_t's
+		{0x019ac2, 0x01a18a},	-- fx1_t's
+	}, "fx1_t's")
+	--]]
 
-	-- remove duplicates 
-	
 
-	-- TODO remove unlinked/unused *here*
+	--[[
+	with lift_t then you can point many offsets to one object 
+	but with door_t, esp since the first field is the associated room_t offset
+	I don't think you can have any duplicate doors ... actually yes, there are 3
+	--]]
+
+	-- TODO rooms point to a list of doorOffsets
+	-- these can be grouped and uniquely reduced as well
+
+	local fx1sForDoorOffsets = {}
+	for _,fx1set in ipairs(self.fx1sets) do
+		for _,fx1 in ipairs(fx1set.fx1s) do
+			if not fx1sForDoorOffsets[fx1.doorPageOffset] then
+				fx1sForDoorOffsets[fx1.doorPageOffset] = table()
+			end
+			fx1sForDoorOffsets[fx1.doorPageOffset]:insert(fx1)
+		end
+	end
+
+	-- TODO merge doors (and upate fx1_t's that point ot the doors) 
+	--  before merging fx1_t's
+	for i=#self.doors-1,1,-1 do
+		local di = self.doors[i]
+		for j=i+1,#self.doors do
+			local dj = self.doors[j]
+			if di.type == dj.type
+			and di:obj() == dj:obj() 
+			then
+				print('doors '..('%06x'):format(di.addr)..' and '..('%06x'):format(dj.addr)..' are matching -- removing '..('%06x'):format(dj.addr)..'(type='..di.type..')')
+				
+				-- door j => door i
+				
+				-- do this here since i'm not tracking .door within the .fx1 (since it's a POD)
+				-- so TODO make fx1 a Lua object and do a :toC() or do a Blob?
+				local fx1sForDj = fx1sForDoorOffsets[dj.addr]
+				if fx1sForDj then
+					for _,fx1 in ipairs(fx1sForDj) do
+						fx1.doorPageOffset = select(2, frompc(di.addr))
+					end
+				end
+
+				--[[
+				-- but doors don't keep track of what room holds them, other than 'destRoom', which is a single pointer that lift_t doesn't have
+				-- and I'm thinking only lift_t is going to hit this case
+				-- TODO NOPE, there are 3 door_t's that are identical
+				-- what would the point of two duplicate doors be?
+				-- maybe because one is associated with a bg_t and the other is not?
+				-- or plms somehow?
+				-- anything that references a door by its pageoffset
+				for _,room in ipairs(dj.rooms) do
+					for k=1,#room.doors do
+						if room.doors[k] == dj then
+							room.doors[k] = di
+						end
+					end
+				end
+				--]]
+				self.doors:remove(j)
+				break
+			end
+		end
+	end
+
+
+	-- remove empty fx1sets but one
+	-- since we need a ffff marker for an empty fx1set, but we can otherwise point them all to the same fx1set
+	-- (who thought this empty set marker up?  why not just null the offset?)
+	--[[ or don't, since merging plms will do just this anyways
+	local needsEmpty
+	for i=#self.fx1sets,1,-1 do
+		local fx1set = self.fx1sets[i]
+		if #fx1set.fx1s == 0 then
+			print('!!! removing empty fx1set !!! '..('%06x'):format(fx1set.addr))
+			self.fx1sets:remove(i)
+			needsEmpty = true
+		end
+	end
+	--]]
+	-- [[ remove fx1sets not referenced by any roomstates
+	for i=#self.fx1sets,1,-1 do
+		local fx1set = self.fx1sets[i]
+		if #fx1set.roomStates == 0 then
+			print('!!! removing fx1set that is never referenced !!! '..('%06x'):format(fx1set.addr))
+			self.fx1sets:remove(i)
+		end
+	end
+	--]]
+	-- [[ get rid of any duplicate fx1sets
+	-- seems the only duplicates are the empty sets
+	-- (which do still need their own terminator)
+	-- TODO find if setting fx1PageOffset to 0 makes it empty?
+	for i=#self.fx1sets-1,1,-1 do
+		local fi = self.fx1sets[i]
+		for j=i+1,#self.fx1sets do
+			local fj = self.fx1sets[j]
+			if #fi.fx1s == #fj.fx1s then
+				local differ
+				for k=1,#fi.fx1s do
+					if fi.fx1s[k] ~= fj.fx1s[k] then
+						differ = true
+						break
+					end
+				end
+				if not differ then
+					local fiaddr = ('$%06x'):format(fi.addr)
+					local fjaddr = ('$%06x'):format(fj.addr)
+					print('fx1sets '..fiaddr..' and '..fjaddr..' are matching -- removing '..fjaddr..' (size is '..#fi.fx1s..')')
+					local bank, ofs = frompc(fi.addr)
+					assert(bank == self.fx1Bank)
+					-- TODO no need, since we are about to move and rewrite these anyways?
+					for _,rs in ipairs(table(fj.roomStates)) do
+						rs:obj().fx1PageOffset = ofs
+						rs:ptr().fx1PageOffset = ofs
+						rs:setFX1Set(fi)
+					end
+					self.fx1sets:remove(j)
+					break
+				end
+			end
+		end
+	end
+	--]]
+
+	for _,fx1set in ipairs(self.fx1sets) do
+		local empty = #fx1set.fx1s == 0
+		local bytesToWrite = empty and 2 or #fx1set.fx1s * ffi.sizeof'fx1_t'
+		local addr, endaddr = writeRanges:get(bytesToWrite)
+		fx1set.addr = addr
+		local bank, ofs = frompc(fx1set.addr)
+		assert(bank == self.fx1Bank)
+
+		if empty then
+			ffi.cast('uint16_t*', rom + addr)[0] = 0xffff	-- term
+			addr = addr + 2
+		else
+			for _,fx1 in ipairs(fx1set.fx1s) do
+				local ptr = ffi.cast('fx1_t*', rom + addr)
+				ptr[0] = fx1
+				addr = addr + ffi.sizeof'fx1_t'
+			end
+		end
+		assert(addr == endaddr)
+
+		-- TODO don't write now.  write in mapWriteRooms() instead
+		for _,rs in ipairs(fx1set.roomStates) do
+			rs:obj().fx1PageOffset = ofs
+			rs:ptr().fx1PageOffset = ofs
+		end
+	end
+
 
 	-- TODO should I do this in mapWriteRooms()
 	-- in the original, fx1 writes first, then door, (then fx1, then door)
 	-- I'm not sure if door pageofs has a test for > or >= 0x8000 so I'll write fx1 first
-	-- also, like PLM, FX1 are grouped per roomstate ...
-	for _,room in ipairs(self.rooms) do
-		for _,rs in ipairs(room.roomStates) do
-			
-		end
-	end
-	for _,fx in ipairs(self.fx1s) do
-		local addr, endaddr = writeRanges:get(fx:sizeof())
-		fx.addr = addr
-		fx:writeToROM()
-		
-		-- TODO update all objects (rooms?) that reference this fx1
-	end
-
 	for _,door in ipairs(self.doors) do
 		local addr, endaddr = writeRanges:get(door:sizeof())
 		door.addr = addr
 		door:writeToROM()
-	
-		-- TODO update
 	end
 
+-- [[
+	-- now that i've rearranged all doors, update plm pointers
+	-- I think I'll update roomstate door pointers during roomstate write later
+	-- but right now I don't move bg_t's, so I'll update those pointers here
+	for _,bg in ipairs(self.bgs) do
+		if bg.type == 'bg_e_t' then
+			if bg.door then
+				local addr = select(2, frompc(bg.door.addr))
+				bg:obj().doorPageOffset = addr
+				bg:ptr().doorPageOffset = addr
+			else
+				-- and if it's not?  then we shouldn't be using bg_e_t...
+			end
+		end
+	end
+--]]
 
 	writeRanges:print()
 end
@@ -3675,6 +3866,7 @@ function SMMap:mapWritePLMSets(roomBankWriteRanges)
 					print('plmsets '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
 					local bank, ofs = frompc(pi.addr)
 					assert(bank == self.plmBank)
+					-- TODO no need, since we are about to move and rewrite these anyways?
 					for _,rs in ipairs(table(pj.roomStates)) do
 						rs:obj().plmPageOffset = ofs
 						rs:ptr().plmPageOffset = ofs
@@ -3705,11 +3897,12 @@ function SMMap:mapWritePLMSets(roomBankWriteRanges)
 	-- TODO any code that points to a PLM needs to be updated as well
 	-- like whatever changes doors around from blue to grey, etc
 	-- otherwise you'll find grey doors where you don't want them
-	print()
 	for _,plmset in ipairs(self.plmsets) do
 		local bytesToWrite = #plmset.plms * ffi.sizeof'plm_t' + 2	-- +2 for null term
 		local addr, endaddr = roomBankWriteRanges:get(bytesToWrite)
 		plmset.addr = addr
+		local bank, ofs = frompc(plmset.addr)
+		assert(bank == self.plmBank)
 
 		-- write
 		for _,plm in ipairs(plmset.plms) do
@@ -3723,20 +3916,15 @@ function SMMap:mapWritePLMSets(roomBankWriteRanges)
 		addr = addr + ffi.sizeof'uint16_t'
 		assert(addr == endaddr)
 
-		local bank, ofs = frompc(plmset.addr)
-		assert(bank == self.plmBank)
+		-- TODO don't write now.  write in mapWriteRooms() instead
 		for _,rs in ipairs(plmset.roomStates) do
-			if ofs ~= rs:obj().plmPageOffset then
-				--print('updating roomstate plm from '..('%04x'):format(rs:ptr().plmPageOffset)..' to '..('%04x'):format(ofs))
-				rs:obj().plmPageOffset = ofs
-				rs:ptr().plmPageOffset = ofs
-			end
+			rs:obj().plmPageOffset = ofs
+			rs:ptr().plmPageOffset = ofs
 		end
 	end
 	--]]
 	-- [[ write scrollmods last, so it can fill in the holes that the plmsets can't
 	-- and then update the scrollmod ptrs of the plms after
-	print()
 	-- now for all scrollmods
 	-- write the largest ones first then the smallest, and search for subsets in the small regions
 	-- if I was clever I would think of a way to have later ones search contiguously across all previous ones instead of just search each previous one at a time
@@ -4400,7 +4588,7 @@ function SMMap:mapWrite()
 	-- 2) update all addrs in all objs based on the ptrs
 	-- 3) write last
 
---	self:mapWriteDoorsAndFX1Sets()
+	self:mapWriteDoorsAndFX1Sets()
 
 	-- I'm combining plm_t and room_t writeranges:
 	-- [inclusive, exclusive)

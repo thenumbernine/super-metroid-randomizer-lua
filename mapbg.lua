@@ -113,7 +113,12 @@ function MapBG:init(args)
 		-- but nope, seems bg tilemaps are 1:1 with bgs
 		assert(not self.tilemap.bg)
 		self.tilemap.bg = self	-- is this 1:1?
+	elseif header == 0xe then
+		-- keep track of the door
+		-- TODO later
+		-- don't do this here since we are mid-loading the roomstates here
 	end
+
 end
 
 return MapBG
