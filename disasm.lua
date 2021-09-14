@@ -940,11 +940,11 @@ local function getLineStr(addr, flag, ...)
 end
 
 -- code is lua table, 1-based
-local function disasm(addr, ptr, maxlen)
+local function disasm(addr, ptr, maxlen, initFlags)
 --[[ TODO
 	local bank, ofs = frompc(addr)
 	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
---]]	
+--]]
 	flag[0] = 0
 	local ss = table()
 	local i = 0
@@ -972,11 +972,11 @@ reads instructions, stops at RTS, returns contents in a Lua table
 (TODO generate the disasm string as you go?)
 (TODO follow branches, create a jump/call graph)
 --]]
-local function readUntilRet(addr, rom)
+local function readUntilRet(addr, rom, initFlags)
 	local bank, ofs = frompc(addr)
 	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
 	
-	flag[0] = 0
+	flag[0] = initFlags or 0
 	ptr = rom + addr
 	local i = 0
 	while i < maxlen do

@@ -5,7 +5,7 @@ local tolua = require 'ext.tolua'
 
 --[[
 alright, I'm just going to make plms as pure lua objects
-so I can add optional extra data loke scrollmod directly to the plm
+so I can add optional extra data like scrollmod directly to the plm
 expected fields (from plm_t, so just use plm_t:toLua()):
 	cmd
 	x
@@ -13,6 +13,8 @@ expected fields (from plm_t, so just use plm_t:toLua()):
 	args
 	ptr
 	scrollmod (optional)
+
+I'm doing this so I can insert new PLMs without needing to assign them an address
 --]]
 local PLM = class()
 
@@ -64,6 +66,5 @@ function PLM:__tostring()
 	s = s .. '}'
 	return s
 end
-
 
 return PLM

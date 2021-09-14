@@ -1005,7 +1005,7 @@ function SMMap:mapAddLayerHandling(addr)
 	if layerHandling then return layerHandling end
 	local layerHandling = {
 		addr = addr,
-		code = disasm.readUntilRet(addr, self.rom),
+		code = disasm.readUntilRet(addr, self.rom, 0x30),
 		roomStates = table(),
 	}
 	self.layerHandlings:insert(layerHandling)
@@ -1328,6 +1328,7 @@ function SMMap:mapInit()
 		for _,ls in ipairs(lsr.stations) do
 			if ls:obj().doorPageOffset > 0 then
 				ls.door = self:mapAddDoor(topc(self.doorBank, ls:obj().doorPageOffset))
+				ls.door.srcLoadStations:insertUnique(ls)
 				ls.door:buildRoom(self)
 			end
 		end
@@ -3192,7 +3193,7 @@ function SMMap:mapPrint()
 		print(' code: '..range(0,ffi.sizeof(layerHandling.code)-1):mapi(function(i)
 				return ('%02x'):format(layerHandling.code[i])
 			end):concat' ')
-		print(disasm.disasm(layerHandling.addr, layerHandling.code, ffi.sizeof(layerHandling.code)))
+		print(disasm.disasm(layerHandling.addr, layerHandling.code, ffi.sizeof(layerHandling.code), 0x30))
 		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
 				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
 			end):concat' ')
@@ -3254,8 +3255,8 @@ function SMMap:mapPrint()
 			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
 			print('   room select code:')
 			local roomSelectCodeAddr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
-			local code = disasm.readUntilRet(roomSelectCodeAddr, rom)
-			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code)))
+			local code = disasm.readUntilRet(roomSelectCodeAddr, rom, 0x30)
+			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code), 0x30))
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.type..': '
@@ -3265,7 +3266,7 @@ function SMMap:mapPrint()
 				print('   code: '..range(0,ffi.sizeof(door.doorCode)-1):mapi(function(i) 
 						return ('%02x'):format(door.doorCode[i])
 					end):concat' ')
-				print(disasm.disasm(door.doorCodeAddr, door.doorCode, ffi.sizeof(door.doorCode)))
+				print(disasm.disasm(door.doorCodeAddr, door.doorCode, ffi.sizeof(door.doorCode), 0x30))
 			end
 		end
 	end
@@ -3377,6 +3378,7 @@ end
 
 function SMMap:mapBuildMemoryMap(mem)
 	local rom = self.rom
+	
 	for _,room in ipairs(self.rooms) do
 		room:addMem(mem, nil, room)
 		for _,rs in ipairs(room.roomStates) do
@@ -3397,7 +3399,7 @@ function SMMap:mapBuildMemoryMap(mem)
 
 			-- TODO possible to relocate?
 			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
-			local code = disasm.readUntilRet(addr, rom)
+			local code = disasm.readUntilRet(addr, rom, 0x30)
 			mem:add(addr, ffi.sizeof(code), 'room select code', room)
 		end
 		
@@ -3542,6 +3544,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 	-- TODO rooms point to a list of doorOffsets
 	-- these can be grouped and uniquely reduced as well
 
+	-- [[ build a map from doors to fx1's that point to the doors (for updating fx1 door pointers)
 	local fx1sForDoor = {}
 	for _,fx1set in ipairs(self.fx1sets) do
 		for _,fx1 in ipairs(fx1set.fx1s) do
@@ -3553,9 +3556,9 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			end
 		end
 	end
+	--]]
 
-	-- TODO merge doors (and upate fx1_t's that point ot the doors) 
-	--  before merging fx1_t's
+	-- [[ merge doors (and upate fx1_t's that point ot the doors) before merging fx1_t's
 	for i=#self.doors-1,1,-1 do
 		local di = self.doors[i]
 		for j=i+1,#self.doors do
@@ -3573,11 +3576,13 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 				if fx1sForDj then
 					for _,fx1 in ipairs(fx1sForDj) do
 						fx1:obj().doorPageOffset = select(2, frompc(di.addr))
-						fx1sForDoor[di]:append(fx1sForDj)
+						fx1sForDoor[di] = (fx1sForDoor[di] or table()):append(fx1sForDj)
 					end
 				end
 
-				--[[
+		-- TODO get this to work
+		-- until then, don't move doors or fx1s?
+				-- [[
 				-- but doors don't keep track of what room holds them, other than 'destRoom', which is a single pointer that lift_t doesn't have
 				-- and I'm thinking only lift_t is going to hit this case
 				-- TODO NOPE, there are 3 door_t's that are identical
@@ -3585,7 +3590,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 				-- maybe because one is associated with a bg_t and the other is not?
 				-- or plms somehow?
 				-- anything that references a door by its pageoffset
-				for _,room in ipairs(dj.rooms) do
+				for _,room in ipairs(dj.srcRooms) do
 					for k=1,#room.doors do
 						if room.doors[k] == dj then
 							room.doors[k] = di
@@ -3598,6 +3603,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			end
 		end
 	end
+	--]]
 
 
 	-- remove empty fx1sets but one
@@ -4603,7 +4609,8 @@ function SMMap:mapWrite()
 	-- 2) update all addrs in all objs based on the ptrs
 	-- 3) write last
 
-	self:mapWriteDoorsAndFX1Sets()
+-- not working? go down the powerbomb downlift to red brinstar
+--	self:mapWriteDoorsAndFX1Sets()
 
 	-- I'm combining plm_t and room_t writeranges:
 	-- [inclusive, exclusive)
@@ -4631,7 +4638,7 @@ function SMMap:mapWrite()
 		-- {0x07c8fc, 0x07c90a,	-- 14 bytes of draygon's room unpausing code 
 		
 		-- {0x07c90a, 0x07c98e},	-- layer handling code
-		{0x7c98e, 0x7e0fd},	-- rooms of regions 3-6
+		{0x7c98e, 0x7e0fd},			-- rooms of regions 3-6
 
 		-- {0x07e0fd, 0x07e1d8},	-- bg_t's TODO verifying padding at 0x07e132 isn't used
 		-- {0x07e1d8, 0x07e248},	-- door code

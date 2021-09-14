@@ -61,6 +61,11 @@ args:
 	sm = for the super metroid hack global info
 	addr = right now - points to the door structure
 
+fields:
+who owns this door? either or:
+	srcRooms = room owning this door
+	srcLoadStations = load station owning this door
+
 looks like right now I am not rearranging any of the door_t or lift_t's
 --]]
 function Door:init(args)
@@ -74,11 +79,14 @@ function Door:init(args)
 	
 	Door.super.init(self, args)
 
+	self.srcRooms = table()
+	self.srcLoadStations = table()
+
 	if self.type == 'door_t' 
 	and self:ptr().code > 0x8000 
 	then
 		self.doorCodeAddr = topc(self.sm.doorCodeBank, self:ptr().code)
-		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, self.sm.rom)
+		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, self.sm.rom, 0x30)
 	end
 end
 

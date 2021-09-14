@@ -143,7 +143,11 @@ function Room:init(args)
 			-- TODO should this test be < or <= ?
 			if doorPageOffset <= 0x8000 then break end
 
-			self.doors:insert(sm:mapAddDoor(topc(sm.doorBank, doorPageOffset)))
+			local door = sm:mapAddDoor(topc(sm.doorBank, doorPageOffset))
+			door.srcRooms:insertUnique(self)
+			
+			door.srcRoom = self
+			self.doors:insert(door)
 		end
 	end
 end
