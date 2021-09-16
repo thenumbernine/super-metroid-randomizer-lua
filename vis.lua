@@ -1670,7 +1670,7 @@ function App:updateGUI()
 
 				for _,field in ipairs(sm.loadStation_t.fields) do
 					local name,ctype = next(field)
-					ig.igText(name..' = '..ls.obj:fieldToString(name,ctype))
+					ig.igText(name..' = '..ls:obj():fieldToString(name,ctype))
 				end
 			end
 		end

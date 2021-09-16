@@ -179,12 +179,11 @@ function TileSet:init(args)
 	-- bg_t's need this
 	-- ... will they need this, or just the non-common portion of it?
 	self.graphicsTileVec = graphicsTileVec
-
+		
 	-- TODO here - map from the graphicsTile address (should be 32-byte-aligned) to the tileIndex
 	-- this way, if a background uses a graphicsTile, then we can flag all tileIndexes that are also used
 	-- (it will have to map to multiple tileIndexes)
 	-- used for tileIndex removal/optimization
-	sm.tileSets:insert(self)
 end
 
 function TileSet:setPalette(palette)

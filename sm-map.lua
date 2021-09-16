@@ -1218,10 +1218,14 @@ function SMMap:mapReadTileSets()
 	-- load all the tileset address info that is referenced by per-room stuff
 	-- do this before any mapAddRoom calls
 	for tileSetIndex=0,tileSetCount-1 do
-		local tileSet = TileSet{
-			index = tileSetIndex,
-			sm = self,
-		}
+		xpcall(function()
+			self.tileSets:insert(TileSet{
+				index = tileSetIndex,
+				sm = self,
+			})
+		end, function(err)
+			print(err..'\n'..debug.traceback())
+		end)
 	end
 
 	-- strangely, immediately *after* the tileset data, is the table into the tileset data

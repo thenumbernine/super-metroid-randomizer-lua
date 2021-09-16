@@ -11,7 +11,7 @@ local roomstate_t = struct{
 	name = 'roomstate_t',
 	fields = {
 		{roomBlockAddr24 = 'addr24_t'},		-- points to block data.  bank is $c2 to $c9
-		{tileSet = 'uint8_t'},				-- tile graphics data
+		{tileSetIndex = 'uint8_t'},			-- tile graphics data
 		{musicTrack = 'uint8_t'},
 		{musicControl = 'uint8_t'},
 		{fx1PageOffset = 'uint16_t'},				-- $83
@@ -142,12 +142,11 @@ function RoomState:init(args)
 		self.roomvar = roomvar
 	end
 
-	-- try to load tile graphics from rs.tileSet
+	-- try to load tile graphics from rs.obj():tileSetIndex
 	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
 	do
-		local tileSetIndex = self:obj().tileSet
-		local tileSet = assert(sm.tileSets[tileSetIndex+1])
-		assert(tileSet.index == tileSetIndex)
+		local tileSetIndex = self:obj().tileSetIndex
+		local tileSet = assert(select(2, sm.tileSets:find(nil, function(tileSet) return tileSet.index == tileSetIndex end)))
 		self:setTileSet(tileSet)
 	end
 end
