@@ -1,5 +1,6 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local table = require 'ext.table'
 
 local topc = require 'pc'.to
 
@@ -205,6 +206,134 @@ function Patches:beefUpXRay()
 	write(0x88, 0xadbf, 0x80)
 	write(0x88, 0xafa6, 0x80)
 --]==]	
+-- [==[ nah, don't modify the state-changing stuff, instead update the per-state code itself
+-- but can I do that here also?
+-- ok this is the pre-instruction x-ray main ...
+-- it calls (8726,x), which points to the four x-ray state functions
+-- how about instead I just call them all?
+-- but won't I have to change x-ray HDMA in page 91 to also call all its functions?
+-- old:
+-- $88:871C AD 7A 0A    LDA $0A7A
+-- $88:871F 0A          ASL A
+-- $88:8720 AA          TAX
+-- $88:8721 FC 26 87    JSR ($8726,x)
+-- new:
+	write(0x88, 0x871c, 
+		0x4c, 0x32, 0xee,				-- JMP $ee32
+		0xea, 0xea, 0xea, 0xea, 0xea)	-- nops	
+	-- use some free space.  hopefully no one else is ...
+	local code = table{
+		-- original programming
+		0xad, 0x7a, 0x0a,	-- LDA $0A7A
+		0x0a,				-- ASL A
+		0xaa,				-- TAX
+		0xfc, 0x26, 0x87,	-- JSR ($8726,x)
+		--[[ call all at once.  bad idea.
+		0x20, 0x32, 0x87,	-- JSR $8732	-- state 0 = no beam
+		0x20, 0x54, 0x87,	-- JSR $8754	-- state 1 = beam is widening
+		0x20, 0xab, 0x87,	-- JSR $87ab	-- state 2 = full beam
+		0x20, 0x34, 0x89,	-- JSR $8934	-- state 3 = deactivate beam (restore bg2 first half)
+		0x20, 0xba, 0x89,	-- JSR $89ba	-- state 4 = deactivate beam (restore b22 second half)
+		0x20, 0x08, 0x8a,	-- JSR $8a08	-- state 5 = deactivate beam finish
+		--]]
+		-- [[ call the HDMA x-ray handler, since that usually just runs through once and then inf loops til it dies
+		--0x22, 0x7f, 0xd2, 0x91,	-- JSR $91d27f	-- pre-instruction
+		
+
+		--0x22, 0xf9, 0xca, 0x91,	-- JSR $91caf9	-- x-ray setup stage 1 -- messes up controls after the first x-ray
+		-- instead I'll inline:
+--$91:CAFA E2 30       SEP #$30
+--$91:CAFC A9 01       LDA #$01               ;\
+--$91:CAFE 8D 78 0A    STA $0A78  [$7E:0A78]  ;} Freeze time
+0xa5, 0xb5,			-- LDA $B5    [$7E:00B5]  ;\
+0x9d, 0x14, 0x19,	-- STA $1914,x[$7E:1918]  ;|
+0xa5, 0xb6,			-- LDA $B6    [$7E:00B6]  ;} Backup BG2 X scroll
+0x9d, 0x15, 0x19,	-- STA $1915,x[$7E:1919]  ;/
+0xa5, 0xb7,			-- LDA $B7    [$7E:00B7]  ;\
+0x9d, 0x20, 0x19,	-- STA $1920,x[$7E:1924]  ;|
+0xa5, 0xb8,			-- LDA $B8    [$7E:00B8]  ;} Backup BG2 Y scroll
+0x9d, 0x21, 0x19,	-- STA $1921,x[$7E:1925]  ;/
+0xa5, 0x59,			-- LDA $59    [$7E:0059]  ;\
+0x9d, 0x2c, 0x19,	-- STA $192C,x[$7E:1930]  ;} Backup BG2 address/size
+
+
+		--0x22, 0x1c, 0xcb, 0x9a,	-- JSR $91cb1c	-- x-ray setup stage 2	-- read bg1 tilemap 2nd screen	-- screen goes black
+		--0x22, 0x57, 0xcb, 0x91,	-- JSR $91cb57	-- x-ray setup stage 3	-- read bg1 tilemap 1st screen
+		--0x22, 0x8e, 0xcb, 0x91,	-- JSR $91cb8e	-- x-ray setup stage 4	-- calc xray block graphics lookup. .. freezes when run from main
+		
+		--0x22, 0xd3, 0xd0, 0x91,	-- JSR $91d0d3	-- x-ray setup stage 5	-- calc xray bg2 base
+		--0x22, 0x73, 0xd1, 0x91,	-- JSR $91d173	-- x-ray setup stage 6	-- queue transfer of blocks
+		
+-- [=[
+		--0x22, 0xa0, 0xd1, 0x91,	-- JSR $91d1a0	-- x-ray setup stage 7	-- queue transfer of blocks / reset angle.  
+		-- the reset angle part screws a lot of things up
+		-- so I will inline it and pick what I want:
+--0x08,					--PHP
+0xc2, 0x30,				--REP #$30
+0x22, 0x43, 0xd1, 0x91,	--JSL $91D143[$91:D143]	 ;\
+0xf0, 0x26,				--BEQ $26    [$D1CF]     ;} If x-ray should not show any blocks: return
+0xae, 0x30, 0x03,		--LDX $0330  [$7E:0330]  ;\
+0xa9, 0x00, 0x08,		--LDA #$0800             ;|
+0x95, 0xd0,				--STA $D0,x  [$7E:00D0]  ;|
+0xa9, 0x00, 0x48,		--LDA #$4800             ;|
+0x95, 0xd2,				--STA $D2,x  [$7E:00D2]  ;|
+0xa9, 0x7e, 0x00,		--LDA #$007E             ;|
+0x95, 0xd4,				--STA $D4,x  [$7E:00D4]  ;|
+0xa5, 0x59,				--LDA $59    [$7E:0059]  ;|
+0x29, 0xfc, 0x00,		--AND #$00FC             ;} Queue transfer of 800h bytes from $7E:4800 to VRAM BG2 tilemap base + 400h
+0xeb,					--XBA                    ;|
+0x18,					--CLC                    ;|
+0x69, 0x00, 0x04,		--ADC #$0400             ;|
+0x95, 0xd5,				--STA $D5,x  [$7E:00D5]  ;|
+0x8a,					--TXA                    ;|
+0x18,					--CLC                    ;|
+0x69, 0x07, 0x00,		--ADC #$0007             ;|
+0x8d, 0x30, 0x03,		--STA $0330  [$7E:0330]  ;/
+
+0xa9, 0xe4, 0x00,		--LDA #$00E4             ;\
+0x8d, 0x88, 0x0a,		--STA $0A88  [$7E:0A88]  ;|
+0xa9, 0x00, 0x98,		--LDA #$9800             ;|
+0x8d, 0x89, 0x0a,		--STA $0A89  [$7E:0A89]  ;|
+0xa9, 0xe4, 0x00,		--LDA #$00E4             ;|
+0x8d, 0x8b, 0x0a,		--STA $0A8B  [$7E:0A8B]  ;|
+0xa9, 0xc8, 0x98,		--LDA #$98C8             ;} $0A88..92 = E4h,$9800, E4h,$98C8, 98h,$9990, 00,00
+0x8d, 0x8c, 0x0a,		--STA $0A8C  [$7E:0A8C]  ;|
+0xa9, 0x98, 0x00,		--LDA #$0098             ;|
+0x8d, 0x8e, 0x0a,		--STA $0A8E  [$7E:0A8E]  ;|
+0xa9, 0x90, 0x99,		--LDA #$9990             ;|
+0x8d, 0x8f, 0x0a,		--STA $0A8F  [$7E:0A8F]  ;|
+0x9c, 0x91, 0x0a,		--STZ $0A91  [$7E:0A91]  ;/
+--0x9c, 0x7a, 0x0a,		--STZ $0A7A  [$7E:0A7A]  ; $0A7A = 0
+--0x9c, 0x7c, 0x0a,		--STZ $0A7C  [$7E:0A7C]  ; $0A7C = 0
+--0x9c, 0x7e, 0x0a,		--STZ $0A7E  [$7E:0A7E]  ; $0A7E = 0
+--0xa9, 0x00, 0x00,		--LDA #$0000             ;\
+--0x8d, 0x84, 0x0a,		--STA $0A84  [$7E:0A84]  ;} $0A84 = 0
+--0x9c, 0x86, 0x0a,		--STZ $0A86  [$7E:0A86]  ; $0A86 = 0
+--0xad, 0x1e, 0x0a,		--LDA $0A1E  [$7E:0A1E]  ;\
+--0x29, 0xff, 0x00,		--AND #$00FF             ;|
+--0xc9, 0x04, 0x00,		--CMP #$0004             ;} If Samus is facing right:
+--0xf0, 0x08,			--BEQ $08    [$D21B]     ;/
+--0xa9, 0x40, 0x00,		--LDA #$0040             ;\
+--0x8d, 0x82, 0x0a,		--STA $0A82  [$7E:0A82]  ;} X-ray angle = 40h
+--0x80, 0x06,			--BRA $06    [$D221]     ; Return
+
+--0xa9, 0xc0, 0x00,		--LDA #$00C0             ;\
+--0x8d, 0x82, 0x0a,		--STA $0A82  [$7E:0A82]  ;} X-ray angle = C0h
+
+--0x28,					--PLP
+--0x6b,					--RTL
+--]=]
+
+
+		--0x22, 0xbc, 0xd2, 0x91,	-- JSR $91d2bc	-- x-ray setup stage 8 	-- backdrop color
+		--0x22, 0xef, 0x86, 0x88	-- JSR $8886ef	-- pre-instruction x-ray main ... which is where I'm calling this from ...
+		--]]
+		0x4c, 0x24, 0x87	-- JMP 8724 and pick up where we left off
+
+	}
+	assert(#code <= 0xffff - 0xee2d)
+	write(0x88, 0xee32, code:unpack())
+--]==]
 -- [==[
 	-- fireflea
 	write(0x88, 0xb0ce, 0xea, 0xea)
@@ -294,8 +423,9 @@ g:
 	-- ok how about this, 83e2 is unused, and spawns a HDMA into a specific slot, so ... can I use that?
 	-- well, gotta adjust the stack after the call, because 841b uses [s+1]+3, while 8435 uses [s+1]+1
 	-- maybe i can change the x-ray HDMA instructions?
-	-- instead 91:d277 going to 91:d277, have it go back to 91:d233
-	--write(0x91, 0xd27d, 0xa3)	-- still locking up
+	-- instead 91:d277 going to 91:d277, have it go back to 91:d223
+	--write(0x91, 0xd27d, 0x23)	-- goto start of x-ray HDMA object instruction list -- beam doesn't fully open and never turns off
+	--write(0x91, 0xd27d, 0x29)	-- same
 	-- OK what this did?  only opens the beam a little bit, but does let the normal view scroll and follow you while the x-ray part lags behind, 
 	--write(0x91, 0xd27d, 0x29)
 

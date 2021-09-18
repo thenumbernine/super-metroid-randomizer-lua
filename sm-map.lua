@@ -940,7 +940,9 @@ function FX1Set:init(args)
 		-- whereas sets of more than 1 value use 0000 as a term ...
 		-- They can also be used to terminate a set of fx1_t
 		if cmd == 0xffff then
-			assert(#self.fx1s == 0)
+			if #self.fx1s ~= 0 then
+				print('WARNING - found a fx1set with a terminator that is not its only entry')
+			end
 			break
 		end
 		

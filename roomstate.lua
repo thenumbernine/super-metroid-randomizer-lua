@@ -95,14 +95,20 @@ function RoomState:init(args)
 	self:setFX1Set(sm:mapAddFX1Set(topc(sm.fx1Bank, self:obj().fx1PageOffset)))
 	
 	if self:obj().bgPageOffset > 0x8000 then
-		local addr = topc(sm.bgBank, self:obj().bgPageOffset)
-		while true do
-			local bg = sm:mapAddBG(addr, rom)
-			bg.roomStates:insert(self)
-			self.bgs:insert(bg)
-			addr = addr + ffi.sizeof(bg.type)
-			if bg:obj().header == 0 then break end
-		end
+		-- bg_*_t's are sequentially stored, and their size varies depending on their header
+		-- which means (should this be a MapBGSet?) if one fails to read then the rest can't be read either.
+		xpcall(function()
+			local addr = topc(sm.bgBank, self:obj().bgPageOffset)
+			while true do
+				local bg = sm:mapAddBG(addr, rom)
+				bg.roomStates:insert(self)
+				self.bgs:insert(bg)
+				addr = addr + ffi.sizeof(bg.type)
+				if bg:obj().header == 0 then break end
+			end
+		end, function(err)
+			print(err..'\n'..debug.traceback())
+		end)
 	end
 
 	do
@@ -144,11 +150,9 @@ function RoomState:init(args)
 
 	-- try to load tile graphics from rs.obj():tileSetIndex
 	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
-	do
-		local tileSetIndex = self:obj().tileSetIndex
-		local tileSet = assert(select(2, sm.tileSets:find(nil, function(tileSet) return tileSet.index == tileSetIndex end)))
-		self:setTileSet(tileSet)
-	end
+	self:setTileSet(select(2, sm.tileSets:find(nil, function(tileSet)
+		return tileSet.index == self:obj().tileSetIndex
+	end)))
 end
 
 function RoomState:setPLMSet(plmset)
