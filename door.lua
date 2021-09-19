@@ -85,8 +85,8 @@ function Door:init(args)
 	if self.type == 'door_t' 
 	and self:ptr().code > 0x8000 
 	then
-		self.doorCodeAddr = topc(self.sm.doorCodeBank, self:ptr().code)
-		self.doorCode = disasm.readUntilRet(self.doorCodeAddr, self.sm.rom, 0x30)
+		self.doorCode = self.sm:mapAddCode(topc(self.sm.doorCodeBank, self:ptr().code))
+		self.doorCode.srcs:insert(self)
 	end
 end
 

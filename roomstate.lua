@@ -113,9 +113,8 @@ function RoomState:init(args)
 
 	do
 		if self:obj().layerHandlingPageOffset > 0x8000 then
-			local addr = topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset)
-			self.layerHandlingPageOffset = sm:mapAddLayerHandling(addr)
-			self.layerHandlingPageOffset.roomStates:insert(self)
+			self.layerHandlingCode = sm:mapAddCode(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
+			self.layerHandlingCode.srcs:insert(self)
 		end
 
 		xpcall(function()

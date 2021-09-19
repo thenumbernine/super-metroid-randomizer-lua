@@ -641,6 +641,36 @@ function PLMSet:init(args)
 end
 
 
+--[[
+this is a merge of roomState.layerHandling and door.doorCode
+TODO generalize this into all code- change it to "function" 
+--]]
+local Code = class()
+
+function Code:init(args)
+	self.sm = assert(args.sm)
+	self.addr = assert(args.addr)
+	self.code = disasm.readUntilRet(self.addr, self.sm.rom, 0x30)
+	--[[
+	who points to this.
+	current list: 
+	- roomState (layerHandling)
+	- door (doorCode)
+	--]]
+	self.srcs = table()
+end
+
+
+function SMMap:mapAddCode(addr)
+	for _,code in ipairs(self.codes) do
+		if code.addr == addr then return code end
+	end
+	local code = Code{sm=self, addr=addr}
+	self.codes:insert(code)
+	return code
+end
+
+
 local Door = require 'door'
 SMMap.Door = Door
 
@@ -999,21 +1029,6 @@ function SMMap:mapAddRoomBlockData(addr, room)
 	return roomBlockData
 end
 
-
-function SMMap:mapAddLayerHandling(addr)
-	local _,layerHandling = self.layerHandlings:find(nil, function(layerHandling)
-		return layerHandling.addr == addr
-	end)
-	if layerHandling then return layerHandling end
-	local layerHandling = {
-		addr = addr,
-		code = disasm.readUntilRet(addr, self.rom, 0x30),
-		roomStates = table(),
-	}
-	self.layerHandlings:insert(layerHandling)
-	return layerHandling
-end
-
 --[[
 alright naming
 graphicsTile_t = 8x8 rendered block
@@ -1303,12 +1318,14 @@ function SMMap:mapInit()
 	self.bgs = table()
 	self.bgTilemaps = table()
 	self.fx1sets = table()
-	self.layerHandlings = table()
 
 	self.doors = table()	-- most doors are added by rooms, but some are added by loadStations
 	self.plmsets = table()
 	self.enemySpawnSets = table()
 	self.enemyGFXSets = table()
+
+	-- combination of layerHandling and doorCode
+	self.codes = table()
 
 	self.tileSets = table()
 	self.tileSetPalettes = table()
@@ -3192,19 +3209,6 @@ function SMMap:mapPrint()
 	end
 	--]]
 
-	print()
-	print"all layerHandling's:"
-	for _,layerHandling in ipairs(self.layerHandlings) do
-		print(('%06x'):format(layerHandling.addr))
-		print(' code: '..range(0,ffi.sizeof(layerHandling.code)-1):mapi(function(i)
-				return ('%02x'):format(layerHandling.code[i])
-			end):concat' ')
-		print(disasm.disasm(layerHandling.addr, layerHandling.code, ffi.sizeof(layerHandling.code), 0x30))
-		print(' rooms: '..layerHandling.roomStates:mapi(function(rs)
-				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
-			end):concat' ')
-	end
-
 	-- print bg info
 	print()
 	print("all bg_t's:")
@@ -3258,22 +3262,34 @@ function SMMap:mapPrint()
 			for _,bg in ipairs(rs.bgs) do
 				print('   '..bg.type..': '..('$%06x'):format(bg.addr)..': '..bg:obj())
 			end
-			-- TODO only disassemble code once per location -- no repeats per repeated room pointers
-			print('   room select code:')
-			local roomSelectCodeAddr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
-			local code = disasm.readUntilRet(roomSelectCodeAddr, rom, 0x30)
-			print(disasm.disasm(roomSelectCodeAddr, code, ffi.sizeof(code), 0x30))
+			print('   roomSelect testCode: '..('$%02x:%04x'):format(frompc(rs.roomSelect.testCode.addr)))
+			if rs.layerHandlingCode then
+				print('   layerHandling: '..('$%02x:%04x'):format(frompc(rs.layerHandlingCode.addr)))
+			end
 		end
 		for _,door in ipairs(m.doors) do
 			print('  '..door.type..': '
 				..('$%02x:%04x'):format(frompc(door.addr))
 				..' '..door:obj())
 			if door.doorCode then
-				print('   code: '..range(0,ffi.sizeof(door.doorCode)-1):mapi(function(i) 
-						return ('%02x'):format(door.doorCode[i])
-					end):concat' ')
-				print(disasm.disasm(door.doorCodeAddr, door.doorCode, ffi.sizeof(door.doorCode), 0x30))
+				print('   code: '..('$%02x:%04x'):format(frompc(door.doorCode.addr)))
 			end
+		end
+	end
+
+	print()
+	print('all codes')
+	print('currently used by roomState.layerHandling, roomSelect.testCode, and door.doorCode')
+	for _,code in ipairs(self.codes) do
+		print()
+		print((' $%02x:%04x'):format(frompc(code.addr)))
+		print('   code: '..range(0,ffi.sizeof(code.code)-1):mapi(function(i) 
+				return ('%02x'):format(code.code[i])
+			end):concat' ')
+		print(disasm.disasm(code.addr, code.code, ffi.sizeof(code.code), 0x30))
+		print('   srcs:')
+		for _,src in ipairs(code.srcs) do
+			print('    '..('$%02x:%04x'):format(frompc(src.addr))..' '..src.type)
 		end
 	end
 
@@ -3402,11 +3418,6 @@ function SMMap:mapBuildMemoryMap(mem)
 		
 			-- add plmset later
 			-- add fx1set later
-
-			-- TODO possible to relocate?
-			local addr = topc(self.roomBank, rs.roomSelect:obj().testCodePageOffset)
-			local code = disasm.readUntilRet(addr, rom, 0x30)
-			mem:add(addr, ffi.sizeof(code), 'room select code', room)
 		end
 		
 		mem:add(topc(self.doorAddrBank, room:obj().doorPageOffset), #room.doors * 2, 'dooraddrs', room)
@@ -3422,13 +3433,10 @@ function SMMap:mapBuildMemoryMap(mem)
 	-- loop through self.doors so we get room's and loadStation's
 	for _,door in ipairs(self.doors) do
 		door:addMem(mem, nil, door.destRoom)
-		if door.doorCode then
-			mem:add(door.doorCodeAddr, ffi.sizeof(door.doorCode), 'door code', door.destRoom)
-		end
 	end
 
-	for _,layerHandling in ipairs(self.layerHandlings) do
-		mem:add(layerHandling.addr, ffi.sizeof(layerHandling.code), 'layer handling code', layerHandling.roomStates[1].room)
+	for _,code in ipairs(self.codes) do
+		mem:add(code.addr, ffi.sizeof(code.code), 'code')
 	end
 
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do

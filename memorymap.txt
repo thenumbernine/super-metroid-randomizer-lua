@@ -1140,23 +1140,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/4a: $079110..$079117 : $8f:9110..$8f:9117 (plm_t)
 02/4b: $079118..$07918b : $8f:9118..$8f:918b (plm_t)
 02/4c: $07918c..$079193 : $8f:918c..$8f:9193 (plm_t)
-00/02: $079194..$0791a8 : $8f:9194..$8f:91a8 (layer handling code)
-00/12: $0791a9..$0791b1 : $8f:91a9..$8f:91b1 (layer handling code)
-00/15: $0791b2..$0791ba : $8f:91b2..$8f:91ba (layer handling code)
-00/16: $0791bb..$0791bb : $8f:91bb..$8f:91bb (layer handling code)
-00/02: $0791bc..$0791bc : $8f:91bc..$8f:91bc (layer handling code)
-00/00: $0791bd..$0791cd : $8f:91bd..$8f:91cd (layer handling code) ... -5 bytes of padding ...
-00/00: $0791c9..$0791cd : $8f:91c9..$8f:91cd (layer handling code)
-00/05: $0791ce..$0791d2 : $8f:91ce..$8f:91d2 (layer handling code)
-00/02: $0791d3..$0791d3 : $8f:91d3..$8f:91d3 (layer handling code)
-00/18: $0791d4..$0791d4 : $8f:91d4..$8f:91d4 (layer handling code)
-01/00: $0791d5..$0791d5 : $8f:91d5..$8f:91d5 (layer handling code)
-00/30: $0791d6..$0791d6 : $8f:91d6..$8f:91d6 (layer handling code)
-00/33: $0791d7..$0791f3 : $8f:91d7..$8f:91f3 (layer handling code)
-01/34: $0791f4..$0791f4 : $8f:91f4..$8f:91f4 (layer handling code)
-02/03: $0791f5..$0791f5 : $8f:91f5..$8f:91f5 (layer handling code)
-02/0c: $0791f6..$0791f6 : $8f:91f6..$8f:91f6 (layer handling code)
-02/48: $0791f7..$0791f7 : $8f:91f7..$8f:91f7 (layer handling code)
+     : $079194..$0791cd : $8f:9194..$8f:91cd (code x6) ... -5 bytes of padding ...
+     : $0791c9..$0791f7 : $8f:91c9..$8f:91f7 (code x11)
 00/00: $0791f8..$079202 : $8f:91f8..$8f:9202 (room_t)
 00/00: $079203..$079207 : $8f:9203..$8f:9207 (roomselect3_t)
 00/00: $079208..$07920b : $8f:9208..$8f:920b (roomselect2_t)
@@ -2019,16 +2004,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/1c: $07b956..$07b95c : $8f:b956..$8f:b95c (bg_4_t)
 00/1c: $07b95d..$07b96e : $8f:b95d..$8f:b96e (bg_2_8_t x2)
 00/1c: $07b96f..$07b970 : $8f:b96f..$8f:b970 (bg_header_t)
-03/01: $07b971..$07b98b : $8f:b971..$8f:b98b (door code) ... -11 bytes of padding ...
-00/02: $07b981..$07b996 : $8f:b981..$8f:b996 (door code x2)
-00/00: $07b997..$07b9a1 : $8f:b997..$8f:b9a1 (door code)
-00/02: $07b9a2..$07b9b2 : $8f:b9a2..$8f:b9b2 (door code)
-03/00: $07b9b3..$07b9f0 : $8f:b9b3..$8f:b9f0 (door code x2)
-00/07: $07b9f1..$07b9ff : $8f:b9f1..$8f:b9ff (door code)
-00/12: $07ba00..$07ba15 : $8f:ba00..$8f:ba15 (door code x2)
-00/10: $07ba16..$07ba20 : $8f:ba16..$8f:ba20 (door code)
-01/24: $07ba21..$07ba2b : $8f:ba21..$8f:ba2b (door code)
-00/1c: $07ba2c..$07ba36 : $8f:ba2c..$8f:ba36 (door code)
+     : $07b971..$07b98b : $8f:b971..$8f:b98b (code) ... -11 bytes of padding ...
+     : $07b981..$07ba36 : $8f:b981..$8f:ba36 (code x12)
 01/00: $07ba37..$07ba3d : $8f:ba37..$8f:ba3d (bg_4_t)
 01/00: $07ba3e..$07ba4f : $8f:ba3e..$8f:ba4f (bg_2_8_t x2)
 01/00: $07ba50..$07ba51 : $8f:ba50..$8f:ba51 (bg_header_t)
@@ -2086,27 +2063,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 01/26: $07bcec..$07bcf2 : $8f:bcec..$8f:bcf2 (bg_4_t)
 01/26: $07bcf3..$07bd04 : $8f:bcf3..$8f:bd04 (bg_2_8_t x2)
 01/26: $07bd05..$07bd06 : $8f:bd05..$8f:bd06 (bg_header_t)
-01/00: $07bd07..$07bd15 : $8f:bd07..$8f:bd15 (door code)
-01/13: $07bd16..$07bd24 : $8f:bd16..$8f:bd24 (door code)
-01/00: $07bd25..$07bd2f : $8f:bd25..$8f:bd2f (door code)
-01/0c: $07bd30..$07bd3e : $8f:bd30..$8f:bd3e (door code)
-01/34: $07bd3f..$07bd4f : $8f:bd3f..$8f:bd4f (door code)
-01/08: $07bd50..$07bd5a : $8f:bd50..$8f:bd5a (door code)
-01/09: $07bd5b..$07bd6b : $8f:bd5b..$8f:bd6b (door code)
-01/08: $07bd6c..$07bd76 : $8f:bd6c..$8f:bd76 (door code)
-01/09: $07bd77..$07bd89 : $8f:bd77..$8f:bd89 (door code)
-01/10: $07bd8a..$07bd94 : $8f:bd8a..$8f:bd94 (door code)
-01/2e: $07bd95..$07bd9f : $8f:bd95..$8f:bd9f (door code)
-01/20: $07bda0..$07bdae : $8f:bda0..$8f:bdae (door code)
-04/09: $07bdaf..$07bdbf : $8f:bdaf..$8f:bdbf (door code)
-01/01: $07bdc0..$07bdd0 : $8f:bdc0..$8f:bdd0 (door code)
-04/03: $07bdd1..$07bde1 : $8f:bdd1..$8f:bde1 (door code)
-01/2c: $07bde2..$07bdf0 : $8f:bde2..$8f:bdf0 (door code)
-01/28: $07bdf1..$07bdff : $8f:bdf1..$8f:bdff (door code)
-01/09: $07be00..$07be0a : $8f:be00..$8f:be0a (door code)
-01/24: $07be0b..$07be24 : $8f:be0b..$8f:be24 (door code x2)
-01/0f: $07be25..$07be35 : $8f:be25..$8f:be35 (door code)
-00/19: $07be36..$07be3e : $8f:be36..$8f:be3e (door code)
+     : $07bd07..$07be3e : $8f:bd07..$8f:be3e (code x22)
 02/05: $07be3f..$07be45 : $8f:be3f..$8f:be45 (bg_4_t)
 02/05: $07be46..$07be57 : $8f:be46..$8f:be57 (bg_2_8_t x2)
 02/05: $07be58..$07be59 : $8f:be58..$8f:be59 (bg_header_t)
@@ -2140,27 +2097,8 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 02/1a: $07bf83..$07bf89 : $8f:bf83..$8f:bf89 (bg_4_t)
 02/1a: $07bf8a..$07bf9b : $8f:bf8a..$8f:bf9b (bg_2_8_t x2)
 02/1a: $07bf9c..$07bf9d : $8f:bf9c..$8f:bf9d (bg_header_t)
-02/35: $07bf9e..$07bfba : $8f:bf9e..$8f:bfba (door code)
-02/43: $07bfbb..$07bfd9 : $8f:bfbb..$8f:bfd9 (door code)
-02/0a: $07bfda..$07bfe8 : $8f:bfda..$8f:bfe8 (door code)
-02/2d: $07bfe9..$07bff9 : $8f:bfe9..$8f:bff9 (door code)
-02/04: $07bffa..$07c004 : $8f:bffa..$8f:c004 (door code) ... 17 bytes of padding ...
-02/0d: $07c016..$07c024 : $8f:c016..$8f:c024 (door code)
-02/21: $07c025..$07c039 : $8f:c025..$8f:c039 (door code)
-02/07: $07c03a..$07c04a : $8f:c03a..$8f:c04a (door code)
-02/46: $07c04b..$07c055 : $8f:c04b..$8f:c055 (door code)
-02/3c: $07c056..$07c066 : $8f:c056..$8f:c066 (door code)
-02/45: $07c067..$07c077 : $8f:c067..$8f:c077 (door code)
-02/4b: $07c078..$07c088 : $8f:c078..$8f:c088 (door code)
-02/37: $07c089..$07c0a1 : $8f:c089..$8f:c0a1 (door code)
-02/41: $07c0a2..$07c0ac : $8f:c0a2..$8f:c0ac (door code)
-02/4b: $07c0ad..$07c0c1 : $8f:c0ad..$8f:c0c1 (door code)
-02/45: $07c0c2..$07c0d2 : $8f:c0c2..$8f:c0d2 (door code)
-02/19: $07c0d3..$07c0dd : $8f:c0d3..$8f:c0dd (door code)
-02/24: $07c0de..$07c0ee : $8f:c0de..$8f:c0ee (door code)
-02/04: $07c0ef..$07c0f9 : $8f:c0ef..$8f:c0f9 (door code)
-02/22: $07c0fa..$07c10a : $8f:c0fa..$8f:c10a (door code)
-02/3e: $07c10b..$07c115 : $8f:c10b..$8f:c115 (door code) ... 255 bytes of padding ...
+     : $07bf9e..$07c004 : $8f:bf9e..$8f:c004 (code x5) ... 17 bytes of padding ...
+     : $07c016..$07c115 : $8f:c016..$8f:c115 (code x16) ... 255 bytes of padding ...
 03/00: $07c215..$07c22e : $8f:c215..$8f:c22e (plm_t)
 03/01: $07c22f..$07c230 : $8f:c22f..$8f:c230 (plm_t)
 03/02: $07c231..$07c244 : $8f:c231..$8f:c244 (plm_t)
@@ -2270,22 +2208,10 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/03: $07c8c1..$07c8c2 : $8f:c8c1..$8f:c8c2 (plm_t)
 06/04: $07c8c3..$07c8c4 : $8f:c8c3..$8f:c8c4 (plm_t)
 06/05: $07c8c5..$07c8c6 : $8f:c8c5..$8f:c8c6 (plm_t)
-03/01: $07c8c7..$07c8c7 : $8f:c8c7..$8f:c8c7 (layer handling code)
-03/08: $07c8c8..$07c8d0 : $8f:c8c8..$8f:c8d0 (layer handling code) ... -1 bytes of padding ...
-03/0b: $07c8d0..$07c8d0 : $8f:c8d0..$8f:c8d0 (layer handling code)
-04/13: $07c8d1..$07c8d1 : $8f:c8d1..$8f:c8d1 (layer handling code)
-04/19: $07c8d2..$07c8d2 : $8f:c8d2..$8f:c8d2 (layer handling code)
-04/30: $07c8d3..$07c8dc : $8f:c8d3..$8f:c8dc (layer handling code x2)
-04/37: $07c8dd..$07c8f5 : $8f:c8dd..$8f:c8f5 (layer handling code) ... 20 bytes of padding ...
-05/00: $07c90a..$07c91d : $8f:c90a..$8f:c91d (layer handling code)
-05/0a: $07c91e..$07c91e : $8f:c91e..$8f:c91e (layer handling code)
-05/0e: $07c91f..$07c932 : $8f:c91f..$8f:c932 (layer handling code)
-05/0f: $07c933..$07c945 : $8f:c933..$8f:c945 (layer handling code)
-05/10: $07c946..$07c952 : $8f:c946..$8f:c952 (layer handling code)
-05/11: $07c953..$07c96d : $8f:c953..$8f:c96d (layer handling code)
-06/00: $07c96e..$07c97a : $8f:c96e..$8f:c97a (layer handling code) ... -5 bytes of padding ...
-06/00: $07c976..$07c97a : $8f:c976..$8f:c97a (layer handling code)
-06/05: $07c97b..$07cf7b : $8f:c97b..$8f:cf7b (layer handling code) ... -1518 bytes of padding ...
+     : $07c8c7..$07c8d0 : $8f:c8c7..$8f:c8d0 (code x2) ... -1 bytes of padding ...
+     : $07c8d0..$07c8f5 : $8f:c8d0..$8f:c8f5 (code x6) ... 20 bytes of padding ...
+     : $07c90a..$07c97a : $8f:c90a..$8f:c97a (code x7) ... -5 bytes of padding ...
+     : $07c976..$07cf7b : $8f:c976..$8f:cf7b (code x2) ... -1518 bytes of padding ...
 03/00: $07c98e..$07c998 : $8f:c98e..$8f:c998 (room_t)
 03/00: $07c999..$07c99d : $8f:c999..$8f:c99d (roomselect3_t)
 03/00: $07c99e..$07c99f : $8f:c99e..$8f:c99f (roomselect1_t)
@@ -2828,32 +2754,20 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 03/03: $07e1c0..$07e1d1 : $8f:e1c0..$8f:e1d1 (bg_2_8_t x2)
 03/03: $07e1d2..$07e1d3 : $8f:e1d2..$8f:e1d3 (bg_header_t)
 06/00: $07e1d4..$07e1d7 : $8f:e1d4..$8f:e1d7 (bg_header_t x2)
-03/01: $07e1d8..$07e1f2 : $8f:e1d8..$8f:e1f2 (door code) ... -11 bytes of padding ...
-03/0b: $07e1e8..$07e1f2 : $8f:e1e8..$8f:e1f2 (door code)
-03/06: $07e1f3..$07e1fd : $8f:e1f3..$8f:e1fd (door code)
-03/08: $07e1fe..$07e20e : $8f:e1fe..$8f:e20e (door code)
-03/04: $07e20f..$07e228 : $8f:e20f..$8f:e228 (door code x2)
-03/00: $07e229..$07e247 : $8f:e229..$8f:e247 (door code)
+     : $07e1d8..$07e1f2 : $8f:e1d8..$8f:e1f2 (code) ... -11 bytes of padding ...
+     : $07e1e8..$07e247 : $8f:e1e8..$8f:e247 (code x6)
 04/07: $07e248..$07e24e : $8f:e248..$8f:e24e (bg_4_t)
 04/07: $07e24f..$07e257 : $8f:e24f..$8f:e257 (bg_2_8_t)
 04/07: $07e258..$07e259 : $8f:e258..$8f:e259 (bg_header_t)
 04/1a: $07e25a..$07e260 : $8f:e25a..$8f:e260 (bg_4_t)
 04/1a: $07e261..$07e269 : $8f:e261..$8f:e269 (bg_2_8_t)
 04/1a: $07e26a..$07e26b : $8f:e26a..$8f:e26b (bg_header_t)
-04/18: $07e26c..$07e2b5 : $8f:e26c..$8f:e2b5 (door code x2) ... 75 bytes of padding ...
-04/14: $07e301..$07e328 : $8f:e301..$8f:e328 (door code) ... -32 bytes of padding ...
-04/1b: $07e309..$07e328 : $8f:e309..$8f:e328 (door code) ... -17 bytes of padding ...
-04/31: $07e318..$07e328 : $8f:e318..$8f:e328 (door code) ... 28 bytes of padding ...
-04/03: $07e345..$07e355 : $8f:e345..$8f:e355 (door code)
-04/0e: $07e356..$07e366 : $8f:e356..$8f:e366 (door code)
-01/24: $07e367..$07e377 : $8f:e367..$8f:e377 (door code)
-04/01: $07e378..$07e38c : $8f:e378..$8f:e38c (door code)
-04/32: $07e38d..$07e397 : $8f:e38d..$8f:e397 (door code)
-04/0c: $07e398..$07e3a2 : $8f:e398..$8f:e3a2 (door code)
-04/24: $07e3a3..$07e3ad : $8f:e3a3..$8f:e3ad (door code) ... 11 bytes of padding ...
-04/24: $07e3b9..$07e3c7 : $8f:e3b9..$8f:e3c7 (door code)
-04/25: $07e3c8..$07e3d8 : $8f:e3c8..$8f:e3d8 (door code)
-04/2a: $07e3d9..$07e3e7 : $8f:e3d9..$8f:e3e7 (door code)
+     : $07e26c..$07e2b5 : $8f:e26c..$8f:e2b5 (code x2) ... 75 bytes of padding ...
+     : $07e301..$07e328 : $8f:e301..$8f:e328 (code) ... -32 bytes of padding ...
+     : $07e309..$07e328 : $8f:e309..$8f:e328 (code) ... -17 bytes of padding ...
+     : $07e318..$07e328 : $8f:e318..$8f:e328 (code) ... 28 bytes of padding ...
+     : $07e345..$07e3ad : $8f:e345..$8f:e3ad (code x7) ... 11 bytes of padding ...
+     : $07e3b9..$07e3e7 : $8f:e3b9..$8f:e3e7 (code x3)
 05/04: $07e3e8..$07e3ee : $8f:e3e8..$8f:e3ee (bg_4_t)
 05/04: $07e3ef..$07e400 : $8f:e3ef..$8f:e400 (bg_2_8_t x2)
 05/04: $07e401..$07e402 : $8f:e401..$8f:e402 (bg_header_t)
@@ -2878,16 +2792,9 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 06/01: $07e4a5..$07e4ab : $8f:e4a5..$8f:e4ab (bg_4_t)
 06/01: $07e4ac..$07e4bd : $8f:e4ac..$8f:e4bd (bg_2_8_t x2)
 06/01: $07e4be..$07e4bf : $8f:e4be..$8f:e4bf (bg_header_t)
-00/33: $07e4c0..$07e4ce : $8f:e4c0..$8f:e4ce (door code)
-00/12: $07e4cf..$07e4df : $8f:e4cf..$8f:e4df (door code)
-06/00: $07e4e0..$07e512 : $8f:e4e0..$8f:e512 (door code)
-06/01: $07e513..$07e51e : $8f:e513..$8f:e51e (door code) ... 199 bytes of padding ...
-00/00: $07e5e6..$07e5fe : $8f:e5e6..$8f:e5fe (room select code)
-05/0a: $07e5ff..$07e611 : $8f:e5ff..$8f:e611 (room select code)
-00/00: $07e612..$07e628 : $8f:e612..$8f:e628 (room select code)
-01/0b: $07e629..$07e63f : $8f:e629..$8f:e63f (room select code) ... 18 bytes of padding ...
-00/14: $07e652..$07e668 : $8f:e652..$8f:e668 (room select code)
-00/00: $07e669..$07e677 : $8f:e669..$8f:e677 (room select code) ... 42 bytes of padding ...
+     : $07e4c0..$07e51e : $8f:e4c0..$8f:e51e (code x4) ... 199 bytes of padding ...
+     : $07e5e6..$07e63f : $8f:e5e6..$8f:e63f (code x4) ... 18 bytes of padding ...
+     : $07e652..$07e677 : $8f:e652..$8f:e677 (code x2) ... 42 bytes of padding ...
 00/00: $07e6a2..$07e6aa : $8f:e6a2..$8f:e6aa (tileSet_t)
      : $07e6ab..$07e6b3 : $8f:e6ab..$8f:e6b3 (tileSet_t)
 00/18: $07e6b4..$07e6bc : $8f:e6b4..$8f:e6bc (tileSet_t)
