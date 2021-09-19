@@ -4623,8 +4623,10 @@ function SMMap:mapWrite()
 	-- 2) update all addrs in all objs based on the ptrs
 	-- 3) write last
 
--- not working? go down the powerbomb downlift to red brinstar
---	self:mapWriteDoorsAndFX1Sets()
+	-- NOTE TO SELF
+	-- don't validate this using state-reload, since your current room info might be moved, and then your state load is essentially corrupted
+	-- only validate using reset and savefile reload
+	self:mapWriteDoorsAndFX1Sets()
 
 	-- I'm combining plm_t and room_t writeranges:
 	-- [inclusive, exclusive)

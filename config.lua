@@ -56,12 +56,10 @@ return {
 
 	-- skips the intro cutscene
 	skipIntro = true,
---]==]
 
 	-- make x-ray fullscreen
 	beefUpXRay = true,
 
---[==[
 	---------------------------------------------------------
 	--------------------- randomization ---------------------
 	---------------------------------------------------------

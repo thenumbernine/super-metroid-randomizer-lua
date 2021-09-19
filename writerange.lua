@@ -29,6 +29,18 @@ end
 local WriteRange = class()
 
 function WriteRange:init(ranges, name)
+	ranges = table(ranges)
+	-- [[
+	-- merge congruent ranges ... ?
+	-- or is this a bad idea due to a need to prevent writes across banks
+	-- or sholud I prevent that through a seprate flag?
+	for i=#ranges-1,1,-1 do
+		if ranges[i][2] == ranges[i+1][1] then
+			ranges[i][2] = ranges[i+1][2]
+			table.remove(ranges, i+1)
+		end
+	end
+	--]]
 	self.ranges = table.mapi(ranges, function(range)
 		return Interval(range[1], range[2])
 	end)
