@@ -221,7 +221,7 @@ timer('everything', function()
 			}:append(range(0x89, 0xdf))) do
 				-- you know, data could mess this up 
 				local addr = topc(bank, 0x8000)
-				file[('bank/%02X.txt'):format(bank)] = require 'disasm'.disasm(addr, rom+addr, 0x8000)
+				file[('bank/%02X.txt'):format(bank)] = sm:codeDisasm(addr, rom+addr, 0x8000)
 			end
 		end)
 	end

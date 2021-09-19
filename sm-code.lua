@@ -52,11 +52,21 @@ uint16_t& mem16(uint8_t bank, uint16_t offset) {
 local ffi = require 'ffi'
 local bit = require 'bit'
 local table = require 'ext.table'
+local range = require 'ext.range'
+local class = require 'ext.class'
+
+local topc = require 'pc'.to
+local frompc = require 'pc'.from
 
 local byteArraySubset = require 'util'.byteArraySubset
 
 -- idk what this is.  should jmps turn into gotos?  or should this be emulation-equivalents where jmps assign pc?
 local tryToPrintCEquiv = false
+
+
+
+local SMCode = {}
+
 
 local instrsForNames = {
 	ADC = {
@@ -810,7 +820,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'RTS' then
 				return 'return;'
 			elseif self.name == 'RTL' then
-				return 'return;'
+				return 'return; //long'
 			elseif self.name == 'SBC' then	-- "subtracts an additional 1 if carry is clear."
 				if readmem then arg = 'mem['..arg..']' end
 				return 'accum -= '..arg..' + !carry;'
@@ -886,21 +896,21 @@ end
 
 
 
-local frompc = require 'pc'.from
 
-local flag = ffi.new('uint8_t[1]', 0)
+local defaultFlagObj = ffi.new('uint8_t[1]', 0)
 local pushflag = ffi.new('uint8_t[1]', 0)
 
 -- making all this seamless soon
 local tmpmem = ffi.new('uint8_t[4]')
 
-local function getLineStr(addr, flag, ...)
+function SMCode:codeGetLineStr(addr, flag, ...)
 	local code0, code1, code2, code3 = ...
 	tmpmem[0] = code0
 	tmpmem[1] = code1
 	tmpmem[2] = code2
 	tmpmem[3] = code3
 	local instr = instrInfo[code0]
+	local origflag = flag[0]
 	pushflag[0] = flag[0]	-- store state for instrcstr
 	local instrstr, n = instr.eat(
 		addr,	-- TODO ... 0000 vs 8000 here, and BEQ resolving the correct address ...
@@ -929,11 +939,13 @@ local function getLineStr(addr, flag, ...)
 			linestr = linestr .. '   '
 		end
 	end
+	linestr = linestr..' '..('P=%02X'):format(origflag)
 	linestr = linestr ..' '..instr.name ..' '..instrstr
+
 	if tryToPrintCEquiv then
 		linestr = linestr
 			-- if we are also showing n00b c pseudocode
-			..(' '):rep(16-#instrstr)
+			..(' '):rep(18-#instrstr)
 			..instrcstr
 	end	
 	return linestr, n
@@ -943,7 +955,8 @@ end
 -- some JSRs expect fixed-size data after their instruction
 -- and expect the subroutine to offset the stack pushed PC to skip the instrs
 local argsForJSRFuncs = table{
-	{addr=0x8483d7, args={1,1,2}},
+	{addr=topc(0x84, 0x83d7), args={1,1,2}},	-- spawn PLM
+	{addr=topc(0x88, 0x8435), args={1,1,2}},	-- spawn indirect HDMA
 }
 
 --[[
@@ -953,40 +966,50 @@ and return 'i, str'
 where str is the arg str
 and 'i' is offset by the arg size
 --]]
-local function processArgs(i, lasti, addr, ptr)
+function SMCode:codeProcessArgs(i, lasti, addr, ptr, add, flag, asmfunc)		-- TODO don't use ptr, just use self.rom ?
 	-- TODO how about JSR $xxxx and match code bank
 	for _,func in ipairs(argsForJSRFuncs) do
 		local bank, instrofs = frompc(addr+i)
-		if (
-			i - lasti == 4
-			and ptr[lasti] == 0x22						-- JSR $xx:xxxx
-			and bit.band(func.addr, 0xff) == ptr[lasti+1]
-			and bit.band(bit.rshift(func.addr, 8), 0xff) == ptr[lasti+2]
-			and bit.band(bit.rshift(func.addr, 16), 0xff) == ptr[lasti+3]
-		) or (
-			i - lasti == 3
-			and ptr[lasti] == 0x20						-- JSR $xxxx
-			and bit.band(func.addr, 0xff) == ptr[lasti+1]
-			and bit.band(bit.rshift(func.addr, 8), 0xff) == ptr[lasti+2]
-			and bit.band(bit.rshift(func.addr, 16), 0xff) == bank
-		) 
-		-- JSR ($xxxx, X) ... but what would X be?
+	
+		local jsrAddr
+		if i - lasti == 4
+		and ptr[lasti] == 0x22		-- JSR $xx:xxxx
 		then
-			local linestr = ('$%02X:%04X'):format(bank, instrofs)..(' '):rep(13)..'dx '
-			local sep = ''
-			for _,arg in ipairs(func.args) do
-				linestr = linestr..sep
-				if arg == 1 then
-					linestr = linestr .. ('%02X'):format(ptr[i])
-				elseif arg == 2 then
-					linestr = linestr .. ('%04X'):format(ffi.cast('uint16_t*', ptr+i)[0])
-				else
-					error"here"
-				end
-				i = i + arg
-				sep = ', '
+			jsrAddr = topc(ptr[lasti+3], ffi.cast('uint16_t*', ptr+lasti+1)[0])
+		elseif i - lasti == 3
+		and ptr[lasti] == 0x20		-- JSR $xxxx
+		then
+			jsrAddr = topc(bank, ffi.cast('uint16_t*', ptr+lasti+1)[0])
+		end
+		-- TODO JSR ($xxxx, X) ... but what would X be?
+
+		if jsrAddr then
+			if add then
+--print('adding from '..('$%02X:%04X'):format(frompc(addr+i))..' to '..('$%02X:%04X'):format(frompc(jsrAddr)))
+				-- TODO store the incoming and outgoing flags for each routine, compare, and see it if can be inferred which flags to use to disasm the routine
+				local callee = self:codeAdd(jsrAddr, flag[0])
+				-- TODO callee.srcs:insertUnique(caller)
+				flag[0] = callee.flagout
+				callee.srcs:insertUnique(asmfunc)
 			end
-			return i, linestr
+		
+			if jsrAddr == func.addr then
+				local linestr = ('$%02X:%04X'):format(bank, instrofs)..(' '):rep(13)..'dx '
+				local sep = ''
+				for _,arg in ipairs(func.args) do
+					linestr = linestr..sep
+					if arg == 1 then
+						linestr = linestr .. ('%02X'):format(ptr[i])
+					elseif arg == 2 then
+						linestr = linestr .. ('%04X'):format(ffi.cast('uint16_t*', ptr+i)[0])
+					else
+						error"here"
+					end
+					i = i + arg
+					sep = ', '
+				end
+				return i, linestr
+			end
 		end
 	end
 end
@@ -1014,16 +1037,17 @@ $8F:C98D 60          RTS
 SO HOW DO I TELL A FUNCTION TO SET FLAGS ACCORDING TO ITS JSR OR JMP?
 this looks like more of a stretch goal for disasm call graphs
 --]]
-local function disasm(addr, ptr, maxlen, initFlags)
+function SMCode:codeDisasm(addr, ptr, maxlen, flagObj)
 --[[ TODO
 	local bank, ofs = frompc(addr)
 	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
 --]]
-	flag[0] = 0
+	defaultFlagObj[0] = 0
+	local flag = flagObj or defaultFlagObj
 	local ss = table()
 	local i = 0
 	while i < maxlen do
-		local str, n = getLineStr(
+		local str, n = self:codeGetLineStr(
 			addr+i,
 			flag,
 			-- TODO ... how about reading over the end ...
@@ -1038,7 +1062,7 @@ local function disasm(addr, ptr, maxlen, initFlags)
 	
 		local lasti = i
 		i = i + n
-		local newi, linestr = processArgs(i, lasti, addr, ptr)
+		local newi, linestr = self:codeProcessArgs(i, lasti, addr, ptr, false, flag)
 		if newi then
 			i = newi
 			ss:insert(linestr)
@@ -1052,40 +1076,115 @@ reads instructions, stops at RTS, returns contents in a Lua table
 (TODO return a uint8_t[] instead?)
 (TODO generate the disasm string as you go?)
 (TODO follow branches, create a jump/call graph)
+
+here's an idea for merging codeDisasm() and codeReadUntilRet() : 
+have codeReadUntilRet return a table of ASMInstructions, each a table of bytes
+then for serialization, just ... serialize them each as is
+and for readjusting them, just shift the bytes between ASMInstructions
 --]]
-local function readUntilRet(addr, rom, initFlags)
+function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
 	local bank, ofs = frompc(addr)
 	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
-	
-	flag[0] = initFlags or 0
-	ptr = rom + addr
+--print('codeReadUntilRet '..('%02x:%04x'):format(bank, ofs))	
+	defaultFlagObj[0] = 0
+	local flag = flagObj or defaultFlagObj
+	local ptr = rom + addr
 	local i = 0
 	while i < maxlen do
-		local instr = instrInfo[ptr[i]]
-		local _, n = instr.eat(
-			addr+i,
-			flag,
-			ptr+i
-		)
+		local instrcode = ptr[i]
+		local instr = instrInfo[instrcode]
+--print(('%02x:%04x'):format(frompc(i+addr))..' '..instr.name)
+		local _, n = instr.eat(addr+i, flag, ptr+i)
 				
-		if ptr[i] == 0x22
-		and ptr[i+1] == 0xd7
-		and ptr[i+2] == 0x83
-		and ptr[i+3] == 0x84
-		then
-			i = i + 4
-		end
-
+		local lasti = i
 		i = i + n
-
-		if instr.name == 'RTS' then break end
+-- [[
+		local newi = self:codeProcessArgs(i, lasti, addr, ptr, true, flag, asmfunc)
+		if newi then
+--print("skipping at "..('%02x:%04x'):format(frompc(addr+i)).. ' by ' .. (newi-i) .. ' bytes')
+			i = newi
+		end
+--]]	
+		if instrcode == 0x60 	-- RTS = "return from subroutine"
+		or instrcode == 0x6B	-- RTL = "return from subroutine long" ... does this mean pop 3 from stack?
+		then break end
 	end
+--print('...got until '..('%02x:%04x'):format(frompc(addr+i)))
 	return byteArraySubset(rom, addr, i)
 end
 
-return {
-	disasm = disasm,
-	readUntilRet = readUntilRet,
-	instrInfo = instrInfo,
-	getLineStr = getLineStr,
-}
+--[[
+this is a merge of roomState.layerHandling and door.doorCode
+TODO generalize this into all code - change it to "ASMFunction" 
+	and then make a call graph traversal out of it
+--]]
+local ASMFunction = class()
+ASMFunction.type = 'code'
+
+function ASMFunction:init(args)
+	self.sm = assert(args.sm)
+	self.addr = assert(args.addr)
+	local flag = {[0] = args.flag or 0}
+	self.flagin = flag[0]
+	self.code = self.sm:codeReadUntilRet(self.addr, self.sm.rom, flag, self)
+	self.flagout = flag[0]
+	--[[
+	who points to this.
+	current list: 
+	- roomState (layerHandling)
+	- door (doorCode)
+	--]]
+	self.srcs = table()
+end
+
+
+function SMCode:codeAdd(addr, flag)
+	flag = flag or 0
+	for _,asmfunc in ipairs(self.asmfuncs) do
+		if asmfunc.addr == addr then 
+if asmfunc.flagin ~= flag then
+	print("WARNING - disasm of "..('%02x:%04x'):format(frompc(addr))
+		..' called with different flags: '..('%02x'):format(asmfunc.flagin)..' vs '..('%02x'):format(flag))
+end
+			return asmfunc 
+		end
+	end
+	local asmfunc = ASMFunction{sm=self, addr=addr, flag=flag}
+	self.asmfuncs:insert(asmfunc)
+	return asmfunc
+end
+
+function SMCode:codeInit()
+	-- combination of roomState.layerHandling, roomSelect.testCode, door.doorCode
+	self.asmfuncs = table()
+end
+	
+function SMCode:codeBuildMemoryMap(mem)
+	for _,asmfunc in ipairs(self.asmfuncs) do
+		mem:add(asmfunc.addr, ffi.sizeof(asmfunc.code), 'code')
+	end
+end
+
+function SMCode:codePrint()
+	print()
+	print('all codes')
+	self.asmfuncs:sort(function(a,b) return a.addr < b.addr end)
+	print('currently used by roomState.layerHandling, roomSelect.testCode, and door.doorCode')
+	for _,asmfunc in ipairs(self.asmfuncs) do
+		print()
+		print((' $%02x:%04x'):format(frompc(asmfunc.addr)))
+		print('  flag in='..('%02x'):format(asmfunc.flagin)..' out='..('%02x'):format(asmfunc.flagout))
+		print('   code ('
+			..ffi.sizeof(asmfunc.code)..' bytes'
+			..'): '..range(0,ffi.sizeof(asmfunc.code)-1):mapi(function(i) 
+				return ('%02x'):format(asmfunc.code[i])
+			end):concat' ')
+		print(self:codeDisasm(asmfunc.addr, asmfunc.code, ffi.sizeof(asmfunc.code), {[0]=asmfunc.flagin}))
+		print('   srcs:')
+		for _,src in ipairs(asmfunc.srcs) do
+			print('    '..('$%02x:%04x'):format(frompc(src.addr))..' '..src.type)
+		end
+	end
+end
+
+return SMCode

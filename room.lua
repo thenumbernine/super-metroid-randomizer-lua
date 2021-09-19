@@ -60,7 +60,7 @@ RoomSelect.count = 1
 
 function RoomSelect:init(args)
 	RoomSelect.super.init(self, args)
-	self.testCode = self.sm:mapAddCode(topc(self.sm.roomBank, self:obj().testCodePageOffset))
+	self.testCode = self.sm:codeAdd(topc(self.sm.roomBank, self:obj().testCodePageOffset))
 	self.testCode.srcs:insert(self)
 end
 

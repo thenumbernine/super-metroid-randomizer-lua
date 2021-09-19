@@ -3,7 +3,6 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local frompc = require 'pc'.from
 local topc = require 'pc'.to
-local disasm = require 'disasm'
 local struct = require 'struct'
 local Blob = require 'blob'
 
@@ -85,7 +84,7 @@ function Door:init(args)
 	if self.type == 'door_t' 
 	and self:ptr().code > 0x8000 
 	then
-		self.doorCode = self.sm:mapAddCode(topc(self.sm.doorCodeBank, self:ptr().code))
+		self.doorCode = self.sm:codeAdd(topc(self.sm.doorCodeBank, self:ptr().code))
 		self.doorCode.srcs:insert(self)
 	end
 end

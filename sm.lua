@@ -13,6 +13,7 @@ local config = require 'config'
 local strtohex = require 'util'.strtohex
 
 local SM = class(
+	require 'sm-code',
 	require 'sm-enemies',
 	require 'sm-items',
 	require 'sm-map',
@@ -37,6 +38,7 @@ function SM:init(rom, romlen)
 	local name = ffi.string(rom + nameAddr, nameLen)
 	print(name)
 
+	self:codeInit()
 	self:graphicsInit()
 	self:samusInit()
 	self:weaponsInit()
@@ -49,6 +51,7 @@ function SM:buildMemoryMap()
 	local mem = MemoryMap()
 	mem:add(nameAddr, nameLen, 'game name') 
 	-- TODO make this return a 'memorymap' object that prints out
+	self:codeBuildMemoryMap(mem)
 	self:graphicsBuildMemoryMap(mem)
 	self:samusBuildMemoryMap(mem)
 	self:weaponsBuildMemoryMap(mem)
@@ -59,6 +62,7 @@ function SM:buildMemoryMap()
 end
 
 function SM:print()
+	self:codePrint()
 	self:samusPrint()
 	self:enemiesPrint()
 	self:mapPrint()

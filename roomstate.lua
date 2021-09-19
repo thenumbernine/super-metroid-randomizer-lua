@@ -113,7 +113,7 @@ function RoomState:init(args)
 
 	do
 		if self:obj().layerHandlingPageOffset > 0x8000 then
-			self.layerHandlingCode = sm:mapAddCode(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
+			self.layerHandlingCode = sm:codeAdd(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
 			self.layerHandlingCode.srcs:insert(self)
 		end
 

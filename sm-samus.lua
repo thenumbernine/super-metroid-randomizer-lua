@@ -37,7 +37,6 @@ local class = require 'ext.class'
 local Blob = require 'blob'
 local Palette = require 'palette'
 local topc = require 'pc'.to
-local disasm = require 'disasm'
 local struct = require 'struct'
 
 local SMGraphics = require 'sm-graphics'
@@ -122,7 +121,7 @@ function SMSamus:samusInit()
 
 	-- 0x8000..0x808d = code
 	self.samusAnimCodeAddr = topc(0x92, 0x8000)
-	self.samusAnimCode = disasm.readUntilRet(self.samusAnimCodeAddr, self.rom, 0x1000)
+	self.samusAnimCode = self:codeAdd(self.samusAnimCodeAddr)
 
 	-- this is a collection of unique SpritemapSet's
 	self.samusSpritemapSets = table()
@@ -177,7 +176,7 @@ function SMSamus:samusInit()
 	-- TODO track branches and keep reading past the first RET
 	-- also TODO use page size as the maxlen
 	self.samusAnimCode2Addr = topc(0x92, 0xedf4)
-	self.samusAnimCode2 = disasm.readUntilRet(self.samusAnimCode2Addr, self.rom, 0x1000)
+	self.samusAnimCode2 = self:codeReadUntilRet(self.samusAnimCode2Addr, self.rom)
 
 	-- samus tiles ...
 	-- where are the tilemaps?
@@ -253,8 +252,6 @@ function SMSamus:samusPrint()
 end
 
 function SMSamus:samusBuildMemoryMap(mem)
-	mem:add(self.samusAnimCodeAddr, ffi.sizeof(self.samusAnimCode), 'samusAnimCode')
-	
 	self.samusAnimOffsetTable:addMem(mem, 'samusAnimOffsetTable')
 
 	for _,smset in ipairs(self.samusSpritemapSets) do

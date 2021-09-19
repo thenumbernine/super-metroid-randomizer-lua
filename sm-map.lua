@@ -21,7 +21,6 @@ local struct = require 'struct'
 local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
 local WriteRange = require 'writerange'
-local disasm = require 'disasm'
 local config = require 'config'
 local Image = require 'image'
 
@@ -638,36 +637,6 @@ function PLMSet:init(args)
 	self.addr = args.addr	--optional
 	self.plms = table(args.plms)
 	self.roomStates = table()
-end
-
-
---[[
-this is a merge of roomState.layerHandling and door.doorCode
-TODO generalize this into all code- change it to "function" 
---]]
-local Code = class()
-
-function Code:init(args)
-	self.sm = assert(args.sm)
-	self.addr = assert(args.addr)
-	self.code = disasm.readUntilRet(self.addr, self.sm.rom, 0x30)
-	--[[
-	who points to this.
-	current list: 
-	- roomState (layerHandling)
-	- door (doorCode)
-	--]]
-	self.srcs = table()
-end
-
-
-function SMMap:mapAddCode(addr)
-	for _,code in ipairs(self.codes) do
-		if code.addr == addr then return code end
-	end
-	local code = Code{sm=self, addr=addr}
-	self.codes:insert(code)
-	return code
 end
 
 
@@ -1323,9 +1292,6 @@ function SMMap:mapInit()
 	self.plmsets = table()
 	self.enemySpawnSets = table()
 	self.enemyGFXSets = table()
-
-	-- combination of layerHandling and doorCode
-	self.codes = table()
 
 	self.tileSets = table()
 	self.tileSetPalettes = table()
@@ -3277,23 +3243,6 @@ function SMMap:mapPrint()
 		end
 	end
 
-	print()
-	print('all codes')
-	self.codes:sort(function(a,b) return a.addr < b.addr end)
-	print('currently used by roomState.layerHandling, roomSelect.testCode, and door.doorCode')
-	for _,code in ipairs(self.codes) do
-		print()
-		print((' $%02x:%04x'):format(frompc(code.addr)))
-		print('   code: '..range(0,ffi.sizeof(code.code)-1):mapi(function(i) 
-				return ('%02x'):format(code.code[i])
-			end):concat' ')
-		print(disasm.disasm(code.addr, code.code, ffi.sizeof(code.code), 0x30))
-		print('   srcs:')
-		for _,src in ipairs(code.srcs) do
-			print('    '..('$%02x:%04x'):format(frompc(src.addr))..' '..src.type)
-		end
-	end
-
 	--[[ print plmset information
 	-- half this is in the all plms_ts and the other half is in all room_ts
 	print()
@@ -3434,10 +3383,6 @@ function SMMap:mapBuildMemoryMap(mem)
 	-- loop through self.doors so we get room's and loadStation's
 	for _,door in ipairs(self.doors) do
 		door:addMem(mem, nil, door.destRoom)
-	end
-
-	for _,code in ipairs(self.codes) do
-		mem:add(code.addr, ffi.sizeof(code.code), 'code')
 	end
 
 	for _,enemySpawnSet in ipairs(self.enemySpawnSets) do
