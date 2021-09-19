@@ -171,8 +171,11 @@ local instrsForNames = {
 	JMP = {
 		instrs = {0x4C, 0x6C, 0x7C, 0x5C, 0xDC},
 	},
+	JSL = {
+		instrs = {0x22},
+	},
 	JSR = {
-		instrs = {0x22, 0x20, 0xFC},
+		instrs = {0x20, 0xFC},
 	},
 	LDA = {
 		instrs = {0xA9, 0xAD, 0xAF, 0xA5, 0xB2, 0xA7, 0xBD, 0xBF, 0xB9, 0xB5, 0xA1, 0xB1, 0xB7, 0xA3, 0xB3},
@@ -504,8 +507,9 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x10, 0x30, 0x50, 0x70, 0x80, 0x90, 0xB0, 0xD0, 0xF0},
 		eat = function(addr, flag, mem)
-			local sval = (mem[1]>127) and (mem[1]-256) or mem[1]
-			return ("$%04X"):format(bit.band(addr+sval+2, 0xFFFF)), 2
+			return ("$%04X"):format(
+				bit.bor(bit.band(addr + 2 + ffi.cast('int8_t*', mem+1)[0], 0xFFFF), 0x8000)
+			), 2
 		end,
 	},
 	
@@ -515,9 +519,9 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x62, 0x82},
 		eat = function(addr, flag, mem)
-			local sval = bit.bor(mem[1], bit.lshift(mem[2], 8))
-			sval = (sval>32767) and (sval-65536) or sval
-			return ("$%04X"):format(bit.band(addr+sval+3, 0xFFFF)), 3
+			return ("$%04X"):format(
+				bit.bor(bit.band(addr + 3 + ffi.cast('int16_t*', mem+1)[0], 0xFFFF), 0x8000)
+			), 3
 		end,
 	},
 
@@ -690,7 +694,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'BRK' then	-- "Causes a software break. The PC is loaded from a vector table from somewhere around $FFE6."
 				-- TODO
 				return 'BRK '..arg
-			elseif self.name == 'BRL' then	-- how is this different from BRA?
+			elseif self.name == 'BRL' then	-- how is this different from BRA? BRA="break", BRL="break long"
 				return 'goto '..arg..';'
 			elseif self.name == 'BVC' then
 				return 'if (!overflow) goto '..arg..';'
@@ -973,7 +977,7 @@ function SMCode:codeProcessArgs(i, lasti, addr, ptr, add, flag, asmfunc)		-- TOD
 	
 		local jsrAddr
 		if i - lasti == 4
-		and ptr[lasti] == 0x22		-- JSR $xx:xxxx
+		and ptr[lasti] == 0x22		-- JSL $xx:xxxx
 		then
 			jsrAddr = topc(ptr[lasti+3], ffi.cast('uint16_t*', ptr+lasti+1)[0])
 		elseif i - lasti == 3
@@ -1083,9 +1087,13 @@ then for serialization, just ... serialize them each as is
 and for readjusting them, just shift the bytes between ASMInstructions
 --]]
 function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
+	-- what's the furthest branch statement yet?
+	-- disasm until we get to a RTS/RTL after this point
+	local maxBranchAddr = addr
+
 	local bank, ofs = frompc(addr)
 	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
---print('codeReadUntilRet '..('%02x:%04x'):format(bank, ofs))	
+--print('codeReadUntilRet '..('%02X:%04X'):format(bank, ofs))	
 	defaultFlagObj[0] = 0
 	local flag = flagObj or defaultFlagObj
 	local ptr = rom + addr
@@ -1093,23 +1101,74 @@ function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
 	while i < maxlen do
 		local instrcode = ptr[i]
 		local instr = instrInfo[instrcode]
---print(('%02x:%04x'):format(frompc(i+addr))..' '..instr.name)
+--print(('%02X:%04X'):format(frompc(i+addr))..' '..instr.name)
 		local _, n = instr.eat(addr+i, flag, ptr+i)
-				
+
+		-- if we read any branches, see where they go
+		-- if they go *before* our origin, put out a warning
+		-- if they go after our current index then don't stop upon return before that point
+		--[[
+		relative instructions:
+1-byte = 
+	0x10 = BPL (branch on plus)
+	0x30 = BMI (branch on minus)
+	0x50 = BVC (branch on overflow clear)
+	0x70 = BVS (branch on overflow set)
+	0x80 = BRA (branch)
+	0x90 = BCC (branch on carry clear)
+	0xB0 = BCC (branch on carry set)
+	0xD0 = BNE (branch on not equal / zero clear)
+	0xF0 = BEQ (branch on equal / zero set)
+2-byte, i.e. jump to addr + 3 + ((sint16_t*)arg)[0]
+	0x82 = BRL (branch long)
+		--]]
+
+		local branchBase
+		local branchOffset
+		if instrcode == 0x10
+		or instrcode == 0x30
+		or instrcode == 0x50
+		or instrcode == 0x70
+		or instrcode == 0x80
+		or instrcode == 0x90
+		or instrcode == 0xB0
+		or instrcode == 0xD0
+		or instrcode == 0xF0
+		then
+			branchBase = addr + i + 2
+			branchOffset = ffi.cast('int8_t*', ptr + i + 1)[0]
+		elseif instrcode == 0x82 then
+			branchBase = addr + i + 3
+			branchOffset = ffi.cast('int16_t*', ptr + i + 1)[0]
+		end
+		if branchBase then
+			local branchAddr = branchBase + branchOffset
+--print("branch command at "..('%02X:%04X'):format(frompc(addr+i)).." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr)))
+			if branchAddr < addr then
+				print("WARNING - "
+					.."in function "..('%02X:%04X'):format(frompc(addr))
+					.." found a branch command at "..('%02X:%04X'):format(frompc(addr+i))
+					.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
+					.." that is before our function starting address")
+			end
+			maxBranchAddr = math.max(maxBranchAddr, branchAddr)
+		end
+
 		local lasti = i
 		i = i + n
 -- [[
 		local newi = self:codeProcessArgs(i, lasti, addr, ptr, true, flag, asmfunc)
 		if newi then
---print("skipping at "..('%02x:%04x'):format(frompc(addr+i)).. ' by ' .. (newi-i) .. ' bytes')
+--print("skipping at "..('%02X:%04X'):format(frompc(addr+i)).. ' by ' .. (newi-i) .. ' bytes')
 			i = newi
 		end
 --]]	
-		if instrcode == 0x60 	-- RTS = "return from subroutine"
-		or instrcode == 0x6B	-- RTL = "return from subroutine long" ... does this mean pop 3 from stack?
+		if (instrcode == 0x60 	-- RTS = "return from subroutine"
+		or instrcode == 0x6B)	-- RTL = "return from subroutine long" ... does this mean pop 3 from PC stack?
+		and addr + i > maxBranchAddr 
 		then break end
 	end
---print('...got until '..('%02x:%04x'):format(frompc(addr+i)))
+--print('...got until '..('%02X:%04X'):format(frompc(addr+i)))
 	return byteArraySubset(rom, addr, i)
 end
 
@@ -1143,8 +1202,8 @@ function SMCode:codeAdd(addr, flag)
 	for _,asmfunc in ipairs(self.asmfuncs) do
 		if asmfunc.addr == addr then 
 if asmfunc.flagin ~= flag then
-	print("WARNING - disasm of "..('%02x:%04x'):format(frompc(addr))
-		..' called with different flags: '..('%02x'):format(asmfunc.flagin)..' vs '..('%02x'):format(flag))
+	print("WARNING - disasm of "..('%02X:%04X'):format(frompc(addr))
+		..' called with different flags: '..('%02X'):format(asmfunc.flagin)..' vs '..('%02X'):format(flag))
 end
 			return asmfunc 
 		end
@@ -1172,17 +1231,17 @@ function SMCode:codePrint()
 	print('currently used by roomState.layerHandling, roomSelect.testCode, and door.doorCode')
 	for _,asmfunc in ipairs(self.asmfuncs) do
 		print()
-		print((' $%02x:%04x'):format(frompc(asmfunc.addr)))
-		print('  flag in='..('%02x'):format(asmfunc.flagin)..' out='..('%02x'):format(asmfunc.flagout))
+		print((' $%02X:%04X'):format(frompc(asmfunc.addr)))
+		print('  flag in='..('%02X'):format(asmfunc.flagin)..' out='..('%02X'):format(asmfunc.flagout))
 		print('   code ('
 			..ffi.sizeof(asmfunc.code)..' bytes'
 			..'): '..range(0,ffi.sizeof(asmfunc.code)-1):mapi(function(i) 
-				return ('%02x'):format(asmfunc.code[i])
+				return ('%02X'):format(asmfunc.code[i])
 			end):concat' ')
 		print(self:codeDisasm(asmfunc.addr, asmfunc.code, ffi.sizeof(asmfunc.code), {[0]=asmfunc.flagin}))
 		print('   srcs:')
 		for _,src in ipairs(asmfunc.srcs) do
-			print('    '..('$%02x:%04x'):format(frompc(src.addr))..' '..src.type)
+			print('    '..('$%02X:%04X'):format(frompc(src.addr))..' '..src.type)
 		end
 	end
 end

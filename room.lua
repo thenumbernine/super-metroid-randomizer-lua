@@ -60,6 +60,10 @@ RoomSelect.count = 1
 
 function RoomSelect:init(args)
 	RoomSelect.super.init(self, args)
+	--[[
+	with flags == 0x00 we have no OOB branches
+	with flags == 0x20 we have 1 OOB branches
+	--]]
 	self.testCode = self.sm:codeAdd(topc(self.sm.roomBank, self:obj().testCodePageOffset))
 	self.testCode.srcs:insert(self)
 end

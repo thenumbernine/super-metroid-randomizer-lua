@@ -113,6 +113,10 @@ function RoomState:init(args)
 
 	do
 		if self:obj().layerHandlingPageOffset > 0x8000 then
+			--[[
+			with flags == 0x00 we have 8 mismatched flag calls
+			with flags == 0x20 we have 17 mismatched flag calls and 2 OOB branches
+			--]]
 			self.layerHandlingCode = sm:codeAdd(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
 			self.layerHandlingCode.srcs:insert(self)
 		end
