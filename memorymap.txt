@@ -2004,8 +2004,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 00/1c: $07b956..$07b95c : $8f:b956..$8f:b95c (bg_4_t)
 00/1c: $07b95d..$07b96e : $8f:b95d..$8f:b96e (bg_2_8_t x2)
 00/1c: $07b96f..$07b970 : $8f:b96f..$8f:b970 (bg_header_t)
-     : $07b971..$07b98b : $8f:b971..$8f:b98b (code) ... -11 bytes of padding ...
-     : $07b981..$07ba36 : $8f:b981..$8f:ba36 (code x12)
+     : $07b971..$07ba36 : $8f:b971..$8f:ba36 (code x13)
 01/00: $07ba37..$07ba3d : $8f:ba37..$8f:ba3d (bg_4_t)
 01/00: $07ba3e..$07ba4f : $8f:ba3e..$8f:ba4f (bg_2_8_t x2)
 01/00: $07ba50..$07ba51 : $8f:ba50..$8f:ba51 (bg_header_t)
@@ -2754,8 +2753,7 @@ map region/index: addr $start-$end (desc) ... trailing bytes until next region .
 03/03: $07e1c0..$07e1d1 : $8f:e1c0..$8f:e1d1 (bg_2_8_t x2)
 03/03: $07e1d2..$07e1d3 : $8f:e1d2..$8f:e1d3 (bg_header_t)
 06/00: $07e1d4..$07e1d7 : $8f:e1d4..$8f:e1d7 (bg_header_t x2)
-     : $07e1d8..$07e1f2 : $8f:e1d8..$8f:e1f2 (code) ... -11 bytes of padding ...
-     : $07e1e8..$07e247 : $8f:e1e8..$8f:e247 (code x6)
+     : $07e1d8..$07e247 : $8f:e1d8..$8f:e247 (code x7)
 04/07: $07e248..$07e24e : $8f:e248..$8f:e24e (bg_4_t)
 04/07: $07e24f..$07e257 : $8f:e24f..$8f:e257 (bg_2_8_t)
 04/07: $07e258..$07e259 : $8f:e258..$8f:e259 (bg_header_t)

@@ -939,7 +939,81 @@ local function getLineStr(addr, flag, ...)
 	return linestr, n
 end
 
+
+-- some JSRs expect fixed-size data after their instruction
+-- and expect the subroutine to offset the stack pushed PC to skip the instrs
+local argsForJSRFuncs = table{
+	{addr=0x8483d7, args={1,1,2}},
+}
+
+--[[
+sees if the current instruction is JSR into a predefined 'argsForJSRFuncs'
+then print its args
+and return 'i, str' 
+where str is the arg str
+and 'i' is offset by the arg size
+--]]
+local function processArgs(i, lasti, addr, ptr)
+	-- TODO how about JSR $xxxx and match code bank
+	for _,func in ipairs(argsForJSRFuncs) do
+		local bank, instrofs = frompc(addr+i)
+		if (
+			i - lasti == 4
+			and ptr[lasti] == 0x22						-- JSR $xx:xxxx
+			and bit.band(func.addr, 0xff) == ptr[lasti+1]
+			and bit.band(bit.rshift(func.addr, 8), 0xff) == ptr[lasti+2]
+			and bit.band(bit.rshift(func.addr, 16), 0xff) == ptr[lasti+3]
+		) or (
+			i - lasti == 3
+			and ptr[lasti] == 0x20						-- JSR $xxxx
+			and bit.band(func.addr, 0xff) == ptr[lasti+1]
+			and bit.band(bit.rshift(func.addr, 8), 0xff) == ptr[lasti+2]
+			and bit.band(bit.rshift(func.addr, 16), 0xff) == bank
+		) 
+		-- JSR ($xxxx, X) ... but what would X be?
+		then
+			local linestr = ('$%02X:%04X'):format(bank, instrofs)..(' '):rep(13)..'dx '
+			local sep = ''
+			for _,arg in ipairs(func.args) do
+				linestr = linestr..sep
+				if arg == 1 then
+					linestr = linestr .. ('%02X'):format(ptr[i])
+				elseif arg == 2 then
+					linestr = linestr .. ('%04X'):format(ffi.cast('uint16_t*', ptr+i)[0])
+				else
+					error"here"
+				end
+				i = i + arg
+				sep = ', '
+			end
+			return i, linestr
+		end
+	end
+end
+
 -- code is lua table, 1-based
+--[[
+TODO WARNING
+in sm-map I am disassembling assuming code flags start at 0x30
+but for function 8f:c97b immediately we have a SEP #$20, which clears the 16-bit flag
+HOWEVER shortly after we JSR into a function THAT SETS THE 16 BIT FLAG
+BUT THE DISASSEMBLER DOESN'T KNOW THIS
+so when the disasembler keeps going, it interprets the next few commands as:
+
+$8F:C987 A9 09       LDA #$09
+$8F:C989 00 8D       BRK $8D
+$8F:C98B EB          XBA 
+$8F:C98C 07 60       ORA [$60]
+
+WHEN IT SHOULD INTERPRET THESE AS 16-BIT COMMANDS LIKE SO:
+
+$8F:C987 A9 09 00    LDA #$0009
+$8F:C98A 8D EB 07    STA $07EB
+$8F:C98D 60          RTS
+
+SO HOW DO I TELL A FUNCTION TO SET FLAGS ACCORDING TO ITS JSR OR JMP?
+this looks like more of a stretch goal for disasm call graphs
+--]]
 local function disasm(addr, ptr, maxlen, initFlags)
 --[[ TODO
 	local bank, ofs = frompc(addr)
@@ -961,7 +1035,14 @@ local function disasm(addr, ptr, maxlen, initFlags)
 			i+3 < maxlen and ptr[i+3] or 0x00
 		)
 		ss:insert(str)
+	
+		local lasti = i
 		i = i + n
+		local newi, linestr = processArgs(i, lasti, addr, ptr)
+		if newi then
+			i = newi
+			ss:insert(linestr)
+		end
 	end
 	return ss:concat'\n'
 end
@@ -986,7 +1067,17 @@ local function readUntilRet(addr, rom, initFlags)
 			flag,
 			ptr+i
 		)
+				
+		if ptr[i] == 0x22
+		and ptr[i+1] == 0xd7
+		and ptr[i+2] == 0x83
+		and ptr[i+3] == 0x84
+		then
+			i = i + 4
+		end
+
 		i = i + n
+
 		if instr.name == 'RTS' then break end
 	end
 	return byteArraySubset(rom, addr, i)

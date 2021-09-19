@@ -3279,6 +3279,7 @@ function SMMap:mapPrint()
 
 	print()
 	print('all codes')
+	self.codes:sort(function(a,b) return a.addr < b.addr end)
 	print('currently used by roomState.layerHandling, roomSelect.testCode, and door.doorCode')
 	for _,code in ipairs(self.codes) do
 		print()
