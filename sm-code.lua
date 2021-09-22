@@ -724,7 +724,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'BRK' then	-- "Causes a software break. The PC is loaded from a vector table from somewhere around $FFE6."
 				-- TODO
 				return 'BRK '..arg
-			elseif self.name == 'BRL' then	-- how is this different from BRA? BRA="break", BRL="break long"
+			elseif self.name == 'BRL' then	-- how is this different from BRA? BRA="branch", BRL="branch long"
 				return 'goto '..arg..';'
 			elseif self.name == 'BVC' then
 				return 'if (!overflow) goto '..arg..';'
@@ -1155,6 +1155,146 @@ here's the issue:
 local ASMFunction = class()
 ASMFunction.type = 'code'
 
+
+local debugtab = ''
+
+local function processNextInstruction(
+	self,	-- ASMFunction
+	rom,	
+	addr,	-- current instruction address
+	flag,
+	flagstack
+)
+	local instr = select(2, self.instrs:find(nil, function(instr)
+		return instr.addr == addr
+	end))
+	-- already processed
+	if instr then return instr end
+	
+	local curFuncAddr = self.addr
+--[[ hmm, only complain for changing banks if we are not long jumping
+	if frompc(curFuncAddr) ~= frompc(self.addr) then
+		 -- banks differ -- return
+	end
+--]]
+
+	local ptr = rom + addr
+
+	local instrcode = ptr[0]
+	local instr = instrClasses[instrcode]{addr=addr, ptr=ptr}
+	instr.prev = table()
+	instr.next = table()
+	self.instrs:insert(instr)
+
+--[[ normal
+	local _, n = instr:eat(addr, flag, ptr, flagstack)
+--]]
+-- [[ debugging
+	local str, n = instr:getLineStr(flag, flagstack)
+print(debugtab..str)
+--]]
+	
+	local nextAddr = addr + n
+
+	local newn, linestr = self.sm:codeProcessArgs(n, 0, addr, ptr, true, flag, self)
+	if newn then
+print(debugtab.."skipping at "..('%02X:%04X'):format(frompc(nextAddr)).. ' by ' .. (newn-n) .. ' bytes')
+print(debugtab..linestr)
+		nextAddr = addr + newn
+	end
+
+	local function inlineProcessNext(nextAddr)
+		local nextinstr = processNextInstruction(self, rom, nextAddr, flag, flagstack)
+		if nextinstr then
+			instr.next:insert(nextinstr)
+			nextinstr.prev:insert(instr)
+		end
+	end
+
+	-- return -- doesn't need a next instr, and save it as an exit node
+	if instrcode == 0x60 	-- RTS = "return from subroutine"
+	or instrcode == 0x6B	-- RTL = "return from subroutine long" ... does this mean pop 3 from PC stack?
+	then
+		-- save all returns as instruction graph exits
+		self.retInstrs:insert(instr)
+		return instr
+
+	-- unconditional branches, jumps ... next node address is the instruction argument
+	
+	elseif instrcode == 0x80 then 	-- BRA = branch
+		local branchBase = addr + 2
+		local branchOffset = ffi.cast('int8_t*', ptr + 1)[0]
+		local branchAddr = branchBase + branchOffset
+		if branchAddr < curFuncAddr then 
+			print("WARNING - "
+				.."in function "..('%02X:%04X'):format(frompc(curFuncAddr))
+				.." found a branch command at "..('%02X:%04X'):format(frompc(addr))
+				.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
+				.." that is before our function starting address")
+		end
+		inlineProcessNext(branchAddr)
+
+	-- 1-byte relative
+	elseif instrcode == 0x10	-- BPL (branch on plus)
+	or instrcode == 0x30		-- BMI (branch on minus)
+	or instrcode == 0x50		-- BVC (branch on overflow clear)
+	or instrcode == 0x70		-- BVS (branch on overflow set)
+	or instrcode == 0x90		-- BCC (branch on carry clear)
+	or instrcode == 0xB0		-- BCS (branch on carry set)
+	or instrcode == 0xD0		-- BNE (branch on not equal / zero clear)
+	or instrcode == 0xF0		-- BEQ (branch on equal / zero set)
+	then
+		local branchBase = addr + 2
+		local branchOffset = ffi.cast('int8_t*', ptr + 1)[0]
+		local branchAddr = branchBase + branchOffset
+--print(debugtab.."branch command at "..('%02X:%04X'):format(frompc(addr)).." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr)))
+		if branchAddr < curFuncAddr then
+			print("WARNING - "
+				.."in function "..('%02X:%04X'):format(frompc(curFuncAddr))
+				.." found a branch command at "..('%02X:%04X'):format(frompc(addr))
+				.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
+				.." that is before our function starting address")
+		end
+		inlineProcessNext(nextAddr)
+		inlineProcessNext(branchAddr)
+	
+	elseif instrcode == 0x82 then 	 	-- BRL = branch long
+		local branchBase = addr + 3
+		local branchOffset = ffi.cast('int16_t*', ptr + 1)[0]
+		local branchAddr = branchBase + branchOffset
+		if branchAddr < curFuncAddr then 
+			print("WARNING - "
+				.."in function "..('%02X:%04X'):format(frompc(curFuncAddr))
+				.." found a branch command at "..('%02X:%04X'):format(frompc(addr))
+				.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
+				.." that is before our function starting address")	
+		end
+		inlineProcessNext(branchAddr)
+	
+	elseif instrcode == 0x4C then	-- JMP $xxxx
+		local bank = frompc(addr)
+		local jumpAddr = topc(bank, ffi.cast('uint16_t*', ptr + 1)[0])
+		inlineProcessNext(jumpAddr)
+	
+	elseif instrcode == 0x5C then	-- JMP $xx:xxxx
+		local jumpAddr = ffi.cast('addr24_t*', ptr + 1)[0]:topc()
+		inlineProcessNext(jumpAddr)
+	
+	-- hmm, these jumps are conditional on the state of RAM ... what to do about them?
+	elseif instrcode == 0x6C	-- JMP ($xxxx)
+	or instrcode == 0xDC		-- JMP [$xxxx]
+	or instrcode == 0x7C		-- JMP ($xxxx,X)
+	then
+		-- TODO how to treat this?
+		-- just pretend they're normal instructions?
+		inlineProcessNext(addr)
+	else
+		inlineProcessNext(nextAddr)
+	end
+
+	return instr
+end
+
 --[[
 ctor reads instructions, stops at RTS, returns contents in a Lua table
 (TODO return a uint8_t[] instead?)
@@ -1166,7 +1306,6 @@ have codeReadUntilRet return a table of ASMInstructions, each a table of bytes
 then for serialization, just ... serialize them each as is
 and for readjusting them, just shift the bytes between ASMInstructions
 --]]
-local debugtab = ''
 function ASMFunction:init(args)
 	self.sm = assert(args.sm)
 	self.addr = assert(args.addr)
@@ -1176,19 +1315,11 @@ function ASMFunction:init(args)
 	-- and last trace through all paths to see how the flags can change
 
 	local flag = {[0] = args.flag or 0}
+	local flagstack = table()
 	self.flagin = flag[0]
 	
---	self.code = 
---	self.sm:codeReadUntilRet(self.addr, self.sm.rom, flag, self)
 	do
---function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
 		local rom = self.sm.rom
-		local flag = flag or defaultFlagObj
-		local flagstack = table()
-
-		-- what's the furthest branch statement yet?
-		-- disasm until we get to a RTS/RTL after this point
-		local maxBranchAddr = self.addr
 
 		-- all instructions go here
 		-- instrs[1] will always be the subroutine entry point
@@ -1197,179 +1328,25 @@ function ASMFunction:init(args)
 		-- keep track of all return instructions.  exit points of the instruction graph.
 		self.retInstrs = table()
 		
-		-- link from the last instruction to the next
-		-- unless the last instruction is a return ...
-		local lastInstr
-
-		-- when waiting to disasm, insert instruction here:
-		local futureBranches = {}
-
 		local bank, ofs = frompc(self.addr)
 		local maxlen = 0x10000 - ofs	-- don't read past the page boundary
 --print(debug.traceback())
-print(debugtab..'BEGIN codeReadUntilRet '..('%02X:%04X'):format(bank, ofs))
+print(debugtab..'BEGIN ASMFunction '..('%02X:%04X'):format(bank, ofs))
 local olddebugtab = debugtab
 debugtab = debugtab..'\t'
-		defaultFlagObj[0] = 0
 		
-		
-		local ptr = rom + self.addr
-		local i = 0
-		while i < maxlen do
-			local instrcode = ptr[i]
-			local instr = instrClasses[instrcode]{addr=self.addr+i, ptr=ptr+i}
-			instr.prev = table()
-			instr.next = table()
-			self.instrs:insert(instr)
-			if lastInstr then 
-				-- #lastInstr.next should be 0 for non-branch and 1 for branch instructions
-				assert(#lastInstr.next == 0 or #lastInstr.next == 1)
-				lastInstr.next:insert(1, instr)
-				instr.prev:insert(lastInstr)
-			end
+		processNextInstruction(self, rom, self.addr, flag, flagstack)
 
-			-- see if any previous branch instructions had pointed to this
-			local branches = futureBranches[self.addr+i]
-			if branches then 
-				for _,branchSrc in ipairs(branches) do
-					-- this will == 0 if the prev instruction was a JMP or BRA
-					assert(#branchSrc.next == 0 or #branchSrc.next == 1, "somehow found a branch that points to more than 2 instructions")
-					branchSrc.next:insert(instr)
-					instr.prev:insert(branchSrc)
-				end
-				futureBranches[self.addr+i] = nil
-			end
-
---[[ normal
-			local _, n = instr:eat(self.addr+i, flag, ptr+i, flagstack)
---]]
--- [[ debugging
-local str, n = instr:getLineStr(flag, flagstack)
-print(debugtab..str)
---]]
-			-- if we read any branches, see where they go
-			-- if they go *before* our origin, put out a warning
-			-- if they go after our current index then don't stop upon return before that point
-			--[[
-			relative instructions:
-			1-byte = 
-				0x10 = BPL (branch on plus)
-				0x30 = BMI (branch on minus)
-				0x50 = BVC (branch on overflow clear)
-				0x70 = BVS (branch on overflow set)
-				0x80 = BRA (branch)
-				0x90 = BCC (branch on carry clear)
-				0xB0 = BCC (branch on carry set)
-				0xD0 = BNE (branch on not equal / zero clear)
-				0xF0 = BEQ (branch on equal / zero set)
-			2-byte, i.e. jump to self.addr + 3 + ((sint16_t*)arg)[0]
-				0x82 = BRL (branch long)
-			--]]
-
-			local branchBase
-			local branchOffset
-			if instrcode == 0x10
-			or instrcode == 0x30
-			or instrcode == 0x50
-			or instrcode == 0x70
-			or instrcode == 0x80
-			or instrcode == 0x90
-			or instrcode == 0xB0
-			or instrcode == 0xD0
-			or instrcode == 0xF0
-			then
-				branchBase = self.addr + i + 2
-				branchOffset = ffi.cast('int8_t*', ptr + i + 1)[0]
-			elseif instrcode == 0x82 then
-				branchBase = self.addr + i + 3
-				branchOffset = ffi.cast('int16_t*', ptr + i + 1)[0]
-			end
-			if branchBase then
-				local branchAddr = branchBase + branchOffset
-print(debugtab.."branch command at "..('%02X:%04X'):format(frompc(self.addr+i)).." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr)))
-				if branchAddr < self.addr then
-					print("WARNING - "
-						.."in function "..('%02X:%04X'):format(frompc(self.addr))
-						.." found a branch command at "..('%02X:%04X'):format(frompc(self.addr+i))
-						.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
-						.." that is before our function starting address")
-				elseif branchAddr <= self.addr + i then
-					local targetInstr = select(2, self.instrs:find(nil, function(ins) return ins.addr == branchAddr end))
-					if targetInstr then
-						-- because we haven't processed the next instruction, we haven't assigned the non-branch 'next' yet, so we will only have 0 'next's
-						assert(#instr.next == 0)
-						instr.next:insert(targetInstr)
-						targetInstr.prev:insert(instr)
-					else
-						-- this happens when we have a branch within our currently-disassembled range but doesn't hit an instruction
-						-- so it probably targets an instruction argument, which shouldn't be disassembled, right?
-						-- so for now I'll just save it in the to-be-disasm'd table
-						futureBranches[branchAddr] = futureBranches[branchAddr] or table()
-						futureBranches[branchAddr]:insert(instr)
-					end
-				else -- branchAddr >= self.addr + i
-					-- if we haven't got there yet then save it for later until we do resolve it
-					futureBranches[branchAddr] = futureBranches[branchAddr] or table()
-					futureBranches[branchAddr]:insert(instr)
-				end
-				maxBranchAddr = math.max(maxBranchAddr, branchAddr)
-			end
-
-			local lasti = i
-			i = i + n
-			-- [[
-			local newi, linestr = self.sm:codeProcessArgs(i, lasti, self.addr, ptr, true, flag, self)
-			if newi then
-print(debugtab.."skipping at "..('%02X:%04X'):format(frompc(self.addr+i)).. ' by ' .. (newi-i) .. ' bytes')
-print(debugtab..linestr)
-				i = newi
-			end
-			--]]
-			
-			-- return -- doesn't need a next instr, so clear 'lastInstr'
-			if instrcode == 0x60 	-- RTS = "return from subroutine"
-			or instrcode == 0x6B	-- RTL = "return from subroutine long" ... does this mean pop 3 from PC stack?
-			then
-				-- save all returns as instruction graph exits
-				self.retInstrs:insert(instr)
-				-- clear the lastInstr / don't assign a link from a 'return' to the next instruction disassembled
-				lastInstr = nil
-				if self.addr + i > maxBranchAddr then 
-					break 
-				end
-			elseif instrcode == 0x80	-- BRA = branch, so clear 'lastInstr'
-			or instrcode == 0x4C		-- JMP $xxxx
-			or instrcode == 0x5C		-- JMP $xx:xxxx
-			or instrcode == 0x6C		-- JMP ($xxxx)
-			or instrcode == 0x7C		-- JMP ($xxxx,X)
-			or instrcode == 0xDC		-- JMP [$xxxx]
-			then
-				lastInstr = nil
-			else
-				-- save this to assign a link to the next instruction
-				lastInstr = instr
-			end
-		end
 debugtab = olddebugtab
-print(debugtab..'END codeReadUntilRet '..('%02X:%04X'):format(bank, ofs)..' got until '..('%02X:%04X'):format(frompc(self.addr+i)))
+print(debugtab..'END ASMFunction '..('%02X:%04X'):format(bank, ofs))
 
-if next(futureBranches) then
-	print(debugtab..'WARNING - had some unresolved branch targets:')
-	for addr,branches in pairs(futureBranches) do
-		print(debugtab..' '..('%02X:%04X'):format(frompc(addr))..' : {'.. branches:mapi(function(br) 
-				return ('%02X:%04X'):format(frompc(br.addr))
-			end):concat', '..'}')
 	end
-end
-
-		self.code = byteArraySubset(rom, self.addr, i)
-	end
-
 
 	-- now reduce graph transitions
 	for _,instr in ipairs(self.instrs) do
 		instr.compressed = table{instr}
 	end
+	
 	do
 		local modified
 		repeat
@@ -1386,7 +1363,6 @@ end
 			end
 		until not modified
 	end
-
 
 	do
 		self.instrSeqGroups = table()
@@ -1405,9 +1381,21 @@ end
 		print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
 		local olddebugtab = debugtab
 		debugtab = debugtab .. '\t'
-		for _,compressed in ipairs(self.instrSeqGroups) do
+		for i,compressed in ipairs(self.instrSeqGroups) do
 			print(debugtab..('$%02X:%04X'):format(frompc(compressed[1].addr))
-				..' '..compressed:mapi(function(instr) return instr.name end):concat', ')
+				..' #'..i..': '
+				..compressed:mapi(function(instr) return instr.name end):concat', ')
+			
+			local nextGroupIndexes = compressed:last().next:mapi(function(instr)
+				local j = self.instrSeqGroups:find(nil, function(group)
+					return group[1] == instr
+				end)
+				assert(j, "how did I have a group last instr not pointing to another group first instr?")
+				return j
+			end)
+			if #nextGroupIndexes > 0 then
+				print(debugtab..' -> '..nextGroupIndexes:mapi(function(j) return '#'..j end):concat', ')
+			end
 		end
 		debugtab = olddebugtab
 		print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
@@ -1415,7 +1403,10 @@ end
 
 	-- TODO flagin vs flagout is too simple.  we need to track all changes to the flags, set, clear, push, pop
 	self.flagout = flag[0]
-	
+
+	-- TOOD calculate code size by longest contiguous set of instructions
+	self.codesize = 0
+
 	--[[
 	who points to this.
 	current list: 
@@ -1449,7 +1440,7 @@ end
 	
 function SMCode:codeBuildMemoryMap(mem)
 	for _,asmfunc in ipairs(self.asmfuncs) do
-		mem:add(asmfunc.addr, ffi.sizeof(asmfunc.code), 'code')
+		mem:add(asmfunc.addr, asmfunc.codesize, 'code')
 	end
 end
 
@@ -1462,12 +1453,17 @@ function SMCode:codePrint()
 		print()
 		print((' $%02X:%04X'):format(frompc(asmfunc.addr)))
 		print('  flag in='..('%02X'):format(asmfunc.flagin)..' out='..('%02X'):format(asmfunc.flagout))
-		print('   code ('
+		print('   code'
+--[[
+			..' ('
 			..ffi.sizeof(asmfunc.code)..' bytes'
-			..'): '..range(0,ffi.sizeof(asmfunc.code)-1):mapi(function(i) 
+			..')'
+			..': '..range(0,ffi.sizeof(asmfunc.code)-1):mapi(function(i) 
 				return ('%02X'):format(asmfunc.code[i])
-			end):concat' ')
-		print(self:codeDisasm(asmfunc.addr, asmfunc.code, ffi.sizeof(asmfunc.code), {[0]=asmfunc.flagin}))
+			end):concat' '
+--]]	
+		)
+--		print(self:codeDisasm(asmfunc.addr, asmfunc.code, ffi.sizeof(asmfunc.code), {[0]=asmfunc.flagin}))
 		print('   srcs:')
 		for _,src in ipairs(asmfunc.srcs) do
 			print('    '..('$%02X:%04X'):format(frompc(src.addr))..' '..src.type)
