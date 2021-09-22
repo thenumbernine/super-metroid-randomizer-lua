@@ -354,7 +354,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x0C, 0x0D, 0x0E, 0x1C, 0x20, 0x2C, 0x2D, 0x2E, 0x4C, 0x4D, 0x4E, 0x6D, 0x6E, 0x8C, 0x8D, 0x8E, 0x9C, 0xAC, 0xAD, 0xAE, 0xCC, 0xCD, 0xCE, 0xEC, 0xED, 0xEE},
 		address = 'absolute-a',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	}, 
@@ -368,7 +368,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x7C, 0xFC},
 		address = 'absolute indexed indirect-(a,x)',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%04X,X)"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	}, 
@@ -380,7 +380,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x1D, 0x1E, 0x3C, 0x3D, 0x3E, 0x5D, 0x5E, 0x7D, 0x7E, 0x9D, 0x9E, 0xBC, 0xBD, 0xDD, 0xDE, 0xFD, 0xFE},
 		address = 'absolute indexed with X-a,x',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X,X"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	}, 
@@ -392,7 +392,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x19, 0x39, 0x59, 0x79, 0x99, 0xB9, 0xBE, 0xD9, 0xF9},
 		address = 'absolute indexed with Y-a,y',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X,Y"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	},
@@ -405,7 +405,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x6C},
 		address = 'absolute indirect-(a)',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%04X)"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	},
@@ -413,7 +413,7 @@ local formatsAndSizesInfo = {
 	-- absolute indirect long?
 	{
 		instrs = {0xDC},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("[$%04X]"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	}, 
@@ -424,7 +424,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x0F, 0x22, 0x2F, 0x4F, 0x5C, 0x6F, 0x8F, 0xAF, 0xCF, 0xEF},
 		address = 'absolute long-al',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X:%04X"):format(mem[3],  bit.bor(mem[1], bit.lshift(mem[2], 8))), 4
 		end,
 	},
@@ -435,7 +435,7 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x1F, 0x3F, 0x5F, 0x7F, 0x9F, 0xBF, 0xDF, 0xFF},
 		address = 'absolute long indexed with x-al,x',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X:%04X,X"):format(mem[3], bit.bor(mem[1], bit.lshift(mem[2], 8))), 4
 		end,
 	}, 
@@ -446,59 +446,85 @@ local formatsAndSizesInfo = {
 	{
 		instrs = {0x0A, 0x1A, 0x2A, 0x3A, 0x4A, 0x6A},
 		address = 'accumulator-a',
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return string.format("A"), 1
 		end,
 	},
 
 	{
 		instrs = {0x44, 0x54},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X,$%02X"):format(mem[1],mem[2]), 3
 		end,
 	}, {
 		instrs = {0x04, 0x05, 0x06, 0x14, 0x24, 0x25, 0x26, 0x45, 0x46, 0x64, 0x65, 0x66, 0x84, 0x85, 0x86, 0xA4, 0xA5, 0xA6, 0xC4, 0xC5, 0xC6, 0xE4, 0xE5, 0xE6},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x15, 0x16, 0x34, 0x35, 0x36, 0x55, 0x56, 0x74, 0x75, 0x76, 0x94, 0x95, 0xB4, 0xB5, 0xD5, 0xD6, 0xF5, 0xF6},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X,X"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x96, 0xB6},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X,Y"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x12, 0x32, 0x52, 0x72, 0x92, 0xB2, 0xD2, 0xF2},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%02X)"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x07, 0x27, 0x47, 0x67, 0x87, 0xA7, 0xC7, 0xE7},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("[$%02X]"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x01, 0x21, 0x41, 0x61, 0x81, 0xA1, 0xC1, 0xE1},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%02X,X)"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x11, 0x31, 0x51, 0x71, 0x91, 0xB1, 0xD1, 0xF1},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%02X),Y"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x17, 0x37, 0x57, 0x77, 0x97, 0xB7, 0xD7, 0xF7},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("[$%02X],Y"):format(mem[1]), 2
 		end,
 	}, {
-		instrs = {0x28, 0x2B, 0x68, 0x7A, 0xAB, 0xFA, 0x08, 0x0B, 0x48, 0x4B, 0x5A, 0x8B, 0xDA, 0x6B, 0x60, 0x40, 0x18, 0x1B, 0x38, 0x3B, 0x58, 0x5B, 0x78, 0x7B, 0x88, 0x8A, 0x98, 0x9A, 0x9B, 0xA8, 0xAA, 0xB8, 0xBA, 0xBB, 0xC8, 0xCA, 0xCB, 0xD8, 0xDB, 0xE8, 0xEA, 0xEB, 0xF8, 0xFB},
-		eat = function(addr, flag, mem) return "", 1 end,
+		instrs = {0x2B, 0x68, 0x7A, 0xAB, 0xFA, 0x0B, 0x48, 0x4B, 0x5A, 0x8B, 0xDA, 0x6B, 0x60, 0x40, 0x18, 0x1B, 0x38, 0x3B, 0x58, 0x5B, 0x78, 0x7B, 0x88, 0x8A, 0x98, 0x9A, 0x9B, 0xA8, 0xAA, 0xB8, 0xBA, 0xBB, 0xC8, 0xCA, 0xCB, 0xD8, 0xDB, 0xE8, 0xEA, 0xEB, 0xF8, 0xFB},
+		eat = function(self, addr, flag, mem) return "", 1 end,
+		-- TODO handle push P / pop P
+	},
+	--[[
+	I'm going to do a really rough emulation of flag push/pop
+	in reality I would have to emulate the stack pointer as well, for the cases when the flags are pushed and another register is popped, or vice versa
+	instead all I'll do is warn if the stack is not balanced at the end of the routine
+	--]]
+	-- PHP
+	{
+		instrs = {0x08},
+		eat = function(self, addr, flag, mem, flagstack)
+			flagstack:insert(flag[0])
+			return "", 1
+		end,
+	},
+	-- PLP
+	{
+		instrs = {0x28},
+		eat = function(self, addr, flag, mem, flagstack)
+			if #flagstack == 0 then
+				print('WARNING - flag stack underrun at '..('%02X:%04X'):format(frompc(addr)))
+			else
+				flag[0] = flagstack:remove()
+			end
+			return "", 1
+		end,
 	},
 
 	--[[
@@ -506,7 +532,7 @@ local formatsAndSizesInfo = {
 	--]]
 	{
 		instrs = {0x10, 0x30, 0x50, 0x70, 0x80, 0x90, 0xB0, 0xD0, 0xF0},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X"):format(
 				bit.bor(bit.band(addr + 2 + ffi.cast('int8_t*', mem+1)[0], 0xFFFF), 0x8000)
 			), 2
@@ -518,7 +544,7 @@ local formatsAndSizesInfo = {
 	--]]
 	{
 		instrs = {0x62, 0x82},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X"):format(
 				bit.bor(bit.band(addr + 3 + ffi.cast('int16_t*', mem+1)[0], 0xFFFF), 0x8000)
 			), 3
@@ -527,7 +553,7 @@ local formatsAndSizesInfo = {
 
 	{
 		instrs = {0x13, 0x33, 0x53, 0x73, 0x93, 0xB3, 0xD3, 0xF3},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%02X,S),Y"):format(mem[1]), 2
 		end,
 	},
@@ -537,41 +563,41 @@ local formatsAndSizesInfo = {
 	--]]
 	{
 		instrs = {0xF4},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%04X"):format(bit.bor(mem[1], bit.lshift(mem[2], 8))), 3
 		end,
 	},
 
 	{
 		instrs = {0xD4},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("($%02X)"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x03, 0x23, 0x43, 0x63, 0x83, 0xA3, 0xC3, 0xE3},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X,S"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x42, 0x00, 0x02},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			return ("$%02X"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0xC2},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			flag[0] = bit.band(flag[0], bit.bnot(mem[1]))
 			return ("#$%02X"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0xE2},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			flag[0] = bit.bor(flag[0], mem[1])
 			return ("#$%02X"):format(mem[1]), 2
 		end,
 	}, {
 		instrs = {0x09, 0x29, 0x49, 0x69, 0x89, 0xA9, 0xC9, 0xE9},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			if bit.band(flag[0], 0x20) ~= 0 then
 				return ("#$%02X"):format(mem[1]), 2
 			else
@@ -580,7 +606,7 @@ local formatsAndSizesInfo = {
 		end,
 	}, {
 		instrs = {0xA0, 0xA2, 0xC0, 0xE0},
-		eat = function(addr, flag, mem)
+		eat = function(self, addr, flag, mem)
 			if bit.band(flag[0], 0x10) ~= 0 then
 				return ("#$%02X"):format(mem[1]), 2
 			else
@@ -603,26 +629,30 @@ stores:
 
 	eatcstr = function like eat but produces c-like pseudocode
 --]]
-local instrInfo = {}
+local instrClasses = {}
 for name, instrs in pairs(instrsForNames) do
-	for _,instr in ipairs(instrs.instrs) do
-		instrInfo[instr] = {name=name}
+	for _,code in ipairs(instrs.instrs) do
+		instrClasses[code] = {name=name}
 	end
 end
 for _,info in ipairs(formatsAndSizesInfo) do
-	for _,instr in ipairs(info.instrs) do
+	for _,code in ipairs(info.instrs) do
+		-- copy everything into the instrClass
+		instrClasses[code].code = code
 		for k,v in pairs(info) do
-			instrInfo[instr][k] = v
+			if k ~= 'instrs' then
+				instrClasses[code][k] = v
+			end
 		end
 
 		-- making this for my c friends who don't like asm
 		-- hopefully it's right ... shows how well i remember asm programming
 		-- notice 'flag' might become modified, but don't trust its value
 		-- you can write 'flag' beforehand but don't read it afterwards.
-		instrInfo[instr].eatcstr = function(self, addr, flag, mem)
+		instrClasses[code].eatcstr = function(self, addr, flag, mem, flagstack)
 			local arg = self.eatc 
-				and self.eatc(addr, flag, mem)
-				or self.eat(addr, flag, mem)
+				and self:eatc(addr, flag, mem, flagstack)
+				or self:eat(addr, flag, mem, flagstack)
 			local readmem
 			if arg:match'^#%$' then
 				arg = '0x'..arg:match'^#%$(.*)$' 
@@ -899,52 +929,66 @@ for _,info in ipairs(formatsAndSizesInfo) do
 end
 
 
+local InstructionImpl = {}
+	
+--[[
+args:
+	addr = address of instruction
+	-- rom+addr == ptr
+	ptr = pointer to memory at the instruction address
 
+runtime state:
+	next = table to points to next Instruction.  should always have 1.
+			in the case of branches, should only have two and 2nd points to the alternative next Instruction.
 
-local defaultFlagObj = ffi.new('uint8_t[1]', 0)
+runtime function args:
+	flag = incoming flag state (determines instruction)
+	flagstack = push/pop of flags
+
+statics:
+	code = byte code of the instruction
+--]]
+function InstructionImpl:init(args)
+	self.addr = assert(args.addr)
+	self.ptr = assert(args.ptr)
+end
+
 local pushflag = ffi.new('uint8_t[1]', 0)
-
--- making all this seamless soon
-local tmpmem = ffi.new('uint8_t[4]')
-
-function SMCode:codeGetLineStr(addr, flag, ...)
-	local code0, code1, code2, code3 = ...
-	tmpmem[0] = code0
-	tmpmem[1] = code1
-	tmpmem[2] = code2
-	tmpmem[3] = code3
-	local instr = instrInfo[code0]
+function InstructionImpl:getLineStr(flag, flagstack)
+	local instr = instrClasses[code0]
 	local origflag = flag[0]
 	pushflag[0] = flag[0]	-- store state for instrcstr
-	local instrstr, n = instr.eat(
-		addr,	-- TODO ... 0000 vs 8000 here, and BEQ resolving the correct address ...
+	local instrstr, n = self:eat(
+		self.addr,	-- TODO ... 0000 vs 8000 here, and BEQ resolving the correct address ...
 		flag,	-- or maybe I just shouldn't use 'frompc' next:
-		tmpmem
+		self.ptr,
+		flagstack
 	)
 
 	local instrcstr
 	if tryToPrintCEquiv then
 		-- trying out c-like pseudocode for kicks
-		instrcstr = instr:eatcstr(
-			addr,
+		instrcstr = self:eatcstr(
+			self.addr,
 			pushflag,
-			tmpmem
+			self.ptr,
+			table(flagstack)
 		)
 	end
 
-	local bank, instrofs = frompc(addr)
+	local bank, instrofs = frompc(self.addr)
 	-- notice frompc is snes based so it's only using 15 bits and setting the 15th
 	-- so wrt addresses, 0x0000-1 = 0xffff, but 0x0000 will show up as address 0x8000 (15th bit goes into the bank) 
 	local linestr = ('$%02X:%04X'):format(bank, instrofs)
 	for j=0,3 do
 		if j < n then
-			linestr = linestr .. (' %02X'):format(select(j+1, ...) or 0x00)
+			linestr = linestr .. (' %02X'):format(self.ptr[j])
 		else
 			linestr = linestr .. '   '
 		end
 	end
 	linestr = linestr..' '..('P=%02X'):format(origflag)
-	linestr = linestr ..' '..instr.name ..' '..instrstr
+	linestr = linestr ..' '..self.name ..' '..instrstr
 
 	if tryToPrintCEquiv then
 		linestr = linestr
@@ -954,6 +998,17 @@ function SMCode:codeGetLineStr(addr, flag, ...)
 	end	
 	return linestr, n
 end
+
+-- make each a class
+for i=0,255 do
+	local cl = class(InstructionImpl, instrClasses[i])
+	instrClasses[i] = cl
+end
+
+SMCode.instrClasses = instrClasses
+
+
+local defaultFlagObj = ffi.new('uint8_t[1]', 0)
 
 
 -- some JSRs expect fixed-size data after their instruction
@@ -1048,20 +1103,12 @@ function SMCode:codeDisasm(addr, ptr, maxlen, flagObj)
 --]]
 	defaultFlagObj[0] = 0
 	local flag = flagObj or defaultFlagObj
+	local flagstack = table()
 	local ss = table()
 	local i = 0
 	while i < maxlen do
-		local str, n = self:codeGetLineStr(
-			addr+i,
-			flag,
-			-- TODO ... how about reading over the end ...
-			-- seems like I should always pad the incoming buffer by 3 bytes
-			-- until then, i'll pad the next function
-			ptr[i],
-			i+1 < maxlen and ptr[i+1] or 0x00,
-			i+2 < maxlen and ptr[i+2] or 0x00,
-			i+3 < maxlen and ptr[i+3] or 0x00
-		)
+		local instr = instrClasses[ptr[i]]{addr=addr+i, ptr=ptr+i}
+		local str, n = instr:getLineStr(flag, flagstack)
 		ss:insert(str)
 	
 		local lasti = i
@@ -1076,7 +1123,40 @@ function SMCode:codeDisasm(addr, ptr, maxlen, flagObj)
 end
 
 --[[
-reads instructions, stops at RTS, returns contents in a Lua table
+this is a merge of roomState.layerHandling and door.doorCode
+TODO generalize this into all code - change it to "ASMFunction" 
+	and then make a call graph traversal out of it
+
+ok bigger TODO with flagin and flagout ...
+and this will get messier when I consider branches ...
+
+here's the issue:
+8F:C97B has flags ...
+... push flags
+... flags |= 0x20
+... pop flags
+... call 88:DDC7
+... and on the way back, my current flagin=00, flagout=30
+... but what should the flags be set to on the way out, esp if it has balanced push/pop?
+
+88:DDC7 ... flags in=00
+... call 80:81DC ... flags before=00, flags after=00
+... either call 88:8435 with one set of trailing values ... (flags in=00, out=30)
+... or call 88:8435 with another set						(flags in=00, out=30)
+
+80:81DC:
+... push flags
+... flags |= 0x20
+... branch 1: pop flags
+... branch 2: pop flags
+
+88:8435
+--]]
+local ASMFunction = class()
+ASMFunction.type = 'code'
+
+--[[
+ctor reads instructions, stops at RTS, returns contents in a Lua table
 (TODO return a uint8_t[] instead?)
 (TODO generate the disasm string as you go?)
 (TODO follow branches, create a jump/call graph)
@@ -1086,107 +1166,256 @@ have codeReadUntilRet return a table of ASMInstructions, each a table of bytes
 then for serialization, just ... serialize them each as is
 and for readjusting them, just shift the bytes between ASMInstructions
 --]]
-function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
-	-- what's the furthest branch statement yet?
-	-- disasm until we get to a RTS/RTL after this point
-	local maxBranchAddr = addr
-
-	local bank, ofs = frompc(addr)
-	local maxlen = 0x10000 - ofs	-- don't read past the page boundary
---print('codeReadUntilRet '..('%02X:%04X'):format(bank, ofs))	
-	defaultFlagObj[0] = 0
-	local flag = flagObj or defaultFlagObj
-	local ptr = rom + addr
-	local i = 0
-	while i < maxlen do
-		local instrcode = ptr[i]
-		local instr = instrInfo[instrcode]
---print(('%02X:%04X'):format(frompc(i+addr))..' '..instr.name)
-		local _, n = instr.eat(addr+i, flag, ptr+i)
-
-		-- if we read any branches, see where they go
-		-- if they go *before* our origin, put out a warning
-		-- if they go after our current index then don't stop upon return before that point
-		--[[
-		relative instructions:
-1-byte = 
-	0x10 = BPL (branch on plus)
-	0x30 = BMI (branch on minus)
-	0x50 = BVC (branch on overflow clear)
-	0x70 = BVS (branch on overflow set)
-	0x80 = BRA (branch)
-	0x90 = BCC (branch on carry clear)
-	0xB0 = BCC (branch on carry set)
-	0xD0 = BNE (branch on not equal / zero clear)
-	0xF0 = BEQ (branch on equal / zero set)
-2-byte, i.e. jump to addr + 3 + ((sint16_t*)arg)[0]
-	0x82 = BRL (branch long)
-		--]]
-
-		local branchBase
-		local branchOffset
-		if instrcode == 0x10
-		or instrcode == 0x30
-		or instrcode == 0x50
-		or instrcode == 0x70
-		or instrcode == 0x80
-		or instrcode == 0x90
-		or instrcode == 0xB0
-		or instrcode == 0xD0
-		or instrcode == 0xF0
-		then
-			branchBase = addr + i + 2
-			branchOffset = ffi.cast('int8_t*', ptr + i + 1)[0]
-		elseif instrcode == 0x82 then
-			branchBase = addr + i + 3
-			branchOffset = ffi.cast('int16_t*', ptr + i + 1)[0]
-		end
-		if branchBase then
-			local branchAddr = branchBase + branchOffset
---print("branch command at "..('%02X:%04X'):format(frompc(addr+i)).." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr)))
-			if branchAddr < addr then
-				print("WARNING - "
-					.."in function "..('%02X:%04X'):format(frompc(addr))
-					.." found a branch command at "..('%02X:%04X'):format(frompc(addr+i))
-					.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
-					.." that is before our function starting address")
-			end
-			maxBranchAddr = math.max(maxBranchAddr, branchAddr)
-		end
-
-		local lasti = i
-		i = i + n
--- [[
-		local newi = self:codeProcessArgs(i, lasti, addr, ptr, true, flag, asmfunc)
-		if newi then
---print("skipping at "..('%02X:%04X'):format(frompc(addr+i)).. ' by ' .. (newi-i) .. ' bytes')
-			i = newi
-		end
---]]	
-		if (instrcode == 0x60 	-- RTS = "return from subroutine"
-		or instrcode == 0x6B)	-- RTL = "return from subroutine long" ... does this mean pop 3 from PC stack?
-		and addr + i > maxBranchAddr 
-		then break end
-	end
---print('...got until '..('%02X:%04X'):format(frompc(addr+i)))
-	return byteArraySubset(rom, addr, i)
-end
-
---[[
-this is a merge of roomState.layerHandling and door.doorCode
-TODO generalize this into all code - change it to "ASMFunction" 
-	and then make a call graph traversal out of it
---]]
-local ASMFunction = class()
-ASMFunction.type = 'code'
-
+local debugtab = ''
 function ASMFunction:init(args)
 	self.sm = assert(args.sm)
 	self.addr = assert(args.addr)
+
+	-- ok now build a directed graph of all *INSTRUCTIONS* within the function
+	-- then collapse all edges of the graph
+	-- and last trace through all paths to see how the flags can change
+
 	local flag = {[0] = args.flag or 0}
 	self.flagin = flag[0]
-	self.code = self.sm:codeReadUntilRet(self.addr, self.sm.rom, flag, self)
+	
+--	self.code = 
+--	self.sm:codeReadUntilRet(self.addr, self.sm.rom, flag, self)
+	do
+--function SMCode:codeReadUntilRet(addr, rom, flagObj, asmfunc)
+		local rom = self.sm.rom
+		local flag = flag or defaultFlagObj
+		local flagstack = table()
+
+		-- what's the furthest branch statement yet?
+		-- disasm until we get to a RTS/RTL after this point
+		local maxBranchAddr = self.addr
+
+		-- all instructions go here
+		-- instrs[1] will always be the subroutine entry point
+		self.instrs = table()
+		
+		-- keep track of all return instructions.  exit points of the instruction graph.
+		self.retInstrs = table()
+		
+		-- link from the last instruction to the next
+		-- unless the last instruction is a return ...
+		local lastInstr
+
+		-- when waiting to disasm, insert instruction here:
+		local futureBranches = {}
+
+		local bank, ofs = frompc(self.addr)
+		local maxlen = 0x10000 - ofs	-- don't read past the page boundary
+--print(debug.traceback())
+print(debugtab..'BEGIN codeReadUntilRet '..('%02X:%04X'):format(bank, ofs))
+local olddebugtab = debugtab
+debugtab = debugtab..'\t'
+		defaultFlagObj[0] = 0
+		
+		
+		local ptr = rom + self.addr
+		local i = 0
+		while i < maxlen do
+			local instrcode = ptr[i]
+			local instr = instrClasses[instrcode]{addr=self.addr+i, ptr=ptr+i}
+			instr.prev = table()
+			instr.next = table()
+			self.instrs:insert(instr)
+			if lastInstr then 
+				-- #lastInstr.next should be 0 for non-branch and 1 for branch instructions
+				assert(#lastInstr.next == 0 or #lastInstr.next == 1)
+				lastInstr.next:insert(1, instr)
+				instr.prev:insert(lastInstr)
+			end
+
+			-- see if any previous branch instructions had pointed to this
+			local branches = futureBranches[self.addr+i]
+			if branches then 
+				for _,branchSrc in ipairs(branches) do
+					-- this will == 0 if the prev instruction was a JMP or BRA
+					assert(#branchSrc.next == 0 or #branchSrc.next == 1, "somehow found a branch that points to more than 2 instructions")
+					branchSrc.next:insert(instr)
+					instr.prev:insert(branchSrc)
+				end
+				futureBranches[self.addr+i] = nil
+			end
+
+--[[ normal
+			local _, n = instr:eat(self.addr+i, flag, ptr+i, flagstack)
+--]]
+-- [[ debugging
+local str, n = instr:getLineStr(flag, flagstack)
+print(debugtab..str)
+--]]
+			-- if we read any branches, see where they go
+			-- if they go *before* our origin, put out a warning
+			-- if they go after our current index then don't stop upon return before that point
+			--[[
+			relative instructions:
+			1-byte = 
+				0x10 = BPL (branch on plus)
+				0x30 = BMI (branch on minus)
+				0x50 = BVC (branch on overflow clear)
+				0x70 = BVS (branch on overflow set)
+				0x80 = BRA (branch)
+				0x90 = BCC (branch on carry clear)
+				0xB0 = BCC (branch on carry set)
+				0xD0 = BNE (branch on not equal / zero clear)
+				0xF0 = BEQ (branch on equal / zero set)
+			2-byte, i.e. jump to self.addr + 3 + ((sint16_t*)arg)[0]
+				0x82 = BRL (branch long)
+			--]]
+
+			local branchBase
+			local branchOffset
+			if instrcode == 0x10
+			or instrcode == 0x30
+			or instrcode == 0x50
+			or instrcode == 0x70
+			or instrcode == 0x80
+			or instrcode == 0x90
+			or instrcode == 0xB0
+			or instrcode == 0xD0
+			or instrcode == 0xF0
+			then
+				branchBase = self.addr + i + 2
+				branchOffset = ffi.cast('int8_t*', ptr + i + 1)[0]
+			elseif instrcode == 0x82 then
+				branchBase = self.addr + i + 3
+				branchOffset = ffi.cast('int16_t*', ptr + i + 1)[0]
+			end
+			if branchBase then
+				local branchAddr = branchBase + branchOffset
+print(debugtab.."branch command at "..('%02X:%04X'):format(frompc(self.addr+i)).." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr)))
+				if branchAddr < self.addr then
+					print("WARNING - "
+						.."in function "..('%02X:%04X'):format(frompc(self.addr))
+						.." found a branch command at "..('%02X:%04X'):format(frompc(self.addr+i))
+						.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
+						.." that is before our function starting address")
+				elseif branchAddr <= self.addr + i then
+					local targetInstr = select(2, self.instrs:find(nil, function(ins) return ins.addr == branchAddr end))
+					if targetInstr then
+						-- because we haven't processed the next instruction, we haven't assigned the non-branch 'next' yet, so we will only have 0 'next's
+						assert(#instr.next == 0)
+						instr.next:insert(targetInstr)
+						targetInstr.prev:insert(instr)
+					else
+						-- this happens when we have a branch within our currently-disassembled range but doesn't hit an instruction
+						-- so it probably targets an instruction argument, which shouldn't be disassembled, right?
+						-- so for now I'll just save it in the to-be-disasm'd table
+						futureBranches[branchAddr] = futureBranches[branchAddr] or table()
+						futureBranches[branchAddr]:insert(instr)
+					end
+				else -- branchAddr >= self.addr + i
+					-- if we haven't got there yet then save it for later until we do resolve it
+					futureBranches[branchAddr] = futureBranches[branchAddr] or table()
+					futureBranches[branchAddr]:insert(instr)
+				end
+				maxBranchAddr = math.max(maxBranchAddr, branchAddr)
+			end
+
+			local lasti = i
+			i = i + n
+			-- [[
+			local newi, linestr = self.sm:codeProcessArgs(i, lasti, self.addr, ptr, true, flag, self)
+			if newi then
+print(debugtab.."skipping at "..('%02X:%04X'):format(frompc(self.addr+i)).. ' by ' .. (newi-i) .. ' bytes')
+print(debugtab..linestr)
+				i = newi
+			end
+			--]]
+			
+			-- return -- doesn't need a next instr, so clear 'lastInstr'
+			if instrcode == 0x60 	-- RTS = "return from subroutine"
+			or instrcode == 0x6B	-- RTL = "return from subroutine long" ... does this mean pop 3 from PC stack?
+			then
+				-- save all returns as instruction graph exits
+				self.retInstrs:insert(instr)
+				-- clear the lastInstr / don't assign a link from a 'return' to the next instruction disassembled
+				lastInstr = nil
+				if self.addr + i > maxBranchAddr then 
+					break 
+				end
+			elseif instrcode == 0x80	-- BRA = branch, so clear 'lastInstr'
+			or instrcode == 0x4C		-- JMP $xxxx
+			or instrcode == 0x5C		-- JMP $xx:xxxx
+			or instrcode == 0x6C		-- JMP ($xxxx)
+			or instrcode == 0x7C		-- JMP ($xxxx,X)
+			or instrcode == 0xDC		-- JMP [$xxxx]
+			then
+				lastInstr = nil
+			else
+				-- save this to assign a link to the next instruction
+				lastInstr = instr
+			end
+		end
+debugtab = olddebugtab
+print(debugtab..'END codeReadUntilRet '..('%02X:%04X'):format(bank, ofs)..' got until '..('%02X:%04X'):format(frompc(self.addr+i)))
+
+if next(futureBranches) then
+	print(debugtab..'WARNING - had some unresolved branch targets:')
+	for addr,branches in pairs(futureBranches) do
+		print(debugtab..' '..('%02X:%04X'):format(frompc(addr))..' : {'.. branches:mapi(function(br) 
+				return ('%02X:%04X'):format(frompc(br.addr))
+			end):concat', '..'}')
+	end
+end
+
+		self.code = byteArraySubset(rom, self.addr, i)
+	end
+
+
+	-- now reduce graph transitions
+	for _,instr in ipairs(self.instrs) do
+		instr.compressed = table{instr}
+	end
+	do
+		local modified
+		repeat
+			modified = nil
+			-- 
+			for _,instr in ipairs(self.instrs) do
+				local last = instr.compressed:last()
+				if #last.next == 1 
+				and #last.next[1].prev == 1	-- make sure compressed edges don't include branch entry points
+				then
+					instr.compressed:insert(last.next[1])
+					modified = true
+				end
+			end
+		until not modified
+	end
+
+
+	do
+		self.instrSeqGroups = table()
+		local i = 1
+		while i <= #self.instrs do
+			local instr = self.instrs[i]
+			self.instrSeqGroups:insert(instr.compressed)
+			i = i + #instr.compressed
+		end
+		for _,instr in ipairs(self.instrs) do
+			instr.compressed = nil
+		end
+		-- ok now that we have our distinct groups ...
+		-- TODO if we have any BRA's at the end, and they target instructions with no beginnings ... then we can just append those
+
+		print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+		local olddebugtab = debugtab
+		debugtab = debugtab .. '\t'
+		for _,compressed in ipairs(self.instrSeqGroups) do
+			print(debugtab..('$%02X:%04X'):format(frompc(compressed[1].addr))
+				..' '..compressed:mapi(function(instr) return instr.name end):concat', ')
+		end
+		debugtab = olddebugtab
+		print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+	end
+
+	-- TODO flagin vs flagout is too simple.  we need to track all changes to the flags, set, clear, push, pop
 	self.flagout = flag[0]
+	
 	--[[
 	who points to this.
 	current list: 

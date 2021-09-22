@@ -120,8 +120,7 @@ assert(ffi.sizeof'animLookup_t' == 4)
 function SMSamus:samusInit()
 
 	-- 0x8000..0x808d = code
-	self.samusAnimCodeAddr = topc(0x92, 0x8000)
-	self.samusAnimCode = self:codeAdd(self.samusAnimCodeAddr)
+	self.samusAnimCode = self:codeAdd(topc(0x92, 0x8000))
 
 	-- this is a collection of unique SpritemapSet's
 	self.samusSpritemapSets = table()
@@ -173,10 +172,8 @@ function SMSamus:samusInit()
 	end
 
 
-	-- TODO track branches and keep reading past the first RET
-	-- also TODO use page size as the maxlen
-	self.samusAnimCode2Addr = topc(0x92, 0xedf4)
-	self.samusAnimCode2 = self:codeReadUntilRet(self.samusAnimCode2Addr, self.rom)
+	-- code from 92:ED24 to EDF3
+	self.samusAnimCode2 = self:codeAdd(topc(0x92, 0xed24))
 
 	-- samus tiles ...
 	-- where are the tilemaps?
@@ -265,8 +262,6 @@ function SMSamus:samusBuildMemoryMap(mem)
 	self.samusBottomDMASetOffset:addMem(mem, 'samusBottomDMASetOffset')
 	self.samusAnimOfs:addMem(mem, 'samusAnimOfs')
 	self.samusAnimLookups:addMem(mem, 'samusAnimLookups')
-
-	mem:add(self.samusAnimCode2Addr, ffi.sizeof(self.samusAnimCode2), 'samusAnimCode2')
 
 	self.samusDeathTiles:addMem(mem, 'samusDeathTiles')
 	for i,palette in ipairs(self.samusPalettes) do
