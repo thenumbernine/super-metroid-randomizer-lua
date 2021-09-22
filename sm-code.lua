@@ -650,7 +650,9 @@ for _,info in ipairs(formatsAndSizesInfo) do
 		-- hopefully it's right ... shows how well i remember asm programming
 		-- notice 'flag' might become modified, but don't trust its value
 		-- you can write 'flag' beforehand but don't read it afterwards.
-		instrClasses[code].eatcstr = function(self, addr, flag, mem, flagstack)
+		instrClasses[code].eatcstr = function(self, flag, flagstack)
+			local addr = self.addr
+			local mem = self.ptr
 			local arg = self.eatc 
 				and self:eatc(addr, flag, mem, flagstack)
 				or self:eat(addr, flag, mem, flagstack)
@@ -958,22 +960,12 @@ function InstructionImpl:getLineStr(flag, flagstack)
 	local instr = instrClasses[code0]
 	local origflag = flag[0]
 	pushflag[0] = flag[0]	-- store state for instrcstr
-	local instrstr, n = self:eat(
-		self.addr,	-- TODO ... 0000 vs 8000 here, and BEQ resolving the correct address ...
-		flag,	-- or maybe I just shouldn't use 'frompc' next:
-		self.ptr,
-		flagstack
-	)
+	local instrstr, n = self:eat(flag, flagstack)
 
 	local instrcstr
 	if tryToPrintCEquiv then
 		-- trying out c-like pseudocode for kicks
-		instrcstr = self:eatcstr(
-			self.addr,
-			pushflag,
-			self.ptr,
-			table(flagstack)
-		)
+		instrcstr = self:eatcstr(pushflag, table(flagstack))
 	end
 
 	local bank, instrofs = frompc(self.addr)
@@ -1003,6 +995,12 @@ end
 for i=0,255 do
 	local cl = class(InstructionImpl, instrClasses[i])
 	instrClasses[i] = cl
+
+	-- ok bad hack, but the previous "eat" functions take in stuff that's now members of InstructionImpl ...
+	local oldeat = cl.eat
+	function cl:eat(flag, flagstack)
+		return oldeat(self, self.addr, flag, self.ptr, flagstack)
+	end
 end
 
 SMCode.instrClasses = instrClasses
@@ -1187,7 +1185,7 @@ local function processNextInstruction(
 	self.instrs:insert(instr)
 
 --[[ normal
-	local _, n = instr:eat(addr, flag, ptr, flagstack)
+	local _, n = instr:eat(flag, flagstack)
 --]]
 -- [[ debugging
 	local str, n = instr:getLineStr(flag, flagstack)
@@ -1447,7 +1445,8 @@ end
 			or instr.code == 0xE2	-- SEP
 			then
 				--subtrace:insert(instr.code)
-				trace:insert(instr.name)
+				--trace:insert(instr.name)
+				trace:insert(instr.name..' '..instr:eat({[0]=0}, table()))
 			end
 		end
 
