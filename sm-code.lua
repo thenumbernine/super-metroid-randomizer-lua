@@ -111,6 +111,7 @@ local instrsForNames = {
 	BIT = {
 		instrs = {0x89, 0x2C, 0x24, 0x3C, 0x34},
 	},
+	-- is this BRK $xx or is it just BRK?
 	BRK = {
 		instrs = {0x00},
 	},
@@ -497,7 +498,7 @@ local formatsAndSizesInfo = {
 			return ("[$%02X],Y"):format(mem[1]), 2
 		end,
 	}, {
-		instrs = {0x2B, 0x68, 0x7A, 0xAB, 0xFA, 0x0B, 0x48, 0x4B, 0x5A, 0x8B, 0xDA, 0x6B, 0x60, 0x40, 0x18, 0x1B, 0x38, 0x3B, 0x58, 0x5B, 0x78, 0x7B, 0x88, 0x8A, 0x98, 0x9A, 0x9B, 0xA8, 0xAA, 0xB8, 0xBA, 0xBB, 0xC8, 0xCA, 0xCB, 0xD8, 0xDB, 0xE8, 0xEA, 0xEB, 0xF8, 0xFB},
+		instrs = {0x00, 0x2B, 0x68, 0x7A, 0xAB, 0xFA, 0x0B, 0x48, 0x4B, 0x5A, 0x8B, 0xDA, 0x6B, 0x60, 0x40, 0x18, 0x1B, 0x38, 0x3B, 0x58, 0x5B, 0x78, 0x7B, 0x88, 0x8A, 0x98, 0x9A, 0x9B, 0xA8, 0xAA, 0xB8, 0xBA, 0xBB, 0xC8, 0xCA, 0xCB, 0xD8, 0xDB, 0xE8, 0xEA, 0xEB, 0xF8, 0xFB},
 		eat = function(self, addr, flag, mem) return "", 1 end,
 		-- TODO handle push P / pop P
 	},
@@ -579,7 +580,7 @@ local formatsAndSizesInfo = {
 			return ("$%02X,S"):format(mem[1]), 2
 		end,
 	}, {
-		instrs = {0x42, 0x00, 0x02},
+		instrs = {0x42, 0x02},
 		eat = function(self, addr, flag, mem)
 			return ("$%02X"):format(mem[1]), 2
 		end,
@@ -722,8 +723,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'BRA' then
 				return 'goto '..arg..';'
 			elseif self.name == 'BRK' then	-- "Causes a software break. The PC is loaded from a vector table from somewhere around $FFE6."
-				-- TODO
-				return 'BRK '..arg
+				return 'BRK'
 			elseif self.name == 'BRL' then	-- how is this different from BRA? BRA="branch", BRL="branch long"
 				return 'goto '..arg..';'
 			elseif self.name == 'BVC' then
@@ -1203,6 +1203,8 @@ print(debugtab..linestr)
 		nextAddr = addr + newn
 	end
 
+	instr.size = nextAddr - addr
+
 	local function inlineProcessNext(nextAddr)
 		local nextinstr = processNextInstruction(self, rom, nextAddr, flag, flagstack)
 		if nextinstr then
@@ -1378,34 +1380,69 @@ print(debugtab..'END ASMFunction '..('%02X:%04X'):format(bank, ofs))
 		-- ok now that we have our distinct groups ...
 		-- TODO if we have any BRA's at the end, and they target instructions with no beginnings ... then we can just append those
 
-		print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
-		local olddebugtab = debugtab
-		debugtab = debugtab .. '\t'
-		for i,compressed in ipairs(self.instrSeqGroups) do
-			print(debugtab..('$%02X:%04X'):format(frompc(compressed[1].addr))
-				..' #'..i..': '
-				..compressed:mapi(function(instr) return instr.name end):concat', ')
+print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+local olddebugtab = debugtab
+debugtab = debugtab .. '\t'
+		for i,seq in ipairs(self.instrSeqGroups) do
 			
-			local nextGroupIndexes = compressed:last().next:mapi(function(instr)
+			seq.startAddr = seq[1].addr
+			local last = seq:last()
+			seq.endAddr = last.addr + last.size
+
+			-- indexes into subsequent groups
+			seq.nextIndexes = seq:last().next:mapi(function(instr)
 				local j = self.instrSeqGroups:find(nil, function(group)
 					return group[1] == instr
 				end)
 				assert(j, "how did I have a group last instr not pointing to another group first instr?")
 				return j
 			end)
-			if #nextGroupIndexes > 0 then
-				print(debugtab..' -> '..nextGroupIndexes:mapi(function(j) return '#'..j end):concat', ')
+			
+			print(debugtab..('$%02X:%04X'):format(frompc(seq[1].addr))
+				..' #'..i..': '
+				..seq:mapi(function(instr) return instr.name end):concat', ')
+			if #seq.nextIndexes > 0 then
+				print(debugtab..' -> '..seq.nextIndexes:mapi(function(j) return '#'..j end):concat', ')
 			end
 		end
-		debugtab = olddebugtab
-		print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+debugtab = olddebugtab
+print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
 	end
+
+-- with clearing these pointers: gets to line 3267 before out of mem
+-- without clearing these pointers: same
+--[[
+self.instrs = nil
+for _,seq in ipairs(self.instrSeqGroups) do
+	for j=1,#seq do
+		seq[j] = nil
+	end
+end
+--]]
+
+	-- detect cycles in the instrSeqGroups
+	local function search(...)
+		local n = select('#', ...)
+		for _,i in ipairs(self.instrSeqGroups[...].nextIndexes) do
+			for j=1,n do
+				if i == select(j, ...) then return true end
+			end
+			search(i, ...)
+		end
+	end
+	for i=1,#self.instrSeqGroups do
+		if search(i) then
+			self.hasCycle = true
+			break
+		end
+	end
+	if self.hasCycle then 
+		print("!!! cycle detected !!!")
+	end
+
 
 	-- TODO flagin vs flagout is too simple.  we need to track all changes to the flags, set, clear, push, pop
 	self.flagout = flag[0]
-
-	-- TOOD calculate code size by longest contiguous set of instructions
-	self.codesize = 0
 
 	--[[
 	who points to this.
@@ -1440,7 +1477,9 @@ end
 	
 function SMCode:codeBuildMemoryMap(mem)
 	for _,asmfunc in ipairs(self.asmfuncs) do
-		mem:add(asmfunc.addr, asmfunc.codesize, 'code')
+		for _,seq in ipairs(asmfunc.instrSeqGroups) do
+			mem:add(seq.startAddr, seq.endAddr - seq.startAddr, 'code')
+		end
 	end
 end
 
