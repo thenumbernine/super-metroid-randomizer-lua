@@ -14,7 +14,7 @@ typedef struct {
 	uint8_t memory_register_is_8bit : 1;
 	uint8_t overflow : 1;
 	uint8_t negative : 1;
-} flags_t flags;
+} flags_t;
 
 struct {
 	uint16_t accum;		//aka "C"
@@ -29,7 +29,7 @@ uint8_t stack;			//aka "S"
 uint8_t data_bank;		//aka "DBR" / "DB"
 uint8_t direct_page;	//aka "D" / "DP"
 uint8_t program_bank;	//aka "PB" / "PBR"
-uint8_t flags;			//aka "status" / "P"
+flags_t flags;			//aka "status" / "P"
 uint8_t pc;				//program counter
 
 
@@ -58,7 +58,7 @@ local class = require 'ext.class'
 local topc = require 'pc'.to
 local frompc = require 'pc'.from
 
-local byteArraySubset = require 'util'.byteArraySubset
+local tablesAreEqual = require 'util'.tablesAreEqual
 
 -- idk what this is.  should jmps turn into gotos?  or should this be emulation-equivalents where jmps assign pc?
 local tryToPrintCEquiv = false
@@ -1346,7 +1346,7 @@ print(debugtab..'END ASMFunction '..('%02X:%04X'):format(bank, ofs))
 
 	-- now reduce graph transitions
 	for _,instr in ipairs(self.instrs) do
-		instr.compressed = table{instr}
+		instr.collapsed = table{instr}
 	end
 	
 	do
@@ -1355,11 +1355,11 @@ print(debugtab..'END ASMFunction '..('%02X:%04X'):format(bank, ofs))
 			modified = nil
 			-- 
 			for _,instr in ipairs(self.instrs) do
-				local last = instr.compressed:last()
+				local last = instr.collapsed:last()
 				if #last.next == 1 
-				and #last.next[1].prev == 1	-- make sure compressed edges don't include branch entry points
+				and #last.next[1].prev == 1	-- make sure collapsed edges don't include branch entry points
 				then
-					instr.compressed:insert(last.next[1])
+					instr.collapsed:insert(last.next[1])
 					modified = true
 				end
 			end
@@ -1367,31 +1367,31 @@ print(debugtab..'END ASMFunction '..('%02X:%04X'):format(bank, ofs))
 	end
 
 	do
-		self.instrSeqGroups = table()
+		self.instrSeqs = table()
 		local i = 1
 		while i <= #self.instrs do
 			local instr = self.instrs[i]
-			self.instrSeqGroups:insert(instr.compressed)
-			i = i + #instr.compressed
+			self.instrSeqs:insert(instr.collapsed)
+			i = i + #instr.collapsed
 		end
 		for _,instr in ipairs(self.instrs) do
-			instr.compressed = nil
+			instr.collapsed = nil
 		end
 		-- ok now that we have our distinct groups ...
 		-- TODO if we have any BRA's at the end, and they target instructions with no beginnings ... then we can just append those
 
-print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+print(debugtab..'BEGIN '..('%02X:%04X'):format(frompc(self.addr))..' collapsed')
 local olddebugtab = debugtab
 debugtab = debugtab .. '\t'
-		for i,seq in ipairs(self.instrSeqGroups) do
-			
+		for i,seq in ipairs(self.instrSeqs) do
+			seq.index = i
 			seq.startAddr = seq[1].addr
 			local last = seq:last()
 			seq.endAddr = last.addr + last.size
 
 			-- indexes into subsequent groups
 			seq.nextIndexes = seq:last().next:mapi(function(instr)
-				local j = self.instrSeqGroups:find(nil, function(group)
+				local j = self.instrSeqs:find(nil, function(group)
 					return group[1] == instr
 				end)
 				assert(j, "how did I have a group last instr not pointing to another group first instr?")
@@ -1405,41 +1405,92 @@ debugtab = debugtab .. '\t'
 				print(debugtab..' -> '..seq.nextIndexes:mapi(function(j) return '#'..j end):concat', ')
 			end
 		end
+
+		self.retSeqs = self.instrSeqs:filter(function(seq)
+			return self.retInstrs:find(seq:last())
+		end)
+		-- TODO can't you just determine return sequences from sequences whose # nextIndexes == 0?
+		for _,seq in ipairs(self.retSeqs) do
+			assert(#seq.nextIndexes == 0)
+		end
+		print(debugtab..self.retSeqs:mapi(function(seq) return '#'..seq.index end):concat', '..' -> END')
+
 debugtab = olddebugtab
-print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' compressed')
+print(debugtab..'END '..('%02X:%04X'):format(frompc(self.addr))..' collapsed')
 	end
 
 -- with clearing these pointers: gets to line 3267 before out of mem
 -- without clearing these pointers: same
 --[[
 self.instrs = nil
-for _,seq in ipairs(self.instrSeqGroups) do
+for _,seq in ipairs(self.instrSeqs) do
 	for j=1,#seq do
 		seq[j] = nil
 	end
 end
 --]]
 
-	-- detect cycles in the instrSeqGroups
-	local function search(...)
+	-- trace all possible flag operations through dif branches of instructions 
+	local allTraces = table()
+	local function search(trace, ...)
+		trace = table(trace)
 		local n = select('#', ...)
-		for _,i in ipairs(self.instrSeqGroups[...].nextIndexes) do
-			for j=1,n do
-				if i == select(j, ...) then return true end
+		local seq = self.instrSeqs[...]
+	
+		--trace:insert('#'..(...))	-- debugging only
+		-- insert into subtrace any flag operations
+		for _,instr in ipairs(seq) do
+			-- the 8-bit mem / index register commands are only manually set -- no dedicated instructions for them (like the other processor flags)
+			if instr.code == 0x08	-- PHP
+			or instr.code == 0x28	-- PLP
+			or instr.code == 0xC2	-- REP
+			or instr.code == 0xE2	-- SEP
+			then
+				--subtrace:insert(instr.code)
+				trace:insert(instr.name)
 			end
-			search(i, ...)
 		end
-	end
-	for i=1,#self.instrSeqGroups do
-		if search(i) then
-			self.hasCycle = true
-			break
+
+		local cycleFound
+		if #seq.nextIndexes == 0 then
+			-- done -- save the list of flag operations 
+			allTraces:insert(trace)
+		else
+			for _,i in ipairs(seq.nextIndexes) do
+				-- found a next node is a prev touched node
+				for j=1,n do
+					if i == select(j, ...) then return true end
+				end
+				cycleFound = cycleFound or search(trace, i, ...)
+			end
 		end
+		return cycleFound
 	end
-	if self.hasCycle then 
+	-- seq[1] is the only entry point of the function
+	if search(table(), 1) then
+		self.hasCycle = true
 		print("!!! cycle detected !!!")
 	end
-
+	do
+		local inequal
+		for i=1,#allTraces-1 do
+			for j=i+1,#allTraces do
+				if not tablesAreEqual(allTraces[i], allTraces[j]) then
+					inequal = true
+				end
+			end
+			if inequal then break end
+		end
+		if inequal then
+			print("!!! found traces that varied in flag manipulation:")
+			for _,trace in ipairs(allTraces) do
+				--print(trace:mapi(function(x) return ('%02X'):format(x) end):concat', ')
+				print(trace:concat', ')
+			end
+		else
+			print(debugtab.."traces flag manipulation: "..allTraces[1]:concat', ')
+		end
+	end
 
 	-- TODO flagin vs flagout is too simple.  we need to track all changes to the flags, set, clear, push, pop
 	self.flagout = flag[0]
@@ -1477,7 +1528,7 @@ end
 	
 function SMCode:codeBuildMemoryMap(mem)
 	for _,asmfunc in ipairs(self.asmfuncs) do
-		for _,seq in ipairs(asmfunc.instrSeqGroups) do
+		for _,seq in ipairs(asmfunc.instrSeqs) do
 			mem:add(seq.startAddr, seq.endAddr - seq.startAddr, 'code')
 		end
 	end
