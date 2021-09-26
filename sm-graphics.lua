@@ -3,6 +3,7 @@ local bit = require 'bit'
 local class = require 'ext.class'
 local range = require 'ext.range'
 local table = require 'ext.table'
+local struct = require 'struct'
 local Blob = require 'blob'
 local Palette = require 'palette'
 local Image = require 'image'
@@ -10,6 +11,23 @@ local Image = require 'image'
 local pc = require 'pc'
 local topc = pc.to
 local frompc = pc.from
+
+
+--[[
+tilemapElem_t = uint16_t element of the tilemap that references which 8*8 graphics tile to use
+	maybe tile table element? etc?
+--]]
+local tilemapElem_t = struct{
+	name = 'tilemapElem_t',
+	fields = {
+		{graphicsTileIndex = 'uint16_t:10'},	-- graphics tile index
+		{colorIndexHi = 'uint16_t:4'},			-- high nibble color index to write throughout the graphics tile
+		{xflip = 'uint16_t:1'},					-- whether to 'not'/flip x 
+		{yflip = 'uint16_t:1'},					-- whether to 'not'/flip y
+	},
+}
+assert(ffi.sizeof'tilemapElem_t' == 2)
+
 
 
 local SMGraphics = {}
@@ -28,6 +46,8 @@ function SMGraphics:graphicsSwizzleTileBitsInPlace(ptr, size)
 	-- rearrange the graphicsTiles ... but why?  why not keep them in their original order? and render the graphicsTiles + tilemap => bitmap using the original format?
 	--[[
 	8 pixels wide * 8 pixels high * 1/2 byte per pixel = 32 bytes per 8x8 tile
+	
+	4bpp format: Bitplanes 0 and 1 are stored first, intertwined row by row. Then bitplanes 2 and 3 are stored, intertwined row by row.
 	--]]
 	assert(size % graphicsTileSizeInBytes == 0)	
 	
@@ -81,6 +101,41 @@ function SMGraphics:graphicsSwizzleTileBitsInPlace(ptr, size)
 	end
 end
 
+--[[
+TODO naming, since this is the opposite of 'graphicsSwizzleTileBitsInPlace' 
+make one 'to' and make one 'from'
+this converts from 4bpp 1 plane to 2bpp 2 plane
+it also doesn't run in place unlike the above
+--]]
+function SMGraphics:graphicsWrite8x8x4bpp(dstblob, ofs, src)
+	-- since the blobs contain unswizzled data, just copy it across:
+	ffi.copy(dstblob.v + ofs, src, 32)
+	
+	-- now write it back to the ROM
+	-- this means for now, no moving around blobs of graphics tiles
+	-- TODO don't swizzle graphics tiles, and instead read them as-is 
+	-- or another TODO is to do this re-encoding when saving back the graphcis tile blobs
+	local dst = self.rom + dstblob.addr + ofs
+	for j=0,7 do
+		for b=0,3 do
+			local dstbyte = bit.bor(
+				bit.lshift(j, 1),
+				bit.band(b, 1),
+				bit.lshift(bit.band(b, 2), 3)
+			)
+			local dstbytevalue = 0
+			for i=0,7 do
+				local srcbyte = bit.rshift(bit.bor(i, bit.lshift(j, 3)), 1)	-- 8 bits per byte, 4 bits per pixel, means 2 pixels per byte, so div by 2
+				local srcbit = bit.bor(b, bit.lshift(bit.band(i, 1), 2))	-- srcbit = b + (i & 1) ? 4 : 0
+				local v = bit.band(bit.rshift(src[srcbyte], srcbit), 1)
+				
+				local dstbit = i
+				dstbytevalue = bit.bor(dstbytevalue, bit.lshift(v, dstbit))
+			end
+			dst[dstbyte] = dstbytevalue
+		end
+	end
+end
 
 --[[
 convert a 2D array of tilemap elements, plus a list of graphics tiles, into a bitmap
@@ -332,20 +387,6 @@ function SMGraphics:graphicsInitPauseScreen()
 	-- and from 0xe980 - end of page is free
 
 
-	-- pointers to the region tilemaps are in code here:
-	-- this maps from region# to region tilemap address
-	self.regionTilemapPointers = Blob{sm=self, addr=topc(0x82, 0x964a), count=7, type='addr24_t'}
-
-	--[[
-	Lua table is 1-based
-	notice that Brinstar is first and Crateria second.  look at the regionTilemapPointers for correct index ordering.
-	0x1000 = 4096 = 32x64 tiles
-	and then the bottom half 32x32 is moved to the right of the top half
-	--]]
-	self.regionTilemaps = range(0x8000,0xf000,0x1000):mapi(function(ofs)
-		return Blob{sm=self, addr=topc(0xb5, ofs), count=0x1000}
-	end)
-
 	-- read pause & equip screen tiles
 	self.pauseScreenTiles = Blob{sm=self, addr=topc(0xb6, 0x8000), count=0x6000}
 	
@@ -361,7 +402,7 @@ function SMGraphics:graphicsInitPauseScreen()
 		self.itemTiles,
 		self.pauseScreenTiles,
 	} do
-		-- if you swizzle a buffer then don't use it (until I write an un-swizzle ... or just write the bit order into the renderer)
+		-- if you swizzle a buffer then don't save it (until I write an un-swizzle ... or just write the bit order into the renderer)
 		self:graphicsSwizzleTileBitsInPlace(tiles.v, tiles:sizeof())
 	end
 end
@@ -370,7 +411,7 @@ function SMGraphics:graphicsInit()
 	self:graphicsInitPauseScreen()
 end
 
-function SMGraphics:graphicsSavePauseScreenImages()
+function SMGraphics:graphicsDumpPauseScreenImages()
 	for _,info in ipairs{
 		{
 			name = 'itemtiles',
@@ -430,10 +471,11 @@ function SMGraphics:graphicsSavePauseScreenImages()
 				}
 			end)
 		):append(
-			self.regionTilemaps:mapi(function(regionTilemap,i)
+			-- notice, self.regions[].tilemap is otherwise in sm-regions
+			self.regions:mapi(function(region)
 				return {
-					destName = 'mapregions/regionTilemap'..(i-1),
-					tilemap = regionTilemap,
+					destName = 'mapregions/regionTilemap'..region.index,
+					tilemap = region.tilemap,
 					tilemapWidth = 32,
 					tilemapHeight = 64,
 					palette = self.pauseScreenPalette,
@@ -480,10 +522,8 @@ function SMGraphics:graphicsSavePauseScreenImages()
 end
 
 function SMGraphics:graphicsBuildMemoryMap(mem)
-	
 	self.itemTiles:addMem(mem, 'item graphics tiles')
 	self.fxTilemapPalette:addMem(mem, 'fx tilemap palette')
-
 
 	self.lavaTilemap:addMem(mem, 'lavaTilemap')
 	self.acidTilemap:addMem(mem, 'acidTilemap')
@@ -496,15 +536,10 @@ function SMGraphics:graphicsBuildMemoryMap(mem)
 		tilemap:addMem(mem, 'scrollingSkyTilemaps')
 	end
 
-	for i,regionTilemap in ipairs(self.regionTilemaps) do
-		regionTilemap:addMem(mem, 'region '..(i-1)..' tilemap')
-	end
-
 	self.pauseScreenTiles:addMem(mem, 'pause and equip screen graphics tiles')
 	self.pauseScreenTilemap:addMem(mem, 'pause screen tilemap')
 	self.equipScreenTilemap:addMem(mem, 'equip screen tilemap')
 	self.pauseScreenPalette:addMem(mem, 'pause screen palette')
 end
-
 
 return SMGraphics 

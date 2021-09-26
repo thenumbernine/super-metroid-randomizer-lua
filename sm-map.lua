@@ -554,7 +554,7 @@ red door left:
 	motherbrain_in_a_jar = 0xd6de,
 
 	-- in the crateria chozo boss room next to the item
-	--0xd6ea: 00/15, 00/15
+	boss_chozo_statue = 0xd6ea,	-- 00/15, 00/15
 
 	powerbomb_glass_tube = 0xd70c,
 
@@ -694,6 +694,12 @@ function SMMap:mapAddRoom(addr)
 	end
 
 	return room
+end
+
+-- used for adding new rooms
+function SMMap:mapNewRoom()
+	local room = Room{sm=self}	-- no address, always new
+	self.rooms:insert(room)
 end
 
 function SMMap:mapRemoveRoom(m)
@@ -998,23 +1004,6 @@ function SMMap:mapAddRoomBlockData(addr, room)
 	return roomBlockData
 end
 
---[[
-alright naming
-graphicsTile_t = 8x8 rendered block
-tilemapElem_t = uint16_t element of the tilemap that references which 8*8 graphics tile to use
-	maybe tile table element? etc?
---]]
-local tilemapElem_t = struct{
-	name = 'tilemapElem_t',
-	fields = {
-		{graphicsTileIndex = 'uint16_t:10'},	-- graphics tile index
-		{colorIndexHi = 'uint16_t:4'},			-- high nibble color index to write throughout the graphics tile
-		{xflip = 'uint16_t:1'},					-- whether to 'not'/flip x 
-		{yflip = 'uint16_t:1'},					-- whether to 'not'/flip y
-	},
-}
-assert(ffi.sizeof'tilemapElem_t' == 2)
-
 -- index into the graphicsTile buffer shl 1 (to include the nibble address as the lsb)
 local graphicsTileOffset_t = struct{
 	name = 'graphicsTileOffset_t',
@@ -1094,6 +1083,9 @@ end
 
 local TileSet = require 'tileset'
 
+--[[
+graphicsTile_t = 8x8 rendered block
+--]]
 ffi.cdef(template([[
 typedef struct {
 	uint8_t s[<?=graphicsTileSizeInBytes?>];

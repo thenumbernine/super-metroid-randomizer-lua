@@ -19,18 +19,19 @@ typedef struct {
 struct {
 	uint16_t accum;		//aka "C"
 	struct {
-		uint8_t a;
-		uint8_t b;
+		uint8_t A;
+		uint8_t B;
 	};
 };
 
-uint8_t x, y;
-uint8_t stack;			//aka "S"
+uint16_t X, Y;
+
+uint16_t stack;			//aka "S"
 uint8_t data_bank;		//aka "DBR" / "DB"
-uint8_t direct_page;	//aka "D" / "DP"
+uint16_t direct_page;	//aka "D" / "DP"
 uint8_t program_bank;	//aka "PB" / "PBR"
 flags_t flags;			//aka "status" / "P"
-uint8_t pc;				//program counter
+uint16_t pc;			//program counter
 
 
 uint8_t mem[];
@@ -44,7 +45,12 @@ uint24_t addr24(uint8_t bank, uint16_t offset) {
 uint8_t* bankptr = mem + addr24(data_bank, 0);
 
 uint16_t& mem16(uint8_t bank, uint16_t offset) {
-	return *(uint16_t*)(mem + add24(bank, offset));
+	return *(uint16_t*)(mem + addr24(bank, offset));
+}
+
+better yet, addr<->uint routines combined with
+uint16_t& mem16(uint24_t addr) {
+	return *(uint16_t*)(mem + addr);
 }
 
 --]]
@@ -60,12 +66,11 @@ local frompc = require 'pc'.from
 
 local tablesAreEqual = require 'util'.tablesAreEqual
 
--- idk what this is.  should jmps turn into gotos?  or should this be emulation-equivalents where jmps assign pc?
-local tryToPrintCEquiv = false
-
-
 
 local SMCode = {}
+
+-- idk what this is.  should jmps turn into gotos?  or should this be emulation-equivalents where jmps assign pc?
+SMCode.tryToPrintCEquiv = true
 
 
 local instrsForNames = {
@@ -489,6 +494,7 @@ local formatsAndSizesInfo = {
 		end,
 	}, {
 		instrs = {0x11, 0x31, 0x51, 0x71, 0x91, 0xB1, 0xD1, 0xF1},
+		address = 'post-indexed indirect',
 		eat = function(self, addr, flag, mem)
 			return ("($%02X),Y"):format(mem[1]), 2
 		end,
@@ -654,8 +660,8 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			local addr = self.addr
 			local mem = self.ptr
 			local arg = self.eatc 
-				and self:eatc(addr, flag, mem, flagstack)
-				or self:eat(addr, flag, mem, flagstack)
+				and self:eatc(flag, flagstack)
+				or self:eat(flag, flagstack)
 			local readmem
 			if arg:match'^#%$' then
 				arg = '0x'..arg:match'^#%$(.*)$' 
@@ -671,11 +677,11 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				readmem = false
 				if self.address == 'absolute-a' then
 					--arg = 'mem[addr24(data_bank, x + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')]'
-					arg = 'bankptr[x + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..']'
+					arg = 'bankptr[X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..']'
 				elseif self.address == 'absolute indexed indirect-(a,x)' then
-					arg = 'mem16(0, x + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
+					arg = 'mem16(0, X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
 				elseif self.address == 'absolute indexed with X-a,x' then
-					arg = 'mem16(data_bank, x + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
+					arg = 'mem16(data_bank, X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
 				elseif self.address == 'absolute indexed with Y-a,y' then
 					arg = 'mem16(data_bank, y + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
 				elseif self.address == 'absolute indirect-(a)' then
@@ -685,7 +691,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 						..('0x%02X'):format(mem[3])
 						..', '
 						..('0x%04X'):format(bit.bor(mem[1], bit.lshift(mem[2], 8)))
-						..') + x]'
+						..') + X]'
 				elseif self.address == 'absolute long-al' then
 					arg = 'mem[addr24('
 						..('0x%02X'):format(mem[3])
@@ -694,6 +700,10 @@ for _,info in ipairs(formatsAndSizesInfo) do
 						..')]'			
 				elseif self.address == 'accumulator-a' then
 					arg = 'accum'
+				elseif self.address == 'post-indexed indirect' then
+					arg = 'mem['
+						..('0x%02X'):format(mem[1])
+						..'] + Y'
 				end
 			end
 
@@ -715,6 +725,9 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				return 'if (zero) goto '..arg..';'
 			elseif self.name == 'BIT' then
 				if readmem then arg = 'mem['..arg..']' end
+				-- technically this isn't set all flags
+				-- it is do the bit operation, and set arithmetic flags accordingly
+				-- specifically (only?) the zero flag?
 				return 'setflags(accum & '..arg..');'
 			elseif self.name == 'BMI' then
 				return 'if (negative) goto '..arg..';'
@@ -747,28 +760,30 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				return 'setflags(accum - '..arg..');'
 			elseif self.name == 'CPX' then
 				if readmem then arg = 'mem['..arg..']' end
-				return 'setflags(x - '..arg..');'
+				return 'setflags(X - '..arg..');'
 			elseif self.name == 'CPY' then
 				if readmem then arg = 'mem['..arg..']' end
-				return 'setflags(y - '..arg..');'
+				return 'setflags(Y - '..arg..');'
 			elseif self.name == 'COP' then	-- "Causes a software interrupt using a vector."
 				-- TODO
 				return 'coprocessor_enable();'
 			elseif self.name == 'DEC' then
-				return 'accum--;'
+				if readmem then arg = 'mem['..arg..']' end
+				return arg..'--;'
 			elseif self.name == 'DEX' then
-				return 'x--;'
+				return 'X--;'
 			elseif self.name == 'DEY' then
-				return 'y--;'
+				return 'Y--;'
 			elseif self.name == 'EOR' then
 				if readmem then arg = 'mem['..arg..']' end
 				return 'accum ^= '..arg..';'
 			elseif self.name == 'INC' then
-				return 'accum++;'
+				if readmem then arg = 'mem['..arg..']' end
+				return arg..'++;'
 			elseif self.name == 'INX' then
-				return 'x++;'
+				return 'X++;'
 			elseif self.name == 'INY' then
-				return 'y++;'
+				return 'Y++;'
 			elseif self.name == 'JMP' then
 				-- TODO how about mem here, except that $ means immediate
 				-- also TODO what's the dif between BRA, BRL, and JMP ?
@@ -783,23 +798,23 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				return 'accum = '..arg..';'
 			elseif self.name == 'LDX' then
 				if readmem then arg = 'mem['..arg..']' end
-				return 'x = '..arg..';'
+				return 'X = '..arg..';'
 			elseif self.name == 'LDY' then
 				if readmem then arg = 'mem['..arg..']' end
-				return 'y = '..arg..';'
+				return 'Y = '..arg..';'
 			elseif self.name == 'LSR' then
 				if readmem then arg = 'mem['..arg..']' end
 				return 'accum = '..arg..' >> 1;'
 			elseif self.name == 'MVN' then
 				return 'memcpy('
-					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', x-accum-1), '
-					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', y-accum-1), '
+					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', X-accum-1), '
+					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', Y-accum-1), '
 					.. 'accum+1'
 				..');'
 			elseif self.name == 'MVP' then
 				return 'memcpy('
-					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', x), '
-					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', y), '
+					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', X), '
+					.. 'mem + addr24('..('0x%02X'):format(mem[1])..', Y), '
 					.. 'accum+1'
 				..');'
 			elseif self.name == 'NOP' then
@@ -828,9 +843,9 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'PHP' then
 				return 'push(flags);'
 			elseif self.name == 'PHX' then
-				return 'push(x);'
+				return 'push(X);'
 			elseif self.name == 'PHY' then
-				return 'push(y);'
+				return 'push(Y);'
 			elseif self.name == 'PLA' then
 				return 'accum = pop();'
 			elseif self.name == 'PLB' then
@@ -840,9 +855,9 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'PLP' then
 				return 'flags = pop();'
 			elseif self.name == 'PLX' then
-				return 'x = pop();'
+				return 'X = pop();'
 			elseif self.name == 'PLY' then
-				return 'y = pop();'
+				return 'Y = pop();'
 			elseif self.name == 'REP' then
 				return 'flags &= ~'..('0x%02X'):format(mem[1])..';'
 			elseif self.name == 'ROL' then
@@ -873,19 +888,19 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				return arg..' = accum;'
 			elseif self.name == 'STX' then
 				if readmem then arg = 'mem['..arg..']' end
-				return arg..' = x;'
+				return arg..' = X;'
 			elseif self.name == 'STY' then
 				if readmem then arg = 'mem['..arg..']' end
-				return arg..' = y;'
+				return arg..' = Y;'
 			elseif self.name == 'STP' then
 				return 'exit(0);'
 			elseif self.name == 'STZ' then
 				if readmem then arg = 'mem['..arg..']' end
 				return arg..' = 0;'
 			elseif self.name == 'TAX' then
-				return 'x = accum;'
+				return 'X = accum;'
 			elseif self.name == 'TAY' then
-				return 'y = accum;'
+				return 'Y = accum;'
 			elseif self.name == 'TCD' then
 				-- TODO
 				return 'direct_page = accum;'
@@ -897,23 +912,23 @@ for _,info in ipairs(formatsAndSizesInfo) do
 			elseif self.name == 'TSC' then
 				return 'accum = stack;'
 			elseif self.name == 'TSX' then
-				return 'x = stack;'
+				return 'X = stack;'
 			elseif self.name == 'TXA' then
-				return 'accum = x;'
+				return 'accum = X;'
 			elseif self.name == 'TXS' then
-				return 'stack = x;'
+				return 'stack = X;'
 			elseif self.name == 'TXY' then
-				return 'y = x;'
+				return 'Y = X;'
 			elseif self.name == 'TYA' then
-				return 'accum = y;'
+				return 'accum = Y;'
 			elseif self.name == 'TYX' then
-				return 'x = y;'
+				return 'X = Y;'
 			elseif self.name == 'TRB' then
-				-- TODO couldn't be more vague in superfamicom.org
 				arg = arg:gsub('%$', '0x')
-				return 'setflags(flags & '..arg..'); flags &= ~'..arg..';'
+				return arg..'&= ~accum;'
 			elseif self.name == 'TSB' then
-				return 'setflags(flags & '..arg..'); flags |= '..arg..';'
+				arg = arg:gsub('%$', '0x')
+				return arg..'|= accum;'
 			elseif self.name == 'WAI'then
 				return 'wait_for_hardware_interrupt();'
 			elseif self.name == 'WDM' then
@@ -963,7 +978,7 @@ function InstructionImpl:getLineStr(flag, flagstack)
 	local instrstr, n = self:eat(flag, flagstack)
 
 	local instrcstr
-	if tryToPrintCEquiv then
+	if SMCode.tryToPrintCEquiv then
 		-- trying out c-like pseudocode for kicks
 		instrcstr = self:eatcstr(pushflag, table(flagstack))
 	end
@@ -982,7 +997,7 @@ function InstructionImpl:getLineStr(flag, flagstack)
 	linestr = linestr..' '..('P=%02X'):format(origflag)
 	linestr = linestr ..' '..self.name ..' '..instrstr
 
-	if tryToPrintCEquiv then
+	if SMCode.tryToPrintCEquiv then
 		linestr = linestr
 			-- if we are also showing n00b c pseudocode
 			..(' '):rep(18-#instrstr)

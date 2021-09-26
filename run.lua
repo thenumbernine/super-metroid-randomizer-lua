@@ -191,9 +191,14 @@ timer('everything', function()
 			sm:mapSaveGraphicsLayer2BGs()
 		end)
 	end
-	if config.graphicsSavePauseScreenImages then
-		timer('write out pause screen images', function()
-			sm:graphicsSavePauseScreenImages()
+	if config.graphicsDumpPauseScreenImages then
+		timer('dump to file pause screen images', function()
+			sm:graphicsDumpPauseScreenImages()
+		end)
+	end
+	if config.regionsWriteMaps then
+		timer('write to rom region maps', function()
+			sm:regionsWriteMaps()
 		end)
 	end
 	if config.samusSaveImages then
@@ -497,34 +502,41 @@ timer('everything', function()
 		end)
 	end
 
-	-- this is just my testbed for map modification code
-	--require 'rooms'
-
-	if config.randomizeDoors then
-		timer('randomizing doors', function()
-			require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability.
+	if config.randomizeWorld then
+		timer('randomizing world', function()
+			require 'randomizeworld'
 		end)
+	else
+
+		-- this is just my testbed for map modification code
+		--require 'rooms'
+
+		if config.randomizeDoors then
+			timer('randomizing doors', function()
+				require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability.
+			end)
+		end
+
+		if config.randomizeItems then
+			timer('randomizing items', function()
+				require 'items'
+			end)
+		end
+
+		if config.randomizeItemsScavengerHunt then
+			timer('applying item-scavenger', function()
+				require 'item-scavenger'
+			end)
+		end
+
+		if config.mapRecompress then
+			timer('write map changes to ROM', function()
+				-- write back changes
+				sm:mapWrite()
+			end)
+		end
 	end
 
-	if config.randomizeItems then
-		timer('randomizing items', function()
-			require 'items'
-		end)
-	end
-
-	if config.randomizeItemsScavengerHunt then
-		timer('applying item-scavenger', function()
-			require 'item-scavenger'
-		end)
-	end
-
-	if config.mapRecompress then
-		timer('write map changes to ROM', function()
-			-- write back changes
-			sm:mapWrite()
-		end)
-	end
-	
 	-- write out altered stuff
 	sm:print()
 	

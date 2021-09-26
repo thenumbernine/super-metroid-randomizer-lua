@@ -1,24 +1,24 @@
 return {
 	-- saving data in the original rom
-	mapSaveImageInformative = false,
+	mapSaveImageInformative = true,
 	mapSaveImageTextured = false,
 	mapSaveImageTextured_HighlightItems = false,
 	mapSaveGraphicsMode7 = false,
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	graphicsSavePauseScreenImages = false,
+	graphicsDumpPauseScreenImages = true,	-- dump to file
 	samusSaveImages = false,
+	regionsWriteMaps = true,	-- write back to rom
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
 	
-	-- rearrange and recompress data in the map
+	-- rearrange and recompress room data 
 	mapRecompress = false,
 
 	-- write the informative image of the randomized rom 
 	writeOutModifiedMapImage = false,
-	
 
 	-- for the original rom:
 	-- whether to chop out rooms that overlap each other in the original layout
@@ -56,12 +56,10 @@ return {
 
 	-- skips the intro cutscene
 	skipIntro = true,
---]==]
 
 	-- make x-ray fullscreen
 	beefUpXRay = true,
 
---[==[
 	---------------------------------------------------------
 	--------------------- randomization ---------------------
 	---------------------------------------------------------
@@ -98,6 +96,9 @@ return {
 	removeGreyDoorInOldMotherBrainRoom = true,
 
 --]==]
+
+	-- toss out everything and rebuild a full new world
+	randomizeWorld = true,
 
 	---------------------------------------------------------
 	---- properties for each of the randomizations above ----

@@ -11,19 +11,19 @@ local class = require 'ext.class'
 local MemoryMap = require 'memorymap'
 local config = require 'config'
 local strtohex = require 'util'.strtohex
+local Blob = require 'blob'
+local frompc = require 'pc'.from
 
 local SM = class(
 	require 'sm-code',
 	require 'sm-enemies',
 	require 'sm-items',
+	require 'sm-graphics',
+	require 'sm-regions',
 	require 'sm-map',
 	require 'sm-weapons',
-	require 'sm-graphics',
 	require 'sm-samus'
 )
-
-local nameAddr = 0x7fc0
-local nameLen = 0x15
 
 --[[
 rom = c string of the ROM
@@ -35,29 +35,34 @@ function SM:init(rom, romlen)
 	self.md5hash = strtohex(require 'md5'(rom, romlen))
 	print('md5: '..self.md5hash)
 
-	local name = ffi.string(rom + nameAddr, nameLen)
-	print(name)
+	self.nameBlob = Blob{sm=self, addr=frompc(0x80, 0xffc0), count=0x15}
+	print(ffi.string(self.nameBlob.v, self.nameBlob:sizeof()))
 
 	self:codeInit()
 	self:graphicsInit()
 	self:samusInit()
 	self:weaponsInit()
 	self:enemiesInit()
-	self:mapInit()		-- do this before itemsInit
+	self:regionsInit()	-- do before graphicsInit
+	self:mapInit()		-- do before itemsInit
 	self:itemsInit()
+
+	-- TODO do this in mapInit as you build each room?
+	self:regionsBindRooms()
 end
 
 function SM:buildMemoryMap()
 	local mem = MemoryMap()
-	mem:add(nameAddr, nameLen, 'game name') 
+	self.nameBlob:addMem(mem, 'game name')
 	-- TODO make this return a 'memorymap' object that prints out
 	self:codeBuildMemoryMap(mem)
 	self:graphicsBuildMemoryMap(mem)
 	self:samusBuildMemoryMap(mem)
 	self:weaponsBuildMemoryMap(mem)
 	self:enemiesBuildMemoryMap(mem)
-	self:itemsBuildMemoryMap(mem)
+	self:regionsBuildMemoryMap(mem)
 	self:mapBuildMemoryMap(mem)
+	self:itemsBuildMemoryMap(mem)
 	return mem
 end
 
@@ -65,6 +70,7 @@ function SM:print()
 	self:codePrint()
 	self:samusPrint()
 	self:enemiesPrint()
+	self:regionsPrint()
 	self:mapPrint()
 end
 

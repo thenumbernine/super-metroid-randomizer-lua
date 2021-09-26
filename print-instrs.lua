@@ -2,6 +2,7 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
 local SMCode = require 'sm-code'
+SMCode.tryToPrintCEquiv = true
 local topc = require 'pc'.to
 for i=0,255 do
 	local tmpmem = ffi.new('uint8_t[4]', i, 0xF0, 0xF1, 0xF2)
