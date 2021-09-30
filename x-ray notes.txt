@@ -1,0 +1,2059 @@
+ok a breakdown of calls:
+
+90:C4B5 = handle switching HUD selection
++-	90:C5AE = switched to HUD item handler - x-ray ... clear charge vars, clear carry on success
+
+$90:C5AE AD A2 09    LDA $09A2  [$7E:09A2]		\ 
+$90:C5B1 89 00 80    BIT #$8000           		| if (!(equippedItems & EquipFlags::XRayScope)) {	
+$90:C5B4 D0 02       BNE $02    [$C5B8]   		| 	return carry=true;	// means we didn't have it and didn't select it
+$90:C5B6 38          SEC                  		| }
+$90:C5B7 60          RTS                  		/
+$90:C5B8 9C D0 0C    STZ $0CD0  [$7E:0CD0]		} beamChargeCounter = 0
+$90:C5BB 20 BE BC    JSR $BCBE  [$90:BCBE]		} Clear charge beam animation state
+$90:C5BE 22 BA DE 91 JSL $91DEBA[$91:DEBA]		} Load Samus suit palette
+$90:C5C2 18          CLC                  		}
+$90:C5C3 60          RTS                  		} return carry=false;	// means we selected the item
+
+90:DD3D = standard HUD selection handler
++-	90:DDC8 = hud selection handler - xray
+	+-	90:B80D = hud selection handler - nothing / power bombs
+	+-	91:CAD6 = x-ray handler
+		+-	91:E16D = x-ray setup ... clc means already running and no need to spawn HDMA for x-ray
+		+-	88:8435 = spawn x-ray HDMA, pass it values: $41, $28, $D223
+
+90:DD3D 
+... if we have the condition to call the currentHUDSelection
+... then why is there special case for grappling beam and x-ray?
+... and that seems to be th default branch at DD57-DD5B: "execute handler for current HUD selection", whih the specifically-handle x-ray handler skips
+....soooo better change x-ray to call the default Nothing handler as well?
+if we just remove that x-ray-specific block, will x-ray always run? no.
+
+$90:DD3D	//: Standard HUD selection handler
+			// Standing, running, normal jumping, crouching, falling, moon walking, ran into a wall
+{
+$90:DD3D 08          PHP						}	push(flags);
+$90:DD3E C2 30       REP #$30					}	flags &= ~0x30
+$90:DD40 AD 32 0D    LDA $0D32  [$7E:0D32]  	\	if (grapplingBeamFunc != GrapplingBeamFunc::Inactive) {
+$90:DD43 C9 F0 C4    CMP #$C4F0             	|		hudSelectionHandler[HUDItem::GrapplingBeam]();	//Execute grapple handler
+$90:DD46 F0 05       BEQ $05    [$DD4D]     	|
+$90:DD48 A2 08 00    LDX #$0008             	|		
+$90:DD4B 80 0F       BRA $0F    [$DD5C]     	|
+$90:DD4D AD 78 0A    LDA $0A78  [$7E:0A78]  	<	} else if (xrayTimeIsFrozen) { 
+$90:DD50 F0 05       BEQ $05    [$DD57]     	|		hudSelectionHandler[HUDItem::XRayScope]();	//Execute x-ray handler		
+$90:DD52 A2 0A 00    LDX #$000A             	|
+$90:DD55 80 05       BRA $05    [$DD5C]     	<	} else {
+$90:DD57 AD D2 09    LDA $09D2  [$7E:09D2]  	|		hudSelectionHandler[currentHUDSelection]();	//Execute handler for current HUD selection 		
+$90:DD5A 0A          ASL A                  	|
+$90:DD5B AA          TAX                    	/	}
+$90:DD5C FC 61 DD    JSR ($DD61,x)				}
+$90:DD5F 28          PLP						}	flags = pop();
+$90:DD60 60          RTS						}	return;
+$90:DD61             dw B80D, ; Nothing			\	void (*hudSelectionHandler)()[] = {
+                        BE62, ; Missiles		|
+                        BE62, ; SuperMissiles	|
+                        B80D, ; PowerBombs		|
+                        DD6F, ; GrapplingBeam	|
+                        DDC8, ; XRayScope		|
+                        DD74  ; turning			/	}	// <- last is HUD selection handler for turning, looks like a mistake, would cause stack overflow if Samus shoots in the air, can't be indexed anyway
+}
+
+$90:DDC8	//;;; $DDC8: HUD selection handler - x-ray ;;;
+{
+$90:DDC8 A5 8B       LDA $8B    [$7E:008B]  \	if (!(buttonsDown.value & runButtonFlag)) {
+$90:DDCA 2C B6 09    BIT $09B6  [$7E:09B6]  |
+$90:DDCD D0 04       BNE $04    [$DDD3]    	|
+$90:DDCF 20 0D B8    JSR $B80D  [$90:B80D]  |		call 90:B80D	//	HUD selection handler - nothing / power bombs
+$90:DDD2 60          RTS					<	} else {
+$90:DDD3 22 D6 CA 91 JSL $91CAD6[$91:CAD6]  |		call 91:CAD6	//	x-ray handler
+$90:DDD7 60          RTS					/	}
+}
+
+$91:CAD6	//;;; $CAD6: X-ray handler ;;;
+{
+$91:CAD6 08          PHP					}	push(flags)
+$91:CAD7 8B          PHB					}	push(data_bank)
+$91:CAD8 4B          PHK					\	data_bank = program_bank = 0x91
+$91:CAD9 AB          PLB					/
+$91:CADA C2 30       REP #$30				}	flags &= ~0x30
+$91:CADC AD 78 0A    LDA $0A78  [$7E:0A78]  \	if (	!xrayTimeIsFrozen
+$91:CADF D0 15       BNE $15    [$CAF6]     |			&& (buttonsDown.value & runButtonFlag)
+$91:CAE1 A5 8B       LDA $8B    [$7E:008B]  |	){
+$91:CAE3 2C B6 09    BIT $09B6  [$7E:09B6]  |		bool success = (0x91:E16D)(); //X-ray setup                                          
+$91:CAE6 F0 0E       BEQ $0E    [$CAF6]     |		if (success) {
+$91:CAE8 22 6D E1 91 JSL $91E16D[$91:E16D]  |			call $88:8435(0x41, 0x28, 0xD223);
+$91:CAEC 90 08       BCC $08    [$CAF6]     |			//Spawn x-ray HDMA object for indirect HDMA to window 2 left/right positions
+$91:CAEE 22 35 84 88 JSL $888435[$88:8435]  |		}
+$91:CAF2             dx 41, 28, D223        /	}
+$91:CAF6 AB          PLB					}	data_bank = pop();
+$91:CAF7 28          PLP					}	flags = pop();
+$91:CAF8 6B          RTL					}	return;
+}
+
+
+$91:E16D: // ;;; X-ray setup. Returns: Carry: set for success, clear for error
+{
+$91:E16D 08          PHP					}	push(flags);
+$91:E16E 8B          PHB					}	push(data_bank);
+$91:E16F 4B          PHK                    \	data_bank = program_bank = 0x91;
+$91:E170 AB          PLB                    /
+$91:E171 C2 30       REP #$30				}	flags &= ~0x30
+$91:E173 AD CC 0C    LDA $0CCC  [$7E:0CCC]  \
+$91:E176 C9 07 00    CMP #$0007             |	//If being drained by shitroid: return carry clear
+$91:E179 D0 10       BNE $10    [$E18B]     |	//If A4h <= [Samus pose] < A8h (landing from jump - neutral): return carry clear
+$91:E17B AD D2 0C    LDA $0CD2  [$7E:0CD2]  |	//If E0h <= [Samus pose] < E8h (landing from a jump - aiming/firing): return carry clear
+$91:E17E C9 05 00    CMP #$0005             |	if (
+$91:E181 D0 08       BNE $08    [$E18B]     |		(cooldownTimer == 0x0007
+$91:E183 AD 66 0A    LDA $0A66  [$7E:0A66]  |		&& bombCounter == 0x0005
+$91:E186 C9 02 00    CMP #$0002             |		&& samusYVelDivPowOf2 == 2)
+$91:E189 F0 54       BEQ $54    [$E1DF]     |
+$91:E18B AD 1C 0A    LDA $0A1C  [$7E:0A1C]  |		|| (samusPose >= 0x00A4 && samusPose < 0x00A8)
+$91:E18E C9 A4 00    CMP #$00A4             |		|| (samusPose >= 0x00E0 && samusPose < 0x00E8)
+$91:E191 30 0F       BMI $0F    [$E1A2]     |
+$91:E193 C9 A8 00    CMP #$00A8             |		|| gameState != GameState::MainGameplay
+$91:E196 30 47       BMI $47    [$E1DF]     |		|| powerBombExplosionStatus
+$91:E198 C9 E0 00    CMP #$00E0             |		|| samusVelY                         
+$91:E19B 30 05       BMI $05    [$E1A2]     |		|| samusSubVelY
+$91:E19D C9 E8 00    CMP #$00E8             |
+$91:E1A0 30 3D       BMI $3D    [$E1DF]     |		|| !samusMoveTypeCanXRay[samusPrevMoveType)]
+$91:E1A2 AD 98 09    LDA $0998  [$7E:0998]  |
+$91:E1A5 C9 08 00    CMP #$0008             |
+$91:E1A8 D0 35       BNE $35    [$E1DF]     |	) { 		
+$91:E1AA AD 92 05    LDA $0592  [$7E:0592]  |		data_bank = pop();
+$91:E1AD D0 30       BNE $30    [$E1DF]     |		flags = pop();
+$91:E1AF AD 2E 0B    LDA $0B2E  [$7E:0B2E]  |		flags &= ~carry;
+$91:E1B2 D0 2B       BNE $2B    [$E1DF]     |		return carry=false; //long
+$91:E1B4 AD 2C 0B    LDA $0B2C  [$7E:0B2C]  |	}
+$91:E1B7 D0 26       BNE $26    [$E1DF]     |
+$91:E1B9 AD 11 0A    LDA $0A11  [$7E:0A11]  |
+$91:E1BC 29 FF 00    AND #$00FF             |
+$91:E1BF AA          TAX                    |
+$91:E1C0 BD 91 E2    LDA $E291,x[$91:E292]  |
+$91:E1C3 29 FF 00    AND #$00FF             |
+$91:E1C6 F0 17       BEQ $17    [$E1DF]     /
+$91:E1C8 AD 1F 0A    LDA $0A1F  [$7E:0A1F]  \
+$91:E1CB 29 FF 00    AND #$00FF             |
+$91:E1CE AA          TAX                    |
+$91:E1CF BD 91 E2    LDA $E291,x[$91:E292]  |
+$91:E1D2 29 FF 00    AND #$00FF             |	
+$91:E1D5 C9 01 00    CMP #$0001             |
+$91:E1D8 F0 09       BEQ $09    [$E1E3]     |
+$91:E1DA C9 02 00    CMP #$0002             /
+$91:E1DD F0 1F       BEQ $1F    [$E1FE]     \
+$91:E1DF AB          PLB					|	// this C code is up at the previous "return"
+$91:E1E0 28          PLP					|	
+$91:E1E1 18          CLC					|	
+$91:E1E2 6B          RTL					/	
+$91:E1E3 AD 1E 0A    LDA $0A1E  [$7E:0A1E]  \	
+$91:E1E6 29 FF 00    AND #$00FF             |	uint8_t mt = samusMoveTypeCanXRay[samusMoveType]; 	// If [$E291 + [Samus movement type]] = 1: go to BRANCH_STANDING 
+$91:E1E9 C9 04 00    CMP #$0004             |																// If [$E291 + [Samus movement type]] = 2: go to BRANCH_CROUCHING
+$91:E1EC F0 08       BEQ $08    [$E1F6]     |	if (mt == 1) {	//standing  
+$91:E1EE A9 D5 00    LDA #$00D5             |		if (samusPoseDirX != SamusPoseDirX::Left) {			// If Samus is facing right:
+$91:E1F1 8D 2A 0A    STA $0A2A  [$7E:0A2A]  |			samusNewPose0A2A = 0x00D5;		// = facing right - x-ray - standing
+$91:E1F4 80 21       BRA $21    [$E217]     |		} else {
+$91:E1F6 A9 D6 00    LDA #$00D6             |			samusNewPose0A2A = 0x00D6;		// = facing left - x-ray - standing
+$91:E1F9 8D 2A 0A    STA $0A2A  [$7E:0A2A]  |		}
+$91:E1FC 80 19       BRA $19    [$E217]     |	
+$91:E1FE AD 1E 0A    LDA $0A1E  [$7E:0A1E]  |	} else if (mt == 2) {
+$91:E201 29 FF 00    AND #$00FF             |	
+$91:E204 C9 04 00    CMP #$0004             |	
+$91:E207 F0 08       BEQ $08    [$E211]     |		if (samusPoseDirX != SamusPoseDirX::Left) { 				// If Samus is facing right: 	
+$91:E209 A9 D9 00    LDA #$00D9             |			samusNewPose0A2A = 0x00D9;		//facing right - x-ray - crouching
+$91:E20C 8D 2A 0A    STA $0A2A  [$7E:0A2A]  |		} else {
+$91:E20F 80 06       BRA $06    [$E217]     |			samusNewPose0A2A = 0x00DA;		//facing left - x-ray - crouching 
+$91:E211 A9 DA 00    LDA #$00DA             |		}
+$91:E214 8D 2A 0A    STA $0A2A  [$7E:0A2A]  /	}
+$91:E217 A9 01 00    LDA #$0001             \
+$91:E21A 8D 78 0A    STA $0A78  [$7E:0A78]  /	xrayTimeIsFrozen = 1;	// Time is frozen flag = x-ray is active
+$91:E21D A9 05 00    LDA #$0005             \
+$91:E220 8D 30 0A    STA $0A30  [$7E:0A30]  /	samusTransitionGfxHandlerIndex = 5
+$91:E223 A2 FE 01    LDX #$01FE             \
+$91:E226 A9 FF 00    LDA #$00FF             |
+$91:E229 9F 00 98 7E STA $7E9800,x[$7E:99FE]|	// $7E:9800..99FF = 00,FFh 
+$91:E22D CA          DEX                    |	memset16(mem + 0x7E9800, 0x00FF, 0x0200) 
+$91:E22E CA          DEX                    |
+$91:E22F 10 F5       BPL $F5    [$E226]     /
+$91:E231 22 0B 80 86 JSL $86800B[$86:800B]  }	Disable enemy projectiles
+$91:E235 22 B8 83 84 JSL $8483B8[$84:83B8]  }	Disable PLMs
+$91:E239 22 0B 80 87 JSL $87800B[$87:800B]  }	Disable animated tiles objects
+$91:E23D 22 CD C4 8D JSL $8DC4CD[$8D:C4CD]  }	Disable palette FX objects
+$91:E241 A9 01 00    LDA #$0001             \	// $0A88..92 = 01,$9800, 00,$98C8, 98h,$9990, 00,00
+$91:E244 8D 88 0A    STA $0A88  [$7E:0A88]  |	memcpy8(xrayIndirectHDMATable,
+$91:E247 A9 00 98    LDA #$9800             |		{0x01, 0x00, 0x98, 0x00, 0xC8, 0x98, 0x98, 0x90, 0x99, 0x00, 0x00}, sizeof(input));
+$91:E24A 8D 89 0A    STA $0A89  [$7E:0A89]  |
+$91:E24D 9C 8B 0A    STZ $0A8B  [$7E:0A8B]  |
+$91:E250 A9 C8 98    LDA #$98C8             |
+$91:E253 8D 8C 0A    STA $0A8C  [$7E:0A8C]  |
+$91:E256 A9 98 00    LDA #$0098             |
+$91:E259 8D 8E 0A    STA $0A8E  [$7E:0A8E]  |
+$91:E25C A9 90 99    LDA #$9990             |
+$91:E25F 8D 8F 0A    STA $0A8F  [$7E:0A8F]  |
+$91:E262 9C 91 0A    STZ $0A91  [$7E:0A91]  /
+$91:E265 9C 7A 0A    STZ $0A7A  [$7E:0A7A]  }	xrayState = 0
+$91:E268 9C 7C 0A    STZ $0A7C  [$7E:0A7C]  }	xrayAngleWidthDelta = 0
+$91:E26B 9C 7E 0A    STZ $0A7E  [$7E:0A7E]  }	xrayAngleSubwidthDelta = 0
+$91:E26E 9C 84 0A    STZ $0A84  [$7E:0A84]  }	xrayAngleWidth = 0
+$91:E271 9C 86 0A    STZ $0A86  [$7E:0A86]  }	xrayAngleSubwidth = 0
+$91:E274 AD 1E 0A    LDA $0A1E  [$7E:0A1E]  \
+$91:E277 29 FF 00    AND #$00FF             |
+$91:E27A C9 04 00    CMP #$0004             |
+$91:E27D F0 08       BEQ $08    [$E287]     |	if (samusPoseDirX != SamusPoseDirX::Left) {
+$91:E27F A9 40 00    LDA #$0040             |		xrayAngle = 0x40			//If Samus is facing right:
+$91:E282 8D 82 0A    STA $0A82  [$7E:0A82]  |	} else { 			//Else (Samus is facing left):
+$91:E285 80 06       BRA $06    [$E28D]		|		xrayAngle = 0xC0	 
+$91:E287 A9 C0 00    LDA #$00C0             |	}
+$91:E28A 8D 82 0A    STA $0A82  [$7E:0A82]  /
+$91:E28D AB          PLB					}	data_bank = pop();
+$91:E28E 28          PLP					}	flags = pop();
+$91:E28F 38          SEC                    }	flags |= carry;
+$91:E290 6B          RTL                    }	return carry=true; //long
+											\	uint8_t samusMoveTypeCanXRay[] = {...
+$91:E291             db 01, ; 0: Standing
+                        01, ; 1: Running
+                        00, ; 2: Normal jumping
+                        00, ; 3: Spin jumping
+                        00, ; 4: Morph ball - on ground
+                        02, ; 5: Crouching
+                        00, ; 6: Falling
+                        00, ; 7: Unused
+                        00, ; 8: Morph ball - in air
+                        00, ; 9: Unused
+                        00, ; Ah: Knockback / crystal flash ending
+                        00, ; Bh: Unused
+                        00, ; Ch: Unused
+                        00, ; Dh: Unused
+                        00, ; Eh: Turning around - on ground
+                        00, ; Fh: Crouching/standing/morphing/unmorphing transition
+                        00, ; 10h: Moonwalking
+                        00, ; 11h: Spring ball - on ground
+                        00, ; 12h: Spring ball - in air
+                        00, ; 13h: Spring ball - falling
+                        00, ; 14h: Wall jumping
+                        01, ; 15h: Ran into a wall
+                        00, ; 16h: Grappling
+                        00, ; 17h: Turning around - jumping
+                        00, ; 18h: Turning around - falling
+                        00, ; 19h: Damage boost
+                        00, ; 1Ah: Grabbed by Draygon
+                        00  ; 1Bh: Shinespark / crystal flash / drained by metroid / damaged by MB's attacks
+}
+
+
+$91:D223: //HDMA object instruction list - x-ray 
+{
+$91:D223             dx 8655,00,    	|	HDMA table bank = $00
+                        866A,7E,    	|	Indirect HDMA data bank = $7E
+                        8570,91D27F,	|	Pre-instruction = $91:D27F
+                        85B4,91CAF9,	|	X-ray setup stage 1
+                        0001,0A88,		|
+                        85B4,91CB1C,	|	X-ray setup stage 2
+                        0001,0A88,		|
+                        85B4,91CB57,	|	X-ray setup stage 3
+                        0001,0A88,		|
+                        85B4,91CB8E,	|	X-ray setup stage 4
+                        0001,0A88,		|
+                        85B4,91D0D3,	|	X-ray setup stage 5
+                        0001,0A88,		|
+                        85B4,91D173,	|	X-ray setup stage 6
+                        0001,0A88,		|
+                        85B4,91D1A0,	|	X-ray setup stage 7
+                        0001,0A88,		|
+                        85B4,91D2BC,	|	X-ray setup stage 8
+                        8570,8886EF 	|	Pre-instruction = $88:86EF
+$91:D277             dx 0001,0A88,		|
+                        85EC,D277   	|	Go to $D277
+}
+
+
+
+91:D27F = pre-instruction - x-ray - init
++-	check FX room type to fireflea room type
++-	91:D143 = can x-ray show blocks?
++-	if we can show blocks then set the subscreen backdrop color ... some kind of fade in maybe? idk.
++-	random fact, the fireflea stuff is tacked after the RTL, but branches back to the RTL when it's done
+	91:D143 = check if x-ray should show any blocks
+	+-	does a few compares.  zero is set if we can't show blocks, zero is cleared if we can. 
+
+
+;;; $91:D27F: HDMA object pre-instruction - x-ray setup ;;;
+{
+$91:D27F 08          PHP					\
+$91:D280 C2 30       REP #$30				|	push(flags);
+$91:D282 DA          PHX					|	flags &= ~0x30
+$91:D283 A2 00 10    LDX #$1000             |	push(X);
+$91:D286 AD 6E 19    LDA $196E  [$7E:196E]  |	if (roomFXType == RoomFXType::FireFlea) {
+$91:D289 C9 24 00    CMP #$0024             |		if (subscreenBackdropColor1 & 0x1F < 7) {
+$91:D28C F0 22       BEQ $22    [$D2B0]     |			subscreenBackdropColor1 = 0x27;	//Colour math subscreen backdrop colour = (7, 7, 7) (grey) 
+$91:D28E A2 00 20    LDX #$2000             |			subscreenBackdropColor2 = 0x47;
+$91:D291 22 43 D1 91 JSL $91D143[$91:D143]  |			subscreenBackdropColor3 = 0x87;
+$91:D295 F0 12       BEQ $12    [$D2A9]     |		}
+$91:D297 A2 00 40    LDX #$4000             |		layerBlendingConfigWindow2 |= 0x10;
+$91:D29A A9 27 00    LDA #$0027             |	} else {
+$91:D29D 85 74       STA $74    [$7E:0074]  |		bool canShowBlocks = call 91:D143 !zero flag;	//returns in zero flag; //If x-ray can show blocks:
+$91:D29F A9 47 00    LDA #$0047             |		if (canShowBlocks) {
+$91:D2A2 85 75       STA $75    [$7E:0075]  |			subscreenBackdropColor1 = 0x27;	//Colour math subscreen backdrop colour = (7, 7, 7) (grey)
+$91:D2A4 A9 87 00    LDA #$0087             |			subscreenBackdropColor2 = 0x47;
+$91:D2A7 85 76       STA $76    [$7E:0076]  |			subscreenBackdropColor3 = 0x87;
+$91:D2A9 8A          TXA                    |			layerBlendingConfigWindow2 |= 0x40;
+$91:D2AA 0C 86 19    TSB $1986  [$7E:1986]  |		} else {
+$91:D2AD FA          PLX					|			layerBlendingConfigWindow2 |= 0x20;
+$91:D2AE 28          PLP					|		}
+$91:D2AF 6B          RTL					|	}
+$91:D2B0 A5 74       LDA $74    [$7E:0074]  |	X = pop();
+$91:D2B2 29 1F 00    AND #$001F             |	flags = pop();
+$91:D2B5 C9 07 00    CMP #$0007             |	return;
+$91:D2B8 10 EF       BPL $EF    [$D2A9]     |
+$91:D2BA 80 DE       BRA $DE    [$D29A]     /
+}
+
+
+;;; $91:D143: Check if x-ray should show any blocks ;;;
+{
+$91:D143 AD 9B 07    LDA $079B  [$7E:079B]  \
+$91:D146 C9 6A A6    CMP #$A66A             |	return !(	// return via zero flag
+$91:D149 F0 27       BEQ $27    [$D172]     |		roomPageOffset == 0xA66A 					// If in Tourian entrance room: return zero set
+$91:D14B C9 FB CE    CMP #$CEFB             |		|| roomPageOffset == 0xCEFB				// If in n00b tube room: return zero set 
+$91:D14E F0 22       BEQ $22    [$D172]     |		|| roomFXType == RoomFXType::FireFlea		// If [FX layer 3] = fireflea: return zero set
+$91:D150 AD 6E 19    LDA $196E  [$7E:196E]  |		|| bossID == BossID::Kraid					// If fighting Kraid: return zero set
+$91:D153 C9 24 00    CMP #$0024             |		|| bossID == BossID::Crocomire				// If fighting Crocomire: return zero set
+$91:D156 F0 1A       BEQ $1A    [$D172]     |		|| bossID == BossID::Phantoon				// If fighting Phantoon: return zero set
+$91:D158 AD 9C 17    LDA $179C  [$7E:179C]  |		|| bossID == BossID::Draygon				// If fighting Draygon: return zero set
+$91:D15B C9 03 00    CMP #$0003             |		|| bossID == BossID::MotherBrain			// If fighting Mother Brain: return zero set, else return zero clear 
+$91:D15E F0 12       BEQ $12    [$D172]     |	);
+$91:D160 C9 06 00    CMP #$0006             |
+$91:D163 F0 0D       BEQ $0D    [$D172]     |
+$91:D165 C9 07 00    CMP #$0007             |
+$91:D168 F0 08       BEQ $08    [$D172]     |
+$91:D16A C9 08 00    CMP #$0008             |
+$91:D16D F0 03       BEQ $03    [$D172]     |
+$91:D16F C9 0A 00    CMP #$000A             |
+$91:D172 6B          RTL					/
+}
+
+
+HDMA input arguments ... TODO what is X?
+
+91:CAF9 = x-ray setup stage 1 - freeze time and backup BG2 registers
++-	freeze time
++-	backup BG2 X scroll, Y scroll, address, and size
+
+NOTICE - the X register is something that the HDMA code calls
+;;; $CAF9: X-ray setup stage 1 - freeze time and backup BG2 registers ;;;
+{
+$91:CAF9 08          PHP					\	push(flags);
+$91:CAFA E2 30       SEP #$30				|	flags |= 0x30
+$91:CAFC A9 01       LDA #$01               |	// patrickjohnston's notes say 7E:1908..13 are for HDMA, so the bg2Scroll is backed up in the memory right after that ... 
+$91:CAFE 8D 78 0A    STA $0A78  [$7E:0A78]  |	xrayTimeIsFrozen = 1;	// Freeze time
+$91:CB01 A5 B5       LDA $B5    [$7E:00B5]  |
+$91:CB03 9D 14 19    STA $1914,x[$7E:1918]  |	mem16[0x7E1914 + X] = bg2ScrollX;	//  Backup BG2 X scroll
+$91:CB06 A5 B6       LDA $B6    [$7E:00B6]  |
+$91:CB08 9D 15 19    STA $1915,x[$7E:1919]  |
+$91:CB0B A5 B7       LDA $B7    [$7E:00B7]  |
+$91:CB0D 9D 20 19    STA $1920,x[$7E:1924]  |	mem16[0x7E1920 + X] = bg2ScrollY;	//Backup BG2 Y scroll
+$91:CB10 A5 B8       LDA $B8    [$7E:00B8]  |
+$91:CB12 9D 21 19    STA $1921,x[$7E:1925]  |
+$91:CB15 A5 59       LDA $59    [$7E:0059]  |
+$91:CB17 9D 2C 19    STA $192C,x[$7E:1930]  |	mem8[0x7E192C + X] = bg2TilemapBaseAddrAndSize.value;	// Backup BG2 address/size 
+$91:CB1A 28          PLP					|	flags = pop();
+$91:CB1B 6B          RTL					/	return;
+}
+
+91:CB1C = x-ray setup stage 2 - read BG1 tilemap - 2nd screen
++-	queue transfer of 800h bytes from vram BG1 tilemap base + 400h to $7E:6800
+
+$91:CB1C 08          PHP						\
+$91:CB1D C2 30       REP #$30					|	*(vramReadTableEntry_t*)((uint8_t*)vramReadTable + vramReadStackOffset) = {
+$91:CB1F AE 60 03    LDX $0360  [$7E:0360]		|		.srcAddr = bg1TilemapBaseAddrAndSize.base * 0x400 + 0x400,
+$91:CB22 A5 58       LDA $58    [$7E:0058]		|		.DMAControl = 0x81,
+$91:CB24 29 FC 00    AND #$00FC					|		.DMATarget = 0x39,
+$91:CB27 EB          XBA						|		.destAddr24 = (void*)xrayBG1Backup + 0x800,	//7E:6800
+$91:CB28 18          CLC						|		.size = 0x800,
+$91:CB29 69 00 04    ADC #$0400					|	};
+$91:CB2C 9D 40 03    STA $0340,x[$7E:0340]		|	vramReadStackOffset += 9; // == sizeof(vramReadTableEntry_t)
+$91:CB2F A9 81 00    LDA #$0081					|
+$91:CB32 9D 42 03    STA $0342,x[$7E:0342]		|
+$91:CB35 A9 39 00    LDA #$0039					|
+$91:CB38 9D 43 03    STA $0343,x[$7E:0343]		|
+$91:CB3B A9 00 68    LDA #$6800					|
+$91:CB3E 9D 44 03    STA $0344,x[$7E:0344]		|
+$91:CB41 A9 7E 00    LDA #$007E					|
+$91:CB44 9D 46 03    STA $0346,x[$7E:0346]		|
+$91:CB47 A9 00 08    LDA #$0800					|
+$91:CB4A 9D 47 03    STA $0347,x[$7E:0347]		|
+$91:CB4D 8A          TXA						|
+$91:CB4E 18          CLC						|
+$91:CB4F 69 09 00    ADC #$0009					|
+$91:CB52 8D 60 03    STA $0360  [$7E:0360]		|
+$91:CB55 28          PLP						|
+$91:CB56 6B          RTL						/
+
+
+91:CB57 = x-ray setup stage 3 - read BG1 tilemap - 1st screen
++-	queue transfer of 800h bytes from VRAM BG1 tilemap base to $7E:6000
+
+
+$91:CB57	//: X-ray setup stage 3 - read BG1 tilemap - 1st screen ;;;
+			//; Queue transfer of 800h bytes from VRAM BG1 tilemap base to $7E:6000
+{
+$91:CB57 08          PHP						\
+$91:CB58 C2 30       REP #$30					|	*(vramReadTableEntry_t*)((uint8_t*)vramReadTable + vramReadStackOffset) = {
+$91:CB5A AE 60 03    LDX $0360  [$7E:0360]		|		.srcAddr = bg1TilemapBaseAddrAndSize.base * 0x400,
+$91:CB5D A5 58       LDA $58    [$7E:0058]		|		.DMAControl = 0x81,
+$91:CB5F 29 FC 00    AND #$00FC					|    	.DMATarget = 0x39,
+$91:CB62 EB          XBA						|   	.destAddr24 = (void*)xrayBG1Backup,	//7E:6000  
+$91:CB63 9D 40 03    STA $0340,x[$7E:0340]		|   	.size = 0x0800,	
+$91:CB66 A9 81 00    LDA #$0081					|	};
+$91:CB69 9D 42 03    STA $0342,x[$7E:0342]		|	vramReadStackOffset += 9;	// == sizeof(vramReadTableEntry_t)
+$91:CB6C A9 39 00    LDA #$0039					|
+$91:CB6F 9D 43 03    STA $0343,x[$7E:0343]		|
+$91:CB72 A9 00 60    LDA #$6000					|
+$91:CB75 9D 44 03    STA $0344,x[$7E:0344]		|
+$91:CB78 A9 7E 00    LDA #$007E					|
+$91:CB7B 9D 46 03    STA $0346,x[$7E:0346]		|
+$91:CB7E A9 00 08    LDA #$0800					|
+$91:CB81 9D 47 03    STA $0347,x[$7E:0347]		|
+$91:CB84 8A          TXA						|
+$91:CB85 18          CLC						|
+$91:CB86 69 09 00    ADC #$0009					|
+$91:CB89 8D 60 03    STA $0360  [$7E:0360]		|
+$91:CB8C 28          PLP						|
+$91:CB8D 6B          RTL						/
+}
+
+
+91:CB8E = x-ray setup stage 4
++-	some kind of loop over all blocks or something
+	+-	91:CCF1
+		+-	load and store some variables
++-	some other loop
+	+-	91:CD42
+		+-	91:CDD6 = handle x-rayed block
++-	some other loop
+	+-	91:CDBE
+		+-	91:CDD6 = handle x-rayed block
+		+-	JMP to 91:CF36
+		+-	91:CFBF
+			+- ...
+		+-	JMP back to CDCB
+	+-	84:831A = load x-ray blocks
+		
+	84:831A = load x-ray blocks
+	+-	cycle through PLMs and change x-ray blocks
+	+-	80:818E = see if this item (based on PLM arg?) has been picked up
+	+-	84:8290 = calculate PLM block coordinate
+	+-	91:D04C = load blocks to x-ray tilemap
+		+-	if block screen X < 1 then return 
+		+-	if block screen X >= 10h then return 
+		+-	if block screen Y < 1 then return
+		+-	if block screen Y >= 10h then return
+		+-	accum = mem16[7E:0028] is the current tile index of what we are drawing
+		+-	if tile index & 0800h == 0 then then block is not flipped vertically so call ...
+		+-	91:CFC1 = copy individual block to x-ray tilemaps (accum is the tileIndex)
+			+-	does some reading and writing to mem locations
+		+- 	else call ...
+		+-	91:D0A6
+			+-	likewise
+	... and then at the end of the function is drawing instructions per block type.  these are sets of 3 uint16_t's that must be passed to one of the called functions:
+	A30F = 0001, B08E, 0000 \
+	A31B = 0001, B090, 0000 |
+	A327 = 0001, B092, 0000 } Misc. items in loaded order
+	A333 = 0001, B094, 0000 /
+	A2DF = 0001, B04A, 0000 Energy tank
+	A2F1 = 0001, B04D, 0000 Missile tank
+	A2FD = 0001, B04F, 0000 Super missile tank
+	A303 = 0001, B050, 0000 Power bomb tank
+
+	91:CDD6 = handle x-rayed block
+
+91:CB8E		//;;; $CB8E: X-ray setup stage 4 ;;;; Calls the $84 X-ray block graphics lookup
+{
+$91:CB8E 08          PHP					}	push(flags);
+$91:CB8F C2 30       REP #$30				}	flags &= ~0x30
+$91:CB91 AD 1F 09    LDA $091F  [$7E:091F]  \
+$91:CB94 18          CLC                    |	uint16_t & j = mem16[0x12];
+$91:CB95 6D 15 09    ADC $0915  [$7E:0915]  |	uint16_t & i = mem16[0x14];
+$91:CB98 29 F0 00    AND #$00F0             |	uint16_t & k = mem16[0x16];
+$91:CB9B 0A          ASL A                  |	uint16_t & bg1RowBlockIndex = mem16[0x18];
+$91:CB9C 0A          ASL A                  |	uint16_t & bg1rowBlockRowIndex = mem16[0x1A];
+$91:CB9D 85 18       STA $18    [$7E:0018]  |	uint16_t & bg1rowBlockColIndex = mem16[0x1C];
+$91:CB9F AD 1D 09    LDA $091D  [$7E:091D]  |	uint16_t & bg1blockOffsetX = mem16[0x1E];
+$91:CBA2 18          CLC                    |	uint16_t & blockIndex = mem16[0x22];
+$91:CBA3 6D 11 09    ADC $0911  [$7E:0911]  |	uint16_t & blockIndex2 = mem16[0x24];
+$91:CBA6 29 F0 00    AND #$00F0             |
+$91:CBA9 4A          LSR A                  |	// $18 (BG1 row origin block index) =                                                                                                  	
+$91:CBAA 4A          LSR A                  |  	//     (([BG1 Y offset] + [layer 1 Y position]) / 8 & 1Eh) * 20h (20h tiles per tilemap row, rounded down to top-left of 16x16 block)		
+$91:CBAB 4A          LSR A                  |  	//   + ([BG1 X offset] + [layer 1 X position]) / 8 & 1Eh         (1 byte per tilemap column, rounded down to top-left of 16x16 block)		
+$91:CBAC 18          CLC                    |  	//   + ([BG1 X offset] + [layer 1 X position]) / 100h % 2 * 400h (400h tiles per tilemap screen)                                     		
+$91:CBAD 65 18       ADC $18    [$7E:0018]  |	
+$91:CBAF 85 18       STA $18    [$7E:0018]  |	bg1RowBlockIndex =
+$91:CBB1 AD 1D 09    LDA $091D  [$7E:091D]  |		((bg1OffsetY + layer1PosY) & 0x00F0) << 2		
+$91:CBB4 18          CLC                    |		+ ((bg1OffsetX + layer1PosX) & 0x00F0) >> 3
+$91:CBB5 6D 11 09    ADC $0911  [$7E:0911]  |		+ ((bg1OffsetX + layer1PosX) & 0x0100) << 2;
+$91:CBB8 29 00 01    AND #$0100             |
+$91:CBBB 0A          ASL A                  |
+$91:CBBC 0A          ASL A                  |
+$91:CBBD 18          CLC                    |
+$91:CBBE 65 18       ADC $18    [$7E:0018]  |
+$91:CBC0 85 18       STA $18    [$7E:0018]  /
+$91:CBC2 64 16       STZ $16    [$7E:0016]  \ 
+$91:CBC4 A9 10 00    LDA #$0010             |	for (i = 0x10, k = 0; i > 0; i--, k += 0x40) {
+$91:CBC7 85 14       STA $14    [$7E:0014]  /
+$91:CBC9 A9 10 00    LDA #$0010             \
+$91:CBCC 85 12       STA $12    [$7E:0012]  |		// $1A = [BG1 row origin block index] & 7E0h (BG1 row origin block row index)
+$91:CBCE A5 18       LDA $18    [$7E:0018]  |		bg1rowBlockRowIndex = bg1RowBlockIndex & 0x07E0;
+$91:CBD0 29 E0 07    AND #$07E0             |		
+$91:CBD3 85 1A       STA $1A    [$7E:001A]  |		// $1C = [BG1 row origin block index] & 1Fh (BG1 row origin block column index)
+$91:CBD5 A5 18       LDA $18    [$7E:0018]  |		bg1rowBlockColIndex = bg1RowBlockIndex & 0x001F;
+$91:CBD7 29 1F 00    AND #$001F             |		bg1blockOffsetX = 0;								// $1E = 0 (BG1 block X offset)
+$91:CBDA 85 1C       STA $1C    [$7E:001C]  |
+$91:CBDC 64 1E       STZ $1E    [$7E:001E]  /		for (j = 0x10; j > 0; j--, bg1blockOffsetX += 2, k += 4) {
+$91:CBDE A5 1C       LDA $1C    [$7E:001C]  \
+$91:CBE0 18          CLC                    |
+$91:CBE1 65 1E       ADC $1E    [$7E:001E]  |			// If [BG1 row origin block column index] + [BG1 block offset] >= 20h:
+$91:CBE3 C9 20 00    CMP #$0020             |			
+$91:CBE6 30 12       BMI $12    [$CBFA]     /			if (bg1rowBlockColIndex + bg1blockOffsetX >= 0x20) { 
+$91:CBE8 A5 1A       LDA $1A    [$7E:001A]  \       
+$91:CBEA 18          CLC                    |       
+$91:CBEB 69 00 04    ADC #$0400             |				// BG1 row origin block row index = [BG1 row origin block row index] + 400h & 7E0h (switch tilemap screens)
+$91:CBEE 29 E0 07    AND #$07E0             |				bg1rowBlockRowIndex += 0x400;
+$91:CBF1 85 1A       STA $1A    [$7E:001A]  /				bg1rowBlockRowIndex &= 0x7E0;
+$91:CBF3 A9 00 00    LDA #$0000             \				bg1rowBlockColIndex = 0;	// BG1 row origin block column index = 0
+$91:CBF6 85 1C       STA $1C    [$7E:001C]  |				bg1blockOffsetX = 0;	// BG1 block X offset = 0
+$91:CBF8 85 1E       STA $1E    [$7E:001E]  /			}
+$91:CBFA A5 1A       LDA $1A    [$7E:001A]  \       
+$91:CBFC 18          CLC                    |       
+$91:CBFD 65 1C       ADC $1C    [$7E:001C]  |			// X = ([BG1 row origin block row index] + [BG1 row origin block column index] + [BG1 block X offset]) * 2
+$91:CBFF 65 1E       ADC $1E    [$7E:001E]  |			uint16_t src = (bg1rowBlockRowIndex + bg1rowBlockColIndex + bg1blockOffsetX) << 1;
+$91:CC01 0A          ASL A                  |			
+$91:CC02 AA          TAX                    /       
+$91:CC03 BF 00 60 7E LDA $7E6000,x[$7E:650C]\			
+$91:CC07 48          PHA                    |			
+$91:CC08 BF 02 60 7E LDA $7E6002,x[$7E:650E]|			
+$91:CC0C 48          PHA                    |			
+$91:CC0D BF 40 60 7E LDA $7E6040,x[$7E:654C]|			
+$91:CC11 48          PHA                    |			uint16_t dst = k;	
+$91:CC12 BF 42 60 7E LDA $7E6042,x[$7E:654E]|			
+$91:CC16 A6 16       LDX $16    [$7E:0016]  |			*(uint16_t*)(xrayTilemapsViewableBG1 + 0x00 + dst) = *(uint16_t*)(xrayBG1Backup + 0x00 + src);	//$7E:4000 + [$16]       = [$7E:6000 + [X]]
+$91:CC18 9F 42 40 7E STA $7E4042,x[$7E:4042]|			*(uint16_t*)(xrayTilemapsViewableBG1 + 0x02 + dst) = *(uint16_t*)(xrayBG1Backup + 0x02 + src);	//$7E:4000 + [$16] + 2   = [$7E:6000 + [X] + 2]
+$91:CC1C 68          PLA                    |			*(uint16_t*)(xrayTilemapsViewableBG1 + 0x40 + dst) = *(uint16_t*)(xrayBG1Backup + 0x40 + src);	//$7E:4000 + [$16] + 40h = [$7E:6000 + [X] + 40h]
+$91:CC1D 9F 40 40 7E STA $7E4040,x[$7E:4040]|			*(uint16_t*)(xrayTilemapsViewableBG1 + 0x42 + dst) = *(uint16_t*)(xrayBG1Backup + 0x42 + src);	//$7E:4000 + [$16] + 42h = [$7E:6000 + [X] + 42h]
+$91:CC21 68          PLA                    |			
+$91:CC22 9F 02 40 7E STA $7E4002,x[$7E:4002]|			
+$91:CC26 68          PLA                    |			
+$91:CC27 9F 00 40 7E STA $7E4000,x[$7E:4000]/			
+$91:CC2B A5 16       LDA $16    [$7E:0016]  \       
+$91:CC2D 18          CLC                    |       
+$91:CC2E 69 04 00    ADC #$0004             |
+$91:CC31 85 16       STA $16    [$7E:0016]  |       
+$91:CC33 A5 1E       LDA $1E    [$7E:001E]  |
+$91:CC35 69 02 00    ADC #$0002             |
+$91:CC38 85 1E       STA $1E    [$7E:001E]  |
+$91:CC3A C6 12       DEC $12    [$7E:0012]  |		}
+$91:CC3C D0 A0       BNE $A0    [$CBDE]     /	
+$91:CC3E 20 F1 CC    JSR $CCF1  [$91:CCF1]  } 	 	call $91:CCF1
+$91:CC41 A5 18       LDA $18    [$7E:0018]  \
+$91:CC43 29 00 04    AND #$0400             |
+$91:CC46 85 20       STA $20    [$7E:0020]  |
+$91:CC48 A5 18       LDA $18    [$7E:0018]  |		//mem16[0x20] = bg1RowBlockIndex & 0x400;	//used anywhere else? or completely temporary?
+$91:CC4A 18          CLC                    |		//BG1 row origin block index = ([BG1 row origin block index] & 400h)	+ ([BG1 row origin block index] + 40h & 3FFh)
+$91:CC4B 69 40 00    ADC #$0040             |		bg1RowBlockIndex = (bg1RowBlockIndex & 0x400) + ((bg1RowBlockIndex + 0x40) & 0x3FF);
+$91:CC4E 29 FF 03    AND #$03FF             |		
+$91:CC51 18          CLC                    |
+$91:CC52 65 20       ADC $20    [$7E:0020]  |		
+$91:CC54 85 18       STA $18    [$7E:0018]  /
+$91:CC56 A5 16       LDA $16    [$7E:0016]  \
+$91:CC58 18          CLC                    |
+$91:CC59 69 40 00    ADC #$0040             |
+$91:CC5C 85 16       STA $16    [$7E:0016]  |
+$91:CC5E C6 14       DEC $14    [$7E:0014]  |	
+$91:CC60 F0 03       BEQ $03    [$CC65]     |	}
+$91:CC62 4C C9 CB    JMP $CBC9  [$91:CBC9]  /
+$91:CC65 AD 15 09    LDA $0915  [$7E:0915]  \
+$91:CC68 4A          LSR A                  |	//accum = layer1PosY >> 4;	
+$91:CC69 4A          LSR A                  |	//swap(A, B);	        	
+$91:CC6A 4A          LSR A                  |	//...aka...
+$91:CC6B 4A          LSR A                  |	//accum = layer1PosY << 4;
+$91:CC6C EB          XBA                    |
+$91:CC6D 0D A5 07    ORA $07A5  [$7E:07A5]  |	// $22 = [layer 1 Y position] / 10h * [room width in blocks] + [layer 1 X position] / 10h
+$91:CC70 8D 02 42    STA $4202  [$7E:4202]  /	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x202) = (layer1PosY << 4) | roomWidthInBlocks;
+$91:CC73 AD 11 09    LDA $0911  [$7E:0911]  \
+$91:CC76 4A          LSR A                  |
+$91:CC77 4A          LSR A                  |
+$91:CC78 4A          LSR A                  |
+$91:CC79 4A          LSR A                  |
+$91:CC7A 18          CLC                    |
+$91:CC7B 6D 16 42    ADC $4216  [$7E:4216]  |	blockIndex = *(uint16_t*)(xrayTilemapsViewableBG1 + 0x261) + (layer1PosX >> 4);	
+$91:CC7E 85 22       STA $22    [$7E:0022]  /
+$91:CC80 64 16       STZ $16    [$7E:0016]  }	k = 0;
+$91:CC82 A9 10 00    LDA #$0010             \
+$91:CC85 85 14       STA $14    [$7E:0014]  /	for (i = 0x10; i > 0; i--) {
+$91:CC87 20 42 CD    JSR $CD42  [$91:CD42]  }		call $91:CD42 (blockIndex);
+$91:CC8A A9 10 00    LDA #$0010             \
+$91:CC8D 85 12       STA $12    [$7E:0012]  |		blockIndex2 = blockIndex;	
+$91:CC8F A5 22       LDA $22    [$7E:0022]  |
+$91:CC91 85 24       STA $24    [$7E:0024]  |		for (j = 0x10; j > 0; j--) {
+$91:CC93 20 BE CD    JSR $CDBE  [$91:CDBE]  |			call $91:CDBE
+$91:CC96 C6 12       DEC $12    [$7E:0012]  |		}	
+$91:CC98 D0 F9       BNE $F9    [$CC93]     /
+$91:CC9A A5 16       LDA $16    [$7E:0016]  \		
+$91:CC9C 48          PHA                    |		uint16_t orig16 = k;
+$91:CC9D 18          CLC                    |
+$91:CC9E 69 C0 07    ADC #$07C0             |		
+$91:CCA1 85 16       STA $16    [$7E:0016]  |		k = orig16 + 0x7C0;
+$91:CCA3 20 BE CD    JSR $CDBE  [$91:CDBE]  |		call $91:CDBE;
+$91:CCA6 68          PLA                    |		
+$91:CCA7 18          CLC                    |
+$91:CCA8 69 40 00    ADC #$0040             |		k = orig16 + 0x0040;
+$91:CCAB 85 16       STA $16    [$7E:0016]  /
+$91:CCAD A5 22       LDA $22    [$7E:0022]  \
+$91:CCAF 18          CLC                    |
+$91:CCB0 6D A5 07    ADC $07A5  [$7E:07A5]  |		blockIndex += roomWidthInBlocks; // $22 += [room width]
+$91:CCB3 85 22       STA $22    [$7E:0022]  /
+$91:CCB5 C6 14       DEC $14    [$7E:0014]  \	
+$91:CCB7 D0 CE       BNE $CE    [$CC87]     / 	}
+$91:CCB9 22 1A 83 84 JSL $84831A[$84:831A]  }	call $84:831A	//Load x-ray blocks
+$91:CCBD AE 60 03    LDX $0360  [$7E:0360]  \
+$91:CCC0 A5 59       LDA $59    [$7E:0059]  |	// Queue transfer of 800h bytes from VRAM BG2 tilemap base to $7E:5000
+$91:CCC2 29 FC 00    AND #$00FC             |	*(vramReadTableEntry_t*)((uint8_t*)vramReadTable + vramReadStackOffset) = {
+$91:CCC5 EB          XBA                    |		.srcAddr = bg2TilemapBaseAddrAndSize.base * 0x400,
+$91:CCC6 9D 40 03    STA $0340,x[$7E:0340]  |		.DMAControl = 0x81,
+$91:CCC9 A9 81 00    LDA #$0081             |		.DMATarget = 0x39,
+$91:CCCC 9D 42 03    STA $0342,x[$7E:0342]  |		.destAddr24 = (void*)xrayBG2Backup,		//7E:5000
+$91:CCCF A9 39 00    LDA #$0039             |		.size = 0x800,
+$91:CCD2 9D 43 03    STA $0343,x[$7E:0343]  |	};
+$91:CCD5 A9 00 50    LDA #$5000             | 
+$91:CCD8 9D 44 03    STA $0344,x[$7E:0344]  |
+$91:CCDB A9 7E 00    LDA #$007E             |
+$91:CCDE 9D 46 03    STA $0346,x[$7E:0346]  |
+$91:CCE1 A9 00 08    LDA #$0800             |
+$91:CCE4 9D 47 03    STA $0347,x[$7E:0347]  /
+$91:CCE7 8A          TXA                    \
+$91:CCE8 18          CLC                    |	vramReadStackOffset += 9;	//== sizeof(vramReadTableEntry_t)
+$91:CCE9 69 09 00    ADC #$0009             |
+$91:CCEC 8D 60 03    STA $0360  [$7E:0360]  /	
+$91:CCEF 28          PLP					}	flags = pop();
+$91:CCF0 6B          RTL					}	return;	//long
+}
+
+$91:CCF1	//;;; $CCF1:  ;;;
+			// variables are also referenced from 91:CB8E, where the mem locations are specified
+			//external used variables: (bg1rowBlockRowIndex, bg1rowBlockColIndex, bg1blockOffsetX, k)
+{
+$91:CCF1 A5 1A       LDA $1A    [$7E:001A]		\	uint16_t & tmp = mem16[0x20]
+$91:CCF3 85 20       STA $20    [$7E:0020]		/	tmp = bg1rowBlockRowIndex
+$91:CCF5 A5 1C       LDA $1C    [$7E:001C]		\
+$91:CCF7 18          CLC						|
+$91:CCF8 65 1E       ADC $1E    [$7E:001E]		|	accum = bg1rowBlockColIndex + bg1blockOffsetX;
+$91:CCFA C9 20 00    CMP #$0020					|	if (accum >= 0x20) {
+$91:CCFD 30 0E       BMI $0E    [$CD0D]			|
+$91:CCFF A5 20       LDA $20    [$7E:0020]		|		
+$91:CD01 18          CLC						|
+$91:CD02 69 00 04    ADC #$0400					|		tmp += 0x400;
+$91:CD05 29 E0 07    AND #$07E0					|		tmp &= 0x7E0;
+$91:CD08 85 20       STA $20    [$7E:0020]		|		
+$91:CD0A A9 00 00    LDA #$0000					|		accum = 0;
+$91:CD0D 18          CLC						/	}
+$91:CD0E 65 20       ADC $20    [$7E:0020]		\
+$91:CD10 0A          ASL A						|
+$91:CD11 AA          TAX						|
+$91:CD12 BF 00 60 7E LDA $7E6000,x[$7E:6D0C]	|	uint16_t src = (accum + tmp) << 1;
+$91:CD16 48          PHA						|	uint16_t dst = k + 0x7C0;
+$91:CD17 BF 02 60 7E LDA $7E6002,x[$7E:6D0E]	|	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x00 + dst) = *(uint16_t*)(xrayBG1Backup + 0x00 + src);
+$91:CD1B 48          PHA						|	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x02 + dst) = *(uint16_t*)(xrayBG1Backup + 0x02 + src);
+$91:CD1C BF 40 60 7E LDA $7E6040,x[$7E:6D4C]	|	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x40 + dst) = *(uint16_t*)(xrayBG1Backup + 0x40 + src);
+$91:CD20 48          PHA						|	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x42 + dst) = *(uint16_t*)(xrayBG1Backup + 0x42 + src);
+$91:CD21 BF 42 60 7E LDA $7E6042,x[$7E:6D4E]	|                                                 	
+$91:CD25 48          PHA						|	
+$91:CD26 A5 16       LDA $16    [$7E:0016]		|                                                 	
+$91:CD28 18          CLC						|
+$91:CD29 69 C0 07    ADC #$07C0					|
+$91:CD2C AA          TAX						|
+$91:CD2D 68          PLA						|
+$91:CD2E 9F 42 40 7E STA $7E4042,x[$7E:4842]	|
+$91:CD32 68          PLA						|
+$91:CD33 9F 40 40 7E STA $7E4040,x[$7E:4840]	|
+$91:CD37 68          PLA						|
+$91:CD38 9F 02 40 7E STA $7E4002,x[$7E:4802]	|
+$91:CD3C 68          PLA						|
+$91:CD3D 9F 00 40 7E STA $7E4000,x[$7E:4800]	|
+$91:CD41 60          RTS						/	return;
+}
+
+
+;;; $91:CD42:  ;;;
+			// input (uint16_t & blockIndex = mem16[0x22])
+{
+$91:CD42 A6 22       LDX $22    [$7E:0022]		\
+$91:CD44 CA          DEX						/	X = blockIndex - 1;
+$91:CD45 20 D6 CD    JSR $CDD6  [$91:CDD6]		\	call $91:CDD6 (X = block type);	// clobbers X
+$91:CD48 C9 4E CF    CMP #$CF4E					|	
+$91:CD4B F0 3C       BEQ $3C    [$CD89]			|	if (accum != 0xCF4E) {
+$91:CD4D C9 6F CF    CMP #$CF6F					|		if (accum != 0xCF6F) {
+$91:CD50 F0 01       BEQ $01    [$CD53]			|			return;
+$91:CD52 60          RTS						|		}
+$91:CD53 5A          PHY						|		push(Y);	//Y comes from CDD6
+$91:CD54 98          TYA						|		
+$91:CD55 18          CLC						|
+$91:CD56 69 08 00    ADC #$0008                 |		
+$91:CD59 A8          TAY                        |		Y += 8;
+$91:CD5A B1 03       LDA ($03),y                |		accum = mem16[0x3] + Y;		// really? ... what is directPage?
+$91:CD5C 0A          ASL A                      |		
+$91:CD5D 0A          ASL A                      |		
+$91:CD5E 0A          ASL A                      |		
+$91:CD5F AA          TAX                        |		uint16_t src = accum << 3;
+$91:CD60 BF 00 A0 7E LDA $7EA000,x              |		
+$91:CD64 48          PHA                        |		
+$91:CD65 BF 02 A0 7E LDA $7EA002,x              |		
+$91:CD69 48          PHA                        |		
+$91:CD6A BF 04 A0 7E LDA $7EA004,x              |		
+$91:CD6E 48          PHA                        |		
+$91:CD6F BF 06 A0 7E LDA $7EA006,x              |		uint16_t dst = mem16[0x16];                  		
+$91:CD73 A6 16       LDX $16    [$7E:0016]      |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0xC2 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x06 + src);		
+$91:CD75 9F C2 40 7E STA $7E40C2,x              |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0xC0 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x04 + src);
+$91:CD79 68          PLA                        |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0x82 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x02 + src);     		
+$91:CD7A 9F C0 40 7E STA $7E40C0,x              |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0x80 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x00 + src);
+$91:CD7E 68          PLA                        |
+$91:CD7F 9F 82 40 7E STA $7E4082,x              |
+$91:CD83 68          PLA                        |
+$91:CD84 9F 80 40 7E STA $7E4080,x              |		Y = pop();
+$91:CD88 7A          PLY                        |	}
+$91:CD89 98          TYA						|	accum = Y;
+$91:CD8A 18          CLC						|
+$91:CD8B 69 04 00    ADC #$0004					|	accum += 4;
+$91:CD8E A8          TAY						|	Y = accum;
+$91:CD8F B1 03       LDA ($03),y				|	accum = mem16[0x3] + Y;			// really?
+$91:CD91 0A          ASL A						|	
+$91:CD92 0A          ASL A						|
+$91:CD93 0A          ASL A						|
+$91:CD94 AA          TAX						|	uint16_t src = accum << 3;
+$91:CD95 BF 00 A0 7E LDA $7EA000,x				|	
+$91:CD99 48          PHA						|	
+$91:CD9A BF 02 A0 7E LDA $7EA002,x              |	
+$91:CD9E 48          PHA                        |	
+$91:CD9F BF 04 A0 7E LDA $7EA004,x              |	
+$91:CDA3 48          PHA                        |	
+$91:CDA4 BF 06 A0 7E LDA $7EA006,x              |	
+$91:CDA8 A6 16       LDX $16    [$7E:0016]      |	uint16_t dst = mem16[0x16];
+$91:CDAA 9F 42 40 7E STA $7E4042,x              |	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x42 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x02 + src);
+$91:CDAE 68          PLA                        |	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x40 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x04 + src);
+$91:CDAF 9F 40 40 7E STA $7E4040,x              |	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x02 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x02 + src);
+$91:CDB3 68          PLA                        |	*(uint16_t*)(xrayTilemapsViewableBG1 + 0x00 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x00 + src);
+$91:CDB4 9F 02 40 7E STA $7E4002,x              |
+$91:CDB8 68          PLA                        |
+$91:CDB9 9F 00 40 7E STA $7E4000,x              |
+$91:CDBD 60          RTS                        /	return;
+}
+
+
+$91:CDBE:  ;;; ;;; (uint16_t &blockIndex2 = mem16[0x24], uint16_t &k = mem16[0x16] ... same as the calling function)
+{
+$91:CDBE A6 24       LDX $24    [$7E:0024]		\
+$91:CDC0 20 D6 CD    JSR $CDD6  [$91:CDD6]		/	call 91:CDD6(X=blockIndex2);	// clobbers X
+$91:CDC3 C9 FF FF    CMP #$FFFF					\		
+$91:CDC6 F0 03       BEQ $03    [$CDCB]			|
+$91:CDC8 6C 00 00    JMP ($0000)[$91:CF36]		|	if (accum != 0xFFFF) {
+$91:CDCB A5 16       LDA $16    [$7E:0016]		|		Y += 2;       	
+$91:CDCD 18          CLC						|		call $91:CFBF;
+$91:CDCE 69 04 00    ADC #$0004					|	}                    		
+$91:CDD1 85 16       STA $16    [$7E:0016]		|
+$91:CDD3 E6 24       INC $24    [$7E:0024]		|	k += 4; accum = k;			
+$91:CDD5 60          RTS						|	blockIndex2++;     		
+...												|	return;            			
+$91:CF36 C8          INY						|	
+$91:CF37 C8          INY						|
+$91:CF38 20 BF CF    JSR $CFBF  [$91:CFBF]		|
+$91:CF3B 4C CB CD    JMP $CDCB  [$91:CDCB]		/
+}
+
+
+$91:CDD6: ;;; Handle x-rayed block ;;;
+			// X = input = block offset in room data.  value is lookup into the xrayBlockTypes[] table below
+			// Y = output I think.
+			// returns: 
+			//	X = byte offset into xrayBlockTypes of current x-ray block type
+			//	accum = 0xFFFF if we failed to find a block
+{
+$91:CDD6 BF 02 64 7F LDA $7F6402,x[$7F:7104]	\	uint16_t & m = mem16[0x26];
+$91:CDDA 29 FF 00    AND #$00FF					|	uint16_t & n = mem16[0x28];
+$91:CDDD 85 26       STA $26    [$7E:0026]		/	m = (uint8_t)levelBTS[X];	//"BTS" aka channel 3 of the room block data.  //mem8[0x7F6402 + X];	
+$91:CDDF 8A          TXA						\
+$91:CDE0 0A          ASL A						|
+$91:CDE1 AA          TAX						|	
+$91:CDE2 BF 02 00 7F LDA $7F0002,x[$7F:1A06]	|	n = levelData[X] & 0xF000;	//get high nibble of channel 2 of the room block data 
+$91:CDE6 29 00 F0    AND #$F000					|
+$91:CDE9 85 28       STA $28    [$7E:0028]		/
+$91:CDEB A2 00 00    LDX #$0000					\	xrayBlockType_t* p = xrayBlockTypes;
+$91:CDEE BD D6 D2    LDA $D2D6,x[$91:D2D6]      |	//X = (uint8_t*)p - (uint8_t*)xrayBlockTypes; accum = p->blockType;
+$91:CDF1 C9 FF FF    CMP #$FFFF                 |	for (;; ++p) {
+$91:CDF4 F0 35       BEQ $35    [$CE2B]         |		if (p->blockType == 0xFFFF) return;	//accum = 0xFFFF, X = byte offset into xrayBlockTypes;
+$91:CDF6 C5 28       CMP $28    [$7E:0028]      |
+$91:CDF8 F0 06       BEQ $06    [$CE00]         |		if (p->blockType == n) break;
+$91:CDFA E8          INX                        |
+$91:CDFB E8          INX                        |
+$91:CDFC E8          INX                        |	}
+$91:CDFD E8          INX                        |	// assuming directPage = &mem16[0] ...
+$91:CDFE 80 EE       BRA $EE    [$CDEE]         /	*directPage = mem16[0] = p->subtypePageOffset;	// this must be the current directPage address, hence why the LDA($00),y will point to the values offset by the xrayBlockTypes's subtypePageOffset
+$91:CE00 BD D8 D2    LDA $D2D8,x[$91:D2D8]      \													// likewise in function 91:CAD6 and 91:E16D we set data_bank = 0x91 ... I guess nothing else touches it until it gets here? 
+$91:CE03 85 00       STA $00    [$7E:0000]      /
+$91:CE05 A0 00 00    LDY #$0000                 \	xrayBlockSubType_t* q = (xrayBlockSubType_t*)(databankptr + p->subtypePageOffset);
+$91:CE08 B1 00       LDA ($00),y[$91:D2FC]      |	//Y = (uint8_t*)q - (uint8_t*)(databankptr + *directPage);
+$91:CE0A C9 FF FF    CMP #$FFFF                 |	for (;; ++q) {
+$91:CE0D F0 1C       BEQ $1C    [$CE2B]         |		accum = q->btsType;
+$91:CE0F C9 00 FF    CMP #$FF00                 |		if (q->btsType == 0xFFFF) return; //accum = 0xFFFF, X = byte offset into xrayBlockTypes, Y = byte offset into xrayBlockSubData
+$91:CE12 F0 0A       BEQ $0A    [$CE1E]         |		if (q->btsType == 0xFF00) break;	// if we found an empty type, don't keep searching?
+$91:CE14 C5 26       CMP $26    [$7E:0026]      |
+$91:CE16 F0 06       BEQ $06    [$CE1E]         |		if (q->btsType == m) break;
+$91:CE18 C8          INY                        |	
+$91:CE19 C8          INY                        |
+$91:CE1A C8          INY                        |
+$91:CE1B C8          INY                        |
+$91:CE1C 80 EA       BRA $EA    [$CE08]         /	}
+$91:CE1E C8          INY                        \
+$91:CE1F C8          INY                        |
+$91:CE20 B1 00       LDA ($00),y[$91:D2FE]      |	
+$91:CE22 85 03       STA $03    [$7E:0003]      |	mem16[0x7E0003] = q->directPage;		// what is at memory location 3?  does the low byte affect the direct page (set to mem loc 0)'s bank? 
+$91:CE24 A0 00 00    LDY #$0000                 |
+$91:CE27 B1 03       LDA ($03),y[$91:D302]      |	// TODO how is this an indirection into the xrayBlockSubType_t's directPage field?   offset +03 why?
+$91:CE29 85 00       STA $00    [$7E:0000]      |	accum = *directPage = mem16[0] = *(databankptr + directPage + 3); ... ?
+$91:CE2B 60          RTS                        /	return accum;	//X = byte offset into xrayBlockTypes, Y = 0
+}
+
+
+;;; $D2D6..D4D9: X-ray block data ;;;
+															\	struct {                                                                   	
+															|		uint16_t blockType;			// ch2 type
+															|		uint16_t subtypePageOffset;	// offset for ch3 type specific info <-> is of type xrayBlockSubType_t
+															|	} xrayBlockType_t;
+															|
+															|	struct {                                                                   	
+															|		uint16_t btsType;		// ch3 type
+															|		uint16_t directPage;	// graphics tile location to use?  or maybe memory location
+															|	} xrayBlockSubType_t;
+															|
+{															|	xrayBlockType_t xrayBlockTypes[] = {
+$91:D2D6             dw 0000,D2FC, ; Air					|		{0x0000, &xrayBlockSubType_Air},
+                        3000,D306, ; Special air			|		{0x3000, &xrayBlockSubType_SpecialAir},
+                        5000,D310, ; Horizontal extension	|		{0x5000, &xrayBlockSubType_HorzCopy},
+                        A000,D318, ; Spike block			|		{0xA000, &xrayBlockSubType_Spike},
+                        B000,D322, ; Special block			|		{0xB000, &xrayBlockSubType_Special},
+                        C000,D3CC, ; Shootable block		|		{0xC000, &xrayBlockSubType_Shootable},
+                        D000,D462, ; Vertical extension		|		{0xD000, &xrayBlockSubType_VertCopy},
+                        E000,D46A, ; Grappling block		|		{0xE000, &xrayBlockSubType_Grappling},
+                        F000,D484, ; Bombable block			|		{0xF000, &xrayBlockSubType_Bombable},
+                        FFFF								|	}; uint16_t term = 0xFFFF;
+															|
+															|	xrayBlockSubType_t xrayBlockSubType_Air[] = {
+$91:D2FC             dw FF00,D302,							|		{0xFF00, &xrayBlock_Air}
+                        FFFF								|	}; uint16_t term = 0xFFFF;
+
+															|	xrayBlock_Air = {
+$91:D302             dw CF36,00FF							|		// why are there 2 uint16_t's here?  don't we only need one?
+
+															|	xrayBlockSubType_t xrayBlockSubType_SpecialAir[] = {
+$91:D306             dw 0046,D30C,  ; Scroll PLM trigger	|		{0x0046, &xrayBlock_SpecialAir},
+                        FFFF								|	}; uint16_t term = 0xFFFF;
+
+															|	xrayBlock_SpecialAir = {
+$91:D30C             dw CF36,00FF
+
+															|	xrayBlockSubType_t xrayBlockSubType_HorzCopy[] = {
+$91:D310             dw FF00,D316,							|		{0xFF00, &xrayBlock_HorzCopy},
+                        FFFF								|	}; uint16_t term = 0xFFFF;
+
+															|	xrayBlock_HorzCopy = {
+$91:D316             dw CEBB
+
+															|	xrayBlockSubType_t xrayBlockSubType_Spike[] = {
+$91:D318             dw 000E,D31E,  ; X-rayable block		|		{0x000E, &xrayBlock_Spike},
+                        FFFF								|	}; uint16_t term = 0xFFFF;
+
+															|	xrayBlock_Spike = {
+$91:D31E             dw CF36,005F
+
+																	|	xrayBlockSubType_t xrayBlockSubType_Special[] = {
+$91:D322             dw 0000,D374,; 1x1 respawning crumble block	|		{0x0000, 
+                        0001,D378,; 2x1 respawning crumble block
+                        0002,D37E,; 1x2 respawning crumble block
+                        0003,D384,; 2x2 respawning crumble block
+                        0004,D38E,; 1x1 crumble block
+                        0005,D392,; 2x1 crumble block
+                        0006,D398,; 1x2 crumble block
+                        0007,D39E,; 2x2 crumble block
+                        0008,D3A8,; Unused air
+                        0009,D3AC,; Unused air
+                        000A,D3B0,; Unused air
+                        000B,D3B4,; Unused air
+                        000C,D3B8,; Unused air
+                        000D,D3BC,; Unused air
+                        000E,D3C0,; Respawning speed boost block
+                        000F,D3C4,; Speed boost block
+                        0082,D3C8,; Brinstar only. Respawning speed block, slower crumble animation
+                        0083,D3C8,; Brinstar only. Speed block, slower crumble animation
+                        0084,D3C8,; Brinstar only. Respawning speed block (used by dachora pit)
+                        0085,D3C8,; Brinstar only. Speed boost block
+                        FFFF
+
+$91:D374             dw CF36, 00BC									|		// why are these varying lengths?
+$91:D378             dw CF4E, 00BC, 00BC
+$91:D37E             dw CF62, 00BC, 00BC
+$91:D384             dw CF6F, 00BC, 00BC, 00BC, 00BC
+$91:D38E             dw CF36, 00BC
+$91:D392             dw CF4E, 00BC, 00BC
+$91:D398             dw CF62, 00BC, 00BC
+$91:D39E             dw CF6F, 00BC, 00BC, 00BC, 00BC
+$91:D3A8             dw CF36, 00BC
+$91:D3AC             dw CF36, 00BC
+$91:D3B0             dw CF36, 00BC
+$91:D3B4             dw CF36, 00BC
+$91:D3B8             dw CF36, 00BC
+$91:D3BC             dw CF36, 00BC
+$91:D3C0             dw CF36, 00B6
+$91:D3C4             dw CF36, 00B6
+$91:D3C8             dw CF3E, 00B6
+
+																	|	xrayBlockSubType_t xrayBlockSubType_Shootable[] = {
+$91:D3CC             dw 0000,D40E, ; 1x1 respawning shot block		|
+                        0001,D412, ; 2x1 respawning shot block
+                        0002,D418, ; 1x2 respawning shot block
+                        0003,D41E, ; 2x2 respawning shot block
+                        0004,D428, ; 1x1 shot block
+                        0005,D42C, ; 2x1 shot block
+                        0006,D432, ; 1x2 shot block
+                        0007,D438, ; 2x2 shot block
+                        0008,D442, ; Respawning power bomb block
+                        0009,D446, ; Power bomb block
+                        000A,D44A, ; Respawning super missile block
+                        000B,D44E, ; Super missile block
+                        000C,D452, ; Fake super missile block
+                        000D,D456, ; Fake super missile block
+                        000E,D45A, ; Fake super missile block
+                        000F,D45E, ; Fake super missile block
+                        FFFF
+
+$91:D40E             dw CF36, 0052
+$91:D412             dw CF4E, 0096, 0097
+$91:D418             dw CF62, 0098, 00B8
+$91:D41E             dw CF6F, 0099, 009A, 00B9, 00BA
+$91:D428             dw CF36, 0052
+$91:D42C             dw CF4E, 0096, 0097
+$91:D432             dw CF62, 0098, 00B8
+$91:D438             dw CF6F, 0099, 009A, 00B9, 00BA
+$91:D442             dw CF36, 0057
+$91:D446             dw CF36, 0057
+$91:D44A             dw CF36, 009F
+$91:D44E             dw CF36, 009F
+$91:D452             dw CF36, 009F
+$91:D456             dw CF36, 009F
+$91:D45A             dw CF36, 009F
+$91:D45E             dw CF36, 009F
+
+																			|	xrayBlockSubType_t xrayBlockSubType_VertCopy[] = {
+$91:D462             dw FF00,D468,											|
+                        FFFF
+
+$91:D468             dw CE79
+
+																			|	xrayBlockSubType_t xrayBlockSubType_Grappling[] = {
+$91:D46A             dw 0000,D478, ; Generic grapple block					|
+                        0001,D47C, ; Respawning crumbling grapple block
+                        0002,D480, ; Non-respawning crumbling grapple block
+                        FFFF
+
+$91:D478             dw CF36,009B,
+$91:D47C             dw CF36,00B7,
+$91:D480             dw CF36,00B7
+
+																			|	xrayBlockSubType_t xrayBlockSubType_Bombable[] = {
+$91:D484             dw 0000,D4A6, ; 1x1 respawning bomb block				|
+                        0001,D4AA, ; 2x1 respawning bomb block
+                        0002,D4B0, ; 1x2 respawning bomb block
+                        0003,D4B6, ; 2x2 respawning bomb block
+                        0004,D4C0, ; 1x1 bomb block
+                        0005,D4C4, ; 2x1 bomb block
+                        0006,D4CA, ; 1x2 bomb block
+                        0007,D4D0, ; 2x2 bomb block
+                        FFFF
+
+$91:D4A6             dw CF36, 0058
+$91:D4AA             dw CF4E, 0058, 0058
+$91:D4B0             dw CF62, 0058, 0058
+$91:D4B6             dw CF6F, 0058, 0058, 0058, 0058
+$91:D4C0             dw CF36, 0058
+$91:D4C4             dw CF4E, 0058, 0058
+$91:D4CA             dw CF62, 0058, 0058
+$91:D4D0             dw CF6F, 0058, 0058, 0058, 0058
+
+
+
+
+$91:CFBF:  prefix to copy x-ray block (based on Y)
+{
+$91:CFBF B1 03       LDA ($03),y[$91:D304]		}	accum = mem16[0x91:D302] + Y;	//really this addr?
+}												}	goto CFC1;	// continue into the next routine. 
+
+91:CFC1 = copy x-ray block to vram (accum = tileIndex)
+{
+$91:CFC1 0A          ASL A						\	uint16_t tileIndex = accum; // function argument
+$91:CFC2 0A          ASL A						|	uint16_t tileOffset = tileIndex * sizeof(tileBlock_t) // i.e. << 3 
+$91:CFC3 0A          ASL A						|	memcpy(xrayTilemapsViewableBG1 + tileOffset, tileTable + tileOffset, sizeof(tileBlock_t))	// sizeof(tileBlock_t) == 8
+$91:CFC4 AA          TAX						/	//... or, the long spelled out way ...
+$91:CFC5 BF 00 A0 7E LDA $7EA000,x[$7E:A7F8]	\	//
+$91:CFC9 48          PHA						/	//uint16_t tmp3 = mem16[0x7EA000 + tileOffset];
+$91:CFCA BF 02 A0 7E LDA $7EA002,x[$7E:A7FA]	\	//
+$91:CFCE 48          PHA						/	//uint16_t tmp4 = mem16[0x7EA002 + tileOffset];
+$91:CFCF BF 04 A0 7E LDA $7EA004,x[$7E:A7FC]	\	//
+$91:CFD3 48          PHA						/	//uint16_t tmp5 = mem16[0x7EA004 + tileOffset];
+$91:CFD4 BF 06 A0 7E LDA $7EA006,x[$7E:A7FE]	\	//
+$91:CFD8 A6 16       LDX $16    [$7E:0016]		|	//uint16_t tmp2 = mem16[0x7E0016]
+$91:CFDA 9F 42 40 7E STA $7E4042,x[$7E:4042]	/	//mem16[0x7E4042 + tmp2] = mem16[0x7EA006 + tileOffset];
+$91:CFDE 68          PLA						\	//
+$91:CFDF 9F 40 40 7E STA $7E4040,x[$7E:4040]	/	//mem16[0x7E4040 + tmp2] = tmp5;
+$91:CFE3 68          PLA						\	//
+$91:CFE4 9F 02 40 7E STA $7E4002,x[$7E:4002]	/	//mem16[0x7E4002 + tmp2] = tmp4;
+$91:CFE8 68          PLA						\	//
+$91:CFE9 9F 00 40 7E STA $7E4000,x[$7E:4000]	/	//mem16[0x7E4000 + tmp2] = tmp3;
+$91:CFED 60          RTS						}	return;
+}
+
+91:D0D3 = x-ray setup stage 5
++-	91:D143 = can x-ray show blocks.  if we can ....
++-	set BG1 x scroll
++-	set BG1 y scroll
++-	set BG2 X scroll
++-	set BG2 Y scroll
++-	bg2TilemapBaseAddrAndSize.width64 = true		//  set BG2 tilemap size ... to 64x32
++-	bg2TilemapBaseAddrAndSize.height64 = false
++-	bg2TilemapBaseAddrAndSize.base = 0x12 = 0x4800/0x400	// set BG2 tilemap address ... to 7E:4800 (the x-ray tilemaps)
++-											
++-	if we can't ... queue transfer of 800h bytes from VRAM BG2 tilemap base + 400h to $7E:5800		(does this copy back what was backed up in the previous setup stage?)
+( but if stage 2 and 3 copied VRAM to 7E:6000 and 7E:6800 ... 
+	... then how come we're copying back from 7E:5800 and 7E:4000 ?)
+
+
+$91:D0D3: // X-ray setup stage 5 
+{
+$91:D0D3 08          PHP					}	push(flags);
+$91:D0D4 C2 30       REP #$30				}	flags &= ~0x30;
+$91:D0D6 22 43 D1 91 JSL $91D143[$91:D143] 	\	bool canShowBlocks = call $91:D143 !zero flag;
+$91:D0DA F0 2D       BEQ $2D    [$D109]		|	if (canShowBlocks) {
+$91:D0DC AD 40 18    LDA $1840  [$7E:1840]  |		
+$91:D0DF F0 12       BEQ $12    [$D0F3]     |		if (!earthquakeTimer) { 
+$91:D0E1 AD 1D 09    LDA $091D  [$7E:091D] 	|		
+$91:D0E4 18          CLC                    |
+$91:D0E5 6D 11 09    ADC $0911  [$7E:0911]  |			bg1ScrollX = bg1OffsetX + layer1PosX;	//BG1 X scroll = [layer 1 X position] + [BG1 X offset]	
+$91:D0E8 85 B1       STA $B1    [$7E:00B1]  |
+$91:D0EA AD 1F 09    LDA $091F  [$7E:091F]  |		
+$91:D0ED 18          CLC                    |
+$91:D0EE 6D 15 09    ADC $0915  [$7E:0915]  |			bg1ScrollY = bg1OffsetY + layer1PosY;	 BG1 Y scroll = [layer 1 Y position] + [BG1 Y offset]
+$91:D0F1 85 B3       STA $B3    [$7E:00B3]  |		}
+$91:D0F3 A5 B1       LDA $B1    [$7E:00B1]  |		
+$91:D0F5 29 0F 00    AND #$000F             |		bg2ScrollX = bg1ScrollX & 0xF;			//BG2 X scroll = [BG1 X scroll] & Fh
+$91:D0F8 85 B5       STA $B5    [$7E:00B5]  |		
+$91:D0FA A5 B3       LDA $B3    [$7E:00B3]  |		bg2ScrollY = bg1ScrollY & 0xF;			//BG2 Y scroll = [BG1 Y scroll] & Fh                         	
+$91:D0FC 29 0F 00    AND #$000F             |		bg2TilemapBaseAddrAndSize = {
+$91:D0FF 85 B7       STA $B7    [$7E:00B7]  |			.width64 = 1,
+$91:D101 E2 20       SEP #$20				|			.height64 = 0,
+$91:D103 A9 49       LDA #$49               |			.base = 0x4800 / 0x400;	//= 0x12;
+$91:D105 85 59       STA $59    [$7E:0059]  |		}										//BG2 tilemap base address = $4800, size = 64x32
+$91:D107 C2 20       REP #$20				/	}
+$91:D109 AE 60 03    LDX $0360  [$7E:0360]  \
+$91:D10C A5 59       LDA $59    [$7E:0059]  |	// Queue transfer of 800h bytes from VRAM BG2 tilemap base + 400h to $7E:5800
+$91:D10E 29 FC 00    AND #$00FC             |	*(vramReadTableEntry_t*)((uint8_t*)vramReadTable + vramReadStackOffset) = {
+$91:D111 EB          XBA                    |		.srcAddr = bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400,
+$91:D112 18          CLC                    |		.DMAControl = 0x81,
+$91:D113 69 00 04    ADC #$0400             |		.DMATarget = 0x39,
+$91:D116 9D 40 03    STA $0340,x[$7E:0340]  |		.destAddr24 = (void*)xrayBG2Backup + 0x800,		//7E:5800		
+$91:D119 A9 81 00    LDA #$0081             |		.size = 0x800,
+$91:D11C 9D 42 03    STA $0342,x[$7E:0342]  |	};
+$91:D11F A9 39 00    LDA #$0039             |
+$91:D122 9D 43 03    STA $0343,x[$7E:0343]  |
+$91:D125 A9 00 58    LDA #$5800             |		
+$91:D128 9D 44 03    STA $0344,x[$7E:0344]  |
+$91:D12B A9 7E 00    LDA #$007E             |
+$91:D12E 9D 46 03    STA $0346,x[$7E:0346]  |
+$91:D131 A9 00 08    LDA #$0800             |
+$91:D134 9D 47 03    STA $0347,x[$7E:0347]  /
+$91:D137 8A          TXA                    \
+$91:D138 18          CLC                    |	vramReadStackOffset += 9;	//== sizeof(vramReadTableEntry_t)
+$91:D139 69 09 00    ADC #$0009             |
+$91:D13C 8D 60 03    STA $0360  [$7E:0360]  /
+$91:D13F 28          PLP					}	flags = pop();
+$91:D140 6B          RTL					}	return;
+}
+
+
+91:D173 = x-ray setup stage 6
++-	91:D143 = can x-ray show blocks? if not then return.
++-	queue transfer of 800h bytes from $7E:4000 to VRAM BG2 tilemap base
+
+
+$91:D173: //X-ray setup stage 6 
+{
+$91:D173 08          PHP					}	push(flags);
+$91:D174 C2 30       REP #$30				}	flags &= ~0x30;
+$91:D176 22 43 D1 91 JSL $91D143[$91:D143]  }	bool canShowBlocks = call $91:D143 !zero flag;
+$91:D17A F0 22       BEQ $22    [$D19E]     }	if (canShowBlocks) {
+$91:D17C AE 30 03    LDX $0330  [$7E:0330]  \
+$91:D17F A9 00 08    LDA #$0800             |		// Queue transfer of 800h bytes from $7E:4000 to VRAM BG2 tilemap base
+$91:D182 95 D0       STA $D0,x  [$7E:00D0]  |		*(vramWriteTableEntry_t*)((uint8_t*)vramWriteTable + vramWriteStackOffset) = {
+$91:D184 A9 00 40    LDA #$4000             |			.size = 0x800,
+$91:D187 95 D2       STA $D2,x  [$7E:00D2]  |			.srcAddr24 = (void*)xrayTilemapsViewableBG1,			// 7E:4000
+$91:D189 A9 7E 00    LDA #$007E             |			.destOffset = bg2TilemapBaseAddrAndSize.base * 0x400,
+$91:D18C 95 D4       STA $D4,x  [$7E:00D4]  |		};
+$91:D18E A5 59       LDA $59    [$7E:0059]  |		vramWriteStackOffset += 7; // == sizeof(vramWriteTableEntry_t);
+$91:D190 29 FC 00    AND #$00FC             |
+$91:D193 EB          XBA                    |
+$91:D194 95 D5       STA $D5,x  [$7E:00D5]  |
+$91:D196 8A          TXA                    |
+$91:D197 18          CLC                    |
+$91:D198 69 07 00    ADC #$0007             |
+$91:D19B 8D 30 03    STA $0330  [$7E:0330]  /	}
+$91:D19E 28          PLP					}	flags = pop();
+$91:D19F 6B          RTL					}	return;
+}
+
+
+91:D1A0 = x-ray setup stage 7
++-	91:D143 = can x-ray show blocks?
++-	if so, do some stuff?  if not, do some stuff?  
++-	clear some variables
++-	initialize the x-ray angle: 40h if facing right, C0h if facing left 
+
+$91:D1A0: //X-ray setup stage 7 
+{
+$91:D1A0 08          PHP					}	push(flags);
+$91:D1A1 C2 30       REP #$30				}	flags &= ~0x30;
+$91:D1A3 22 43 D1 91 JSL $91D143[$91:D143]  \	bool canShowBlocks = call $91:D143 !zero flag;
+$91:D1A7 F0 26       BEQ $26    [$D1CF]     |	if (canShowBlocks) {
+$91:D1A9 AE 30 03    LDX $0330  [$7E:0330]  | 		// Queue transfer of 800h bytes from $7E:4800 to VRAM BG2 tilemap base + 400h
+$91:D1AC A9 00 08    LDA #$0800             |		*(vramWriteTableEntry_t*)((uint8_t*)vramWriteTable + vramWriteStackOffset) = {
+$91:D1AF 95 D0       STA $D0,x  [$7E:00D0]  |			v->size = 0x800;
+$91:D1B1 A9 00 48    LDA #$4800             |			v->srcAddr24 = (void*)xrayTilemapsViewableBG1 + 0x800,	// 7E:4800
+$91:D1B4 95 D2       STA $D2,x  [$7E:00D2]  |			v->destAddr = bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400;
+$91:D1B6 A9 7E 00    LDA #$007E             |		};
+$91:D1B9 95 D4       STA $D4,x  [$7E:00D4]  |		vramWriteStackOffset += 7; // == sizeof(vramWriteTableEntry_t);
+$91:D1BB A5 59       LDA $59    [$7E:0059]  |	}
+$91:D1BD 29 FC 00    AND #$00FC             |
+$91:D1C0 EB          XBA                    |
+$91:D1C1 18          CLC                    |
+$91:D1C2 69 00 04    ADC #$0400             |
+$91:D1C5 95 D5       STA $D5,x  [$7E:00D5]  |
+$91:D1C7 8A          TXA                    |
+$91:D1C8 18          CLC                    |
+$91:D1C9 69 07 00    ADC #$0007             |
+$91:D1CC 8D 30 03    STA $0330  [$7E:0330]  /
+$91:D1CF A9 E4 00    LDA #$00E4             \	// $0A88..92 = E4h,$9800, E4h,$98C8, 98h,$9990, 00,00
+$91:D1D2 8D 88 0A    STA $0A88  [$7E:0A88]  /	mem8[0x0A88] = 0xE4;
+$91:D1D5 A9 00 98    LDA #$9800             \	mem16[0x0A89] = 0x9800;
+$91:D1D8 8D 89 0A    STA $0A89  [$7E:0A89]  /
+$91:D1DB A9 E4 00    LDA #$00E4             \
+$91:D1DE 8D 8B 0A    STA $0A8B  [$7E:0A8B]  /	mem8[0x0A8B] = 0xE4;
+$91:D1E1 A9 C8 98    LDA #$98C8             \	mem16[0x0A8C] = 0x98C8;
+$91:D1E4 8D 8C 0A    STA $0A8C  [$7E:0A8C]  /
+$91:D1E7 A9 98 00    LDA #$0098             \
+$91:D1EA 8D 8E 0A    STA $0A8E  [$7E:0A8E]  /	mem8[0x0A8E] = 0x98;
+$91:D1ED A9 90 99    LDA #$9990             \	mem16[0x0A8F] = 0x9990;
+$91:D1F0 8D 8F 0A    STA $0A8F  [$7E:0A8F]  /
+$91:D1F3 9C 91 0A    STZ $0A91  [$7E:0A91]  }	mem16[0x0A91] = 0;
+$91:D1F6 9C 7A 0A    STZ $0A7A  [$7E:0A7A]  }	xrayState = 0;
+$91:D1F9 9C 7C 0A    STZ $0A7C  [$7E:0A7C]  }	xrayAngleWidthDelta = 0;
+$91:D1FC 9C 7E 0A    STZ $0A7E  [$7E:0A7E]  }	xrayAngleSubwidthDelta = 0;
+$91:D1FF A9 00 00    LDA #$0000             }	
+$91:D202 8D 84 0A    STA $0A84  [$7E:0A84]  }	xrayAngleWidth = 0;
+$91:D205 9C 86 0A    STZ $0A86  [$7E:0A86]  }	xrayAngleSubwidth = 0;
+$91:D208 AD 1E 0A    LDA $0A1E  [$7E:0A1E]  \	
+$91:D20B 29 FF 00    AND #$00FF             |
+$91:D20E C9 04 00    CMP #$0004             |
+$91:D211 F0 08       BEQ $08    [$D21B]     |	if (samusPoseDirX != SamusPoseDirX::Left) { 	// If Samus is facing right:
+$91:D213 A9 40 00    LDA #$0040             | 		xrayAnge = 0x40;		// X-ray angle = 40h
+$91:D216 8D 82 0A    STA $0A82  [$7E:0A82]  |	} else {
+$91:D219 80 06       BRA $06    [$D221]     |		xrayAngle = 0xC0;
+$91:D21B A9 C0 00    LDA #$00C0             |	}
+$91:D21E 8D 82 0A    STA $0A82  [$7E:0A82]  /
+$91:D221 28          PLP					}	flags = pop();
+$91:D222 6B          RTL					}	return;	//long;
+}
+
+
+91:D2BC = x-ray setup stage 8
++-	set backdrop color to (3,3,3)
+
+$91:D2BC: //X-ray setup stage 8 - backdrop colour = (3, 3, 3) ;;;
+{
+$91:D2BC 08          PHP					}	push(flags);
+$91:D2BD DA          PHX					}	push(X);
+$91:D2BE 5A          PHY					}	push(Y);
+$91:D2BF E2 20       SEP #$20				}	flags |= 0x20;
+$91:D2C1 A9 63       LDA #$63				\	
+$91:D2C3 8F 00 C0 7E STA $7EC000[$7E:C000]	/	mem8[0x7EC000] = 0x63;
+$91:D2C7 A9 0C       LDA #$0C				\
+$91:D2C9 8F 01 C0 7E STA $7EC001[$7E:C001]	/	mem8[0x7EC001] = 0x0C;
+$91:D2CD 7A          PLY					}	Y = pop();
+$91:D2CE FA          PLX					}	X = pop();
+$91:D2CF 28          PLP					}	flags = pop();
+$91:D2D0 6B          RTL					}	return;
+}
+
+... optimized ...
+
+$91:D2BC 08          PHP					}	push(flags);
+$91:D2BD C2 20       REP #$30				}	flags &= 0x30;
+$91:D2BF A9 63 0C    LDA #$0C63				\	
+$91:D2C2 8D 00 C0    STA $C000  [$7E:C000]	/	(r5g5b5_t*)(mem + 0x7EC000) = {r:3, g:3, b:3, a:0};	//0x0C63;	// 0 00011 00011 00011
+$91:D2C5 28          PLP					}	flags = pop();
+$91:D2C6 6B          RTL					}	return;
+
+
+88:86EF = pre-instruction - x-ray - main (called by HDMA object every frame after the HDMA x-ray init)
++-	check FX room type to fireflea room type
++-	91:D143 = can x-ray show blocks. BEQ skips showing blocks (is that CLC or SEC?)
++-	if we can show blocks then set the subscreen backdrop color
++-	call one of the following, indexed by x-ray state: 
+	+- 88:8732 = handle x-ray scope - x-ray state = 0 (no beam)
+	+- 88:8754 = handle x-ray scope - x-ray state = 1 (beam is widening)
+	+- 88:87AB = handle x-ray scope - x-ray state = 2 (full beam)
+	+- 88:8934 = handle x-ray scope - x-ray state = 3 (deactivate beam - restore BG2 - first half)
+	+- 88:89BA = handle x-ray scope - x-ray state = 4 (deactivate beam - restore BG2 - second half)
+	+- 88:8A08 = handle x-ray scope - x-ray state = 5 (deactivate beam - finish)
+
+
+$88:86EF: Pre-instruction - x-ray - main 
+{
+$88:86EF 08          PHP									}	push(flags);
+$88:86F0 C2 30       REP #$30								}	flags &= ~0x30;
+$88:86F2 A2 00 10    LDX #$1000             				}	X = 0x1000;
+$88:86F5 AD 6E 19    LDA $196E  [$7E:196E]  				\
+$88:86F8 C9 24 00    CMP #$0024             				|
+$88:86FB F0 1B       BEQ $1B    [$8718]     				|	if (roomFXType != RoomFXType::FireFlea) {
+$88:86FD A2 00 20    LDX #$2000             				|		X = 0x2000;
+$88:8700 22 43 D1 91 JSL $91D143[$91:D143]  				|		bool canShowBlocks = call $91:D143 !zero flag;
+$88:8704 F0 12       BEQ $12    [$8718]     				|		if (canShowBlocks) {
+$88:8706 A2 00 40    LDX #$4000             				|			X = 0x4000;
+$88:8709 A9 27 00    LDA #$0027             				|       
+$88:870C 85 74       STA $74    [$7E:0074]  				|			mem16[0x74] = 0x27;
+$88:870E A9 47 00    LDA #$0047             				|   		mem16[0x75] = 0x47;	// Colour math subscreen backdrop colour = (7, 7, 7) (grey)    
+$88:8711 85 75       STA $75    [$7E:0075]  				|			mem16[0x76] = 0x87;
+$88:8713 A9 87 00    LDA #$0087             				|		}
+$88:8716 85 76       STA $76    [$7E:0076]  				/	}
+$88:8718 8A          TXA                    				}	
+$88:8719 0C 86 19    TSB $1986  [$7E:1986]  				}	layerBlendingConfigWindow2 |= X >> 8;		// Layer blending window 2 configuration |= [X] >> 8
+$88:871C AD 7A 0A    LDA $0A7A  [$7E:0A7A]  				\	
+$88:871F 0A          ASL A                  				|	
+$88:8720 AA          TAX                    				|	call (codepageptr + xrayStateFuncs[xrayState]);	
+$88:8721 FC 26 87    JSR ($8726,x)[$88:8732]				/
+$88:8724 28          PLP									}	flags = pop();
+$88:8725 6B          RTL									}	return;	//long;
+
+$88:8726             dw 8732, 8754, 87AB, 8934, 89BA, 8A08	}	uint16_t xrayStateFuncs[] = {8732, 8754, 87AB, 8934, 89BA, 8A08};
+}
+
+88:8732 = handle x-ray scope - x-ray state = 0 (no beam)
++-	if not holding run then x-ray state = 3 and return
++-	88:8896 = calculate x-ray HDMA data table
++-	set x-ray state to 1
+
+$88:8732: Handle x-ray scope - x-ray state = 0 (no beam) 
+{
+$88:8732 08          PHP					}	push(flags);
+$88:8733 C2 30       REP #$30				}	flags &= ~0x30;
+$88:8735 A5 8B       LDA $8B    [$7E:008B]  \	
+$88:8737 2C B6 09    BIT $09B6  [$7E:09B6]  | 	
+$88:873A D0 08       BNE $08    [$8744]     |	if (!(buttonsDown.value & runButtonFlag)) {
+$88:873C A9 03 00    LDA #$0003             |		
+$88:873F 8D 7A 0A    STA $0A7A  [$7E:0A7A]  |		xrayState = 3;
+$88:8742 80 0D       BRA $0D    [$8751]     | 	} else {
+$88:8744 20 96 88    JSR $8896  [$88:8896]  |	
+$88:8747 AD 7A 0A    LDA $0A7A  [$7E:0A7A]  |		call $88:8896;	// Calculate x-ray HDMA data table	
+$88:874A 1A          INC A                  |		xrayState++;
+$88:874B 8D 7A 0A    STA $0A7A  [$7E:0A7A]  |						//88:8753 is just a RTS	
+$88:874E 20 53 87    JSR $8753  [$88:8753]  /	}
+$88:8751 28          PLP					}	flags = pop();
+$88:8752 60          RTS					}	return;
+}
+
+88:8754 = handle x-ray scope - x-ray state = 1 (beam is widening)
++-	88:8753 = call NOP
++-	if not holding run then x-ray state = 3 return
++-	grow x-ray beam angle.  if it's at max then set x-ray state to 2
++-	88:8896 = calculate x-ray HDMA data table
+
+$88:8754: Handle x-ray scope - x-ray state = 1 (beam is widening) 
+{
+$88:8754 08          PHP					}	push(flags);
+$88:8755 C2 30       REP #$30				}	flags &= ~0x30;
+$88:8757 A5 8B       LDA $8B    [$7E:008B]  }	
+$88:8759 2C B6 09    BIT $09B6  [$7E:09B6]  }	
+$88:875C D0 08       BNE $08    [$8766]     }	if (!(buttonsDown.value & runButtonFlag)) {
+$88:875E A9 03 00    LDA #$0003             }	
+$88:8761 8D 7A 0A    STA $0A7A  [$7E:0A7A]  }		xrayState = 3;
+$88:8764 80 43       BRA $43    [$87A9]     } 	} else {
+$88:8766 20 53 87    JSR $8753  [$88:8753]  } 		//88:8753 is just a RTS
+$88:8769 C2 20       REP #$20				}		//flags &= 0x20; // waste? already &= 0x30
+$88:876B AD 7E 0A    LDA $0A7E  [$7E:0A7E]  \
+$88:876E 18          CLC                    |		xrayAngleSubwidthDelta += 0x800;		//X-ray angular width delta += 0.0800h
+$88:876F 69 00 08    ADC #$0800             |		
+$88:8772 8D 7E 0A    STA $0A7E  [$7E:0A7E]  / 
+$88:8775 AD 7C 0A    LDA $0A7C  [$7E:0A7C]  \
+$88:8778 69 00 00    ADC #$0000             |		xrayAngleWidthDelta += carry;
+$88:877B 8D 7C 0A    STA $0A7C  [$7E:0A7C]  /
+$88:877E AD 86 0A    LDA $0A86  [$7E:0A86]  \	
+$88:8781 18          CLC                    |
+$88:8782 6D 7E 0A    ADC $0A7E  [$7E:0A7E]  |		xrayAngleSubwidth += xrayAngleSubwidthDelta;		// X-ray angular width += [x-ray angular width delta]
+$88:8785 8D 86 0A    STA $0A86  [$7E:0A86]  /		
+$88:8788 AD 84 0A    LDA $0A84  [$7E:0A84]  \		
+$88:878B 6D 7C 0A    ADC $0A7C  [$7E:0A7C]  |		xrayAngleWidth += xrayAngleWidthDelta + carry;
+$88:878E 8D 84 0A    STA $0A84  [$7E:0A84]  /		
+$88:8791 C9 0B 00    CMP #$000B             }		test xrayAngleWidth - 0xB
+$88:8794 30 10       BMI $10    [$87A6]     }		if (xrayAngleWidth >= 0xB) {
+$88:8796 9C 86 0A    STZ $0A86  [$7E:0A86]  }			xrayAngleSubwidth = 0;
+$88:8799 A9 0A 00    LDA #$000A             \	
+$88:879C 8D 84 0A    STA $0A84  [$7E:0A84]  /			xrayAngleWidth = 0xA;			//X-ray angular width = A.0000h
+$88:879F AD 7A 0A    LDA $0A7A  [$7E:0A7A]  \ 			xrayState++;
+$88:87A2 1A          INC A                  |		}
+$88:87A3 8D 7A 0A    STA $0A7A  [$7E:0A7A]  |		call $88:8896;	// Calculate x-ray HDMA data table
+$88:87A6 20 96 88    JSR $8896  [$88:8896]  |	}
+$88:87A9 28          PLP					}	flags = pop();
+$88:87AA 60          RTS					}	return;
+}
+
+
+88:87AB = handle x-ray scope - x-ray state = 2 (full beam)
++-	if holding run then ....
++-	88:87C5 = handle moving x-ray up/down ... test buttons and determine which to call:
+	+-	88:87E0 = move x-ray up
+		+-	...
+	+-	88:8835 = move x-ray down
+		+-	...
++-	88:8896 = calculate x-ray HDMA data table
++-	88:8753 = call NOP
++-	... otherwise, if not holding run, then set x-ray state = 3
+
+$88:87AB: Handle x-ray scope - x-ray state = 2 (full beam) 
+{
+$88:87AB 08          PHP					}	push(flags);
+$88:87AC C2 30       REP #$30				}	flags &= ~0x30;
+$88:87AE A5 8B       LDA $8B    [$7E:008B]  \
+$88:87B0 2C B6 09    BIT $09B6  [$7E:09B6]  |	if (buttonsDown.value & runButtonFlag) {	// If holding run:
+$88:87B3 F0 0B       BEQ $0B    [$87C0]     |
+$88:87B5 20 C5 87    JSR $87C5  [$88:87C5]  |		call 88:87C5;	// Handle moving x-ray up/down
+$88:87B8 20 96 88    JSR $8896  [$88:8896]  |		call 88:8896;	// Calculate x-ray HDMA data table
+$88:87BB 20 53 87    JSR $8753  [$88:8753]  |			// call 88:8753 immediately returns
+$88:87BE 28          PLP					|	} else {
+$88:87BF 60          RTS					|		xrayState++;
+$88:87C0 EE 7A 0A    INC $0A7A  [$7E:0A7A]  /	}
+$88:87C3 28          PLP					}	flags = pop();
+$88:87C4 60          RTS					}	return;
+}
+
+
+;;; $87C5: Handle moving x-ray up/down ;;;
+{
+$88:87C5 08          PHP
+$88:87C6 C2 30       REP #$30
+$88:87C8 A5 8B       LDA $8B    [$7E:008B]  ;\
+$88:87CA 2C AA 09    BIT $09AA  [$7E:09AA]  ;} If holding up: go to BRANCH_UP
+$88:87CD D0 07       BNE $07    [$87D6]     ;/
+$88:87CF 2C AC 09    BIT $09AC  [$7E:09AC]  ;\
+$88:87D2 D0 07       BNE $07    [$87DB]     ;} If holding down: go to BRANCH_DOWN
+$88:87D4 80 08       BRA $08    [$87DE]     ; Return
+
+; BRANCH_UP
+$88:87D6 20 E0 87    JSR $87E0  [$88:87E0]  ; Move x-ray up
+$88:87D9 80 03       BRA $03    [$87DE]
+
+; BRANCH_DOWN
+$88:87DB 20 35 88    JSR $8835  [$88:8835]  ; Move x-ray down
+
+$88:87DE 28          PLP
+$88:87DF 60          RTS
+}
+
+
+;;; $87E0: Move x-ray up ;;;
+{
+$88:87E0 08          PHP
+$88:87E1 C2 30       REP #$30
+$88:87E3 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:87E6 C9 80 00    CMP #$0080             ;} If [x-ray angle] >= 80h: go to FACING_LEFT
+$88:87E9 10 1F       BPL $1F    [$880A]     ;/
+$88:87EB 38          SEC                    ;\
+$88:87EC ED 84 0A    SBC $0A84  [$7E:0A84]  ;} If [x-ray angle] = [x-ray angular width]: return
+$88:87EF F0 42       BEQ $42    [$8833]     ;/
+$88:87F1 30 0F       BMI $0F    [$8802]     ; If [x-ray angle] > [x-ray angular width]:
+$88:87F3 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:87F6 38          SEC                    ;|
+$88:87F7 E9 01 00    SBC #$0001             ;} X-ray angle -= 1
+$88:87FA 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+$88:87FD ED 84 0A    SBC $0A84  [$7E:0A84]  ;\
+$88:8800 10 31       BPL $31    [$8833]     ;} If [x-ray angle] >= [x-ray angular width]: return
+
+$88:8802 AD 84 0A    LDA $0A84  [$7E:0A84]  ;\
+$88:8805 8D 82 0A    STA $0A82  [$7E:0A82]  ;} X-ray angle = [x-ray angular width]
+$88:8808 80 29       BRA $29    [$8833]
+
+; FACING_LEFT
+$88:880A 18          CLC                    ;\
+$88:880B 6D 84 0A    ADC $0A84  [$7E:0A84]  ;|
+$88:880E C9 00 01    CMP #$0100             ;} If [x-ray angle] + [x-ray angular width] = 100h: return
+$88:8811 F0 20       BEQ $20    [$8833]     ;/
+$88:8813 10 14       BPL $14    [$8829]     ; If [x-ray angle] + [x-ray angular width] < 100h:
+$88:8815 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:8818 18          CLC                    ;|
+$88:8819 69 01 00    ADC #$0001             ;} X-ray angle += 1
+$88:881C 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+$88:881F 6D 84 0A    ADC $0A84  [$7E:0A84]  ;\
+$88:8822 C9 00 01    CMP #$0100             ;|
+$88:8825 F0 0C       BEQ $0C    [$8833]     ;} If [x-ray angle] + [x-ray angular width] <= 100h: return
+$88:8827 30 0A       BMI $0A    [$8833]     ;/
+
+$88:8829 A9 00 01    LDA #$0100             ;\
+$88:882C 38          SEC                    ;|
+$88:882D ED 84 0A    SBC $0A84  [$7E:0A84]  ;} X-ray angle = 100h - [x-ray angular width]
+$88:8830 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+
+$88:8833 28          PLP
+$88:8834 60          RTS
+}
+
+
+;;; $8835: Move x-ray down ;;;
+{
+$88:8835 08          PHP
+$88:8836 C2 30       REP #$30
+$88:8838 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:883B C9 80 00    CMP #$0080             ;} If [x-ray angle] >= 80h: go to FACING_LEFT
+$88:883E 10 2B       BPL $2B    [$886B]     ;/
+$88:8840 18          CLC                    ;\
+$88:8841 6D 84 0A    ADC $0A84  [$7E:0A84]  ;|
+$88:8844 C9 80 00    CMP #$0080             ;} If [x-ray angle] + [x-ray angular width] = 80h: return
+$88:8847 F0 4B       BEQ $4B    [$8894]     ;/
+$88:8849 10 14       BPL $14    [$885F]     ; If [x-ray angle] + [x-ray angular width] < 80h:
+$88:884B AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:884E 18          CLC                    ;|
+$88:884F 69 01 00    ADC #$0001             ;} X-ray angle += 1
+$88:8852 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+$88:8855 6D 84 0A    ADC $0A84  [$7E:0A84]  ;\
+$88:8858 C9 80 00    CMP #$0080             ;|
+$88:885B F0 37       BEQ $37    [$8894]     ;} If [x-ray angle] + [x-ray angular width] <= 80h: return
+$88:885D 30 35       BMI $35    [$8894]     ;/
+
+$88:885F A9 80 00    LDA #$0080             ;\
+$88:8862 38          SEC                    ;|
+$88:8863 ED 84 0A    SBC $0A84  [$7E:0A84]  ;} X-ray angle = 80h - [x-ray angular width]
+$88:8866 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+$88:8869 80 29       BRA $29    [$8894]
+
+; FACING_LEFT
+$88:886B 38          SEC                    ;\
+$88:886C ED 84 0A    SBC $0A84  [$7E:0A84]  ;|
+$88:886F C9 80 00    CMP #$0080             ;} If [x-ray angle] - [x-ray angular width] = 80h: return
+$88:8872 F0 20       BEQ $20    [$8894]     ;/
+$88:8874 30 14       BMI $14    [$888A]     ; If [x-ray angle] - [x-ray angular width] > 80h:
+$88:8876 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:8879 38          SEC                    ;|
+$88:887A E9 01 00    SBC #$0001             ;} X-ray angle -= 1
+$88:887D 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+$88:8880 ED 84 0A    SBC $0A84  [$7E:0A84]  ;\
+$88:8883 C9 80 00    CMP #$0080             ;|
+$88:8886 F0 0C       BEQ $0C    [$8894]     ;} If [x-ray angle] - [x-ray angular width] >= 80h: return
+$88:8888 10 0A       BPL $0A    [$8894]     ;/
+
+$88:888A A9 80 00    LDA #$0080             ;\
+$88:888D 18          CLC                    ;|
+$88:888E 6D 84 0A    ADC $0A84  [$7E:0A84]  ;} X-ray angle = 80h + [x-ray angular width]
+$88:8891 8D 82 0A    STA $0A82  [$7E:0A82]  ;/
+
+$88:8894 28          PLP
+$88:8895 60          RTS
+}
+
+
+88:8934 = handle x-ray scope - x-ray state = 3 (deactivate beam - restore BG2 - first half)
++-	do some stuff
++-	91:D143 = can x-ray show blocks.
++-	restore BG2 X scroll, Y scroll, address, size
++-	queue transfer 800h bytes from $7E:5000 to VRAM BG2 tilemap base
++-	inc x-ray state to 4
+
+
+;;; $8934: Handle x-ray scope - x-ray state = 3 (deactivate beam - restore BG2 - first half) ;;;
+{
+$88:8934 08          PHP
+$88:8935 C2 30       REP #$30
+$88:8937 A9 01 00    LDA #$0001             ;\
+$88:893A 8D 88 0A    STA $0A88  [$7E:0A88]  ;|
+$88:893D A9 00 98    LDA #$9800             ;|
+$88:8940 8D 89 0A    STA $0A89  [$7E:0A89]  ;|
+$88:8943 9C 8B 0A    STZ $0A8B  [$7E:0A8B]  ;} $0A88..91 = 01,$9800, 00,00...
+$88:8946 9C 8C 0A    STZ $0A8C  [$7E:0A8C]  ;|
+$88:8949 9C 8E 0A    STZ $0A8E  [$7E:0A8E]  ;|
+$88:894C 9C 90 0A    STZ $0A90  [$7E:0A90]  ;/
+$88:894F A9 FF 00    LDA #$00FF             ;\
+$88:8952 8F 00 98 7E STA $7E9800[$7E:9800]  ;} $7E:9800 = FFh,00h
+$88:8956 A2 00 10    LDX #$1000             ; X = 1000h
+$88:8959 AD 6E 19    LDA $196E  [$7E:196E]  ;\
+$88:895C C9 24 00    CMP #$0024             ;} If [FX type] != fireflea:
+$88:895F F0 0C       BEQ $0C    [$896D]     ;/
+$88:8961 A2 00 20    LDX #$2000             ; X = 2000h
+$88:8964 22 43 D1 91 JSL $91D143[$91:D143]  ;\
+$88:8968 F0 03       BEQ $03    [$896D]     ;} If x-ray can show blocks:
+$88:896A A2 00 40    LDX #$4000             ; X = 4000h
+
+$88:896D 8A          TXA                    ;\
+$88:896E 0C 86 19    TSB $1986  [$7E:1986]  ;} Layer blending window 2 configuration |= [X] >> 8
+$88:8971 A9 00 00    LDA #$0000             ;\
+$88:8974 8F 00 C0 7E STA $7EC000[$7E:C000]  ;} BG1/2 palette 0 colour 0 = 0
+$88:8978 AE B2 18    LDX $18B2  [$7E:18B2]  ; X = [HDMA object index]
+$88:897B BD 14 19    LDA $1914,x[$7E:1918]  ;\
+$88:897E 85 B5       STA $B5    [$7E:00B5]  ;} Restore BG2 X scroll
+$88:8980 BD 20 19    LDA $1920,x[$7E:1924]  ;\
+$88:8983 85 B7       STA $B7    [$7E:00B7]  ;} Restore BG2 Y scroll
+$88:8985 E2 20       SEP #$20               ;\
+$88:8987 BD 2C 19    LDA $192C,x[$7E:1930]  ;|
+$88:898A 85 59       STA $59    [$7E:0059]  ;} Restore BG2 address/size
+$88:898C C2 20       REP #$20               ;/
+$88:898E AE 30 03    LDX $0330  [$7E:0330]  ;\
+$88:8991 E0 F0 00    CPX #$00F0             ;} If [VRAM write table stack pointer] >= F0h: return
+$88:8994 10 22       BPL $22    [$89B8]     ;/
+$88:8996 A9 00 08    LDA #$0800             ;\
+$88:8999 95 D0       STA $D0,x  [$7E:00D0]  ;|
+$88:899B A9 00 50    LDA #$5000             ;|
+$88:899E 95 D2       STA $D2,x  [$7E:00D2]  ;|
+$88:89A0 A9 7E 00    LDA #$007E             ;|
+$88:89A3 95 D4       STA $D4,x  [$7E:00D4]  ;|
+$88:89A5 A5 59       LDA $59    [$7E:0059]  ;|
+$88:89A7 29 FC 00    AND #$00FC             ;} Queue transfer of 800h bytes from $7E:5000 to VRAM BG2 tilemap base
+$88:89AA EB          XBA                    ;|
+$88:89AB 95 D5       STA $D5,x  [$7E:00D5]  ;|
+$88:89AD 8A          TXA                    ;|
+$88:89AE 18          CLC                    ;|
+$88:89AF 69 07 00    ADC #$0007             ;|
+$88:89B2 8D 30 03    STA $0330  [$7E:0330]  ;/
+$88:89B5 EE 7A 0A    INC $0A7A  [$7E:0A7A]  ; X-ray state = 4
+
+$88:89B8 28          PLP
+$88:89B9 60          RTS
+}
+
+
+88:89BA = handle x-ray scope - x-ray state = 4 (deactivate beam - restore BG2 - second half)
++-	91:D143 = can x-ray show blocks
++-	queue transfer 800h bytes from $7E:5800 to vram BG2 tilemap base + 400h
++-	set x-ray state to 5
+
+
+;;; $89BA: Handle x-ray scope - x-ray state = 4 (deactivate beam - restore BG2 - second half) ;;;
+{
+$88:89BA 08          PHP
+$88:89BB C2 30       REP #$30
+$88:89BD A2 00 10    LDX #$1000             ; X = 1000h
+$88:89C0 AD 6E 19    LDA $196E  [$7E:196E]  ;\
+$88:89C3 C9 24 00    CMP #$0024             ;} If [FX type] != fireflea:
+$88:89C6 F0 0C       BEQ $0C    [$89D4]     ;/
+$88:89C8 A2 00 20    LDX #$2000             ; X = 2000h
+$88:89CB 22 43 D1 91 JSL $91D143[$91:D143]  ;\
+$88:89CF F0 03       BEQ $03    [$89D4]     ;} If x-ray can show blocks:
+$88:89D1 A2 00 40    LDX #$4000             ; X = 4000h
+
+$88:89D4 8A          TXA                    ;\
+$88:89D5 0C 86 19    TSB $1986  [$7E:1986]  ;} Layer blending window 2 configuration |= [X] >> 8
+$88:89D8 AE 30 03    LDX $0330  [$7E:0330]  ;\
+$88:89DB E0 F0 00    CPX #$00F0             ;} If [VRAM write table stack pointer] >= F0h: return
+$88:89DE 10 26       BPL $26    [$8A06]     ;/
+$88:89E0 A9 00 08    LDA #$0800             ;\
+$88:89E3 95 D0       STA $D0,x  [$7E:00D0]  ;|
+$88:89E5 A9 00 58    LDA #$5800             ;|
+$88:89E8 95 D2       STA $D2,x  [$7E:00D2]  ;|
+$88:89EA A9 7E 00    LDA #$007E             ;|
+$88:89ED 95 D4       STA $D4,x  [$7E:00D4]  ;|
+$88:89EF A5 59       LDA $59    [$7E:0059]  ;|
+$88:89F1 29 FC 00    AND #$00FC             ;|
+$88:89F4 EB          XBA                    ;} Queue transfer of 800h bytes from $7E:5800 to VRAM BG2 tilemap base + 400h
+$88:89F5 18          CLC                    ;|
+$88:89F6 69 00 04    ADC #$0400             ;|
+$88:89F9 95 D5       STA $D5,x  [$7E:00D5]  ;|
+$88:89FB 8A          TXA                    ;|
+$88:89FC 18          CLC                    ;|
+$88:89FD 69 07 00    ADC #$0007             ;|
+$88:8A00 8D 30 03    STA $0330  [$7E:0330]  ;/
+$88:8A03 EE 7A 0A    INC $0A7A  [$7E:0A7A]  ; X-ray state = 5
+
+$88:8A06 28          PLP
+$88:8A07 60          RTS
+}
+
+
+88:8A08 = handle x-ray scope - x-ray state = 5 (deactivate beam - finish)
++-	91:D143 = can x-ray show blocks
++-	change layer blending window 2 configuration
++-	if time isn't frozen retur
++-	clear x-ray variables: state, angular width delta, angular subwidth delta, angle, angular width, angular subwidth
++-	91:E2AD = x-ray stand up glitch / something to do with samus sequences
++-	80:9049 = queue sound Ah
++-	something about subscreen backdrop color
++-	if auto-cancel then set HUD index to nothing
+
+
+;;; $8A08: Handle x-ray scope - x-ray state = 5 (deactivate beam - finish) ;;;
+{
+$88:8A08 08          PHP
+$88:8A09 C2 30       REP #$30
+$88:8A0B A2 00 10    LDX #$1000             ; X = 1000h
+$88:8A0E AD 6E 19    LDA $196E  [$7E:196E]  ;\
+$88:8A11 C9 24 00    CMP #$0024             ;} If [FX type] != fireflea:
+$88:8A14 F0 0C       BEQ $0C    [$8A22]     ;/
+$88:8A16 A2 00 20    LDX #$2000             ; X = 2000h
+$88:8A19 22 43 D1 91 JSL $91D143[$91:D143]  ;\
+$88:8A1D F0 03       BEQ $03    [$8A22]     ;} If x-ray can show blocks:
+$88:8A1F A2 00 40    LDX #$4000             ; X = 4000h
+
+$88:8A22 8A          TXA                    ;\
+$88:8A23 0C 86 19    TSB $1986  [$7E:1986]  ;} Layer blending window 2 configuration |= [X] >> 8
+$88:8A26 AD 78 0A    LDA $0A78  [$7E:0A78]  ;\
+$88:8A29 D0 02       BNE $02    [$8A2D]     ;} If time is not frozen:
+$88:8A2B 28          PLP                    ;\
+$88:8A2C 60          RTS                    ;} Return
+
+$88:8A2D 9C 78 0A    STZ $0A78  [$7E:0A78]  ; Unfreeze time
+$88:8A30 9C 7A 0A    STZ $0A7A  [$7E:0A7A]  ; X-ray state = 0
+$88:8A33 9C 7C 0A    STZ $0A7C  [$7E:0A7C]  ; X-ray angular width delta = 0
+$88:8A36 9C 7E 0A    STZ $0A7E  [$7E:0A7E]  ; X-ray angular subwidth delta = 0
+$88:8A39 9C 82 0A    STZ $0A82  [$7E:0A82]  ; X-ray angle = 0
+$88:8A3C 9C 84 0A    STZ $0A84  [$7E:0A84]  ; X-ray angular width = 0
+$88:8A3F 9C 86 0A    STZ $0A86  [$7E:0A86]  ; X-ray angular subwidth = 0
+$88:8A42 A9 01 00    LDA #$0001             ;\
+$88:8A45 8D 88 0A    STA $0A88  [$7E:0A88]  ;|
+$88:8A48 A9 00 98    LDA #$9800             ;|
+$88:8A4B 8D 89 0A    STA $0A89  [$7E:0A89]  ;|
+$88:8A4E 9C 8B 0A    STZ $0A8B  [$7E:0A8B]  ;} $0A88..91 = 01,$9800, 00,00...
+$88:8A51 9C 8C 0A    STZ $0A8C  [$7E:0A8C]  ;|
+$88:8A54 9C 8E 0A    STZ $0A8E  [$7E:0A8E]  ;|
+$88:8A57 9C 90 0A    STZ $0A90  [$7E:0A90]  ;/
+$88:8A5A 22 AD E2 91 JSL $91E2AD[$91:E2AD]  ; Execute $91:E2AD (responsible for the x-ray stand-up glitch)
+$88:8A5E AE B2 18    LDX $18B2  [$7E:18B2]  ;\
+$88:8A61 9E B4 18    STZ $18B4,x[$7E:18B8]  ;} HDMA object channel = 0
+$88:8A64 A9 0A 00    LDA #$000A             ;\
+$88:8A67 22 49 90 80 JSL $809049[$80:9049]  ;} Queue sound Ah, sound library 1, max queued sounds allowed = 6 (x-ray end)
+$88:8A6B E2 20       SEP #$20
+$88:8A6D AD 6E 19    LDA $196E  [$7E:196E]  ;\
+$88:8A70 C9 24       CMP #$24               ;} If [FX type] != fireflea:
+$88:8A72 F0 0C       BEQ $0C    [$8A80]     ;/
+$88:8A74 A9 80       LDA #$80               ;\
+$88:8A76 85 76       STA $76    [$7E:0076]  ;|
+$88:8A78 A9 40       LDA #$40               ;|
+$88:8A7A 85 75       STA $75    [$7E:0075]  ;} Colour math subscreen backdrop colour = (0, 0, 0)
+$88:8A7C A9 20       LDA #$20               ;|
+$88:8A7E 85 74       STA $74    [$7E:0074]  ;/
+
+$88:8A80 A9 7E       LDA #$7E               ;\
+$88:8A82 85 02       STA $02    [$7E:0002]  ;|
+$88:8A84 C2 20       REP #$20               ;|
+$88:8A86 A9 00 98    LDA #$9800             ;|
+$88:8A89 85 00       STA $00    [$7E:0000]  ;|
+$88:8A8B A0 FE 01    LDY #$01FE             ;|
+$88:8A8E A9 FF 00    LDA #$00FF             ;} $7E:9800..99FF = FFh,00h
+                                            ;|
+$88:8A91 97 00       STA [$00],y[$7E:99FE]  ;|
+$88:8A93 88          DEY                    ;|
+$88:8A94 88          DEY                    ;|
+$88:8A95 10 FA       BPL $FA    [$8A91]     ;/
+$88:8A97 AD 04 0A    LDA $0A04  [$7E:0A04]  ;\
+$88:8A9A F0 06       BEQ $06    [$8AA2]     ;} If [auto-cancel HUD item index] != 0:
+$88:8A9C 9C D2 09    STZ $09D2  [$7E:09D2]  ; HUD item index = nothing
+$88:8A9F 9C 04 0A    STZ $0A04  [$7E:0A04]  ; Auto-cancel HUD item index = 0
+
+$88:8AA2 28          PLP
+$88:8AA3 60          RTS
+}
+
+88:8896 = calculate x-ray HDMA data table
++-	determine standing vs crouching, etc
++-	if origin is on screen...
++-	91:C54B = calculate x-ray HDMA data table - x-ray origin is on screen
+	+-	do some x-ray angle tests
+	+-	call one of the following:
+	+-	91:C5FF
+	+-	91:C6C1
+	+-	91:C822
+	+-	91:C660
+	+-	91:C998
+
++-	if origin is off screen...
++-	91:BE11 = calculate x-ray HDMA data table - x-ray origin is off screen
+
+
+
+;;; $8896: Calculate x-ray HDMA data table ;;;
+{
+$88:8896 08          PHP
+$88:8897 C2 30       REP #$30
+$88:8899 A9 00 7E    LDA #$7E00             ;\
+$88:889C 85 01       STA $01    [$7E:0001]  ;|
+$88:889E A9 00 98    LDA #$9800             ;} $00 = $7E:9800 (x-ray HDMA data table)
+$88:88A1 85 00       STA $00    [$7E:0000]  ;/
+$88:88A3 AD 82 0A    LDA $0A82  [$7E:0A82]  ;\
+$88:88A6 85 12       STA $12    [$7E:0012]  ;} $12 = [x-ray angle]
+$88:88A8 AD 84 0A    LDA $0A84  [$7E:0A84]  ;\
+$88:88AB 85 14       STA $14    [$7E:0014]  ;} $14 = [x-ray angular width]
+$88:88AD AD 1E 0A    LDA $0A1E  [$7E:0A1E]  ;\
+$88:88B0 29 FF 00    AND #$00FF             ;|
+$88:88B3 C9 04 00    CMP #$0004             ;} If Samus is facing right:
+$88:88B6 F0 0E       BEQ $0E    [$88C6]     ;/
+$88:88B8 AD F6 0A    LDA $0AF6  [$7E:0AF6]  ;\
+$88:88BB 38          SEC                    ;|
+$88:88BC ED 11 09    SBC $0911  [$7E:0911]  ;|
+$88:88BF 18          CLC                    ;} X = [Samus X position] - [layer 1 X position] + 3
+$88:88C0 69 03 00    ADC #$0003             ;|
+$88:88C3 AA          TAX                    ;/
+$88:88C4 80 0B       BRA $0B    [$88D1]
+
+$88:88C6 AD F6 0A    LDA $0AF6  [$7E:0AF6]  ;\ Else (Samus is facing left):
+$88:88C9 38          SEC                    ;|
+$88:88CA ED 11 09    SBC $0911  [$7E:0911]  ;} X = [Samus X position] - [layer 1 X position] - 3
+$88:88CD E9 03 00    SBC #$0003             ;|
+$88:88D0 AA          TAX                    ;/
+
+$88:88D1 AD 1F 0A    LDA $0A1F  [$7E:0A1F]  ;\
+$88:88D4 29 FF 00    AND #$00FF             ;|
+$88:88D7 C9 05 00    CMP #$0005             ;} If [Samus movement type] != crouching:
+$88:88DA F0 0D       BEQ $0D    [$88E9]     ;/
+$88:88DC AD FA 0A    LDA $0AFA  [$7E:0AFA]  ;\
+$88:88DF 38          SEC                    ;|
+$88:88E0 ED 15 09    SBC $0915  [$7E:0915]  ;} Y = [Samus Y position] - [layer 1 Y position] - 10h
+$88:88E3 E9 10 00    SBC #$0010             ;|
+$88:88E6 A8          TAY                    ;/
+$88:88E7 80 0B       BRA $0B    [$88F4]
+
+$88:88E9 AD FA 0A    LDA $0AFA  [$7E:0AFA]  ;\ Else ([Samus movement type] = crouching):
+$88:88EC 38          SEC                    ;|
+$88:88ED ED 15 09    SBC $0915  [$7E:0915]  ;} Y = [Samus Y position] - [layer 1 Y position] - Ch
+$88:88F0 E9 0C 00    SBC #$000C             ;|
+$88:88F3 A8          TAY                    ;/
+
+$88:88F4 E0 00 00    CPX #$0000             ;\
+$88:88F7 30 12       BMI $12    [$890B]     ;} If [X] < 0: go to BRANCH_LEFT_OF_SCREEN
+$88:88F9 E0 00 01    CPX #$0100             ;\
+$88:88FC 30 1A       BMI $1A    [$8918]     ;} If [X] < 100h: go to BRANCH_ON_SCREEN
+$88:88FE AD 1E 0A    LDA $0A1E  [$7E:0A1E]  ;\
+$88:8901 29 FF 00    AND #$00FF             ;|
+$88:8904 C9 08 00    CMP #$0008             ;} If Samus is facing right: go to BRANCH_OFF_SCREEN
+$88:8907 F0 1B       BEQ $1B    [$8924]     ;/
+$88:8909 80 13       BRA $13    [$891E]     ; Go to BRANCH_ON_SCREEN_FROM_OFF_SCREEN
+
+; BRANCH_LEFT_OF_SCREEN
+$88:890B AD 1E 0A    LDA $0A1E  [$7E:0A1E]  ;\
+$88:890E 29 FF 00    AND #$00FF             ;|
+$88:8911 C9 04 00    CMP #$0004             ;} If Samus is facing left: go to BRANCH_OFF_SCREEN
+$88:8914 F0 0E       BEQ $0E    [$8924]     ;/
+$88:8916 80 06       BRA $06    [$891E]     ; Go to BRANCH_ON_SCREEN_FROM_OFF_SCREEN
+
+; BRANCH_ON_SCREEN
+$88:8918 22 4B C5 91 JSL $91C54B[$91:C54B]  ; Calculate x-ray HDMA data table - x-ray origin is on screen
+$88:891C 28          PLP
+$88:891D 60          RTS
+
+; BRANCH_ON_SCREEN_FROM_OFF_SCREEN
+$88:891E 22 11 BE 91 JSL $91BE11[$91:BE11]  ; Calculate x-ray HDMA data table - x-ray origin is off screen
+$88:8922 28          PLP
+$88:8923 60          RTS
+
+; BRANCH_OFF_SCREEN
+$88:8924 A2 FE 01    LDX #$01FE             ;\
+$88:8927 A9 FF 00    LDA #$00FF             ;|
+                                            ;|
+$88:892A 9F 00 98 7E STA $7E9800,x          ;} $7E:9800..99FF = FFh,00h
+$88:892E CA          DEX                    ;|
+$88:892F CA          DEX                    ;|
+$88:8930 10 F8       BPL $F8    [$892A]     ;/
+$88:8932 28          PLP
+$88:8933 60          RTS
+}
+
+
+
+enum EquipFlags : uint16_t {
+	VariaSuit		= 0x1,
+	SpringBall		= 0x2,
+	MorphBall		= 0x4,
+	ScrewAttack		= 0x8,
+	GravitySuit		= 0x20,
+	HiJumpBoots		= 0x100,
+	SpaceJump		= 0x200,
+	Bombs			= 0x1000,
+	SpeedBooster	= 0x2000,
+	GrapplingBeam	= 0x4000,
+	XRayScope		= 0x8000,
+};
+
+enum HUDItem : uint16_t {
+	Nothing 		= 0,
+	Missiles 		= 1,
+	SuperMissiles 	= 2,
+	PowerBombs		= 3,
+	GrapplingBeam	= 4,
+	XRayScope 		= 5,
+};
+
+struct addr24_t {
+	uint16_t ofs;
+	uint8_t bank;
+};
+static_assert(sizeof(addr24_t) == 3);
+
+typedef struct {
+	uint16_t	srcAddr;		//+00
+	uint8_t		DMAControl;		//+02 ... usually 0x81
+	uint8_t		DMATarget;		//+03 ... usually 0x39
+	addr24_t	destAddr24;		//+04
+	uint16_t	size;			//+07
+} vramReadTableEntry_t;			//+09
+static_assert(sizeof(vramReadTableEntry_t) == 9);
+
+typedef struct {
+	uint16_t	size;			//+00
+	addr24_t	srcAddr24;		//+02
+	uint16_t	destOffset;		//+05
+} vramWriteTableEntry_t;		//+07
+static_assert(sizeof(vramWriteTableEntry_t) == 7);
+
+union tilemapAddrAndSize_t {
+	uint8_t value;
+	struct {
+		uint8_t width64 : 1;	// true => width == 64, false => width == 32
+		uint8_t height64 : 1;	// same
+		uint8_t base : 6;		// tilemap base address = base * 0x400 = base << 10
+	};
+};
+
+struct tilemapElem_t {
+	uint16_t graphicsTileIndex : 10;	// graphics tile index
+	uint16_t colorIndexHi : 4;			// high nibble color index to write throughout the graphics tile
+	uint16_t xflip : 1;					// whether to 'not'/flip x 
+	uint16_t yflip : 1;					// whether to 'not'/flip y
+};
+static_assert(sizeof(tilemapElem_t) == 2);
+
+using tileBlock_t = tilemapElem_t[2][2];
+static_assert(sizeof(tileBlock_t) == 8);
+
+enum GrapplingBeamFunc : uint16_t {
+	Inactive						= 0xC4F0,
+	Fire / go to cancel				= 0xC51E,
+	Firing							= 0xC703,
+	Unused							= 0xC759,
+	Connected - locked in place		= 0xC77E,
+	Connected - swinging			= 0xC79D,
+	Wallgrab						= 0xC814,
+	Wallgrab release				= 0xC832,
+	Cancel							= 0xC856,
+	Dropped							= 0xC8C5,
+	Walljumping						= 0xC9CE,
+	Released from swing				= 0xCB8B,
+}
+
+enum GameState = {
+	Reset/start = 0,
+	Opening. Cinematic = 1,
+	Game options menu = 2,
+	Nothing (RTS) = 3,
+	Save game menus = 4,
+	Loading game map view = 5,
+	Loading game data = 6,
+	Setting game up after loading the game = 7,
+	MainGameplay = 8,
+	Hit a door block = 9,
+	Loading next room = 0xA,
+	Loading next room = 0xB,
+	Pausing, normal gameplay but darkening = 0xC,
+	Pausing, loading pause screen = 0xD,
+	Paused, loading pause screen = 0xE,
+	Paused, map and item screens = 0xF,
+	Unpausing, loading normal gameplay = 0x10,
+	Unpausing, loading normal gameplay = 0x11,
+	Unpausing, normal gameplay but brightening = 0x12,
+	Samus ran out of health = 0x13,
+	Samus ran out of health, black out surroundings = 0x14,
+	Samus ran out of health, black out surroundings = 0x15,
+	Samus ran out of health, starting death animation = 0x16,
+	Samus ran out of health, flashing = 0x17,
+	Samus ran out of health, explosion = 0x18,
+	Samus ran out of health, black out (also cut to by time up death) = 0x19,
+	Game over screen = 0x1A,
+	Reserve tanks auto = 0x1B,
+	Unused. Does JMP ($0DEA) ($0DEA is never set to a pointer) = 0x1C,
+	Debug game over menu (end/continue) = 0x1D,
+	Intro. Cinematic. Set up entirely new game with cutscenes = 0x1E,
+	Set up new game. Post-intro = 0x1F,
+	Made it to Ceres elevator = 0x20,
+	Blackout from Ceres = 0x21,
+	Ceres goes boom, Samus goes to Zebes. Cinematic = 0x22,
+	Time up = 0x23,
+	Whiting out from time up = 0x24,
+	Ceres goes boom with Samus. Cinematic = 0x25,
+	Samus escapes from Zebes. Transition from main gameplay to ending and credits = 0x26,
+	Ending and credits. Cinematic = 0x27,
+	Transition to demo = 0x28,
+	Transition to demo = 0x29,
+	Playing demo = 0x2A,
+	Transition from demo = 0x2B,
+	Transition from demo = 0x2C,
+}
+
+enum SamusMoveType : uint8_t {
+	Standing = 0,
+	Running = 1,
+	Normal jumping = 2,
+	Spin jumping = 3,
+	Morph ball - on ground = 4,
+	Crouching = 5,
+	Falling = 6,
+	Unused. Glitchy morph ball / spin jump = 7,
+	Morph ball - in air = 8,
+	Unused. Glitchy morph ball = 9,
+	Knockback / crystal flash ending = 0xA,
+	Unused. Can fire grapple beam, not moving = 0xB,
+	Unused. Can fire grapple beam and charge pose. No pose definitions correspond to this = 0xC,
+	Unused. Can change pose, no firing... = 0xD,
+	Turning around - on ground = 0xE,
+	Crouching/standing/morphing/unmorphing transition = 0xF,
+	Moonwalking = 0x10,
+	Spring ball - on ground = 0x11,
+	Spring ball - in air = 0x12,
+	Spring ball - falling = 0x13,
+	Wall jumping = 0x14,
+	Ran into a wall = 0x15,
+	Grappling = 0x16,
+	Turning around - jumping = 0x17,
+	Turning around - falling = 0x18,
+	Damage boost = 0x19,
+	Grabbed by Draygon = 0x1A,
+	Shinespark / crystal flash / drained by metroid / damaged by MB's attacks = 0x1B,
+};
+
+enum SamusPoseDirX : uint8_t {
+	Left 	= 4,
+	Right 	= 8,
+};
+
+enum RoomFXType : uint16_t {
+	FireFlea = 0x0024,
+};
+
+enum BossID : uint16_t {
+	None 			= 0,
+	CeresRidley 	= 1,
+	Torizo 			= 2,
+	Kraid 			= 3,
+	SporeSpawn 		= 4,
+	Ridley 			= 5,
+	Crocomire 		= 6,
+	Phantoon 		= 7,
+	Draygon 		= 8,
+	Botwoon 		= 9,
+	MotherBrain 	= 0xA,
+};
+
+typedef union {
+	uint16_t value;
+	struct {
+		uint16_t unused : 4;		//0x000f
+		uint16_t R : 1;				//0x0010
+		uint16_t L : 1;				//0x0020
+		uint16_t X : 1;				//0x0040
+		uint16_t A : 1;				//0x0080
+		uint16_t right : 1;			//0x0100
+		uint16_t left : 1;			//0x0200
+		uint16_t down : 1;			//0x0400
+		uint16_t up : 1;			//0x0800
+		uint16_t start : 1;			//0x1000
+		uint16_t select : 1;		//0x2000
+		uint16_t Y : 1;				//0x4000
+		uint16_t B : 1;				//0x8000
+	};
+} buttons_t;
+
+typedef union {
+	uint16_t value;
+	struct {
+		uint16_t r : 5,
+		uint16_t g : 5,
+		uint16_t b : 5,
+		uint16_t a : 1,
+	};
+} r5g5b5_t;
+
+breakdown of RAM:
+7E0000 = uint8_t temp[20];
+7E0026 = uint16_t mulA
+7E0028 = uint16_t mulB
+7E002A = uint32_t mulResult	// = mula * mulb
+7E0058 = tilemapAddrAndSize_t bg1TilemapBaseAddrAndSize
+7E0059 = tilemapAddrAndSize_t bg2TilemapBaseAddrAndSize
+7E005A = tilemapAddrAndSize_t bg3TilemapBaseAddrAndSize 
+7E005B = tilemapAddrAndSize_t gameplayBG3TilemapBaseAddrAndSize 
+7E005C = tilemapAddrAndSize_t bg4TilemapBaseAddrAndSize 
+7E0074 = uint8_t subscreenBackdropColor1
+7E0075 = uint8_t subscreenBackdropColor2
+7E0076 = uint8_t subscreenBackdropColor3
+7E0080 = uint16_t mode7xformCenterX
+7E0082 = uint16_t mode7xformCenterY
+7E008B = buttons_t buttonsDown
+7E00B1 = uint16_t bg1ScrollX
+7E00B3 = uint16_t bg1ScrollY
+7E00B5 = uint16_t bg2ScrollX
+7E00B7 = uint16_t bg2ScrollY
+7E00B9 = uint16_t bg3ScrollX
+7E00BB = uint16_t bg3ScrollY
+7E00BD = uint16_t bg4ScrollX
+7E00BF = uint16_t bg4ScrollY
+7E00E4
+7E00D0 = vramWriteTableEntry_t vramWriteTable[0x200/7]	//== 73.1 or so vramWriteTableEntry_t here
+7E0330 = uint16_t vramWriteStackOffset
+7E0340 = vramReadTableEntry_t vramReadTable[0x20/9] //== 3.5 or so vramReadTableEntry_t here since it's a 9-byte structure in 32 bytes of memory
+7E0360 = uint16_t vramReadStackOffset
+7E0592 = powerBombExplosionStatus
+7E079B = uint16_t roomPageOffset;
+7E07A5 = uint16_t roomWidthInBlocks;
+7E0911 = uint16_t layer1PosX;
+7E0915 = uint16_t layer1PosY;
+7E091D = uint16_t bg1OffsetX;	//BG1XScroll = layer1PosX + bg1OffsetX
+7E091F = uint16_t bg1OffsetY;	//BG1YScroll = layer1PosY + bg1OffsetY
+7E0998 = GameState gameState
+7E09A2 = EquipFlags equippedItems
+7E09A4 = EquipFlags collectedItems
+7E09B6 = uint16_t runButtonFlag	// all controls?
+7E09D2 = HUDItem currentHUDSelection
+7E0A11 = SamusMoveType samusPrevMoveType
+7E0A1C = uint16_t samusPose
+7E0A1E = SamusPoseDirX samusPoseDirX					// 8 = right, 4 = left, 1 and 2 ... something?
+7E0A1F = SamusMoveType samusMoveType
+7E0A2A = uint16_t samusNewPose0A2A
+7E0A30 = uint16_t samusTransitionGfxHandlerIndex
+7E0A66 = uint16_t samusYVelDivPowOf2
+7E0A78 = uint16_t xrayTimeIsFrozen
+7E0A7A = uint16_t xrayState
+7E0A7C = uint16_t xrayAngleWidthDelta			// \ is this a 32-bit fixed-precision struct?
+7E0A7E = uint16_t xrayAngleSubwidthDelta		// /  is the fraction always stored last?
+7E0A82 = uint16_t xrayAngle
+7E0A84 = uint16_t xrayAngleWidth
+7E0A86 = uint16_t xrayAngleSubwidth
+7E0A88 = uint8_t xrayIndirectHDMATable[0xA]
+7E0B2C = uint16_t samusSubVelY
+7E0B2E = uint16_t samusVelY
+7E0CCC = uint16_t cooldownTimer
+7E0CD0 = uint16_t beamChargeCounter
+7E0CD2 = uint16_t bombCounter
+7E0D32 = GrapplingBeamFunc grapplingBeamFunc
+7E179C = BossID bossID
+7E1840 = uint16_t earthquakeTimer
+7E196E = RoomFXType roomFXType
+7E1986 = uint8_t layerBlendingConfig
+7E1987 = uint8_t layerBlendingConfigWindow2
+7E4000 = uint8_t xrayTilemapsViewableBG1[0x1000]
+7E5000 = uint8_t xrayBG2Backup[0x1000]
+7E6000 = uint8_t xrayBG1Backup[0x1000]
+7EA000 = tilemapElem_t tileTable[0x2000/8] ... is this only for the map tiles?
+
+7F0000 = uitn16_t levelSize;
+7F0002 = uint8_t levelData[0x6400];
+7F6402 = uint8_t levelBTS[0x3200];
+7F9602 = uint8_t customBG[0x6400];

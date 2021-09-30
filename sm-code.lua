@@ -42,7 +42,7 @@ uint24_t addr24(uint8_t bank, uint16_t offset) {
 	return ((bank & 0x7f) << 15) | (offset & 0x7fff);
 }
 
-uint8_t* bankptr = mem + addr24(data_bank, 0);
+uint8_t* databankptr = mem + addr24(data_bank, 0);
 
 uint16_t& mem16(uint8_t bank, uint16_t offset) {
 	return *(uint16_t*)(mem + addr24(bank, offset));
@@ -677,7 +677,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				readmem = false
 				if self.address == 'absolute-a' then
 					--arg = 'mem[addr24(data_bank, x + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')]'
-					arg = 'bankptr[X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..']'
+					arg = 'databankptr[X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..']'
 				elseif self.address == 'absolute indexed indirect-(a,x)' then
 					arg = 'mem16(0, X + '..('0x%04X'):format(ffi.cast('uint16_t*',mem+1)[0])..')'
 				elseif self.address == 'absolute indexed with X-a,x' then
@@ -824,7 +824,7 @@ for _,info in ipairs(formatsAndSizesInfo) do
 				return 'accum |= '..arg..';'
 			elseif self.name == 'PEA' then
 				-- "The instruction is very misleading because you are really pushing an immediate onto the stack. eg."
-				-- so the asm looks like "PEA $ABCD" but what is does is: push(0xcd) push(0xab) .. *NOT* push(bankptr[0xabcd])
+				-- so the asm looks like "PEA $ABCD" but what is does is: push(0xcd) push(0xab) .. *NOT* push(databankptr[0xabcd])
 				return 'push('..arg:gsub('%$', '0x')..');'
 			elseif self.name == 'PEI' then
 				if readmem then arg = 'mem['..arg..']' end
