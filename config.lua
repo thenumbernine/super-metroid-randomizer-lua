@@ -1,7 +1,8 @@
 return {
 	-- saving data in the original rom
 	mapSaveImageInformative = false,
-	mapSaveImageTextured = true,
+	mapSaveImageTextured = false,
+	mapSaveImageRegionsTextured = false,
 	mapSaveImageTextured_HighlightItems = false,
 	mapSaveGraphicsMode7 = false,
 	mapSaveGraphicsTileSets = false,
@@ -9,7 +10,8 @@ return {
 	mapSaveGraphicsLayer2BGs = false,
 	graphicsDumpPauseScreenImages = false,	-- dump to file
 	samusSaveImages = false,
-	regionsWriteMaps = false,	-- write back the region-maps to rom, deduced from the map room data.  TODO soon to contain a downsampled version of the map
+	rebuildRegionWorldMap = false,			-- rebuild the region map based on the rooms
+	regionsWriteMaps = false,				-- write back the region-maps to rom, deduced from the map room data.  TODO soon to contain a downsampled version of the map
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
@@ -22,7 +24,7 @@ return {
 
 	-- for the original rom:
 	-- whether to chop out rooms that overlap each other in the original layout
-	-- doesn't do much good for custom roms
+	-- doesn't do much good for custom roms, unless you take the time to enter the omitted regions
 	mapOmitOverlappingRoomsInOriginal = true,
 	
 --[==[

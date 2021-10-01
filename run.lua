@@ -166,6 +166,11 @@ timer('everything', function()
 			sm:mapSaveImageTextured'map'
 		end)
 	end
+	if config.mapSaveImageRegionsTextured then
+		timer('write original ROM textured image', function()
+			sm:mapSaveImageRegionsTextured()
+		end)
+	end
 	if config.mapSaveDumpworldImage then
 		timer('write original ROM output images', function()
 			sm:mapSaveDumpworldImage()

@@ -155,6 +155,7 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 					{2, 4, 3, 1},
 					{4, 1, 1, 1},
 				},
+				[0x005] = {{6, 2, 2, 2}},	-- crateria big room to the right
 				[0x009] = {{0, 0, 7, 4}},
 				[0x007] = {					-- crateria lift to red brinstar
 					{0, 1, 1, 2},
@@ -2134,7 +2135,12 @@ function SMMap:mapSaveImageInformative(filenamePrefix)
 end
 
 
-local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
+local function drawRoomBlocksTextured(args)
+	local roomBlockData = assert(args.roomBlockData)
+	local rs = assert(args.rs)
+	local sm = assert(args.sm)
+	local mapTexImage = assert(args.mapTexImage)
+
 	local fullmapinfo = sm:mapGetFullMapInfoForMD5(sm.md5hash)
 	
 	local m = rs.room
@@ -2143,9 +2149,13 @@ local function drawRoomBlocksTextured(roomBlockData, rs, sm, mapTexImage)
 	local layer2blocks = roomBlockData:getLayer2Blocks()
 	local w = roomBlockData.width / blocksPerRoom
 	local h = roomBlockData.height / blocksPerRoom
-	local ofscalc = assert(fullmapinfo.ofsPerRegion[m:obj().region+1], "couldn't get offset calc func for room:\n "..m:obj())
-	local ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m)
-	
+
+	local ofsInRoomBlocksX, ofsInRoomBlocksY = 0, 0
+	if not args.ignoreOffsetPerRegion then
+		local ofscalc = assert(fullmapinfo.ofsPerRegion[m:obj().region+1], "couldn't get offset calc func for room:\n "..m:obj())
+		ofsInRoomBlocksX, ofsInRoomBlocksY = ofscalc(m)
+	end
+
 	local tileSet = rs.tileSet
 	if not tileSet then return end
 
@@ -2302,7 +2312,12 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
+			drawRoomBlocksTextured{
+				sm = self,
+				mapTexImage = mapTexImage,
+				rs = rs,
+				roomBlockData = roomBlockData,
+			}
 		end
 	end
 	if config.mapSaveImageTextured_HighlightItems then
@@ -2337,6 +2352,45 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 	end
 
 	mapTexImage:save(filenamePrefix..'-tex.png')
+end
+
+-- TODO put this in sm-regions?
+function SMMap:mapSaveImageRegionsTextured()
+	for _,region in ipairs(self.regions) do
+		-- TODO store region bounds in the sm-regions.lua ctor?
+		local min = {math.huge, math.huge}
+		local max = {-math.huge, -math.huge}
+		for _,room in ipairs(region.rooms) do
+			min[1] = math.min(min[1], room:obj().x)
+			min[2] = math.min(min[2], room:obj().y)
+			max[1] = math.max(max[1], room:obj().x + room:obj().width - 1)
+			max[2] = math.max(max[2], room:obj().y + room:obj().height - 1)
+		end
+		region.min = min
+		region.max = max
+
+		-- also for the image size, use 64x32 map region blocks, since that's how big the region map tilemaps are
+		-- also, to match with the game, draw map tiles down one tile's size
+		local regionTexImage = Image(
+			blockSizeInPixels * blocksPerRoom * 64,
+			blockSizeInPixels * blocksPerRoom * 32,
+			3, 'unsigned char')
+		regionTexImage:clear()
+	
+		for _,room in ipairs(region.rooms) do
+			for _,rs in ipairs(room.roomStates) do
+				drawRoomBlocksTextured{
+					sm = self,
+					mapTexImage = regionTexImage,
+					rs = rs,
+					roomBlockData = rs.roomBlockData,
+					ignoreOffsetPerRegion = true,
+				}
+			end
+		end
+	
+		regionTexImage:save('map-tex-region-'..region.index..'.png')
+	end
 end
 
 local function drawRoomBlocksDumpworld(

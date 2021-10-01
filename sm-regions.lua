@@ -3,6 +3,7 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local math = require 'ext.math'
+local config = require 'config'
 local Blob = require 'blob'
 
 local pc = require 'pc'
@@ -94,10 +95,8 @@ local RegionTilemap = class(Blob)
 RegionTilemap.count = Region.width * Region.height
 RegionTilemap.type = 'tilemapElem_t'
 
-local SMRegions = {}
 
--- TODO make a config flag?
-SMRegions.rebuildRegionWorldMap = true
+local SMRegions = {}
 
 SMRegions.maxRegions = 8
 
@@ -258,7 +257,7 @@ function SMRegions:regionsBindRooms()
 -- [==[
 	-- TODO make this a config flag
 	-- rebuild the region tilemap based on the map
-	if self.rebuildRegionWorldMap then
+	if config.rebuildRegionWorldMap then
 		local freeLocations = table{
 			0x88,
 			0x98, 0x9e, 0x9f,
