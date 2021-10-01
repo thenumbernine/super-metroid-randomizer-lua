@@ -75,8 +75,8 @@ $91:CAD7 8B          PHB					}	push(data_bank)
 $91:CAD8 4B          PHK					\	data_bank = program_bank = 0x91
 $91:CAD9 AB          PLB					/
 $91:CADA C2 30       REP #$30				}	flags &= ~0x30
-$91:CADC AD 78 0A    LDA $0A78  [$7E:0A78]  \	if (	!xrayTimeIsFrozen
-$91:CADF D0 15       BNE $15    [$CAF6]     |			&& (buttonsDown.value & runButtonFlag)
+$91:CADC AD 78 0A    LDA $0A78  [$7E:0A78]  \	if (!xrayTimeIsFrozen
+$91:CADF D0 15       BNE $15    [$CAF6]     |		&& (buttonsDown.value & runButtonFlag)
 $91:CAE1 A5 8B       LDA $8B    [$7E:008B]  |	){
 $91:CAE3 2C B6 09    BIT $09B6  [$7E:09B6]  |		bool success = (0x91:E16D)(); //X-ray setup                                          
 $91:CAE6 F0 0E       BEQ $0E    [$CAF6]     |		if (success) {
@@ -495,7 +495,7 @@ $91:CBBD 18          CLC                    |
 $91:CBBE 65 18       ADC $18    [$7E:0018]  |
 $91:CBC0 85 18       STA $18    [$7E:0018]  /
 $91:CBC2 64 16       STZ $16    [$7E:0016]  \ 
-$91:CBC4 A9 10 00    LDA #$0010             |	for (i = 0x10, k = 0; i > 0; i--, k += 0x40) {
+$91:CBC4 A9 10 00    LDA #$0010             |	for (i = 0x10, k = 0; i > 0; i--, k += 0x40) {	// k += 64 ... for the bg2 width?
 $91:CBC7 85 14       STA $14    [$7E:0014]  /
 $91:CBC9 A9 10 00    LDA #$0010             \
 $91:CBCC 85 12       STA $12    [$7E:0012]  |		// $1A = [BG1 row origin block index] & 7E0h (BG1 row origin block row index)
@@ -707,9 +707,9 @@ $91:CD69 48          PHA                        |
 $91:CD6A BF 04 A0 7E LDA $7EA004,x              |		
 $91:CD6E 48          PHA                        |		
 $91:CD6F BF 06 A0 7E LDA $7EA006,x              |		uint16_t dst = mem16[0x16];                  		
-$91:CD73 A6 16       LDX $16    [$7E:0016]      |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0xC2 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x06 + src);		
+$91:CD73 A6 16       LDX $16    [$7E:0016]      |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0xC2 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x06 + src);
 $91:CD75 9F C2 40 7E STA $7E40C2,x              |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0xC0 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x04 + src);
-$91:CD79 68          PLA                        |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0x82 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x02 + src);     		
+$91:CD79 68          PLA                        |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0x82 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x02 + src);
 $91:CD7A 9F C0 40 7E STA $7E40C0,x              |		*(uint16_t*)(xrayTilemapsViewableBG1 + 0x80 + dst) = *(uint16_t*)((uint8_t*)tileTable + 0x00 + src);
 $91:CD7E 68          PLA                        |
 $91:CD7F 9F 82 40 7E STA $7E4082,x              |
@@ -995,8 +995,8 @@ $91:CFBF B1 03       LDA ($03),y[$91:D304]		}	accum = mem16[0x91:D302] + Y;	//re
 $91:CFC1 0A          ASL A						\	uint16_t tileIndex = accum; // function argument
 $91:CFC2 0A          ASL A						|	uint16_t tileOffset = tileIndex * sizeof(tileBlock_t) // i.e. << 3 
 $91:CFC3 0A          ASL A						|	memcpy(xrayTilemapsViewableBG1 + tileOffset, tileTable + tileOffset, sizeof(tileBlock_t))	// sizeof(tileBlock_t) == 8
-$91:CFC4 AA          TAX						/	//... or, the long spelled out way ...
-$91:CFC5 BF 00 A0 7E LDA $7EA000,x[$7E:A7F8]	\	//
+$91:CFC4 AA          TAX						/
+$91:CFC5 BF 00 A0 7E LDA $7EA000,x[$7E:A7F8]	\	//... or, the long spelled out way ...
 $91:CFC9 48          PHA						/	//uint16_t tmp3 = mem16[0x7EA000 + tileOffset];
 $91:CFCA BF 02 A0 7E LDA $7EA002,x[$7E:A7FA]	\	//
 $91:CFCE 48          PHA						/	//uint16_t tmp4 = mem16[0x7EA002 + tileOffset];
@@ -1124,15 +1124,15 @@ $91:D1A0 08          PHP					}	push(flags);
 $91:D1A1 C2 30       REP #$30				}	flags &= ~0x30;
 $91:D1A3 22 43 D1 91 JSL $91D143[$91:D143]  \	bool canShowBlocks = call $91:D143 !zero flag;
 $91:D1A7 F0 26       BEQ $26    [$D1CF]     |	if (canShowBlocks) {
-$91:D1A9 AE 30 03    LDX $0330  [$7E:0330]  | 		// Queue transfer of 800h bytes from $7E:4800 to VRAM BG2 tilemap base + 400h
-$91:D1AC A9 00 08    LDA #$0800             |		*(vramWriteTableEntry_t*)((uint8_t*)vramWriteTable + vramWriteStackOffset) = {
-$91:D1AF 95 D0       STA $D0,x  [$7E:00D0]  |			v->size = 0x800;
-$91:D1B1 A9 00 48    LDA #$4800             |			v->srcAddr24 = (void*)xrayTilemapsViewableBG1 + 0x800,	// 7E:4800
-$91:D1B4 95 D2       STA $D2,x  [$7E:00D2]  |			v->destAddr = bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400;
-$91:D1B6 A9 7E 00    LDA #$007E             |		};
-$91:D1B9 95 D4       STA $D4,x  [$7E:00D4]  |		vramWriteStackOffset += 7; // == sizeof(vramWriteTableEntry_t);
-$91:D1BB A5 59       LDA $59    [$7E:0059]  |	}
-$91:D1BD 29 FC 00    AND #$00FC             |
+$91:D1A9 AE 30 03    LDX $0330  [$7E:0330]  |
+$91:D1AC A9 00 08    LDA #$0800             | 		// Queue transfer of 800h bytes from $7E:4800 to VRAM BG2 tilemap base + 400h
+$91:D1AF 95 D0       STA $D0,x  [$7E:00D0]  |		*(vramWriteTableEntry_t*)((uint8_t*)vramWriteTable + vramWriteStackOffset) = {
+$91:D1B1 A9 00 48    LDA #$4800             |			.size = 0x800,
+$91:D1B4 95 D2       STA $D2,x  [$7E:00D2]  |			.srcAddr24 = (void*)xrayTilemapsViewableBG1 + 0x800,	// 7E:4800
+$91:D1B6 A9 7E 00    LDA #$007E             |			.destOffset = bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400,
+$91:D1B9 95 D4       STA $D4,x  [$7E:00D4]  |		};
+$91:D1BB A5 59       LDA $59    [$7E:0059]  |		vramWriteStackOffset += 7; // == sizeof(vramWriteTableEntry_t);
+$91:D1BD 29 FC 00    AND #$00FC             |	}
 $91:D1C0 EB          XBA                    |
 $91:D1C1 18          CLC                    |
 $91:D1C2 69 00 04    ADC #$0400             |
@@ -2048,7 +2048,7 @@ breakdown of RAM:
 7E196E = RoomFXType roomFXType
 7E1986 = uint8_t layerBlendingConfig
 7E1987 = uint8_t layerBlendingConfigWindow2
-7E4000 = uint8_t xrayTilemapsViewableBG1[0x1000]
+7E4000 = uint8_t xrayTilemapsViewableBG1[0x1000]	if it's the BG1 backup then why is it written into BG2 in vram?
 7E5000 = uint8_t xrayBG2Backup[0x1000]
 7E6000 = uint8_t xrayBG1Backup[0x1000]
 7EA000 = tilemapElem_t tileTable[0x2000/8] ... is this only for the map tiles?

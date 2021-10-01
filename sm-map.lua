@@ -145,24 +145,42 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 			-- what regions on the map to exclude
 			mapDrawExcludeMapBlocks = {
 				[0x000] = {
-					{0, 0, 1, 2},	-- crateria intro, out of bounds backgrounds
-					{0, 3, 1, 1},	-- "
+					{0, 0, 2, 2},			-- crateria intro, out of bounds backgrounds
+					{0, 3, 2, 1},			-- "
 				},
-				[0x002] = {
+				[0x002] = {					-- crateria first room
+					{0, 1, 1, 2},			-- overlaps the 1st save room
 					{0, 4, 1, 1},
+					{2, 1, 1, 2},
 					{2, 4, 3, 1},
+					{4, 1, 1, 1},
 				},
 				[0x009] = {{0, 0, 7, 4}},
-				[0x012] = {{2, 8, 1, 1}},	-- crateria down hall to mother brain overlapping mother brain 1st room
+				[0x007] = {					-- crateria lift to red brinstar
+					{0, 1, 1, 2},
+					{2, 1, 1, 2},
+				},			
+				[0x012] = {					-- crateria down hall to mother brain overlapping mother brain 1st room
+					{0, 7, 1, 1},
+					{2, 1, 1, 1},
+					{2, 6, 1, 1},
+					{2, 8, 1, 1},
+				},
+				[0x013] = {{1, 1, 1, 1}},	-- crateria old mother brain room
+				[0x01d] = {					-- crateria speed boost to super missile secret
+					{2, 1, 1, 1},
+					{2, 6, 1, 1},
+				},
 				[0x108] = {{0, 1, 4, 5}},	-- brinstar pink speed fall room
 				[0x109] = {
-					{0, 0, 1, 1},	-- brinstar pink big room
-					{0, 1, 2, 2},	-- "
+					{0, 0, 1, 1},			-- brinstar pink big room
+					{0, 1, 2, 2},			-- "
 				},
 				[0x10e] = {{0, 0, 5, 2}},	-- brinstar blue first room
 				[0x113] = {{2, 0, 3, 1}},	-- brinstar bottom flea room
 				[0x124] = {{1, 4, 1, 1}},	-- red room ascending to lift to brinstar, blocks save to the right
 				[0x12c] = {{0, 1, 1, 1}},	-- brinstar kraid fly room
+				[0x134] = {{2, 1, 1, 1}},	-- brinstar flea e-tank room in kraid area
 				[0x204] = {
 					{0, 0, 3, 3},	-- norfair speed room to ice
 					{4, 3, 3, 1},	-- "
@@ -172,6 +190,7 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 					{1, 2, 1, 1},	-- "
 				},
 				[0x214] = {{5, 0, 3, 2}},	-- norfair room before grappling
+				[0x217] = {{0, 3, 1, 1}},	-- norfair grappling room
 				[0x221] = {{0, 0, 2, 2}},	-- norfair lava rise room run to wave
 				[0x225] = {{3, 2, 1, 1}},	-- norfair entrance to lower norfair lava swim, lower right corner occuldes room 2-3c, even though there are gfx tiles here
 				[0x235] = {{2, 0, 1, 1}},	-- chozo morph to lower acid room, upper right overlaps with room to the right
@@ -179,17 +198,38 @@ function SMMap:mapGetFullMapInfoForMD5(md5)
 				[0x23e] = {{0, 0, 2, 3}},	-- norfair lower return from gold chozo loop
 				[0x245] = {{1, 0, 2, 4}},	-- norfair room after acid raise run room, upper right blocks room to the right
 				[0x248] = {{0, 0, 1, 2}},	-- norfair lower escape last room
-				[0x24b] = {{0, 1, 1, 5}},	-- norfair lower escape first room
-				[0x300] = {
-					{0, 0, 2, 1},	-- wrecked ship bowling chozo room
-					{0, 2, 1, 1},	-- "
+				[0x24b] = {					-- norfair lower escape fireflea room
+					{0, 1, 1, 5},
+					{2, 0, 1, 1},
 				},
-				[0x304] = {
-					{0, 0, 4, 5},	-- wrecked ship main shaft
-					{5, 0, 1, 6},	-- "
+				[0x300] = {
+					{0, 0, 2, 1},			-- wrecked ship bowling chozo room
+					{0, 2, 1, 1},			-- "
+				},
+				[0x304] = {					-- wrecked ship main shaft
+					{0, 0, 4, 5},
+					{0, 6, 3, 1},
+					{0, 7, 4, 1},
+					{5, 7, 1, 1},
+					{5, 0, 1, 6},
 				},
 				[0x403] = {{1, 1, 3, 1}},	-- maridia fly and yellow blob room at the bottom
-				[0x404] = {{2, 7, 1, 1}},	-- maridia big climb upper left room, block over its door right to crabs 
+				[0x404] = {
+					{2, 3, 1, 2},
+					{2, 7, 1, 1},			-- maridia big climb upper left room, block over its door right to crabs 
+				},
+				[0x406] = {{0, 0, 1, 2}},	-- maridia turtle room
+				[0x408] = {					-- maridia balloon grappling room
+					{0, 3, 1, 1},
+					{5, 3, 1, 1},
+				},
+				[0x40a] = {{1, 1, 1, 2}},	-- maridia far upper left room
+				[0x40b] = {{1, 0, 3, 1}},	-- maridia room before far upper left room
+				[0x40c] = {{1, 0, 1, 3}},	-- maridia purple vertical shaft with crabs
+				[0x40d] = {{3, 2, 1, 1}},	-- maridia top room to items
+				[0x414] = {{0, 0, 1, 2}},	-- maridia top room to plasma
+				[0x426] = {{1, 0, 1, 1}},	-- maridia springball room
+				[0x42a] = {{1, 1, 1, 2}},	-- maridia room to draygon
 				[0x431] = {{1, 0, 4, 2}},	-- maridia mocktroid and big shell guy area
 			},
 		}
@@ -2261,8 +2301,7 @@ function SMMap:mapSaveImageTextured(filenamePrefix)
 
 	SMMap.bitmapForTileSetAndTileMap = {}	-- clear bgBmp cache
 	for _,roomBlockData in ipairs(self.roomblocks) do
-		local rs = roomBlockData.roomStates[1]
-		if rs then
+		for _,rs in ipairs(roomBlockData.roomStates) do
 			drawRoomBlocksTextured(roomBlockData, rs, self, mapTexImage)
 		end
 	end

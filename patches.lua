@@ -79,7 +79,35 @@ putting this in x-ray notes to go easy on vim syntax highlighting
 function Patches:beefUpXRay()
 	local function write(...) return self:write(...) end
 
---[[ make x-ray always on
+-- [[ experiment: try to write xray blocks to the foreground permanently
+	
+	-- don't redirect bg2TilemapBaseAddrAndSize to the temp during the x-ray event
+	--write(0x91, 0xd101, table{0xea}:rep(8):unpack())
+	
+	-- during setup stage 6 & 7 during vram write, write over bg1 instead of bg2:
+	-- glitches if you use it any further than the 2nd-from-left of the top left corner of the room
+	write(0x91, 0xd18f, 0x58)
+	write(0x91, 0xd1bc, 0x58)
+	
+	-- maybe because bg2TilemapBaseAddrAndSize was pushed & replaced with the fixed-width 64x32 temp buffer, and BG1 was untouched?
+	-- so what if we push and pop the bg1 data, and use it?
+	-- x-ray stage 1
+	write(0x91, 0xcb02, 0xb1)	-- change backup of bg2Scroll to bg1Scroll
+	write(0x91, 0xcb07, 0xb2)
+	write(0x91, 0xcb0c, 0xb3)
+	write(0x91, 0xcb11, 0xb4)
+	write(0x91, 0xd106, 0x58)	-- backup bg1TilemapBaseAddrAndSize instead of bg2
+	
+	--[=[
+	-- x-ray stage 2
+	write(0x91, 0xcb23, 0x59)	-- change vram read source from bg1TilemapBaseAndAddr to bg2 ... should I, or do I need this for getting the correct tile info for xray?
+	-- x-ray stage 3
+	write(0x91, 0xcb5e, 0x59)	-- same
+	--]=]
+	do return end
+--]]
+
+--[[ experiment: make x-ray always on
 	-- handle x-ray scope - x-ray state = 0 
 	write(0x88, 0x8735,
 		0x80, 0x0d)		-- BRA +$0D [$88:8744]

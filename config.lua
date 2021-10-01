@@ -1,15 +1,15 @@
 return {
 	-- saving data in the original rom
-	mapSaveImageInformative = true,
-	mapSaveImageTextured = false,
+	mapSaveImageInformative = false,
+	mapSaveImageTextured = true,
 	mapSaveImageTextured_HighlightItems = false,
 	mapSaveGraphicsMode7 = false,
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
 	mapSaveGraphicsLayer2BGs = false,
-	graphicsDumpPauseScreenImages = true,	-- dump to file
+	graphicsDumpPauseScreenImages = false,	-- dump to file
 	samusSaveImages = false,
-	regionsWriteMaps = true,	-- write back to rom
+	regionsWriteMaps = false,	-- write back the region-maps to rom, deduced from the map room data.  TODO soon to contain a downsampled version of the map
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
