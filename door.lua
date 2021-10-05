@@ -8,6 +8,14 @@ local Blob = require 'blob'
 
 local Door = class(Blob)
 
+Door.directions = {
+	right = 0,
+	left = 1,
+	down = 2,
+	up = 3,
+	closeBehind = 4,	-- flag
+}
+
 -- described in section 12 of metroidconstruction.com/SMMM
 -- if a user touches a xx-9x-yy tile then the number in yy (3rd channel) is used to lookup the door_t to see where to go
 -- This isn't the door so much as the information associated with its destination.
@@ -18,19 +26,13 @@ Door.door_t = struct{
 	fields = {
 		{destRoomPageOffset = 'uint16_t'},				-- 0: points to the room_t to transition into
 		
-	--[[
-	0x40 = change regions
-	0x80 = elevator
-	--]]
+		--[[
+		0x40 = change regions
+		0x80 = elevator
+		--]]
 		{flags = 'uint8_t'},				-- 2
 
-	--[[
-	0 = right
-	1 = left
-	2 = down
-	3 = up
-	| 0x04 flag = door closes behind samus
-	--]]
+		-- Door.directions
 		{direction = 'uint8_t'},			-- 3
 		
 		{capX = 'uint8_t'},					-- 4	target room x offset lo to place you at
@@ -69,36 +71,55 @@ looks like right now I am not rearranging any of the door_t or lift_t's
 --]]
 function Door:init(args)
 	args = table(args):setmetatable(nil)
-	
-	local destRoomPageOffset = ffi.cast('uint16_t*', args.sm.rom + assert(args.addr))[0]
-	-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
-	-- TODO isn't that just a terminator?  how is it a lift_t?
 
-	args.type = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
-	
+	if args.addr then
+		local destRoomPageOffset = ffi.cast('uint16_t*', args.sm.rom + assert(args.addr))[0]
+		-- if destRoomPageOffset == 0 then it is just a 2-byte 'lift' structure ...
+		-- TODO isn't that just a terminator?  how is it a lift_t?
+
+		args.type = destRoomPageOffset == 0 and 'lift_t' or 'door_t'
+	else
+		args.type = args.type or 'door_t'
+	end
+
 	Door.super.init(self, args)
+
+	if not args.addr then
+		self:obj().destRoomPageOffset = 0
+		self:obj().flags = 0
+		self:obj().direction = 0
+		self:obj().capX = 0		-- target room x offset lo
+		self:obj().capY = 0		-- target room y offset lo
+		self:obj().screenX = 0	-- target room x offset hi
+		self:obj().screenY = 0	-- target room y offset hi
+		self:obj().distToSpawnSamus = 0
+		self:obj().code = 0
+	end
 
 	self.srcRooms = table()
 	self.srcLoadStations = table()
 
 	if self.type == 'door_t' 
-	and self:ptr().code > 0x8000 
+	and self:obj().code >= 0x8000 
 	then
-		self.doorCode = self.sm:codeAdd(topc(self.sm.doorCodeBank, self:ptr().code))
+		self.doorCode = self.sm:codeAdd(topc(self.sm.doorCodeBank, self:obj().code))
 		self.doorCode.srcs:insert(self)
 	end
 end
 
 function Door:setDestRoom(room)
-	if not self.type ~= 'door_t' then return false end
+	if self.type ~= 'door_t' then return false end
 		
 	self.destRoom = room
-	-- TODO don't bother do this until writing
-	-- TODO TODO treat Door like all other Blobs
-	-- store .obj or .data or whatever
-	local bank, ofs = frompc(room.addr)
-	assert(bank == self.roomBank)
-	self:ptr().destRoomPageOffset = ofs
+
+	-- TODO no need to update this now at all, addr or not, this will be updated upon writing
+	if room.addr then
+		-- TODO TODO treat Door like all other Blobs
+		-- store .obj or .data or whatever
+		local bank, ofs = frompc(room.addr)
+		assert(bank == self.roomBank)
+		self:obj().destRoomPageOffset = ofs
+	end
 	return true
 end
 
@@ -107,7 +128,7 @@ function Door:buildRoom()
 	if self.type ~= 'door_t' then return false end
 	local sm = self.sm
 	if not self.destRoom then
-		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:ptr().destRoomPageOffset))
+		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:obj().destRoomPageOffset))
 	end
 	return true 
 end

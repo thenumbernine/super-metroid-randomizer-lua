@@ -46,8 +46,8 @@ local roomstate_t = struct{
 		--[[
 		this is only used by the grey torizo room, and points to the extra data after room_t
 		--]]
-		{roomvarPageOffset = 'uint16_t'},				
-		{fx2PageOffset = 'uint16_t'},					-- TODO - aka 'main asm ptr'
+		{roomvarPageOffset = 'uint16_t'},		-- "special x-ray blocks" according to https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures
+		{mainAsmPageOffset = 'uint16_t'},
 		{plmPageOffset = 'uint16_t'},
 		{bgPageOffset = 'uint16_t'},				-- offset to bg_t's
 		{layerHandlingPageOffset = 'uint16_t'},
@@ -72,46 +72,70 @@ function RoomState:init(args)
 	local room = self.room
 	
 	self.bgs = self.bgs or table()
-
-	-- TODO > 0x8000 ?
-	if self:obj().scrollPageOffset > 0x0001 
-	and self:obj().scrollPageOffset ~= 0x8000 
-	then
-		local addr = topc(sm.scrollBank, self:obj().scrollPageOffset)
-		local size = room:obj().width * room:obj().height
-		self.scrollData = range(size):map(function(i)
-			return rom[addr+i-1]
-		end)
-	end
-
-	if self:obj().plmPageOffset ~= 0 then
-		self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset)))
-	end
 	
-	self:setEnemySpawnSet(sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, self:obj().enemySpawnPageOffset)))
+	-- non-addr will have a blank object ... need to init it 
+	if not self.addr then
+		-- roomBlockAddr24 will be blank too ... don't load the roomblockdata 
+		self:obj().roomBlockAddr24.bank = 0
+		self:obj().roomBlockAddr24.ofs = 0
+		self:obj().tileSetIndex = 0
+		self:obj().musicTrack = 0
+		self:obj().musicControl = 0
+		self:obj().fx1PageOffset = 0			-- can this be zero?
+		self:obj().enemySpawnPageOffset = 0		-- can this be zero?
+		self:obj().enemyGFXPageOffset = 0		-- can this be zero?
+		self:obj().layer2scrollXY = 0
+		self:obj().scrollPageOffset = 0
+		self:obj().roomvarPageOffset = 0
+		self:obj().mainAsmPageOffset = 0
+		self:obj().plmPageOffset = 0
+		self:obj().bgPageOffset = 0
+		self:obj().layerHandlingPageOffset = 0
+			
+		self:setRoomBlockData(sm:mapAddRoomBlockData(nil, self.room))
 	
-	self:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, self:obj().enemyGFXPageOffset)))
+		-- can these not be set?
+		self:setEnemySpawnSet(sm:mapAddEnemySpawnSet(nil))
+		self:setEnemyGFXSet(sm:mapAddEnemyGFXSet(nil))
+		self:setFX1Set(sm:mapAddFX1Set(nil))
+	else
 
-	self:setFX1Set(sm:mapAddFX1Set(topc(sm.fx1Bank, self:obj().fx1PageOffset)))
-	
-	if self:obj().bgPageOffset > 0x8000 then
-		-- bg_*_t's are sequentially stored, and their size varies depending on their header
-		-- which means (should this be a MapBGSet?) if one fails to read then the rest can't be read either.
-		xpcall(function()
-			local addr = topc(sm.bgBank, self:obj().bgPageOffset)
-			while true do
-				local bg = sm:mapAddBG(addr, rom)
-				bg.roomStates:insert(self)
-				self.bgs:insert(bg)
-				addr = addr + ffi.sizeof(bg.type)
-				if bg:obj().header == 0 then break end
-			end
-		end, function(err)
-			print(err..'\n'..debug.traceback())
-		end)
-	end
+		-- TODO > 0x8000 ?
+		if self:obj().scrollPageOffset > 0x0001 
+		and self:obj().scrollPageOffset ~= 0x8000 
+		then
+			local addr = topc(sm.scrollBank, self:obj().scrollPageOffset)
+			local size = room:obj().width * room:obj().height
+			self.scrollData = range(size):map(function(i)
+				return rom[addr+i-1]
+			end)
+		end
 
-	do
+		if self:obj().plmPageOffset ~= 0 then
+			self:setPLMSet(sm:mapAddPLMSetFromAddr(topc(sm.plmBank, self:obj().plmPageOffset)))
+		end
+		
+		self:setEnemySpawnSet(sm:mapAddEnemySpawnSet(topc(sm.enemySpawnBank, self:obj().enemySpawnPageOffset)))
+		self:setEnemyGFXSet(sm:mapAddEnemyGFXSet(topc(sm.enemyGFXBank, self:obj().enemyGFXPageOffset)))
+		self:setFX1Set(sm:mapAddFX1Set(topc(sm.fx1Bank, self:obj().fx1PageOffset)))
+		
+		if self:obj().bgPageOffset > 0x8000 then
+			-- bg_*_t's are sequentially stored, and their size varies depending on their header
+			-- which means (should this be a MapBGSet?) if one fails to read then the rest can't be read either.
+			xpcall(function()
+				local addr = topc(sm.bgBank, self:obj().bgPageOffset)
+				while true do
+					local bg = sm:mapAddBG(addr, rom)
+					bg.roomStates:insert(self)
+					self.bgs:insert(bg)
+					addr = addr + ffi.sizeof(bg.type)
+					if bg:obj().header == 0 then break end
+				end
+			end, function(err)
+				print(err..'\n'..debug.traceback())
+			end)
+		end
+
 		if self:obj().layerHandlingPageOffset > 0x8000 then
 			--[[
 			with flags == 0x00 we have 8 mismatched flag calls
@@ -126,29 +150,29 @@ function RoomState:init(args)
 		end, function(err)
 			print(err..'\n'..debug.traceback())
 		end)
-	end
 
-	
-	-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
-	-- pointed to by room[00/15].roomstate_t[#1].roomvarPageOffset
-	-- has data $986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
-	-- this is the rescue animals roomstate
-	-- so this data has to do with the destructable wall on the right side
-	--if roomPageOffset == 0x79804 then
-	if self:obj().roomvarPageOffset ~= 0 then
-		local d = rom + topc(sm.plmBank, self:obj().roomvarPageOffset)
-		local roomvar = table()
-		repeat
-			roomvar:insert(d[0])	-- x
-			roomvar:insert(d[1])	-- y
-			if ffi.cast('uint16_t*', d)[0] == 0 then break end
-			roomvar:insert(d[2])	-- mod 1 == 0x52
-			roomvar:insert(d[3])	-- mod 2 == 0x00
-			-- TODO insert roomvar_t and uint16_t term (or omit term)
-			d = d + 4
-		until false
-		-- TODO should be roomstate
-		self.roomvar = roomvar
+		
+		-- $079804 - 00/15 - grey torizo room - has 14 bytes here 
+		-- pointed to by room[00/15].roomstate_t[#1].roomvarPageOffset
+		-- has data $986b: 0f 0a 52 00 | 0f 0b 52 00 | 0f 0c 52 00 | 00 00
+		-- this is the rescue animals roomstate
+		-- so this data has to do with the destructable wall on the right side
+		--if roomPageOffset == 0x79804 then
+		if self:obj().roomvarPageOffset ~= 0 then
+			local d = rom + topc(sm.plmBank, self:obj().roomvarPageOffset)
+			local roomvar = table()
+			repeat
+				roomvar:insert(d[0])	-- x
+				roomvar:insert(d[1])	-- y
+				if ffi.cast('uint16_t*', d)[0] == 0 then break end
+				roomvar:insert(d[2])	-- mod 1 == 0x52
+				roomvar:insert(d[3])	-- mod 2 == 0x00
+				-- TODO insert roomvar_t and uint16_t term (or omit term)
+				d = d + 4
+			until false
+			-- TODO should be roomstate
+			self.roomvar = roomvar
+		end
 	end
 
 	-- try to load tile graphics from rs.obj():tileSetIndex

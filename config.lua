@@ -10,14 +10,14 @@ return {
 	mapSaveGraphicsLayer2BGs = false,
 	graphicsDumpPauseScreenImages = false,	-- dump to file
 	samusSaveImages = false,
-	rebuildRegionWorldMap = false,			-- rebuild the region map based on the rooms
 	regionsWriteMaps = false,				-- write back the region-maps to rom, deduced from the map room data.  TODO soon to contain a downsampled version of the map
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
 	
 	-- rearrange and recompress room data 
-	mapRecompress = false,
+	-- TODO necessary for 'randomizeWorld' flag below
+	mapRecompress = true,
 
 	-- write the informative image of the randomized rom 
 	writeOutModifiedMapImage = false,
@@ -101,6 +101,11 @@ return {
 
 	-- toss out everything and rebuild a full new world
 	randomizeWorld = true,
+	
+	-- rebuild the region maps based on the rooms
+	-- this looks messy for the original data, since it doesn't know what pieces of each rooms to toss out,
+	-- but it's essential for the randomizeWorld
+	rebuildRegionWorldMap = true,
 
 	---------------------------------------------------------
 	---- properties for each of the randomizations above ----

@@ -1,3 +1,50 @@
+what it does:
+	hdma setup stages:
+		pre) setup subscreenBackdropColor1 2 3 
+		1) set time-is-frozen, backup bg2ScrollX, Y & bg2TilemapAddrAndSize
+		2) read vram bg1TilemapBaseAddrAndSize.base * 0x400 + 0x400 to xrayBG1Backup + 0x800, size 0x800
+		3) read vram bg1TilemapBaseAddrAndSize.base * 0x400 to xrayBG1Backup, size 0x800
+		4) do the block modifications to xrayBG1Backup and store in xrayTilemapsViewableBG1
+			read vram bg2TilemapBaseAddrAndSize.base * 0x400 to xrayBG2Backup, size 0x800
+		5) set bg2ScrollX & Y, bg1ScrollX & Y, bg2TilemapAddrAndSize,
+			read vram bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400 to xrayBG2Backup + 0x800, size 0x800
+		6) write xrayTilemapsViewableBG1, size 0x800 to vram bg2TilemapBaseAddrAndSize.base * 0x400
+		7) write xrayTilemapsViewableBG1 + 0x800 to vram bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400
+			do some more writing of xrayIndirectHDMATable, xrayState, angle, etc
+		8) set backdrop color
+	x-ray stages:
+		0)
+		1)
+		2)
+		3) beam deactivate - restore layer blending, bg2ScrollX & Y, bg2TilemapAddrAndSize,
+			write xrayBG2Backup to vram bg2TilemapBaseAddrAndSize.base * 0x400
+		4) beam deactivate - write xrayBG2Backup + 0x800 to vram bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400
+		5)
+
+what I want it to do:
+	hdma setup stages:
+		pre) NOP
+		1) set time-is-frozen, backup bg2ScrollX, Y & bg2TilemapAddrAndSize
+		2) read vram bg1TilemapBaseAddrAndSize.base * 0x400 + 0x400 to xrayBG1Backup + 0x800, size 0x800
+		3) read vram bg1TilemapBaseAddrAndSize.base * 0x400 to xrayBG1Backup, size 0x800
+		4) do the block modifications to xrayBG1Backup and store in xrayTilemapsViewableBG1
+			DONT read vram bg2TilemapBaseAddrAndSize.base * 0x400 to xrayBG2Backup, size 0x800
+		5) set bg2ScrollX & Y, bg1ScrollX & Y, bg2TilemapAddrAndSize,
+			DONT read vram bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400 to xrayBG2Backup + 0x800, size 0x800
+			DONT restore bg2ScrollX & Y & bg2TilemapAddrAndSize
+		6) (bg2->bg1) write xrayTilemapsViewableBG1, size 0x800 to vram bg1TilemapBaseAddrAndSize.base * 0x400
+		7) (bg2->bg1) write xrayTilemapsViewableBG1 + 0x800 to vram bg1TilemapBaseAddrAndSize.base * 0x400 + 0x400
+			do some more writing of xrayIndirectHDMATable, xrayState, angle, etc
+		8) NOP
+	x-ray stages:
+		0)
+		1)
+		2)
+		3) DO NOT deactivate - write xrayBG2Backup to vram bg2TilemapBaseAddrAndSize.base * 0x400
+		4) DO NOT deactivate - write xrayBG2Backup + 0x800 to vram bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400
+		5)
+
+
 ok a breakdown of calls:
 
 90:C4B5 = handle switching HUD selection
@@ -990,7 +1037,7 @@ $91:CFBF:  prefix to copy x-ray block (based on Y)
 $91:CFBF B1 03       LDA ($03),y[$91:D304]		}	accum = mem16[0x91:D302] + Y;	//really this addr?
 }												}	goto CFC1;	// continue into the next routine. 
 
-91:CFC1 = copy x-ray block to vram (accum = tileIndex)
+91:CFC1 = copy x-ray block to xrayTilemapsViewableBG1 (accum = tileIndex)
 {
 $91:CFC1 0A          ASL A						\	uint16_t tileIndex = accum; // function argument
 $91:CFC2 0A          ASL A						|	uint16_t tileOffset = tileIndex * sizeof(tileBlock_t) // i.e. << 3 
@@ -1061,7 +1108,7 @@ $91:D10E 29 FC 00    AND #$00FC             |	*(vramReadTableEntry_t*)((uint8_t*
 $91:D111 EB          XBA                    |		.srcAddr = bg2TilemapBaseAddrAndSize.base * 0x400 + 0x400,
 $91:D112 18          CLC                    |		.DMAControl = 0x81,
 $91:D113 69 00 04    ADC #$0400             |		.DMATarget = 0x39,
-$91:D116 9D 40 03    STA $0340,x[$7E:0340]  |		.destAddr24 = (void*)xrayBG2Backup + 0x800,		//7E:5800		
+$91:D116 9D 40 03    STA $0340,x[$7E:0340]  |		.destAddr24 = (void*)xrayBG2Backup + 0x800,		//7E:5800
 $91:D119 A9 81 00    LDA #$0081             |		.size = 0x800,
 $91:D11C 9D 42 03    STA $0342,x[$7E:0342]  |	};
 $91:D11F A9 39 00    LDA #$0039             |
@@ -1140,7 +1187,7 @@ $91:D1C5 95 D5       STA $D5,x  [$7E:00D5]  |
 $91:D1C7 8A          TXA                    |
 $91:D1C8 18          CLC                    |
 $91:D1C9 69 07 00    ADC #$0007             |
-$91:D1CC 8D 30 03    STA $0330  [$7E:0330]  /
+$91:D1CC 8D 30 03    STA $0330  [$7E:0330]  /	// 0A88 = uint8_t xrayIndirectHDMATable[0xA]
 $91:D1CF A9 E4 00    LDA #$00E4             \	// $0A88..92 = E4h,$9800, E4h,$98C8, 98h,$9990, 00,00
 $91:D1D2 8D 88 0A    STA $0A88  [$7E:0A88]  /	mem8[0x0A88] = 0xE4;
 $91:D1D5 A9 00 98    LDA #$9800             \	mem16[0x0A89] = 0x9800;
@@ -1183,10 +1230,9 @@ $91:D2BC 08          PHP					}	push(flags);
 $91:D2BD DA          PHX					}	push(X);
 $91:D2BE 5A          PHY					}	push(Y);
 $91:D2BF E2 20       SEP #$20				}	flags |= 0x20;
-$91:D2C1 A9 63       LDA #$63				\	
+$91:D2C1 A9 63       LDA #$63				\	//TODO 'bg1ColorPalette'?
 $91:D2C3 8F 00 C0 7E STA $7EC000[$7E:C000]	/	mem8[0x7EC000] = 0x63;
-$91:D2C7 A9 0C       LDA #$0C				\
-$91:D2C9 8F 01 C0 7E STA $7EC001[$7E:C001]	/	mem8[0x7EC001] = 0x0C;
+$91:D2C7 A9 0C       LDA #$0C				\	//TODO 'bg2ColorPalette'?  $91:D2C9 8F 01 C0 7E STA $7EC001[$7E:C001]	/	mem8[0x7EC001] = 0x0C;
 $91:D2CD 7A          PLY					}	Y = pop();
 $91:D2CE FA          PLX					}	X = pop();
 $91:D2CF 28          PLP					}	flags = pop();
@@ -1229,9 +1275,9 @@ $88:8700 22 43 D1 91 JSL $91D143[$91:D143]  				|		bool canShowBlocks = call $91
 $88:8704 F0 12       BEQ $12    [$8718]     				|		if (canShowBlocks) {
 $88:8706 A2 00 40    LDX #$4000             				|			X = 0x4000;
 $88:8709 A9 27 00    LDA #$0027             				|       
-$88:870C 85 74       STA $74    [$7E:0074]  				|			mem16[0x74] = 0x27;
-$88:870E A9 47 00    LDA #$0047             				|   		mem16[0x75] = 0x47;	// Colour math subscreen backdrop colour = (7, 7, 7) (grey)    
-$88:8711 85 75       STA $75    [$7E:0075]  				|			mem16[0x76] = 0x87;
+$88:870C 85 74       STA $74    [$7E:0074]  				|			subscreenBackdropColor1 = 0x27;
+$88:870E A9 47 00    LDA #$0047             				|   		subscreenBackdropColor2 = 0x47;	// Colour math subscreen backdrop colour = (7, 7, 7) (grey)    
+$88:8711 85 75       STA $75    [$7E:0075]  				|			subscreenBackdropColor3 = 0x87;
 $88:8713 A9 87 00    LDA #$0087             				|		}
 $88:8716 85 76       STA $76    [$7E:0076]  				/	}
 $88:8718 8A          TXA                    				}	

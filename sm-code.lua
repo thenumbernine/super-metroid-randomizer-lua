@@ -1570,7 +1570,7 @@ function SMCode:codePrint()
 --		print(self:codeDisasm(asmfunc.addr, asmfunc.code, ffi.sizeof(asmfunc.code), {[0]=asmfunc.flagin}))
 		print('   srcs:')
 		for _,src in ipairs(asmfunc.srcs) do
-			print('    '..('$%02X:%04X'):format(frompc(src.addr))..' '..src.type)
+			print('    '..(src.addr and (('$%02X:%04X'):format(frompc(src.addr))..' ') or '')..src.type)
 		end
 	end
 end

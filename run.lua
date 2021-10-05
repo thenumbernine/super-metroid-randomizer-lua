@@ -215,6 +215,11 @@ timer('everything', function()
 		-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		sm:buildMemoryMap():print'memorymap.txt'
 	end)
+	
+
+	-- write out original stuff
+	sm:print()
+
 
 	if config.writeOutDisasm then
 		timer('write out disasm', function()
@@ -533,17 +538,14 @@ timer('everything', function()
 				require 'item-scavenger'
 			end)
 		end
-
-		if config.mapRecompress then
-			timer('write map changes to ROM', function()
-				-- write back changes
-				sm:mapWrite()
-			end)
-		end
 	end
-
-	-- write out altered stuff
-	sm:print()
+	
+	if config.mapRecompress then
+		timer('write map changes to ROM', function()
+			-- write back changes
+			sm:mapWrite()
+		end)
+	end
 	
 	-- TODO split this into writing the info map, the mask map, and the textured map
 	-- I don't need a new textured map (unless I'm changin textures)
@@ -554,6 +556,9 @@ timer('everything', function()
 			sm:mapSaveImageInformative'map-random'
 		end)
 	end
+	
+	-- write out altered stuff
+	sm:print()
 	
 	timer('write modified ROM memory map', function()
 		sm:buildMemoryMap():print()

@@ -35,12 +35,13 @@ but this would mean removing lots of ffi.sizeof() code and replacing it with .v 
 --]]
 function Blob:init(args)
 	self.sm = assert(args.sm)
-	self.addr = assert(args.addr)
+	self.addr = args.addr
 	self.type = args.type	-- or class type
 	local sizetype = ffi.sizeof(self.type)
 	
 	self.compressed = args.compressed
 	if self.compressed then
+		assert(args.addr, "I think I still need addr to always exist for compressed blobs")
 		assert(not args.count, "can't be compressed and specify count")
 		
 --print('data decompressing from address '..('0x%06x'):format(self.addr))
@@ -59,7 +60,9 @@ function Blob:init(args)
 	else
 		self.count = args.count
 		self.v = ffi.new(self.type..'[?]', self.count)
-		ffi.copy(self.v, self.sm.rom + self.addr, self.count * sizetype)
+		if self.addr then
+			ffi.copy(self.v, self.sm.rom + self.addr, self.count * sizetype)
+		end
 	end
 end
 
@@ -74,6 +77,7 @@ function Blob:iend()
 end
 
 function Blob:ptr()
+	assert(self.addr)
 	return ffi.cast(self.type..'*', self.sm.rom + self.addr)
 end
 
@@ -83,6 +87,7 @@ function Blob:obj()
 end
 
 function Blob:addMem(mem, name, ...)
+	if not self.addr then return end -- made addr optional, so ..
 	name = self.type..(name and (' '..name) or '')
 	if self.compressed then
 		mem:add(self.addr, self.compressedSize, name, ...)
@@ -113,9 +118,14 @@ Blob.CompressInfo = CompressInfo
 -- TODO rename this more to 'alloc' and 'writeToROM'
 function Blob:recompress(writeRange, compressInfo)
 	assert(self.compressed)
-
 	local recompressed = lz.compress(self.v)
-	compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + self.compressedSize
+
+	--assert(self.addr)
+	-- if we had an .addr then we should also have a .compressedSize
+	if self.addr then
+		compressInfo.totalOriginalCompressedSize = compressInfo.totalOriginalCompressedSize + self.compressedSize
+	end	
+	
 	self.compressedSize = ffi.sizeof(recompressed)
 	compressInfo.totalRecompressedSize = compressInfo.totalRecompressedSize + self.compressedSize
 	local fromaddr, toaddr = writeRange:get(self.compressedSize)
@@ -125,6 +135,7 @@ end
 
 -- copy .v[] data back to rom[]
 function Blob:writeToROM()
+	assert(self.addr)
 	assert(not self.compressed)
 	ffi.copy(self.sm.rom + self.addr, self.v, self:sizeof())
 end

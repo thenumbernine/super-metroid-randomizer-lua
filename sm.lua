@@ -12,6 +12,7 @@ local MemoryMap = require 'memorymap'
 local config = require 'config'
 local strtohex = require 'util'.strtohex
 local Blob = require 'blob'
+local topc = require 'pc'.to
 local frompc = require 'pc'.from
 
 local SM = class(
@@ -35,7 +36,7 @@ function SM:init(rom, romlen)
 	self.md5hash = strtohex(require 'md5'(rom, romlen))
 	print('md5: '..self.md5hash)
 
-	self.nameBlob = Blob{sm=self, addr=frompc(0x80, 0xffc0), count=0x15}
+	self.nameBlob = Blob{sm=self, addr=topc(0x80, 0xffc0), count=0x15}
 	print(ffi.string(self.nameBlob.v, self.nameBlob:sizeof()))
 
 	self:codeInit()

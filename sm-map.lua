@@ -738,9 +738,12 @@ function SMMap:mapAddRoom(addr)
 end
 
 -- used for adding new rooms
-function SMMap:mapNewRoom()
-	local room = Room{sm=self}	-- no address, always new
+function SMMap:mapNewRoom(args)
+	args = table(args, {sm=self}):setmetatable(nil)
+	-- don't need an address, always new
+	local room = Room(args)
 	self.rooms:insert(room)
+	return room
 end
 
 function SMMap:mapRemoveRoom(m)
@@ -877,21 +880,23 @@ function SMMap:mapAddEnemySpawnSet(addr)
 	end)
 	if enemySpawnSet then return enemySpawnSet end
 
-	local startaddr = addr
 	local enemySpawns = table()
-	local enemiesToKill 
-	while true do
-		local ptr = ffi.cast('enemySpawn_t*', rom + addr)
-		if ptr.enemyPageOffset == 0xffff then
-			-- include term and enemies-to-kill
-			addr = addr + 2
-			break
+	local enemiesToKill = 0
+	local startaddr = addr
+	if addr then
+		while true do
+			local ptr = ffi.cast('enemySpawn_t*', rom + addr)
+			if ptr.enemyPageOffset == 0xffff then
+				-- include term and enemies-to-kill
+				addr = addr + 2
+				break
+			end
+			enemySpawns:insert(ffi.new('enemySpawn_t', ptr[0]))
+			addr = addr + ffi.sizeof'enemySpawn_t'
 		end
-		enemySpawns:insert(ffi.new('enemySpawn_t', ptr[0]))
-		addr = addr + ffi.sizeof'enemySpawn_t'
+		enemiesToKill = rom[addr]
+		addr = addr + 1
 	end
-	enemiesToKill = rom[addr]
-	addr = addr + 1
 
 	local enemySpawnSet = {
 		addr = startaddr,
@@ -910,18 +915,21 @@ function SMMap:mapAddEnemyGFXSet(addr)
 	end)
 	if enemyGFXSet then return enemyGFXSet end
 
-	local startaddr = addr
 	local enemyGFXs = table()
-
-	-- NOTICE the name is padded at the beginning with terms
-	-- and it is 8 bytes long
-	local name = range(0,7):map(function(i) return string.char(rom[startaddr-8+i]) end):concat()
-
-	while true do
-		if ffi.cast('uint16_t*', rom+addr)[0] == 0xffff then break end
-		local ptr = ffi.cast('enemyGFX_t*', rom+addr)
-		enemyGFXs:insert(ffi.new('enemyGFX_t', ptr[0]))
-		addr = addr + ffi.sizeof'enemyGFX_t'
+	local startaddr = addr
+	local name
+	if addr then
+		-- NOTICE the name is padded at the beginning with terms
+		-- and it is 8 bytes long
+		name = range(0,7):map(function(i) return string.char(rom[startaddr-8+i]) end):concat()
+		while true do
+			if ffi.cast('uint16_t*', rom+addr)[0] == 0xffff then break end
+			local ptr = ffi.cast('enemyGFX_t*', rom+addr)
+			enemyGFXs:insert(ffi.new('enemyGFX_t', ptr[0]))
+			addr = addr + ffi.sizeof'enemyGFX_t'
+		end
+	else
+		name = ('\0'):rep(8)
 	end
 
 	local enemyGFXSet = {
@@ -965,44 +973,46 @@ local FX1Set = class()
 function FX1Set:init(args)
 	local sm = args.sm
 	local rom = sm.rom
-	local addr = assert(args.addr)
+	local addr = args.addr
 	
 	self.addr = addr
 	self.fx1s = table(args.fx1s)
 	self.roomStates = table()
 
-	-- some rooms use the same fx1 ptr
-	-- and from there they are read in contiguous blocks until a term is encountered
-	-- so I should make these fx1sets (like plmsets)
-	-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
-	-- then make one set and just put the subset's at the end
-	-- (unless the order matters...)
-	local startaddr = addr
-	local retry
-	while true do
-		local cmd = ffi.cast('uint16_t*', rom+addr)[0]
-		
-		-- null sets are represented as an immediate ffff
-		-- whereas sets of more than 1 value use 0000 as a term ...
-		-- They can also be used to terminate a set of fx1_t
-		if cmd == 0xffff then
-			if #self.fx1s ~= 0 then
-				print('WARNING - found a fx1set with a terminator that is not its only entry')
+	if addr then
+		-- some rooms use the same fx1 ptr
+		-- and from there they are read in contiguous blocks until a term is encountered
+		-- so I should make these fx1sets (like plmsets)
+		-- unless -- another optimization -- is, if one room's fx1's (or plms) are a subset of another,
+		-- then make one set and just put the subset's at the end
+		-- (unless the order matters...)
+		local startaddr = addr
+		local retry
+		while true do
+			local cmd = ffi.cast('uint16_t*', rom+addr)[0]
+			
+			-- null sets are represented as an immediate ffff
+			-- whereas sets of more than 1 value use 0000 as a term ...
+			-- They can also be used to terminate a set of fx1_t
+			if cmd == 0xffff then
+				if #self.fx1s ~= 0 then
+					print('WARNING - found a fx1set with a terminator that is not its only entry')
+				end
+				break
 			end
-			break
-		end
-		
-		local fx1 = MapFX1{sm=sm, addr=addr}
-		
-		self.fx1s:insert(fx1)
-		
-		addr = addr + ffi.sizeof'fx1_t'
+			
+			local fx1 = MapFX1{sm=sm, addr=addr}
+			
+			self.fx1s:insert(fx1)
+			
+			addr = addr + ffi.sizeof'fx1_t'
 
-		-- if doorPageOffset == 0 then this is a non-specific fx1
-		-- which means it is the last, general-case fx1 for the room
-		-- and there only can be one
-		-- so break
-		if fx1:obj().doorPageOffset == 0 then break end
+			-- if doorPageOffset == 0 then this is a non-specific fx1
+			-- which means it is the last, general-case fx1 for the room
+			-- and there only can be one
+			-- so break
+			if fx1:obj().doorPageOffset == 0 then break end
+		end
 	end
 end
 
@@ -2882,7 +2892,9 @@ function SMMap:mapPrintRoomBlocks()
 		end
 		local w,h = roomBlockData.width, roomBlockData.height
 		print(' size: '..w..','..h)
-		print(' addr: '..('%06x'):format(roomBlockData.addr))
+		if roomBlockData.addr then
+			print(' addr: '..('%06x'):format(roomBlockData.addr))
+		end
 
 		local function printblock(data, size, width, col)
 			for i=0,size-1 do
@@ -2892,7 +2904,9 @@ function SMMap:mapPrintRoomBlocks()
 			end
 			print()
 		end
-		print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
+		if roomBlockData.tileIndexesUsed then
+			print(' tileIndexes used: '..table.keys(roomBlockData.tileIndexesUsed):sort():mapi(function(s) return ('$%03x'):format(s) end):concat', ')
+		end
 
 		print' offset to ch 3:'
 		printblock(roomBlockData.v, 2, 2, 1)
@@ -3235,7 +3249,13 @@ function SMMap:mapPrint()
 	print"all enemyGFX_t's:"
 	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
 	for _,enemyGFXSet in ipairs(self.enemyGFXSets) do
-		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '..tolua(enemyGFXSet.name)
+		print(' '..('$%06x'):format(enemyGFXSet.addr)..': '
+			..tolua(enemyGFXSet.name)
+			:gsub('.', function(c) 
+				local b = c:byte()
+				if b > 127 then return '\\'..b end 
+				return c 
+			end)
 			..' rooms: '..enemyGFXSet.roomStates:map(function(rs)
 				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
 			end):concat' '
@@ -3279,10 +3299,10 @@ function SMMap:mapPrint()
 	print()
 	print("all room_t's:")
 	for _,m in ipairs(self.rooms) do
-		print(' room_t '..('$%06x'):format(m.addr)..' '..m:ptr()[0])
+		print(' room_t '..(m.addr and (('$%06x'):format(m.addr)..' ') or '')..m:obj())
 		for _,rs in ipairs(m.roomStates) do
-			print('  roomstate_t: '..('$%06x'):format(rs.addr)..' '..rs:obj()) 
-			print('  '..rs.roomSelect.type..': '..('$%06x'):format(rs.roomSelect.addr)..' '..tostring(rs.roomSelect:obj()))
+			print('  roomstate_t: '..(rs.addr and (('$%06x'):format(rs.addr)..' ') or '')..rs:obj()) 
+			print('  '..rs.roomSelect.type..': '..(rs.roomSelect.addr and (('$%06x'):format(rs.roomSelect.addr)..' ') or '')..tostring(rs.roomSelect:obj()))
 			-- [[
 			if rs.plmset then
 				for _,plm in ipairs(rs.plmset.plms) do
@@ -3294,16 +3314,24 @@ function SMMap:mapPrint()
 				end
 			end
 			--]]
-			for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do	
-				print('   enemySpawn_t: '
-					..((self.enemyForPageOffset[enemySpawn.enemyPageOffset] or {}).name or '')
-					..': '..enemySpawn)
+			if rs.enemySpawnSet then	-- TODO is this required? 
+				for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do	
+					print('   enemySpawn_t: '
+						..((self.enemyForPageOffset[enemySpawn.enemyPageOffset] or {}).name or '')
+						..': '..enemySpawn)
+				end
 			end
-			print('   enemyGFXSet: '..tolua(rs.enemyGFXSet.name))	--:match'\0*(.*)')
-			for _,enemyGFX in ipairs(rs.enemyGFXSet.enemyGFXs) do
-				print('    enemyGFX_t: '
-					..tolua((self.enemyForPageOffset[enemyGFX.enemyPageOffset] or {}).name or '')
-					..': '..enemyGFX)
+			if rs.enemyGFXSet then	-- TODO required?
+				print('   enemyGFXSet: '..tolua(rs.enemyGFXSet.name):gsub('.', function(c) 
+					local b = c:byte()
+					if b > 127 then return '\\'..b end 
+					return c 
+				end))
+				for _,enemyGFX in ipairs(rs.enemyGFXSet.enemyGFXs) do
+					print('    enemyGFX_t: '
+						..tolua((self.enemyForPageOffset[enemyGFX.enemyPageOffset] or {}).name or '')
+						..': '..enemyGFX)
+				end
 			end
 			if rs.fx1set then
 				for _,fx1 in ipairs(rs.fx1set.fx1s) do
@@ -3669,7 +3697,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 	for i=#self.fx1sets,1,-1 do
 		local fx1set = self.fx1sets[i]
 		if #fx1set.roomStates == 0 then
-			print('!!! removing fx1set that is never referenced !!! '..('%06x'):format(fx1set.addr))
+			print('!!! removing fx1set that is never referenced !!! '..(fx1set.addr and ('%06x'):format(fx1set.addr) or '#'..i))
 			self.fx1sets:remove(i)
 		end
 	end
@@ -3691,15 +3719,15 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 					end
 				end
 				if not differ then
-					local fiaddr = ('$%06x'):format(fi.addr)
-					local fjaddr = ('$%06x'):format(fj.addr)
+					local fiaddr = fi.addr and ('$%06x'):format(fi.addr) or '#'..i
+					local fjaddr = fj.addr and ('$%06x'):format(fj.addr) or '#'..j
 					print('fx1sets '..fiaddr..' and '..fjaddr..' are matching -- removing '..fjaddr..' (size is '..#fi.fx1s..')')
 					local bank, ofs = frompc(fi.addr)
 					assert(bank == self.fx1Bank)
-					-- TODO no need, since we are about to move and rewrite these anyways?
 					for _,rs in ipairs(table(fj.roomStates)) do
+						-- TODO update here, or upon writing of roomstate?
 						rs:obj().fx1PageOffset = ofs
-						rs:ptr().fx1PageOffset = ofs
+						--rs:ptr().fx1PageOffset = ofs
 						rs:setFX1Set(fi)
 					end
 					self.fx1sets:remove(j)
@@ -3733,7 +3761,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 		-- TODO don't write now.  write in mapWriteRooms() instead
 		for _,rs in ipairs(fx1set.roomStates) do
 			rs:obj().fx1PageOffset = ofs
-			rs:ptr().fx1PageOffset = ofs
+			--rs:ptr().fx1PageOffset = ofs
 		end
 	end
 
@@ -3756,7 +3784,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			if bg.door then
 				local addr = select(2, frompc(bg.door.addr))
 				bg:obj().doorPageOffset = addr
-				bg:ptr().doorPageOffset = addr
+				--bg:ptr().doorPageOffset = addr
 			else
 				-- and if it's not?  then we shouldn't be using bg_e_t...
 			end
@@ -3935,7 +3963,7 @@ function SMMap:mapWritePLMSets(roomBankWriteRanges)
 					-- TODO no need, since we are about to move and rewrite these anyways?
 					for _,rs in ipairs(table(pj.roomStates)) do
 						rs:obj().plmPageOffset = ofs
-						rs:ptr().plmPageOffset = ofs
+						--rs:ptr().plmPageOffset = ofs
 						rs:setPLMSet(pi)
 					end
 					self.plmsets:remove(j)
@@ -3985,7 +4013,7 @@ function SMMap:mapWritePLMSets(roomBankWriteRanges)
 		-- TODO don't write now.  write in mapWriteRooms() instead
 		for _,rs in ipairs(plmset.roomStates) do
 			rs:obj().plmPageOffset = ofs
-			rs:ptr().plmPageOffset = ofs
+			--rs:ptr().plmPageOffset = ofs
 		end
 	end
 	--]]
@@ -4042,7 +4070,7 @@ function SMMap:mapWriteEnemySpawnSets()
 	local rom = self.rom
 
 	-- preserve order
-	self.enemySpawnSets:sort(function(a,b) return a.addr < b.addr end)
+	self.enemySpawnSets:sort(function(a,b) return (a.addr or 0) < (b.addr or 0) end)
 
 	-- remove any enemy spawn sets that no one points to
 	for i=#self.enemySpawnSets,1,-1 do
@@ -4072,15 +4100,17 @@ function SMMap:mapWriteEnemySpawnSets()
 					end
 				end
 				if not differ then
-					local piaddr = ('$%06x'):format(pi.addr)
-					local pjaddr = ('$%06x'):format(pj.addr)
+					--local piaddr = pi.addr and ('$%06x'):format(pi.addr) or '#'..i
+					--local pjaddr = pj.addr and ('$%06x'):format(pj.addr) or '#'..j
 					--print('enemySpawns '..piaddr..' and '..pjaddr..' are matching -- removing '..pjaddr)
 					--print('updating roomState '..('%06x'):format(rs.addr))
-					local bank, ofs = frompc(pi.addr)
-					assert(bank == self.enemySpawnBank)
+					if pi.addr then
+						local bank, ofs = frompc(pi.addr)
+						assert(bank == self.enemySpawnBank)
+					end
 					for _,rs in ipairs(table(pj.roomStates)) do
-						rs:obj().enemySpawnPageOffset = ofs
-						rs:ptr().enemySpawnPageOffset = ofs
+						--rs:obj().enemySpawnPageOffset = ofs
+						--rs:ptr().enemySpawnPageOffset = ofs
 						rs:setEnemySpawnSet(pi)
 					end
 					self.enemySpawnSets:remove(j)
@@ -4119,8 +4149,9 @@ function SMMap:mapWriteEnemySpawnSets()
 		for _,rs in ipairs(enemySpawnSet.roomStates) do
 			if ofs ~= rs:obj().enemySpawnPageOffset then
 				--print('updating roomstate enemySpawn addr from '..('%04x'):format(rs:ptr().enemySpawnPageOffset)..' to '..('%04x'):format(ofs))
+				-- TODO update here or at roomstate write?
 				rs:obj().enemySpawnPageOffset = ofs
-				rs:ptr().enemySpawnPageOffset = ofs
+				--rs:ptr().enemySpawnPageOffset = ofs
 			end
 		end
 	end
@@ -4132,7 +4163,7 @@ function SMMap:mapWriteEnemyGFXSets()
 	local rom = self.rom
 	
 	-- preserve order
-	self.enemyGFXSets:sort(function(a,b) return a.addr < b.addr end)
+	self.enemyGFXSets:sort(function(a,b) return (a.addr or 0) < (b.addr or 0) end)
 
 	-- remove any enemy gfx sets that no one points to
 	for i=#self.enemyGFXSets,1,-1 do
@@ -4184,7 +4215,7 @@ function SMMap:mapWriteEnemyGFXSets()
 			if ofs ~= rs:obj().enemyGFXPageOffset then
 				--print('updating roomstate enemyGFX addr from '..('%04x'):format(rs:obj().enemyGFXPageOffset)..' to '..('%04x'):format(ofs))
 				rs:obj().enemyGFXPageOffset = ofs
-				rs:ptr().enemyGFXPageOffset = ofs
+				--rs:ptr().enemyGFXPageOffset = ofs
 			end
 		end
 	end
@@ -4540,6 +4571,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 		assert(endaddr == ptr - rom)
 	end
 
+	-- now that we have repositioned our rooms,
 	-- update door.destRoomPageOffset
 	for _,door in ipairs(self.doors) do
 		if door.destRoom then
@@ -4620,14 +4652,15 @@ function SMMap:mapWriteRoomBlocks(writeRanges)
 			roomBlockData.count = newcount
 			-- and now the recompression % will also include the clipped data, so it'll not exactly be strictly recompression, but also trimmed block data
 		end
-
+print('encoding roomBlockData for rooms '..roomBlockData.rooms:mapi(function(room) return room:getIdentStr() end):concat', ')
 		roomBlockData:recompress(writeRanges, compressInfo)
 
 		-- update any roomstate_t's that point to this data
 		for _,rs in ipairs(roomBlockData.roomStates) do
 			rs:obj().roomBlockAddr24:frompc(roomBlockData.addr)
-			rs:ptr().roomBlockAddr24.bank = rs:obj().roomBlockAddr24.bank
-			rs:ptr().roomBlockAddr24.ofs = rs:obj().roomBlockAddr24.ofs
+			-- rooms havne't been written yet 
+			--rs:ptr().roomBlockAddr24.bank = rs:obj().roomBlockAddr24.bank
+			--rs:ptr().roomBlockAddr24.ofs = rs:obj().roomBlockAddr24.ofs
 		end
 
 	--[=[ verify that compression works by decompressing and re-compressing

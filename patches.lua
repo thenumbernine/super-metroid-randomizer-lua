@@ -79,17 +79,48 @@ putting this in x-ray notes to go easy on vim syntax highlighting
 function Patches:beefUpXRay()
 	local function write(...) return self:write(...) end
 
--- [[ experiment: try to write xray blocks to the foreground permanently
+-- [[ makes it not dim the screen for x-ray (also can't see the beam)
+	-- x-ray pre-instruction setup
+	write(0x91, 0xd27f, 0x6b)	-- rtl
+	-- x-ray - main
+	write(0x88, 0x86f2, 0x80, 0x28)	-- bra $871c
+	-- x-ray setup stage 8
+	write(0x91, 0xd2bc, 0x6b)	-- rtl
+--]]
+
+-- [=[ try to write xray blocks to the foreground permanently
 	
 	-- don't redirect bg2TilemapBaseAddrAndSize to the temp during the x-ray event
 	--write(0x91, 0xd101, table{0xea}:rep(8):unpack())
-	
-	-- during setup stage 6 & 7 during vram write, write over bg1 instead of bg2:
+
+	-- during hdma setup stage 6 & 7 during vram write, write over bg1 instead of bg2:
 	-- glitches if you use it any further than the 2nd-from-left of the top left corner of the room
 	write(0x91, 0xd18f, 0x58)
 	write(0x91, 0xd1bc, 0x58)
+
+
+--[[ nevermind, looks like i do need to copy bg2 as well in order for changes to be permanent
+	-- during hdma setup stage 4, don't copy vram bg2 to xrayBG2Backup
+	-- if you disable here then also disable in xray stage 3 and 4 deactivation 
+	write(0x91, 0xccbd, 0x80, 0x30) 	-- bra $ccef
 	
-	-- maybe because bg2TilemapBaseAddrAndSize was pushed & replaced with the fixed-width 64x32 temp buffer, and BG1 was untouched?
+	-- during hdma setup stage 5, don't copy vram bg2 to xrayBG2Backup
+	--write(0x91, 0xd109, 0x80, 0x34)	-- bra $d13f
+	-- also don't backup bg1 and bg2 scroll stuff
+	-- so just skip the whole function	
+	write(0x91, 0xd0d3,  0x6b)	-- rtl
+
+	-- during xray stage 3 deactivate, don't copy xrayBG2Backup to vram bg2
+	--write(0x88, 0x8937, 0x80, 0x7c)	-- bra $89b5 - jump immediately, before writing to 0A88 
+	write(0x88, 0x894f, 0x80, 0x89b5-0x894f-2)	-- bra $89b5 - jump after writing to 0A88, but before writing to layer2 blending, 
+	--write(0x88, 0x898e, 0x80, 0x89b5-0x898e-2)		-- bra $89b5 - skip only the vram write 
+
+	-- during xray stage 4 deactivate, don't copy xrayBG2Backup to vram bg2 + 0x800
+	--write(0x88, 0x89bd, 0x80, 0x44)		-- bra $8a03 - skip everything including another layer 2 blending config write
+	write(0x88, 0x89d8, 0x80, 0x8a03-0x89d8-2) 	-- bra $8a03 
+--]]
+
+	--[[ maybe because bg2TilemapBaseAddrAndSize was pushed & replaced with the fixed-width 64x32 temp buffer, and BG1 was untouched?
 	-- so what if we push and pop the bg1 data, and use it?
 	-- x-ray stage 1
 	write(0x91, 0xcb02, 0xb1)	-- change backup of bg2Scroll to bg1Scroll
@@ -97,15 +128,16 @@ function Patches:beefUpXRay()
 	write(0x91, 0xcb0c, 0xb3)
 	write(0x91, 0xcb11, 0xb4)
 	write(0x91, 0xd106, 0x58)	-- backup bg1TilemapBaseAddrAndSize instead of bg2
-	
-	--[=[
+	--]]
+
+	--[[
 	-- x-ray stage 2
 	write(0x91, 0xcb23, 0x59)	-- change vram read source from bg1TilemapBaseAndAddr to bg2 ... should I, or do I need this for getting the correct tile info for xray?
 	-- x-ray stage 3
 	write(0x91, 0xcb5e, 0x59)	-- same
-	--]=]
+	--]]
 	do return end
---]]
+--]=]
 
 --[[ experiment: make x-ray always on
 	-- handle x-ray scope - x-ray state = 0 

@@ -14,70 +14,97 @@ function RoomBlocks:init(args)
 	assert(args.compressed == nil)
 	assert(args.type == nil)
 	
-	RoomBlocks.super.init(self, args)
-	
-	local dataSize = ffi.sizeof(self.v)
-	local room = args.room
-
-	-- list of unique rooms that have roomstates that use this roomBlockData
-	-- don't add/remove to this list, instead use :refreshRooms()
-	self.rooms = table()
-	
-	self.roomStates = table()
-
-	local ofs = 0
-	
-	self.offsetToCh3 = ffi.cast('uint16_t*', self.v)[0]
-
-	-- offsetToCh3 is the offset to channel 3 of the blocks
-	-- and is usually = 2*w*h, sometimes >2*w*h
-	--  in that case ... what's in the padding?
-
+	local room = assert(args.room)
 	local w = room:obj().width * self.blocksPerRoom
 	local h = room:obj().height * self.blocksPerRoom
 	
-	assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
-
 	-- this is just 16 * room's (width, height)
 	self.width = w
 	self.height = h
 
---print('offset to ch3', self.offsetToCh3)
---print('numblocks', ffi.sizeof(self.v) - 2)
---print('decompressed / numblocks', (ffi.sizeof(self.v) - 2) / (w * h))
---print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
---print('decompressed / offset to ch 3', (ffi.sizeof(self.v) - 2) / self.offsetToCh3)
-	-- decompressed / numblocks is only ever 3 or 5
-	-- what determines which?
-	if (ffi.sizeof(self.v) - 2) / (w * h) < 3 then
-		print("WARNING - room has not enough blocks to fill the room")
-		return
+	-- list of unique rooms that have roomstates that use this roomBlockData
+	-- don't add/remove to this list, instead use :refreshRooms()
+	self.rooms = table()
+	self.roomStates = table()
+	
+
+	-- this is kind of a mess ...
+	-- if we're not reading from the rom then don't do the compressed blob init
+	if not args.addr then
+		-- hack - use the non-compressed no-addr ctor of Blob 
+		args = table(args):setmetatable(nil)
+		args.compressed = false
+		args.count = self.width * self.height * 3 + 2
 	end
 
-	-- TODO what happens when self.offsetToCh3 is > 2*w*h
-	ofs = ofs + 2 + self.offsetToCh3 / 2 * 3
-	-- channel 3 ... referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
-	if ofs > dataSize then
-		error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
-	end
-	-- if there's still more to read...
-	if ofs < dataSize then
-		if dataSize - ofs < 2 * w * h then
-			print("WARNING - didn't get enough tile data from decompression for layer 2 data. expected room data size "..ofs.." <= data we got "..dataSize)
-		else
-			self.hasLayer2Blocks = true
+	RoomBlocks.super.init(self, args)
+
+	if not args.addr then
+		-- now that we're done doing the non-compressed no-addr ctor, clear the compressed=false flag and finish
+		self.compressed = nil
+		ffi.fill(self.v, 0, self.count)
+		
+		self.offsetToCh3 = 2 * w * h 
+		ffi.cast('uint16_t*', self.v)[0] = self.offsetToCh3
+	else
+
+		local dataSize = ffi.sizeof(self.v)
+
+		local ofs = 0
+		
+		self.offsetToCh3 = ffi.cast('uint16_t*', self.v)[0]
+
+		-- offsetToCh3 is the offset to channel 3 of the blocks
+		-- and is usually = 2*w*h, sometimes >2*w*h
+		--  in that case ... what's in the padding?
+
+		
+		assert(self.offsetToCh3 >= 2*w*h, "found an offset to bts/channel3 that doesn't pass the ch1 and 2 room blocks")
+
+
+		--print('offset to ch3', self.offsetToCh3)
+		--print('numblocks', ffi.sizeof(self.v) - 2)
+		--print('decompressed / numblocks', (ffi.sizeof(self.v) - 2) / (w * h))
+		--print('offset to ch 3 / numblocks', self.offsetToCh3 / (w * h))
+		--print('decompressed / offset to ch 3', (ffi.sizeof(self.v) - 2) / self.offsetToCh3)
+		-- decompressed / numblocks is only ever 3 or 5
+		-- what determines which?
+		if (ffi.sizeof(self.v) - 2) / (w * h) < 3 then
+			print("WARNING - room has not enough blocks to fill the room")
+			return
+		end
+
+		-- TODO what happens when self.offsetToCh3 is > 2*w*h
+		ofs = ofs + 2 + self.offsetToCh3 / 2 * 3
+		-- channel 3 ... referred to as 'bts' = 'behind the scenes' in some docs.  I'm just going to interleave everything.
+		if ofs > dataSize then
+			error("didn't get enough tile data from decompression. expected room data size "..ofs.." <= data we got "..dataSize)
+		end
+		-- if there's still more to read...
+		if ofs < dataSize then
+			if dataSize - ofs < 2 * w * h then
+				print("WARNING - didn't get enough tile data from decompression for layer 2 data. expected room data size "..ofs.." <= data we got "..dataSize)
+			else
+				self.hasLayer2Blocks = true
+			end
 		end
 	end
+	
+	self:refreshDoors()
+end
 
+function RoomBlocks:refreshDoors()
+	self.doors = table()	-- x,y,w,h
+	self.blocksForExit = table()
 
+	local w = self.width
+	local h = self.height
 	-- keep track of doors
 	
 	-- ok, this correlates with the door plms, so it is useful
 	--  but it isn't general to all exits
-	self.doors = table()	-- x,y,w,h
 	-- so that's where this comes in.  it is general to all exits.
 	-- 	key is the exit, value is a list of all positions of each exit xx9xyy block
-	self.blocksForExit = table()
 	local blocks12 = self:getBlocks12()
 	local blocks3 = self:getBlocks3()
 	for j=0,h-1 do	-- ids of horizontal regions (up/down doors) are 2 blocks from the 4xfffefd pattern
