@@ -70,7 +70,7 @@ function MemoryMap:print(filename)
 		
 		local room = range.room
 		if room then
-			f:write(('%02x/%02x'):format(room:obj().region, room:obj().index))
+			f:write(room:getIdentStr())
 		else
 			f:write('     ')
 		end

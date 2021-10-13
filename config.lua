@@ -26,6 +26,12 @@ return {
 	-- whether to chop out rooms that overlap each other in the original layout
 	-- doesn't do much good for custom roms, unless you take the time to enter the omitted regions
 	mapOmitOverlappingRoomsInOriginal = true,
+
+	-- works for orig, can run away on modified roms
+	disasmHandleBranches = false,
+	
+	-- once again, modified roms can have trouble disassembling, so sometimes disable the whole thing
+	disasmDisable = true,
 	
 --[==[
 	-- whether to write out disasm
@@ -97,7 +103,6 @@ return {
 	-- randomizing sometimes has trouble with this
 	removeGreyDoorInOldMotherBrainRoom = true,
 
---]==]
 
 	-- toss out everything and rebuild a full new world
 	randomizeWorld = true,
@@ -106,6 +111,7 @@ return {
 	-- this looks messy for the original data, since it doesn't know what pieces of each rooms to toss out,
 	-- but it's essential for the randomizeWorld
 	rebuildRegionWorldMap = true,
+--]==]
 
 	---------------------------------------------------------
 	---- properties for each of the randomizations above ----

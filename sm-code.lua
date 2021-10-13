@@ -60,7 +60,7 @@ local bit = require 'bit'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local class = require 'ext.class'
-
+local config = require 'config'
 local topc = require 'pc'.to
 local frompc = require 'pc'.from
 
@@ -1247,7 +1247,11 @@ print(debugtab..linestr)
 				.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
 				.." that is before our function starting address")
 		end
-		inlineProcessNext(branchAddr)
+		if config.disasmHandleBranches then
+			inlineProcessNext(branchAddr)
+		else
+			inlineProcessNext(nextAddr)
+		end
 
 	-- 1-byte relative
 	elseif instrcode == 0x10	-- BPL (branch on plus)
@@ -1271,7 +1275,9 @@ print(debugtab..linestr)
 				.." that is before our function starting address")
 		end
 		inlineProcessNext(nextAddr)
-		inlineProcessNext(branchAddr)
+		if config.disasmHandleBranches then
+			inlineProcessNext(branchAddr)
+		end
 	
 	elseif instrcode == 0x82 then 	 	-- BRL = branch long
 		local branchBase = addr + 3
@@ -1284,25 +1290,39 @@ print(debugtab..linestr)
 				.." that branches by "..branchOffset.." to "..('%02X:%04X'):format(frompc(branchAddr))
 				.." that is before our function starting address")	
 		end
-		inlineProcessNext(branchAddr)
+		if config.disasmHandleBranches then
+			inlineProcessNext(branchAddr)
+		else
+			inlineProcessNext(nextAddr)
+		end
 	
 	elseif instrcode == 0x4C then	-- JMP $xxxx
-		local bank = frompc(addr)
-		local jumpAddr = topc(bank, ffi.cast('uint16_t*', ptr + 1)[0])
-		inlineProcessNext(jumpAddr)
-	
+		if config.disasmHandleBranches then
+			local bank = frompc(addr)
+			local jumpAddr = topc(bank, ffi.cast('uint16_t*', ptr + 1)[0])
+			inlineProcessNext(jumpAddr)
+		else
+			inlineProcessNext(nextAddr)
+		end
 	elseif instrcode == 0x5C then	-- JMP $xx:xxxx
-		local jumpAddr = ffi.cast('addr24_t*', ptr + 1)[0]:topc()
-		inlineProcessNext(jumpAddr)
-	
+		if config.disasmHandleBranches then
+			local jumpAddr = ffi.cast('addr24_t*', ptr + 1)[0]:topc()
+			inlineProcessNext(jumpAddr)
+		else
+			inlineProcessNext(nextAddr)
+		end
 	-- hmm, these jumps are conditional on the state of RAM ... what to do about them?
 	elseif instrcode == 0x6C	-- JMP ($xxxx)
 	or instrcode == 0xDC		-- JMP [$xxxx]
 	or instrcode == 0x7C		-- JMP ($xxxx,X)
 	then
-		-- TODO how to treat this?
-		-- just pretend they're normal instructions?
-		inlineProcessNext(addr)
+		if config.disasmHandleBranches then
+			-- TODO how to treat this?
+			-- just pretend they're normal instructions?
+			inlineProcessNext(addr)
+		else
+			inlineProcessNext(nextAddr)
+		end
 	else
 		inlineProcessNext(nextAddr)
 	end
@@ -1349,7 +1369,7 @@ function ASMFunction:init(args)
 print(debugtab..'BEGIN ASMFunction '..('%02X:%04X'):format(bank, ofs))
 local olddebugtab = debugtab
 debugtab = debugtab..'\t'
-		
+
 		processNextInstruction(self, rom, self.addr, flag, flagstack)
 
 debugtab = olddebugtab
@@ -1449,6 +1469,7 @@ end
 		trace = table(trace)
 		local n = select('#', ...)
 		local seq = self.instrSeqs[...]
+		if not seq then return end
 	
 		--trace:insert('#'..(...))	-- debugging only
 		-- insert into subtrace any flag operations
@@ -1485,7 +1506,7 @@ end
 		self.hasCycle = true
 		print("!!! cycle detected !!!")
 	end
-	do
+	if #allTraces > 0 then
 		local inequal
 		for i=1,#allTraces-1 do
 			for j=i+1,#allTraces do
@@ -1529,6 +1550,12 @@ if asmfunc.flagin ~= flag then
 end
 			return asmfunc 
 		end
+	end
+	if config.disasmDisable then
+		return {
+			addr = addr,
+			srcs = table(),
+		}
 	end
 	local asmfunc = ASMFunction{sm=self, addr=addr, flag=flag}
 	self.asmfuncs:insert(asmfunc)

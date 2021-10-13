@@ -96,11 +96,11 @@ function MapBG:init(args)
 	local addr = args.addr
 	args = table(args):setmetatable(nil)
 	local header = ffi.cast('uint16_t*', rom + addr)[0]
-	args.type = bgCTypeForHeader[header].name
-	if not args.type then
+	local bgctypeinfo = bgCTypeForHeader[header]
+	if not bgctypeinfo then
 		error("failed to find type for bg_t header "..('%04x'):format(header)..' addr '..('%06x'):format(addr))
 	end
-
+	args.type = assert(bgctypeinfo.name)
 	MapBG.super.init(self, args)
 
 	-- list of all m's that use this bg

@@ -133,7 +133,10 @@ function SMSamus:samusInit()
 
 	for i=0,self.samusAnimOffsetTable.count-1 do
 		local ofs = self.samusAnimOffsetTable.v[i]
-		assert(ofs == 0 or (ofs >= 0x8000 and ofs < 0x10000))
+		if not (ofs == 0 or (ofs >= 0x8000 and ofs < 0x10000)) then
+			print("WARNING - samusAnimOffsetTable bad offset")
+			break
+		end
 		if ofs == 0 then
 			-- hmm, these can be compressed out, right?
 			-- remove all indexes to them from the top and bottom index arrays

@@ -257,9 +257,7 @@ local function placeInPLMSet(args)	--m, plmset, pos, cmd, args)	-- m is only for
 		args = plmarg,
 		scrollmod = args.scrollmod
 	}
-	print('placing in room '
-		..('%02x/%02x'):format(m:obj().region, m:obj().index)
-		..' plm '..plm)
+	print('placing in room '..m:getIdentStr()..' plm '..plm)
 	plmset.plms:insert(plm)
 end
 

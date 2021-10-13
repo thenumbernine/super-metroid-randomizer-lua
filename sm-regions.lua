@@ -193,30 +193,31 @@ function SMRegions:regionsBindRooms()
 		local regionIndex = room:obj().region
 		local region = select(2, self.regions:find(nil, function(region) return region.index == regionIndex end))
 		if not region then
-			error("couldn't find region "..regionIndex)
-		end
-		room.regionMapBlockPos = table()
-		region.rooms:insert(room)
-		for j=0,room:obj().height-1 do
-			for i=0,room:obj().width-1 do
-				local x = room:obj().x + i
-				local y = room:obj().y + j
-				assert(x >= 0 and x < region.width)
-				assert(y >= 0 and y < region.height)
+			print("WARNING - room was a part of a region but couldn't find region "..regionIndex..': '..room:obj())
+		else
+			room.regionMapBlockPos = table()
+			region.rooms:insert(room)
+			for j=0,room:obj().height-1 do
+				for i=0,room:obj().width-1 do
+					local x = room:obj().x + i
+					local y = room:obj().y + j
+					assert(x >= 0 and x < region.width)
+					assert(y >= 0 and y < region.height)
 
-				-- insert in all mapblocks, or only those that are accessible, or only those also on the overworld?
-				-- seems to e too exclusive:
-				--[[
-				local tilemap = assert(region.tilemap)
-				local tilemapIndex = ffi.cast('uint16_t*', tilemap.v)[regionTilemapIndex(x,y)]
-				if bit.band(0x3ff, tilemapIndex) ~= 0x01f then
-				--]]
-				-- [[
-				do
-				--]]
-					roomsAtXY(region, x, y, true):insert(room)
-					-- the problem is, this will also include neighboring rooms that overlap this room's rectangle
-					room.regionMapBlockPos:insert(vec2i(x,y))
+					-- insert in all mapblocks, or only those that are accessible, or only those also on the overworld?
+					-- seems to e too exclusive:
+					--[[
+					local tilemap = assert(region.tilemap)
+					local tilemapIndex = ffi.cast('uint16_t*', tilemap.v)[regionTilemapIndex(x,y)]
+					if bit.band(0x3ff, tilemapIndex) ~= 0x01f then
+					--]]
+					-- [[
+					do
+					--]]
+						roomsAtXY(region, x, y, true):insert(room)
+						-- the problem is, this will also include neighboring rooms that overlap this room's rectangle
+						room.regionMapBlockPos:insert(vec2i(x,y))
+					end
 				end
 			end
 		end

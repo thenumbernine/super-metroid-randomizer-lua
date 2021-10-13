@@ -27,6 +27,9 @@ Door.door_t = struct{
 		{destRoomPageOffset = 'uint16_t'},				-- 0: points to the room_t to transition into
 		
 		--[[
+		bits i=0-6 = set elevator index 'i' as used ... from https://wiki.metroidconstruction.com/doku.php?id=super:technical_information:data_structures
+		what do elevator used bits do? never noticed in the game that this mattered
+
 		0x40 = change regions
 		0x80 = elevator
 		--]]
@@ -102,8 +105,12 @@ function Door:init(args)
 	if self.type == 'door_t' 
 	and self:obj().code >= 0x8000 
 	then
-		self.doorCode = self.sm:codeAdd(topc(self.sm.doorCodeBank, self:obj().code))
-		self.doorCode.srcs:insert(self)
+		xpcall(function()
+			self.doorCode = self.sm:codeAdd(topc(self.sm.doorCodeBank, self:obj().code))
+			self.doorCode.srcs:insert(self)
+		end, function(err)
+			print(err..'\n'..debug.traceback())
+		end)
 	end
 end
 
@@ -117,7 +124,12 @@ function Door:setDestRoom(room)
 		-- TODO TODO treat Door like all other Blobs
 		-- store .obj or .data or whatever
 		local bank, ofs = frompc(room.addr)
-		assert(bank == self.roomBank)
+		if bank ~= sm.roomBank then
+			error("setDestRoom room target had a bad address: "..(('$%06x'):format(room.addr)..' '..('$%02x:%04x'):format(frompc(room.addr)))
+				..' bank='..('%02x'):format(bank)
+				..' roomBank='..('%02x'):format(self.roomBank)
+			)
+		end
 		self:obj().destRoomPageOffset = ofs
 	end
 	return true

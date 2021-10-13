@@ -4,6 +4,8 @@ local table = require 'ext.table'
 local range = require 'ext.range'
 local struct = require 'struct'
 local Blob = require 'blob'
+
+local frompc = require 'pc'.from
 local topc = require 'pc'.to
 
 
@@ -132,6 +134,8 @@ function RoomState:init(args)
 					if bg:obj().header == 0 then break end
 				end
 			end, function(err)
+				print('while reading roomstate '..(self.addr and ('%02x:%04x'):format(frompc(self.addr)) or ''))
+				print('for room '..room:getIdentStr())
 				print(err..'\n'..debug.traceback())
 			end)
 		end
@@ -141,13 +145,18 @@ function RoomState:init(args)
 			with flags == 0x00 we have 8 mismatched flag calls
 			with flags == 0x20 we have 17 mismatched flag calls and 2 OOB branches
 			--]]
-			self.layerHandlingCode = sm:codeAdd(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
-			self.layerHandlingCode.srcs:insert(self)
+			xpcall(function()
+				self.layerHandlingCode = sm:codeAdd(topc(sm.layerHandlingBank, self:obj().layerHandlingPageOffset))
+				self.layerHandlingCode.srcs:insert(self)
+			end, function(err)
+				print(err..'\n'..debug.traceback())
+			end)
 		end
 
 		xpcall(function()
 			self:setRoomBlockData(sm:mapAddRoomBlockData(self:obj().roomBlockAddr24:topc(), room))
 		end, function(err)
+			print("failed when reading roomState "..#self.roomStates.." for room "..self:obj())
 			print(err..'\n'..debug.traceback())
 		end)
 

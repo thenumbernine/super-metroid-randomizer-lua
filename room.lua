@@ -86,8 +86,12 @@ function RoomSelect:init(args)
 	with flags == 0x00 we have no OOB branches
 	with flags == 0x20 we have 1 OOB branches
 	--]]
-	self.testCode = self.sm:codeAdd(topc(self.sm.roomBank, self:obj().testCodePageOffset))
-	self.testCode.srcs:insert(self)
+	xpcall(function()
+		self.testCode = self.sm:codeAdd(topc(self.sm.roomBank, self:obj().testCodePageOffset))
+		self.testCode.srcs:insert(self)
+	end, function(err)
+		print(err..'\n'..debug.traceback())
+	end)
 end
 
 
@@ -109,7 +113,11 @@ args:
 --]]
 function Room:init(args)
 	Room.super.init(self, args)
-		
+
+	if self:obj().region >= 8 then
+		error("room has an invalid region: "..self:obj())
+	end
+	
 	self.doors = table()
 	self.roomStates = table()
 	

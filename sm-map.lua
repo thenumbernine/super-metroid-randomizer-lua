@@ -685,8 +685,10 @@ local Door = require 'door'
 SMMap.Door = Door
 
 function SMMap:mapAddDoor(addr)
-	for _,door in ipairs(self.doors) do
-		if door.addr == addr then return door end
+	if addr then
+		for _,door in ipairs(self.doors) do
+			if door.addr == addr then return door end
+		end
 	end
 	local door = Door{sm=self, addr=addr}
 	self.doors:insert(door)
@@ -1193,26 +1195,39 @@ function SMMap:mapReadTileSets()
 	--  since those two are usually packed?
 	-- well, in roms like Metroid Redesigned, where these lookup instructions have been changed, it looks like the graphics tile buffer is also not present
 	-- TODO how about instead I read the address from here -- and complain if any of these entries differ?
-	for _,loc in ipairs(commonRoomTilemapAddrLocs) do
+	local function check(loc, write)
 		local ofsvalue = ffi.cast('uint16_t*', rom + loc.ofsaddr)[0]
 		if ofsvalue ~= commonRoomTilemapAddr24.ofs then
 			print(" WARNING - the value at location "..('%02x:%04x'):format(frompc(loc.ofsaddr))..", is "..('%04x'):format(ofsvalue)..", should be "..('%04x'):format(commonRoomTilemapAddr24.ofs))
+			if write then
+				commonRoomTilemapAddr24.ofs = ofsvalue
+			end
 		end
 
 		local bankvalue = rom[loc.bankaddr]
 		if bankvalue ~= commonRoomTilemapAddr24.bank then
 			print(" WARNING - the value at location "..('%02x:%04x'):format(frompc(loc.bankaddr))..", is "..('%02x'):format(bankvalue)..", should be "..('%02x'):format(commonRoomTilemapAddr24.bank))
+			if write then
+				commonRoomTilemapAddr24.bank = bankvalue
+			end
 		end	
+
+	end
+	check(commonRoomTilemapAddrLocs[1], true)
+	for i=2,#commonRoomTilemapAddrLocs do
+		check(commonRoomTilemapAddrLocs[i], false) 
 	end
 
 	--common room elements
+--DEBUG = true		
 	self.commonRoomTilemaps = Blob{
 		sm = self,
 		addr = commonRoomTilemapAddr24:topc(),
 		type = 'tilemapElem_t',
 		compressed = true,
 	}
-	
+--DEBUG = false	
+
 	-- size is 0x800 ... so 256 8bit tile infos
 	-- in my 32-tiles-per-row pics, this is 8 rows
 --print('self.commonRoomTilemaps.size', ('$%x'):format(self.commonRoomTilemaps:sizeof()))
@@ -1361,6 +1376,10 @@ function SMMap:mapInit()
 			if ls:obj().doorPageOffset > 0 then
 				ls.door = self:mapAddDoor(topc(self.doorBank, ls:obj().doorPageOffset))
 				ls.door.srcLoadStations:insertUnique(ls)
+				print('loadStation region '..lsr.region
+					..' has a room at '..('%04x'):format(ls:obj().roomPageOffset)
+					..' has door at '..('%04x'):format(ls:obj().doorPageOffset)
+					..' that points to room at '..('%04x'):format(ls.door:obj().destRoomPageOffset))
 				ls.door:buildRoom(self)
 			end
 		end
@@ -1394,9 +1413,9 @@ function SMMap:mapInit()
 					print("WARNING - loadStation "
 						..('%06x'):format(ls.addr)
 						.." room "
-						..('%02x/%02x'):format(room:obj().region, room:obj().index)
+						..room:getIdentStr()
 						.." does not match door's room "
-						..('%02x/%02x'):format(ls.door.destRoom:obj().region, ls.door.destRoom:obj().index)
+						..ls.door.destRoom:getIdentStr()
 					)
 				end
 			end
@@ -1421,10 +1440,18 @@ function SMMap:mapInit()
 
 	-- load kraid's background, since its address will have to be updated in the code
 	-- this should already be referenced by a room, (and therefore already loaded)
-	self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(0xb9, 0xfa38))
-	assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
-	self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
-	assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
+	xpcall(function()
+		self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(0xb9, 0xfa38))
+		assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
+	end, function(err)
+		print(err..'\n'..debug.traceback())
+	end)
+	xpcall(function()
+		self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
+		assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
+	end, function(err)
+		print(err..'\n'..debug.traceback())
+	end)
 
 
 	if config.mapAssertStructure then
@@ -1963,7 +1990,7 @@ local function drawRoomBlockDoors(ctx, roomBlockData)
 		local srcRoom_xofs = debugImageRoomSizeInPixels * srcRoom_ofsx
 		local srcRoom_yofs = debugImageRoomSizeInPixels * srcRoom_ofsy
 		for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
---print('in room '..('%02x/%02x'):format(srcRoom:obj().region, srcRoom:obj().index)..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
+--print('in room '..srcRoom:getIdentStr()..' looking for exit '..exitIndex..' with '..#blockpos..' blocks')
 			-- TODO lifts will mess up the order of this, maybe?
 			local door = srcRoom.doors[exitIndex+1]
 			if not door then
@@ -2888,7 +2915,7 @@ function SMMap:mapPrintRoomBlocks()
 	print'all roomBlockData'
 	for _,roomBlockData in ipairs(self.roomblocks) do
 		for _,rs in ipairs(roomBlockData.roomStates) do
-			print(('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index))
+			print(rs.room:getIdentStr())
 		end
 		local w,h = roomBlockData.width, roomBlockData.height
 		print(' size: '..w..','..h)
@@ -3170,8 +3197,7 @@ function SMMap:mapPrint()
 		print(' '
 			..(plmset.addr and ('$%06x'):format(plmset.addr) or 'nil')
 			..' rooms: '..plmset.roomStates:map(function(rs)
-				local m = rs.room
-				return ('%02x/%02x'):format(m:obj().region, m:obj().index)
+				return rs.room:getIdentStr()
 			end):concat' '
 		)
 		for _,plm in ipairs(plmset.plms) do
@@ -3187,9 +3213,7 @@ function SMMap:mapPrint()
 	for _,plmset in ipairs(self.plmsets) do
 		local rsstrs = table()
 		for _,rs in ipairs(plmset.roomStates) do
-			local region = assert(tonumber(rs.room:obj().region))
-			local index = assert(tonumber(rs.room:obj().index))
-			rsstrs:insert(('%02x/%02x'):format(region, index))
+			rsstrs:insert(rs.room:getIdentStr())
 		end
 		rsstrs = rsstrs:concat', '
 		for _,plm in ipairs(plmset.plms) do
@@ -3206,9 +3230,7 @@ function SMMap:mapPrint()
 		for _,plmset in ipairs(self.plmsets) do
 			local rsstrs = table()
 			for _,rs in ipairs(plmset.roomStates) do
-				local region = assert(tonumber(rs.room:obj().region))
-				local index = assert(tonumber(rs.room:obj().index))
-				rsstrs:insert(('%02x/%02x'):format(region, index))
+				rsstrs:insert(rs.room:getIdentStr())
 			end
 			rsstrs = rsstrs:concat', '
 			for _,plm in ipairs(plmset.plms) do
@@ -3232,7 +3254,7 @@ function SMMap:mapPrint()
 			enemiesToKill = enemySpawnSet.enemiesToKill, 
 		}
 			..' rooms: '..enemySpawnSet.roomStates:map(function(rs)
-				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
+				return rs.room:getIdentStr()
 			end):concat' '
 		)
 		for _,enemySpawn in ipairs(enemySpawnSet.enemySpawns) do	
@@ -3257,7 +3279,7 @@ function SMMap:mapPrint()
 				return c 
 			end)
 			..' rooms: '..enemyGFXSet.roomStates:map(function(rs)
-				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
+				return rs.room:getIdentStr()
 			end):concat' '
 		)
 		for _,enemyGFX in ipairs(enemyGFXSet.enemyGFXs) do
@@ -3287,7 +3309,7 @@ function SMMap:mapPrint()
 	for _,bg in ipairs(self.bgs) do
 		print(' '..('$%06x'):format(bg.addr)..': '..bg.type..' '..bg:obj())
 		print('  rooms: '..bg.roomStates:mapi(function(rs)
-				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
+				return rs.room:getIdentStr()
 			end):concat' ')
 		if bg.tilemap then
 			print('  tilemap.size: '..('$%x'):format(bg.tilemap:sizeof()))
@@ -3419,7 +3441,7 @@ function SMMap:mapPrint()
 				return ('$%03x'):format(s)
 			end):concat', ')
 		print('  rooms used = '..tileSet.roomStates:mapi(function(rs)
-				return ('%02x/%02x'):format(rs.room:obj().region, rs.room:obj().index)
+				return rs.room:getIdentStr()
 			end):concat', ')
 	end
 
@@ -3632,12 +3654,14 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 	--]]
 
 	-- [[ merge doors (and upate fx1_t's that point ot the doors) before merging fx1_t's
+	-- but doors have destRoom pointers ... so make sure those match too?
 	for i=#self.doors-1,1,-1 do
 		local di = self.doors[i]
 		for j=i+1,#self.doors do
 			local dj = self.doors[j]
 			if di.type == dj.type
 			and di:obj() == dj:obj() 
+			and di.destRoom == dj.destRoom	-- since the addrs might match, while the rooms don't, right?
 			then
 				print('doors '..('%06x'):format(di.addr)..' and '..('%06x'):format(dj.addr)..' are matching -- removing '..('%06x'):format(dj.addr)..'(type='..di.type..')')
 				
@@ -3653,8 +3677,8 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 					end
 				end
 
-		-- TODO get this to work
-		-- until then, don't move doors or fx1s?
+				-- TODO get this to work
+				-- until then, don't move doors or fx1s?
 				-- [[
 				-- but doors don't keep track of what room holds them, other than 'destRoom', which is a single pointer that lift_t doesn't have
 				-- and I'm thinking only lift_t is going to hit this case
@@ -3671,7 +3695,18 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 					end
 				end
 				--]]
+
+				-- redirect loadstations that point to this door
+				for _,lsr in ipairs(self.loadStationsForRegion) do
+					for _,ls in ipairs(lsr.stations) do
+						if ls.door == dj then
+							ls.door = di
+						end
+					end
+				end
+				
 				self.doors:remove(j)
+				
 				break
 			end
 		end
@@ -4497,7 +4532,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 				rs.roomSelect:ptr().roomStatePageOffset = ofs	-- update previous write in rom
 				rs.roomSelect:obj().roomStatePageOffset = ofs	-- update POD
 			else
-				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..('%02x/%02x'):format(m:obj().region, m:obj().index))
+				assert(i == #m.roomStates, "expected only roomselect1_t to appear last, but found one not last for room "..m:getIdentStr())
 			end
 			ptr = ptr + ffi.sizeof'roomstate_t'
 		end
@@ -4582,7 +4617,7 @@ function SMMap:mapWriteRooms(roomBankWriteRanges)
 	end
 
 	for _,m in ipairs(self.rooms) do
-		assert(m:ptr().region == m:obj().region, "regions dont match for room "..('%02x/%02x'):format(m:obj().region, m:obj().index))
+		assert(m:ptr().region == m:obj().region, "regions dont match for room "..m:getIdentStr())
 	end
 	-- if you remove rooms but forget to remove them from rooms then you could end up here ... 
 	for _,roomBlockData in ipairs(self.roomblocks) do
@@ -4769,7 +4804,9 @@ function SMMap:mapWrite()
 		-- recompress them and see how well that works
 
 		self.commonRoomGraphicsTiles:recompress(writeRanges, compressInfo)
+--DEBUG = true		
 		self.commonRoomTilemaps:recompress(writeRanges, compressInfo)
+--DEBUG = false	
 	
 		-- now update the common room tilemap ptrs
 		for _,loc in ipairs(commonRoomTilemapAddrLocs) do
@@ -4788,7 +4825,9 @@ function SMMap:mapWrite()
 		end
 
 		-- update the kraid code that points to the kraid bg tilemaps
-		do
+		if not self.mapKraidBGTilemapTop then
+			print("WARNING - I didn't read the kraid BG tilemap correctly so I'm also not writing it")
+		else
 			local bank, ofs = frompc(self.mapKraidBGTilemapTop.addr)
 			rom[topc(0xa7, 0xaac9)] = bit.band(ofs, 0xff)
 			rom[topc(0xa7, 0xaacf)] = bit.rshift(ofs, 8)

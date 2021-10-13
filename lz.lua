@@ -40,7 +40,7 @@ local function decompress(rom, addr, ctype)
 
 	local function readbyte()
 		--assert(addr >= 0 and addr < #romstr)	-- TODO reintroduce maxlen?
-		local v = rom[addr]
+		local v = ffi.cast('uint8_t*', rom)[addr]
 		-- v is now a lua number
 		addr = addr + 1
 		return v
@@ -51,10 +51,22 @@ local function decompress(rom, addr, ctype)
 		assert(mask == 0 or mask == 0xff)
 		local from = readbyte()
 		if bytes == 2 then
+if DEBUG then
+	print('from was', from)
+end			
 			from = bit.bor(from, bit.lshift(readbyte(), 8))
+if DEBUG then
+	print('from is', from)
+end
 		end
 		if not absolute then
+if DEBUG then
+	print('from was', from)
+end			
 			from = result.size - from
+if DEBUG then
+	print('from is', from)
+end		
 		end
 		if from >= 0 and from < result.size then
 			for i=0,len-1 do
@@ -69,10 +81,17 @@ local function decompress(rom, addr, ctype)
 
 	while true do
 		local c = readbyte()
+if DEBUG then
+	print('got lz command', ('%02x'):format(c))		
+end		
 		if c == 0xff then break end
 		local lzc = ffi.new('lzcmd_t', c)
 		local cmd = lzc.cmd
 		local len = lzc.len
+if DEBUG then
+	print('cmd', cmd)
+	print('len', len)
+end
 		-- this means you can't have cmd==7 without it being an extended cmd
 		if cmd == 7 then	-- 1110:0000
 			-- extended cmd
@@ -85,14 +104,23 @@ local function decompress(rom, addr, ctype)
 			for i=0,len-1 do
 				result:push_back(readbyte())
 			end
+if DEBUG then
+	print('cmd==0 copy '..range(len):mapi(function(i) return ('%02x'):format(result.v[#result-len+i-1]) end):concat' ')
+end
 		elseif cmd == 1 then	-- 001b: byte fill
 			local v = readbyte()
+if DEBUG then
+	print('cmd==1 byte fill '..('%02x'):format(v))
+end
 			for i=0,len-1 do
 				result:push_back(v)
 			end
 		elseif cmd == 2 then	-- 010b: word fill
 			local v1 = readbyte()
 			local v2 = readbyte()
+if DEBUG then
+	print('cmd==2 word fill '..('%02x %02x'):format(v1, v2))
+end
 			for i=0,len-1 do
 				if bit.band(i,1)==0 then
 					result:push_back(v1)
@@ -102,17 +130,32 @@ local function decompress(rom, addr, ctype)
 			end
 		elseif cmd == 3 then	-- 011b: incremental fill
 			local v = readbyte()
+if DEBUG then
+	print('cmd==3 inc fill '..range(len):mapi(function(i) return ('%02x'):format(v+i-1) end):concat' ')
+end
 			for i=0,len-1 do
 				result:push_back(v)
 				v = bit.band(0xff, v+1)
 			end
 		elseif cmd == 4 then	-- 100b: 
+if DEBUG then
+	print('cmd==4')
+end
 			lzdecompress(len, 2, 0, true)
 		elseif cmd == 5 then	-- 101b: 
+if DEBUG then
+	print('cmd==5')
+end
 			lzdecompress(len, 2, 0xff, true)
 		elseif cmd == 6 then	-- 110b: 
+if DEBUG then
+	print('cmd==6')
+end
 			lzdecompress(len, 1, 0, false)
 		elseif cmd == 7 then	-- 111b: 
+if DEBUG then
+	print('cmd==7')
+end
 			lzdecompress(len, 1, 0xff, false)
 		end
 	end
@@ -165,6 +208,9 @@ local function noCompress(source, offset, length, result)
 	for i=0,length-1 do
 		result:insert(source[offset-length+i])
 	end
+if DEBUG then
+	print('adding noCompress '..range(length):mapi(function(i) return ('%02x'):format(result[#result-length+i]) end):concat' ')
+end
 end
 
 local function rleCompress(source, offset, op, len)
@@ -260,12 +306,12 @@ function LZCompress:compress(offset, op)
 	while i < wordLength do
 		if source[offset+i-1] == source[offset+j] then
 			j=j+1
-			tabl[1+ i] = j
+			tabl[1 + i] = j
 			i=i+1
 		elseif j > 0 then
-			j = tabl[1+ j]
+			j = tabl[1 + j]
 		else
-			tabl[1+ i] = 0
+			tabl[1 + i] = 0
 			i=i+1
 		end
 	end
@@ -376,23 +422,34 @@ local function compress(source)
 			noCompressionLength = noCompressionLength + 1
 			i = i + 1
 			if i >= len or noCompressionLength == maxBlockLen(0) then 
---print('adding no-compress len '..noCompressionLength)			
+if DEBUG then 
+	print('adding no-compress len '..noCompressionLength) 
+end
 				noCompress(source, i, noCompressionLength, result)
 				noCompressionLength = 0
 			end
 		else
 			if noCompressionLength ~= 0 then
+if DEBUG then 
+	print('adding no-compress len '..noCompressionLength) 
+end
 				noCompress(source, i, noCompressionLength, result)
---print('adding no-compress len '..noCompressionLength)			
 				noCompressionLength = 0
 			end
---print('adding compress len '..#bestOption.result)			
+if DEBUG then 
+	print('adding compress len '..#bestOption.result) 
+	print('adding '..table.mapi(bestOption.result, function(c) return ('%02x'):format(c) end):concat' ')
+end
 			result:append(bestOption.result)
 			i = i + bestOption.srclen
 		end
 	end
 	result:insert(0xff)
---print('total result len '..#result)	
+if DEBUG then 
+	print('adding ff')
+	print('total result len '..#result)
+	print('compressed result: '..result:mapi(function(c) return ('%02x'):format(c) end):concat', ')
+end
 	return tableToByteArray(result)
 end
 

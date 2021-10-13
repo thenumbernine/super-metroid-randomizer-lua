@@ -1,6 +1,8 @@
 local table = require 'ext.table'
 local ffi = require 'ffi'
 
+do return end
+
 --[=[
 sm.rooms = table()
 sm.roomblocks = table()
@@ -27,6 +29,61 @@ sm.tileSetTilemaps = table()
 
 -- not sure about this routine just yet...
 --local room = sm:mapNewRoom{sm=self}
+
+local doorForSide = {
+	-- 4x3 door upwards
+	up = {
+		{0x009c63, 0x009c62, 0x009862, 0x009863},
+		{0x000c43, 0x000c42, 0x000842, 0x000843},
+		{0x43cc1d, 0xff5c1c, 0xfe581c, 0xfd581d},
+	},
+
+	-- 4x3 door downwards
+	down = {
+		{0x42c41d, 0xff541c, 0xfe501c, 0xfd501d},
+		{0x000443, 0x000442, 0x000042, 0x000043},
+		{0x009463, 0x009462, 0x009062, 0x009063},	-- <- put the door index in ch3 here
+	},
+
+	-- 2x4 door to the left
+	left = {
+		{0x009440, 0x41c40c},
+		{0x009460, 0xffd42c},
+		{0x009c60, 0xfedc2c},
+		{0x009c40, 0xfddc0c},
+	},
+
+	-- 2x4 door to the right
+	right = {
+		{0x40c00c, 0x009040},
+		{0xffd02c, 0x009060},
+		{0xfed82c, 0x009860},
+		{0xfdd80c, 0x009840},
+	},
+}
+
+local function placeDoorBlocks(roomBlockData, ulx, uly, dir, doorIndex)
+	local ch12 = ffi.cast('uint16_t*', roomBlockData:getBlocks12())
+	local ch3 = roomBlockData:getBlocks3()
+	local tiles = assert(doorForSide[dir])
+	for j,row in ipairs(tiles) do
+		for i,value in ipairs(row) do
+			local x = ulx + i-1
+			local y = uly + j-1
+			local index = x + roomBlockData.width * y
+			if x >= 0 and x < roomBlockData.width
+			and y >= 0 and y < roomBlockData.height
+			then
+				ch12[index] = bit.band(0xffff, value)
+				if bit.band(0xf, bit.rshift(value, 12)) == 9 then
+					ch3[index] = doorIndex
+				else
+					ch3[index] = bit.band(0xff, bit.rshift(value, 16))
+				end
+			end
+		end
+	end
+end
 
 -- instead how about just replacing the first room
 local newroom
@@ -81,14 +138,16 @@ end
 -- TODO insert a lift / entry point for loadStation / game starting point
 
 -- testing -- attach an entry to room 0 for now ...
+local room000 
 do
-	local room000 = assert(sm:mapFindRoom(0, 0))
+	room000 = assert(sm:mapFindRoom(0, 0))
 	local door = sm:mapAddDoor()
 	door.srcRooms:insert(room000)
 	door:obj().direction = door.directions.down
 	door:obj().capX = 6						-- block 6?
 	door:obj().capY = 2						-- ?
-	-- screenX and screenY are target screens?
+	door:obj().screenX = 0		-- screenX and screenY are target screens?
+	door:obj().screenY = 0
 	door:obj().distToSpawnSamus = 0x8000	-- seems its always this
 	assert(door:setDestRoom(newroom))
 	local doorIndex = #room000.doors	-- 0-based index
@@ -111,17 +170,30 @@ do
 				local index = x + roomBlockData.width * y
 				ch12[index] = 0x0132		-- empty w/ background
 				ch3[index] = 0
-				if j == 15 then
-					ch12[index] = bit.bor(bit.band(ch12[index], 0x0fff), 0x9000)	-- add flag for door
-					ch3[index] = doorIndex
-				end
 			end
 		end
+		placeDoorBlocks(roomBlockData, 6 + 16 * rx, 13 + 16 * ry, 'down', doorIndex)
 		-- TODO at the bottom, have a door block that transitions into our new room
 		roomBlockData:refreshDoors()
 	end
 end
-
+do
+	local door = sm:mapAddDoor()
+	door.srcRooms:insert(newroom)
+	door:obj().direction = bit.bor(
+		door.directions.up --, door.directions.closeBehind
+	)
+	-- TODO how to set this up so scrolling works on the other side
+	door:obj().capX = 6
+	door:obj().capY = 0xd
+	door:obj().screenX = 0
+	door:obj().screenY = 2
+	door:obj().distToSpawnSamus = 0x8000	--0x01c0
+	assert(door:setDestRoom(room000))
+	local doorIndex = #newroom.doors
+	newroom.doors:insert(door)
+	placeDoorBlocks(newroom.roomStates[1].roomBlockData, 6, 0, 'up', doorIndex)
+end
 
 for _,region in ipairs(sm.regions) do
 	--[[

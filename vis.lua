@@ -369,7 +369,7 @@ end
 function App:initGL()
 	App.super.initGL(self)
 
-	local romstr = file[infilename]
+	local romstr = assert(file[infilename])
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
 		print('skipping rom file header')
@@ -1679,9 +1679,7 @@ function App:updateGUI()
 	if ig.igCollapsingHeader'rooms' then
 		if not self.selectedRoomIndex then self.selectedRoomIndex = 0 end
 		local tmp = {self.selectedRoomIndex}
-		local changed = comboTooltip('room', tmp, 1, self.sm.rooms:mapi(function(room)
-			return ('%02x/%02x'):format(room:obj().region, room:obj().index)
-		end)) 
+		local changed = comboTooltip('room', tmp, 1, self.sm.rooms:mapi(function(room) return room:getIdentStr() end)) 
 		if changed then
 			self.selectedRoomIndex = tmp[1]
 		end
