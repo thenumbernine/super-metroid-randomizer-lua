@@ -855,6 +855,7 @@ App.predefinedRegionOffsets = {
 --[[
 what won't load?
 - Redesigned 2.3
+- Redesigned Axiel Edition
 - Ascent
 - Dependence 1.87
 - Ice Metal 1.24

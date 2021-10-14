@@ -140,7 +140,12 @@ function Door:buildRoom()
 	if self.type ~= 'door_t' then return false end
 	local sm = self.sm
 	if not self.destRoom then
-		self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:obj().destRoomPageOffset))
+		xpcall(function()
+			self.destRoom = sm:mapAddRoom(topc(sm.roomBank, self:obj().destRoomPageOffset))
+		end, function(err)
+			print("while loading door "..('%04x'):format(self.addr))
+			print(err..'\n'..debug.traceback())
+		end)
 	end
 	return true 
 end

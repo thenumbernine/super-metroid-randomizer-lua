@@ -1179,6 +1179,8 @@ function SMMap:mapReadTileSets()
 	local rom = self.rom
 	
 	--common room elements
+	-- TODO this is a bad blob / has moved in Ice Metal
+	-- so find in the code where this is read from
 	self.commonRoomGraphicsTiles = Blob{
 		sm = self,
 		addr = commonRoomGraphicsTileAddr24:topc(),
@@ -1220,6 +1222,7 @@ function SMMap:mapReadTileSets()
 
 	--common room elements
 --DEBUG = true		
+	-- TODO in Super Metroid Dependence the original addresses that point to commonRoomTilemapAddr24 haven't changed, but I'm still getting decompression errors here...
 	self.commonRoomTilemaps = Blob{
 		sm = self,
 		addr = commonRoomTilemapAddr24:topc(),
@@ -1376,10 +1379,13 @@ function SMMap:mapInit()
 			if ls:obj().doorPageOffset > 0 then
 				ls.door = self:mapAddDoor(topc(self.doorBank, ls:obj().doorPageOffset))
 				ls.door.srcLoadStations:insertUnique(ls)
-				print('loadStation region '..lsr.region
-					..' has a room at '..('%04x'):format(ls:obj().roomPageOffset)
-					..' has door at '..('%04x'):format(ls:obj().doorPageOffset)
-					..' that points to room at '..('%04x'):format(ls.door:obj().destRoomPageOffset))
+				
+				if ls:obj().roomPageOffset ~= ls.door:obj().destRoomPageOffset then
+					print('WARNING - loadStation region '..lsr.region
+						..' has a room at '..('%04x'):format(ls:obj().roomPageOffset)
+						..' has door at '..('%04x'):format(ls:obj().doorPageOffset)
+						..' that points to room at '..('%04x'):format(ls.door:obj().destRoomPageOffset))
+				end
 				ls.door:buildRoom(self)
 			end
 		end
@@ -1444,12 +1450,14 @@ function SMMap:mapInit()
 		self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(0xb9, 0xfa38))
 		assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
 	end, function(err)
+		print("failed to load kraid BG tilemap")
 		print(err..'\n'..debug.traceback())
 	end)
 	xpcall(function()
 		self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
 		assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
 	end, function(err)
+		print("failed to load kraid BG tilemap bottom")
 		print(err..'\n'..debug.traceback())
 	end)
 
@@ -3652,6 +3660,17 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 		end
 	end
 	--]]
+	
+	-- before comparing door objs, make sure the door destRoom addr is updated, so that obj compare will work for matching doors
+	-- but in the event the door doesn't really have an address yet, be sure to also compare door ptrs
+	-- alternatively just zero all destRoomPageOffsets as well
+	for _,door in ipairs(self.doors) do
+		if door.type == 'door_t' then
+			door:obj().destRoomPageOffset = 
+				door.destRoom and door.destRoom.addr and select(2, frompc(door.destRoom.addr))
+				or 0
+		end
+	end
 
 	-- [[ merge doors (and upate fx1_t's that point ot the doors) before merging fx1_t's
 	-- but doors have destRoom pointers ... so make sure those match too?
@@ -3672,9 +3691,13 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 				local fx1sForDj = fx1sForDoor[dj]
 				if fx1sForDj then
 					for _,fx1 in ipairs(fx1sForDj) do
+						fx1.door = di
+						-- TODO don't update pageOffset yet ...
 						fx1:obj().doorPageOffset = select(2, frompc(di.addr))
-						fx1sForDoor[di] = (fx1sForDoor[di] or table()):append(fx1sForDj)
 					end
+					
+					fx1sForDoor[di] = (fx1sForDoor[di] or table()):append(fx1sForDj)
+					fx1sForDoor[dj] = nil
 				end
 
 				-- TODO get this to work
@@ -3737,6 +3760,12 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 		end
 	end
 	--]]
+	-- make sure fx1's doorPageOffset is up to date before comparing fx1 objects
+	for _,fx1set in ipairs(self.fx1sets) do
+		for _,fx1 in ipairs(fx1set.fx1s) do
+			fx1:obj().doorPageOffset = fx1.door and fx1.door.addr and select(2, frompc(fx1.door.addr)) or 0
+		end
+	end
 	-- [[ get rid of any duplicate fx1sets
 	-- seems the only duplicates are the empty sets
 	-- (which do still need their own terminator)
@@ -3748,7 +3777,12 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			if #fi.fx1s == #fj.fx1s then
 				local differ
 				for k=1,#fi.fx1s do
-					if fi.fx1s[k] ~= fj.fx1s[k] then
+					-- compare objs and pointers, in case the pageOffset is matching in the case of new unwritten objects
+					if not (
+						fi.fx1s[k]:obj() == fj.fx1s[k]:obj() 
+						and fi.fx1s[k].door == fj.fx1s[k].door
+					)
+					then
 						differ = true
 						break
 					end
@@ -3793,10 +3827,9 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 		end
 		assert(addr == endaddr)
 
-		-- TODO don't write now.  write in mapWriteRooms() instead
 		for _,rs in ipairs(fx1set.roomStates) do
 			rs:obj().fx1PageOffset = ofs
-			--rs:ptr().fx1PageOffset = ofs
+			-- don't write ptr now.  write in mapWriteRooms() instead
 		end
 	end
 
