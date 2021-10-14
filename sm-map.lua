@@ -3843,6 +3843,16 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 		door:writeToROM()
 	end
 
+	-- now that we've written/moved doors, update fx1 door pageoffsets 
+	for _,fx1set in ipairs(self.fx1sets) do
+		for _,fx1 in ipairs(fx1set.fx1s) do
+			local doorPageOffset = fx1.door and fx1.door.addr and select(2, frompc(fx1.door.addr)) or 0
+			fx1:obj().doorPageOffset = doorPageOffset
+			-- and since fx1 is already written, update :ptr() as well
+			fx1:ptr().doorPageOffset  = doorPageOffset
+		end
+	end
+
 -- [[
 	-- now that i've rearranged all doors, update plm pointers
 	-- I think I'll update roomstate door pointers during roomstate write later
@@ -3852,7 +3862,7 @@ function SMMap:mapWriteDoorsAndFX1Sets()
 			if bg.door then
 				local addr = select(2, frompc(bg.door.addr))
 				bg:obj().doorPageOffset = addr
-				--bg:ptr().doorPageOffset = addr
+				bg:ptr().doorPageOffset = addr
 			else
 				-- and if it's not?  then we shouldn't be using bg_e_t...
 			end
