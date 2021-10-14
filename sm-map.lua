@@ -76,12 +76,16 @@ assert(commonRoomGraphicsTileAddr24:topc() == 0x1c8000)
 local commonRoomTilemapAddr24 = ffi.new('addr24_t', {bank=0xb9, ofs=0xa09d})
 assert(commonRoomTilemapAddr24:topc() == 0x1ca09d)
 
--- where is b9:a09d used in code?
+-- where is b9:a09d used in code:
+-- TODO use 3 refs instead of 2, like mapKraidBGTilemap?
 local commonRoomTilemapAddrLocs = table{
 	-- ofsaddr is 16-bit, bankaddr is 8-bit
 	{ofsaddr=topc(0x82, 0xe841), bankaddr=topc(0x82, 0xe83d)},
 	{ofsaddr=topc(0x82, 0xeaf1), bankaddr=topc(0x82, 0xeaed)},
 }
+
+local mapKraidBGTilemapTopAddrLoc = {ofs1addr=topc(0xa7, 0xaac9), ofs2addr=topc(0xa7, 0xaacf), bankaddr=topc(0xa7, 0xaad5)}
+local mapKraidBGTilemapBottomAddrLoc = {ofs1addr=topc(0xa7, 0xaaeb), ofs2addr=topc(0xa7, 0xaaf1), bankaddr=topc(0xa7, 0xaaf7)}
 
 
 local blocksPerRoom = require 'roomblocks'.blocksPerRoom
@@ -1447,14 +1451,22 @@ function SMMap:mapInit()
 	-- load kraid's background, since its address will have to be updated in the code
 	-- this should already be referenced by a room, (and therefore already loaded)
 	xpcall(function()
-		self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(0xb9, 0xfa38))
+		local ofs1 = rom[mapKraidBGTilemapTopAddrLoc.ofs1addr]
+		local ofs2 = rom[mapKraidBGTilemapTopAddrLoc.ofs2addr]
+		local bank = rom[mapKraidBGTilemapTopAddrLoc.bankaddr]
+		local ofs = bit.bor(ofs1, bit.lshift(ofs2, 8))
+		self.mapKraidBGTilemapTop = self:mapAddBGTilemap(topc(bank, ofs))
 		assert(self.mapKraidBGTilemapTop.bg, "expected kraid bg tilemap to already be assigned to a room")
 	end, function(err)
 		print("failed to load kraid BG tilemap")
 		print(err..'\n'..debug.traceback())
 	end)
 	xpcall(function()
-		self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(0xb9, 0xfe3e))
+		local ofs1 = rom[mapKraidBGTilemapBottomAddrLoc.ofs1addr]
+		local ofs2 = rom[mapKraidBGTilemapBottomAddrLoc.ofs2addr]
+		local bank = rom[mapKraidBGTilemapBottomAddrLoc.bankaddr]
+		local ofs = bit.bor(ofs1, bit.lshift(ofs2, 8))
+		self.mapKraidBGTilemapBottom = self:mapAddBGTilemap(topc(bank, ofs))
 		assert(self.mapKraidBGTilemapBottom.bg, "expected kraid bg tilemap to already be assigned to a room")
 	end, function(err)
 		print("failed to load kraid BG tilemap bottom")
@@ -4872,14 +4884,18 @@ function SMMap:mapWrite()
 			print("WARNING - I didn't read the kraid BG tilemap correctly so I'm also not writing it")
 		else
 			local bank, ofs = frompc(self.mapKraidBGTilemapTop.addr)
-			rom[topc(0xa7, 0xaac9)] = bit.band(ofs, 0xff)
-			rom[topc(0xa7, 0xaacf)] = bit.rshift(ofs, 8)
-			rom[topc(0xa7, 0xaad5)] = bank
+			rom[mapKraidBGTilemapTopAddrLoc.ofs1addr] = bit.band(ofs, 0xff)
+			rom[mapKraidBGTilemapTopAddrLoc.ofs2addr] = bit.rshift(ofs, 8)
+			rom[mapKraidBGTilemapTopAddrLoc.bankaddr] = bank
+		end
 			
+		if not self.mapKraidBGTilemapBottom then
+			print("WARNING - I didn't read the kraid BG tilemap correctly so I'm also not writing it")
+		else
 			local bank, ofs = frompc(self.mapKraidBGTilemapBottom.addr)
-			rom[topc(0xa7, 0xaaeb)] = bit.band(ofs, 0xff)
-			rom[topc(0xa7, 0xaaf1)] = bit.rshift(ofs, 8)
-			rom[topc(0xa7, 0xaaf7)] = bank
+			rom[mapKraidBGTilemapBottomAddrLoc.ofs1addr] = bit.band(ofs, 0xff)
+			rom[mapKraidBGTilemapBottomAddrLoc.ofs2addr] = bit.rshift(ofs, 8)
+			rom[mapKraidBGTilemapBottomAddrLoc.bankaddr] = bank
 		end
 
 		-- TODO write out the bg_t's ... but they are intermingled with door code, which can't be moved without updating addresses ... soo ...
