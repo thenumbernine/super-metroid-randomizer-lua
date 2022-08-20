@@ -1,14 +1,25 @@
-# Super Metroid item randomizer
+[![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=KYWUWS86GSFGL)
+
+# Super Metroid Visualizer and Item Randomizer
 
 A description of what you are up against:
 - With randomized weapon drops and enemy weaknesses, you will find yourself switching items very often just to try to kill something, and hunting through rooms just to reload one particular weapon.
 
-Depends on:
+
+![alt text](screenshots/vis1.png)
+![alt text](screenshots/vis2.png)
+![alt text](screenshots/vis3.png)
+![alt text](screenshots/vis4.png)
+
+Randomizer (`run.lua`) Depends On:
 - LuaJIT
-- my lua ext library
-- my lua template library
-- my lua ips library
-- my lua image library, if you enable config.lua's writeOutImage
+- [lua-ext](https://github.com/thenumbernine/lua-ext)
+- [lua-template](https://github.com/thenumbernine/lua-template)
+- [lua-ips](https://github.com/thenumbernine/lua-ips)
+- [lua-image](https://github.com/thenumbernine/lua-image), if you enable config.lua's writeOutImage
+
+Visualizer (`vis.lua`) Depends On (in addition to randomizer's dependencies):
+- [lua-imguiapp](https://github.com/thenumbernine/lua-imguiapp)
 
 randomizes the following:
 - enemies:

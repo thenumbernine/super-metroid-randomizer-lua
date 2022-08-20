@@ -1254,10 +1254,10 @@ function SMMap:mapReadTileSets()
 
 	-- offsets in the tileSetBank where	to find the tileSet_t data
 	self.tileSetOffsets = Blob{
-		sm=self,
-		addr=tileSetOffsetsAddr,
-		count=tileSetCount,
-		type='uint16_t',
+		sm = self,
+		addr = tileSetOffsetsAddr,
+		count = tileSetCount,
+		type = 'uint16_t',
 	}
 	for i=0,tileSetCount-1 do
 		local origOffset = select(2, frompc(tileSetOrigBaseAddr + 9 * i))

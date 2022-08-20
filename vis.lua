@@ -84,32 +84,40 @@ end
 
 function ObjectSelector:updateMouse(app)
 	if app.mouse.leftDown then
+		-- left pressing down
 		if not app.mouse.lastLeftDown then
-			self.dragging = false
+			self.movingSelection = false
 
-			app[self.selectedField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
-			if app[self.selectedField] then
-				app.mouseDownX = app.mouseViewPos.x
-				app.mouseDownY = app.mouseViewPos.y
-				self.selectedObjDown:set(self:getObjPos(app[self.selectedField]))
+			local obj = self:getObjUnderPos(app, app.mouseViewPos:unpack())
+			self.selected = table{obj}
+			app[self.selectedField] = obj
+			if obj then
+				self.selObjMoveDownX = app.mouseViewPos.x
+				self.selObjMoveDownY = app.mouseViewPos.y
+				self.selectedObjDown:set(self:getObjPos(obj))
 			else
-				-- TODO here - start a selection rectangle
+				-- here - start a selection rectangle
 				-- then on mouseup, select all touching rooms
+				self.selRectDownX = app.mouseViewPos.x
+				self.selRectDownY = app.mouseViewPos.y
 			end
+		
+		-- left holding down
 		else
 			local obj = app[self.selectedField]
 			if obj then
-				local deltaX = app.mouseViewPos.x - app.mouseDownX
-				local deltaY = app.mouseViewPos.y - app.mouseDownY
+				local deltaX = app.mouseViewPos.x - self.selObjMoveDownX
+				local deltaY = app.mouseViewPos.y - self.selObjMoveDownY
 				
 				if math.abs(deltaX) > 5
 				or math.abs(deltaY) > 5
 				then
-					self.dragging = true
+					-- notice this 'movingSelection' means 'moving'
+					self.movingSelection = true
 				end
 				
 				
-				if self.dragging then
+				if self.movingSelection then
 					deltaX = math.round(deltaX / self.snap) * self.snap
 					deltaY = math.round(deltaY / self.snap) * self.snap
 
@@ -119,16 +127,19 @@ function ObjectSelector:updateMouse(app)
 						self.selectedObjDown.y - deltaY
 					)
 				end
-
-				-- if we are dragging then don't let orbit control view
-				app.view.orthoSize = app.viewBeforeSize
-				app.view.pos.x = app.viewBeforeX
-				app.view.pos.y = app.viewBeforeY
+			else
+				-- selecting rectangle
 			end
+			
+			-- if we are dragging then don't let orbit control view
+			app.view.orthoSize = app.viewBeforeSize
+			app.view.pos.x = app.viewBeforeX
+			app.view.pos.y = app.viewBeforeY
 		end
 	else
 		if app.mouse.lastLeftDown then
-			if not self.dragging then
+			-- TODO don't just drag 'obj, but drag *all objects* that were selected, which is 'self.selected'
+			if not self.movingSelection then
 				self:onClick(app)
 			end
 --[[ only recalc bounds on mouseup			
@@ -136,6 +147,16 @@ function ObjectSelector:updateMouse(app)
 				m.region:calcBounds()
 			end
 --]]
+			local obj = app[self.selectedField]
+			if obj then
+			else
+				-- rect select ... set 'self.selected' to a table of all objects touching the rectangle
+			end
+
+			self.selObjMoveDownX = nil
+			self.selObjMoveDownY = nil
+			self.selRectDownX = nil
+			self.selRectDownY = nil
 		else
 			app[self.mouseOverField] = self:getObjUnderPos(app, app.mouseViewPos:unpack())
 		end
@@ -304,6 +325,14 @@ function DoorSelector:setObjPos(roomAndDoor, x, y)
 	-- TODO ... this shouldn't be dragging
 	-- doors are associated with tile positions
 end
+
+
+-- TODO how come when I make these member variables it goes incredibly slow?
+local roomSelector = RoomSelector()
+local regionSelector = RegionSelector()
+local doorSelector = DoorSelector()
+
+
 
 
 
@@ -1441,16 +1470,21 @@ end -- useBakedGraphicsTileTextures
 		end
 	end
 
+	for _,selector in ipairs{roomSelector, regionSelector, doorSelector} do
+		if selector.selRectDownX and selector.selRectDownY then
+			gl.glColor3f(1,1,0)
+			gl.glBegin(gl.GL_LINE_LOOP)
+			gl.glVertex2f(selector.selRectDownX, selector.selRectDownY)
+			gl.glVertex2f(self.mouseViewPos.x, selector.selRectDownY)
+			gl.glVertex2f(self.mouseViewPos.x, self.mouseViewPos.y)
+			gl.glVertex2f(selector.selRectDownX, self.mouseViewPos.y)
+			gl.glEnd()
+		end
+	end
+
 	App.super.update(self)
 glreport'here'
 end
-
-
-
--- TODO how come when I make these member variables it goes incredibly slow?
-local roomSelector = RoomSelector()
-local regionSelector = RegionSelector()
-local doorSelector = DoorSelector()
 
 
 
@@ -1460,7 +1494,6 @@ function App:event(...)
 	self.viewBeforeY = self.view.pos.y
 
 	App.super.event(self, ...)
-
 
 	local view = self.view
 	local aspectRatio = self.width / self.height
@@ -1497,7 +1530,7 @@ end
 
 local bool = ffi.new('bool[1]')
 local function checkboxTooltip(name, t, k)
-	ig.igPushIDStr(name)
+	ig.igPushID_Str(name)
 	bool[0] = not not t[k]
 	local result = ig.igCheckbox('', bool)
 	if result then
@@ -1510,7 +1543,7 @@ end
 
 local float = ffi.new('float[1]')
 local function inputFloatTooltip(name, t, k)
-	ig.igPushIDStr(name)
+	ig.igPushID_Str(name)
 	float[0] = tonumber(t[k]) or 0
 	local result = ig.igInputFloat('', float)
 	if result then
@@ -1522,7 +1555,7 @@ local function inputFloatTooltip(name, t, k)
 end
 
 local function buttonTooltip(name, ...)
-	ig.igPushIDStr(name)
+	ig.igPushID_Str(name)
 	local result = ig.igButton(' ', ...)
 	hoverTooltip(name)
 	ig.igPopID()
@@ -1550,8 +1583,8 @@ end
 
 local int = ffi.new('int[1]', 0)
 local function radioTooltip(name, t, k, v)
-	ig.igPushIDStr(name)
-	if ig.igRadioButtonIntPtr('', int, v) then
+	ig.igPushID_Str(name)
+	if ig.igRadioButton_IntPtr('', int, v) then
 		t[k] = int[0]
 	end
 	hoverTooltip(name)
@@ -1571,7 +1604,7 @@ end
 
 
 local function comboTooltip(name, t, k, values)
-	ig.igPushIDStr(name)
+	ig.igPushID_Str(name)
 	int[0] = t[k]
 	local result = ig.igCombo(name, int, values) 
 	if result then
