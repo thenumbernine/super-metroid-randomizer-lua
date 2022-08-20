@@ -1,7 +1,6 @@
 local ffi = require 'ffi'
+local table = require 'ext.table'
 local config = require 'config'
-
-local pickRandom = require 'util'.pickRandom
 
 local rom = sm.rom
 
@@ -29,7 +28,7 @@ local function burrowIntoWall(pos, breakType)
 	end
 
 	-- TODO pick your break type.  TODO base it on what items you have so far.
-	breakType = breakType or pickRandom{
+	breakType = breakType or table.pickRandom{
 		roomBlockData.extTileTypes.beam_1x1,
 		roomBlockData.extTileTypes.bombable_1x1,
 		roomBlockData.extTileTypes.powerbomb_1x1,
@@ -42,14 +41,14 @@ local function burrowIntoWall(pos, breakType)
 	if breakType == roomBlockData.extTileTypes.supermissile_1x1 
 	or breakType == roomBlockData.extTileTypes.grappling_break
 	then
-		breakTypeStack:insert(1,  pickRandom{
+		breakTypeStack:insert(1,  table.pickRandom{
 			roomBlockData.extTileTypes.beam_1x1,
 			roomBlockData.extTileTypes.bombable_1x1,
 		})
 	end
 	-- ok now add some random non-expendible breakable types after the fact
 	for i=1,100 do
-		breakTypeStack:insert(pickRandom{
+		breakTypeStack:insert(table.pickRandom{
 			roomBlockData.extTileTypes.beam_1x1,
 			roomBlockData.extTileTypes.bombable_1x1,
 			roomBlockData.tileTypes.empty,
@@ -72,7 +71,7 @@ local function burrowIntoWall(pos, breakType)
 	local len = math.random(config.randomizeItemsScavengerHuntProps.burrowLength)
 --print('boring break type '..roomBlockData.extTileTypeNameForValue[breakType]..' len '..len..' into wall '..posstr(x,y))
 	
-	local burrowMethod = pickRandom{'worm', 'spider'}
+	local burrowMethod = table.pickRandom{'worm', 'spider'}
 
 	local all = table{{x,y}}
 	local options = table{{x,y}}
@@ -85,7 +84,7 @@ local function burrowIntoWall(pos, breakType)
 			x,y = table.unpack(options:remove(math.random(#options)))
 		elseif burrowMethod == 'spider' then
 			-- does fractures of paths
-			x,y = table.unpack(pickRandom(options))
+			x,y = table.unpack(table.pickRandom(options))
 		end
 		local found
 		for _,dir in ipairs(dirs:shuffle()) do
@@ -296,11 +295,11 @@ do
 			poss:insert(loc)
 		end
 	end	
-	local pos = pickRandom(poss)
+	local pos = table.pickRandom(poss)
 	local roomBlockData = pos[3]
 	assert(roomBlockData.rooms, "found a roomblock without any rooms")
 --	pos = burrowIntoWall(pos, roomBlockData.extTileTypes.beam_1x1)
-	local m = pickRandom(roomBlockData.rooms:filter(function(m) 
+	local m = table.pickRandom(roomBlockData.rooms:filter(function(m) 
 		return firstMissileRooms:find(m)
 	end))
 	for _,plmset in ipairs(getAllRoomPLMs(m)) do
@@ -323,7 +322,7 @@ for rep=1,1 do
 		end
 		local cmd = assert(sm.plmCmdValueForName[name], "failed to find "..tostring(name))
 
-		local enterpos = pickRandom(allLocs)
+		local enterpos = table.pickRandom(allLocs)
 		local roomBlockData = enterpos[3]
 		local itempos, touchedSIs, plmpos = burrowIntoWall(enterpos)	-- now burrow a hole in the room and place the item at the end of it
 		local scrollmodData 
@@ -335,7 +334,7 @@ for rep=1,1 do
 			end
 			scrollmodData:insert(0x80)
 		end
-		local m = pickRandom(roomBlockData.rooms:filter(function(m)
+		local m = table.pickRandom(roomBlockData.rooms:filter(function(m)
 			return allRoomSet[m]
 		end))
 		for _,plmset in ipairs(getAllRoomPLMs(m)) do

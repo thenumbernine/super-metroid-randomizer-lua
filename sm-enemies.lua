@@ -14,8 +14,6 @@ local pc = require 'pc'
 local topc = pc.to
 local frompc = pc.from
 
-local pickRandom = require 'util'.pickRandom
-
 -- where to put this...
 local addr24_t = struct{
 	name = 'addr24_t',
@@ -332,7 +330,7 @@ end
 function EnemyAuxTable:randomizeEnemy(enemy)
 	local field = self.enemyField
 	if not randomizeEnemyProps[field] then return end
-	enemy.ptr[0][field] = pickRandom(self.addrs)
+	enemy.ptr[0][field] = table.pickRandom(self.addrs)
 end
 
 -- print information on an individual enemy

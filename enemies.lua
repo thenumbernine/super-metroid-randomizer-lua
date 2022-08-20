@@ -1,4 +1,5 @@
 local ffi = require 'ffi'
+local table = require 'ext.table'
 local config = require 'config'
 local struct = require 'struct'
 local expRand = require 'exprand'
@@ -67,7 +68,7 @@ for i,enemy in ipairs(sm.enemies) do
 
 	for field,values in pairs(sm.allEnemyFieldValues) do
 		if randomizeEnemyProps[field] then
-			enemy.ptr[0][field] = pickRandom(values.values)
+			enemy.ptr[0][field] = table.pickRandom(values.values)
 		end
 	end
 

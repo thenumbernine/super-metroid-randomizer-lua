@@ -1,9 +1,5 @@
 local ffi = require 'ffi'
 
-local function pickRandom(t)
-	return t[math.random(#t)]
-end
-
 local function byteArraySubset(src, ofs, len)
 	assert(type(src) == 'cdata')
 	-- only do bounds check if we're dealing with an array
@@ -116,7 +112,6 @@ end
 
 return {
 	byteArraySubset = byteArraySubset,
-	pickRandom = pickRandom,
 	tableSubsetsEqual = tableSubsetsEqual,
 	tablesAreEqual = tablesAreEqual,
 	byteArraysAreEqual = byteArraysAreEqual,
