@@ -56,11 +56,11 @@ My next goal is to randomize blocks in certain passageways.
 
 ### I've got rooms decompressing and recompressing correctly: ###
 
-```
+`
 common room graphics tiles + tilemaps + bg tilemaps recompressed from 46094 to 27188, saving 18906 bytes (new data is 58% of original size)
 tileSet tilemap + graphicsTileSet + palettes recompressed from 243079 to 221753, saving 21326 bytes (new data is 91% of original size)
 rooms recompressed from 385399 to 217597, saving 167802 bytes (new data is 56% of original size)
-```
+`
 
 ### And here's a connectivity graph of the rooms.  Multiple arrows means multiple roomstates.
 
