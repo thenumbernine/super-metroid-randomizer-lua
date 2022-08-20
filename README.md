@@ -54,11 +54,7 @@ My next goal is to randomize blocks in certain passageways.
 
 [memory map](memorymap.txt)
 
-### I've got rooms decompressing correctly.  Here's proof:
-
-![map of Super Metroid](map.png)
-
-### And recompressing correctly: ###
+### I've got rooms decompressing and recompressing correctly: ###
 
 ```
 common room graphics tiles + tilemaps + bg tilemaps recompressed from 46094 to 27188, saving 18906 bytes (new data is 58% of original size)
