@@ -7,7 +7,7 @@ TODO replace the rgb conversion with a shader that takes in the indexed 8-bit im
 
 --]]
 local ffi = require 'ffi'
-local ig = require 'ffi.imgui'
+local ig = require 'imgui'
 local gl = require 'gl'
 local glreport = require 'gl.report'
 local GLTex2D = require 'gl.tex2d'
