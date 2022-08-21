@@ -1520,48 +1520,6 @@ function App:event(...)
 	end
 end
 
-local function hoverTooltip(name)
-	if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
-		ig.igBeginTooltip()
-		ig.igText(name)
-		ig.igEndTooltip()
-	end
-end
-
-local bool = ffi.new('bool[1]')
-local function checkboxTooltip(name, t, k)
-	ig.igPushID_Str(name)
-	bool[0] = not not t[k]
-	local result = ig.igCheckbox('', bool)
-	if result then
-		t[k] = bool[0]
-	end
-	hoverTooltip(name)
-	ig.igPopID()
-	return result
-end
-
-local float = ffi.new('float[1]')
-local function inputFloatTooltip(name, t, k)
-	ig.igPushID_Str(name)
-	float[0] = tonumber(t[k]) or 0
-	local result = ig.igInputFloat('', float)
-	if result then
-		t[k] = float[0]
-	end
-	hoverTooltip(name)
-	ig.igPopID()
-	return result
-end
-
-local function buttonTooltip(name, ...)
-	ig.igPushID_Str(name)
-	local result = ig.igButton(' ', ...)
-	hoverTooltip(name)
-	ig.igPopID()
-	return result
-end
-
 local function makeTooltipImage(name, tex, w, h, color)
 	w = w or tex.width
 	h = h or tex.height
@@ -1581,21 +1539,9 @@ local function makeTooltipImage(name, tex, w, h, color)
 	end
 end
 
-local int = ffi.new('int[1]', 0)
-local function radioTooltip(name, t, k, v)
-	ig.igPushID_Str(name)
-	if ig.igRadioButton_IntPtr('', int, v) then
-		t[k] = int[0]
-	end
-	hoverTooltip(name)
-	ig.igPopID()
-end
-
 local function radioTooltipsFromTable(names, t, k)
-	int[0] = t[k]
 	for v,name in ipairs(names) do
-		-- TODO int and t[k] crosses over here ... hmm
-		radioTooltip(name, t, k, v)
+		ig.luatableTooltipRadio(name, t, k, v)
 		if v < #names then
 			ig.igSameLine()
 		end
@@ -1603,43 +1549,39 @@ local function radioTooltipsFromTable(names, t, k)
 end
 
 
+-- TODO make this 1-based
 local function comboTooltip(name, t, k, values)
-	ig.igPushID_Str(name)
-	int[0] = t[k]
-	local result = ig.igCombo(name, int, values) 
-	if result then
-		t[k] = int[0]
-	end
-	hoverTooltip(name)
-	ig.igPopID()
-	return result
+	t[k] = t[k] + 1
+	local result = table.pack(ig.luatableTooltipCombo(name, t, k, values))
+	t[k] = t[k] - 1
+	return result:unpack()
 end
 
 
 function App:updateGUI()
 	local sm = self.sm
 
-	checkboxTooltip('Draw Foreground', _G, 'editorDrawForeground')
+	ig.luatableTooltipCheckbox('Draw Foreground', _G, 'editorDrawForeground')
 	ig.igSameLine()
-	checkboxTooltip('Draw Layer 2 Background', _G, 'editorDrawLayer2')
+	ig.luatableTooltipCheckbox('Draw Layer 2 Background', _G, 'editorDrawLayer2')
 	ig.igSameLine()
-	checkboxTooltip('Draw PLMs', _G, 'editorDrawPLMs')
+	ig.luatableTooltipCheckbox('Draw PLMs', _G, 'editorDrawPLMs')
 	ig.igSameLine()
-	checkboxTooltip('Draw Enemy Spawns', _G, 'editorDrawEnemySpawnSets')
+	ig.luatableTooltipCheckbox('Draw Enemy Spawns', _G, 'editorDrawEnemySpawnSets')
 	ig.igSameLine()
-	checkboxTooltip('Draw Doors', _G, 'editorDrawDoors')
+	ig.luatableTooltipCheckbox('Draw Doors', _G, 'editorDrawDoors')
 	ig.igSameLine()
-	checkboxTooltip('Hide MapBlocks Of Solid Tiles', _G, 'editorHideFilledMapBlocks')
+	ig.luatableTooltipCheckbox('Hide MapBlocks Of Solid Tiles', _G, 'editorHideFilledMapBlocks')
 	ig.igSameLine()
-	checkboxTooltip('Show Region Borders', _G, 'editorShowRegionBorders')
+	ig.luatableTooltipCheckbox('Show Region Borders', _G, 'editorShowRegionBorders')
 	ig.igSameLine()
-	checkboxTooltip('Show Room Borders', _G, 'editorShowRoomBorders')
+	ig.luatableTooltipCheckbox('Show Room Borders', _G, 'editorShowRoomBorders')
 
 	radioTooltipsFromTable(editorModes, _G, 'editorMode')
 
 	if ig.igCollapsingHeader'Set Region Offsets To Predefined:' then
 		for i,info in ipairs(self.predefinedRegionOffsets) do
-			if buttonTooltip(info.name) then
+			if ig.tooltipButton(info.name) then
 				self:setRegionOffsets(i)
 			end
 			if i < #self.predefinedRegionOffsets then
@@ -1674,9 +1616,9 @@ function App:updateGUI()
 		
 		local region = self.selectedRegion
 		if region then
-			checkboxTooltip('Show Region '..region.index, region, 'show')
-			inputFloatTooltip('xofs', region.ofs, 'x')
-			inputFloatTooltip('yofs', region.ofs, 'y')
+			ig.luatableTooltipCheckbox('Show Region '..region.index, region, 'show')
+			ig.luatableTooltipInputFloat('xofs', region.ofs, 'x')
+			ig.luatableTooltipInputFloat('yofs', region.ofs, 'y')
 
 			local lsr = sm.loadStationsForRegion[region.index+1]
 			if not lsr then
