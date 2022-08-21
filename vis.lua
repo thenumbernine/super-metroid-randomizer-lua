@@ -1541,7 +1541,7 @@ end
 
 local function radioTooltipsFromTable(names, t, k)
 	for v,name in ipairs(names) do
-		ig.luatableTooltipRadio(name, t, k, v)
+		ig.luatableTooltipRadioButton(name, t, k, v)
 		if v < #names then
 			ig.igSameLine()
 		end
