@@ -32,7 +32,7 @@ local useBakedGraphicsTileTextures = true
 --local cmdline = require 'ext.cmdline'(...)
 local infilename = ... or 'Super Metroid (JU) [!].smc'
 
-local App = class(require 'glapp.orbit'(require 'imguiapp'))
+local App = require 'imguiapp.withorbit'()
 
 App.title = 'Super Metroid Viewer'
 
