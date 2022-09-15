@@ -398,7 +398,7 @@ end
 function App:initGL()
 	App.super.initGL(self)
 
-	local romstr = assert(file[infilename])
+	local romstr = assert(file(infilename):read())
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
 		print('skipping rom file header')
