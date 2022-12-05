@@ -901,9 +901,9 @@ end
 local matrix_ffi = require 'matrix.ffi'
 matrix_ffi.real = 'float'
 	
-local projMat = matrix_ffi.zeros(4,4)
-local mvMat = matrix_ffi.zeros(4,4)
-local pmvMat = matrix_ffi.zeros(4,4)
+local projMat = matrix_ffi.zeros{4,4}
+local mvMat = matrix_ffi.zeros{4,4}
+local pmvMat = matrix_ffi.zeros{4,4}
 
 -- 1 gl unit = 1 tile
 function App:update()
