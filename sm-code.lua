@@ -5,7 +5,7 @@ https://wiki.superfamicom.org/65816-reference
 https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf
 
 
-typedef struct {
+typedef struct flags_t {
 	uint8_t carry : 1;
 	uint8_t zero : 1;
 	uint8_t interrupt_disable : 1;

@@ -49,7 +49,7 @@ SMSamus.samusSpriteBank = 0x92
 
 
 --[[
-typedef struct {
+typedef struct spritemapSet_t {
 	uint16_t count;
 	spritemap_t spritemap[count];	(see sm-enemies.lua for spritemap_t def)
 } spritemapSet_t;
@@ -103,7 +103,7 @@ local samusDMAEntry_t = struct{
 }	
 
 --[[
-typedef struct {
+typedef struct animLookup_t {
 } animLookup_t;
 --]]
 local animLookup_t = struct{

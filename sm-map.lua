@@ -1144,7 +1144,7 @@ local TileSet = require 'tileset'
 graphicsTile_t = 8x8 rendered block
 --]]
 ffi.cdef(template([[
-typedef struct {
+typedef struct graphicsTile_t {
 	uint8_t s[<?=graphicsTileSizeInBytes?>];
 } graphicsTile_t;
 ]], {
