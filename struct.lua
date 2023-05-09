@@ -29,7 +29,7 @@ function structmt:__call(args)
 	local name = assert(args.name)
 	local fields = assert(args.fields)
 	local code = template([[
-typedef union {
+typedef union <?=name?> {
 	struct {
 <? 
 local ffi = require 'ffi'

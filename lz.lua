@@ -10,7 +10,7 @@ local vector = require 'ffi.cpp.vector'
 local tableToByteArray = require 'util'.tableToByteArray
 
 ffi.cdef[[
-typedef union {
+typedef union lzcmd_t {
 	uint8_t v;
 	struct {
 		uint8_t len : 5;
