@@ -19,10 +19,10 @@ local math = require 'ext.math'
 local file = require 'ext.file'
 local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
-local SM = require 'sm'
+local SM = require 'super_metroid_randomizer.sm'
 
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
+local topc = require 'super_metroid_randomizer.pc'.to
+local frompc = require 'super_metroid_randomizer.pc'.from
 
 -- TODO replace this with shaders
 local useBakedGraphicsTileTextures = true 
@@ -38,7 +38,7 @@ App.title = 'Super Metroid Viewer'
 
 
 local blockSizeInPixels = SM.blockSizeInPixels
-local blocksPerRoom = require 'roomblocks'.blocksPerRoom
+local blocksPerRoom = require 'super_metroid_randomizer.roomblocks'.blocksPerRoom
 local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels 
 local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes 
 local roomSizeInPixels = SM.roomSizeInPixels 

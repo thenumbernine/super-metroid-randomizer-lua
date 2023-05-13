@@ -8,22 +8,22 @@ so TODO clean up and bureaucratize
 
 local ffi = require 'ffi'
 local class = require 'ext.class'
-local MemoryMap = require 'memorymap'
-local config = require 'config'
-local strtohex = require 'util'.strtohex
-local Blob = require 'blob'
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
+local MemoryMap = require 'super_metroid_randomizer.memorymap'
+local config = require 'super_metroid_randomizer.config'
+local strtohex = require 'super_metroid_randomizer.util'.strtohex
+local Blob = require 'super_metroid_randomizer.blob'
+local topc = require 'super_metroid_randomizer.pc'.to
+local frompc = require 'super_metroid_randomizer.pc'.from
 
 local SM = class(
-	require 'sm-code',
-	require 'sm-enemies',
-	require 'sm-items',
-	require 'sm-graphics',
-	require 'sm-regions',
-	require 'sm-map',
-	require 'sm-weapons',
-	require 'sm-samus'
+	require 'super_metroid_randomizer.sm-code',
+	require 'super_metroid_randomizer.sm-enemies',
+	require 'super_metroid_randomizer.sm-items',
+	require 'super_metroid_randomizer.sm-graphics',
+	require 'super_metroid_randomizer.sm-regions',
+	require 'super_metroid_randomizer.sm-map',
+	require 'super_metroid_randomizer.sm-weapons',
+	require 'super_metroid_randomizer.sm-samus'
 )
 
 --[[
@@ -33,7 +33,7 @@ function SM:init(rom, romlen)
 	self.rom = rom
 	self.romlen = romlen
 
-	self.md5hash = strtohex(require 'md5'(rom, romlen))
+	self.md5hash = strtohex(require 'super_metroid_randomizer.md5'(rom, romlen))
 	print('md5: '..self.md5hash)
 
 	self.nameBlob = Blob{sm=self, addr=topc(0x80, 0xffc0), count=0x15}

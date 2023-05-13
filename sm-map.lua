@@ -17,28 +17,28 @@ local range = require 'ext.range'
 local tolua = require 'ext.tolua'
 local math = require 'ext.math'
 local template = require 'template'
-local struct = require 'struct'
-local lz = require 'lz'
 local vector = require 'ffi.cpp.vector'
-local WriteRange = require 'writerange'
-local config = require 'config'
 local Image = require 'image'
+local struct = require 'super_metroid_randomizer.smstruct'
+local lz = require 'super_metroid_randomizer.lz'
+local WriteRange = require 'super_metroid_randomizer.writerange'
+local config = require 'super_metroid_randomizer.config'
 
-local Blob = require 'blob'
-local Palette = require 'palette'
+local Blob = require 'super_metroid_randomizer.blob'
+local Palette = require 'super_metroid_randomizer.palette'
 
-local SMGraphics = require 'sm-graphics'
+local SMGraphics = require 'super_metroid_randomizer.sm-graphics'
 local graphicsTileSizeInPixels = SMGraphics.graphicsTileSizeInPixels 
 local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes 
 
-local pc = require 'pc'
+local pc = require 'super_metroid_randomizer.pc'
 local topc = pc.to
 local frompc = pc.from
 
-local tableSubsetsEqual = require 'util'.tableSubsetsEqual
-local tablesAreEqual = require 'util'.tablesAreEqual
-local byteArraysAreEqual = require 'util'.byteArraysAreEqual
-local tableToByteArray = require 'util'.tableToByteArray
+local tableSubsetsEqual = require 'super_metroid_randomizer.util'.tableSubsetsEqual
+local tablesAreEqual = require 'super_metroid_randomizer.util'.tablesAreEqual
+local byteArraysAreEqual = require 'super_metroid_randomizer.util'.byteArraysAreEqual
+local tableToByteArray = require 'super_metroid_randomizer.util'.tableToByteArray
 
 
 local SMMap = {}
@@ -88,7 +88,7 @@ local mapKraidBGTilemapTopAddrLoc = {ofs1addr=topc(0xa7, 0xaac9), ofs2addr=topc(
 local mapKraidBGTilemapBottomAddrLoc = {ofs1addr=topc(0xa7, 0xaaeb), ofs2addr=topc(0xa7, 0xaaf1), bankaddr=topc(0xa7, 0xaaf7)}
 
 
-local blocksPerRoom = require 'roomblocks'.blocksPerRoom
+local blocksPerRoom = require 'super_metroid_randomizer.roomblocks'.blocksPerRoom
 local blockSizeInPixels = 16
 local roomSizeInPixels = blocksPerRoom * blockSizeInPixels
 
@@ -667,12 +667,12 @@ end
 SMMap.plmCmdNameForValue = SMMap.plmCmdValueForName:map(function(v,k) return k,v end)
 
 
-local Room = require 'room'
+local Room = require 'super_metroid_randomizer.room'
 SMMap.Room = Room
 
-SMMap.RoomState = require 'roomstate'
+SMMap.RoomState = require 'super_metroid_randomizer.roomstate'
 
-local PLM = require 'plm'
+local PLM = require 'super_metroid_randomizer.plm'
 SMMap.PLM = PLM
 
 
@@ -685,7 +685,7 @@ function PLMSet:init(args)
 end
 
 
-local Door = require 'door'
+local Door = require 'super_metroid_randomizer.door'
 SMMap.Door = Door
 
 function SMMap:mapAddDoor(addr)
@@ -948,7 +948,7 @@ function SMMap:mapAddEnemyGFXSet(addr)
 	return enemyGFXSet
 end
 
-local MapBG = require 'mapbg'
+local MapBG = require 'super_metroid_randomizer.mapbg'
 
 --[[
 table of all unique bgs.
@@ -1035,7 +1035,7 @@ function SMMap:mapAddFX1Set(addr)
 end
 
 
-local RoomBlocks = require 'roomblocks'
+local RoomBlocks = require 'super_metroid_randomizer.roomblocks'
 SMMap.RoomBlocks = RoomBlocks
 
 -- this is the block data of the rooms
@@ -1138,7 +1138,7 @@ function SMMap:mapAddTileSetTilemap(addr)
 	return tilemap
 end
 
-local TileSet = require 'tileset'
+local TileSet = require 'super_metroid_randomizer.tileset'
 
 --[[
 graphicsTile_t = 8x8 rendered block

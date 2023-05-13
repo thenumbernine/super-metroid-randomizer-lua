@@ -6,11 +6,11 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local tolua = require 'ext.tolua'
-local struct = require 'struct'
-local config = require 'config'
+local struct = require 'super_metroid_randomizer.smstruct'
+local config = require 'super_metroid_randomizer.config'
 local randomizeEnemyProps = config.randomizeEnemyProps
 
-local pc = require 'pc'
+local pc = require 'super_metroid_randomizer.pc'
 local topc = pc.to
 local frompc = pc.from
 

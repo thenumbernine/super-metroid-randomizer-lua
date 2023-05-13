@@ -5,7 +5,7 @@ but maintains the address back in the source ROM (for writing back)
 --]]
 local ffi = require 'ffi'
 local class = require 'ext.class'
-local lz = require 'lz'
+local lz = require 'super_metroid_randomizer.lz'
 
 local Blob = class()
 

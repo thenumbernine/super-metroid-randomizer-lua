@@ -1,10 +1,10 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
-local struct = require 'struct'
-local topc = require 'pc'.to
 local vector = require 'ffi.cpp.vector'
-local Blob = require 'blob'
+local struct = require 'super_metroid_randomizer.smstruct'
+local topc = require 'super_metroid_randomizer.pc'.to
+local Blob = require 'super_metroid_randomizer.blob'
 --[[
 this is a tilemapElem+graphicsTile+palette triplet
 so if i wanted to optimize this then i should keep track of what tiles are used per each 'tile' and 'graphicsTile'

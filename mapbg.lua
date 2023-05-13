@@ -1,8 +1,8 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
-local struct = require 'struct'
-local Blob = require 'blob'
+local struct = require 'super_metroid_randomizer.smstruct'
+local Blob = require 'super_metroid_randomizer.blob'
 
 --[[
 now using http://patrickjohnston.org/bank/8F#fB76A

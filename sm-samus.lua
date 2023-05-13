@@ -34,12 +34,12 @@ local ffi = require 'ffi'
 local range = require 'ext.range'
 local table = require 'ext.table'
 local class = require 'ext.class'
-local Blob = require 'blob'
-local Palette = require 'palette'
-local topc = require 'pc'.to
-local struct = require 'struct'
+local Blob = require 'super_metroid_randomizer.blob'
+local Palette = require 'super_metroid_randomizer.palette'
+local topc = require 'super_metroid_randomizer.pc'.to
+local struct = require 'super_metroid_randomizer.smstruct'
 
-local SMGraphics = require 'sm-graphics'
+local SMGraphics = require 'super_metroid_randomizer.sm-graphics'
 local graphicsTileSizeInBytes = SMGraphics.graphicsTileSizeInBytes 
 
 

@@ -4,7 +4,7 @@
 
 local ffi = require 'ffi'
 local tolua = require 'ext.tolua'
-local config = require 'config'
+local config = require 'super_metroid_randomizer.config'
 local playerSkills = config.playerSkills
 
 

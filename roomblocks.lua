@@ -1,7 +1,7 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
-local Blob = require 'blob'
+local Blob = require 'super_metroid_randomizer.blob'
 
 local RoomBlocks = class(Blob)
 

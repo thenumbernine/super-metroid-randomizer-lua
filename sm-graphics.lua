@@ -3,12 +3,12 @@ local bit = require 'bit'
 local class = require 'ext.class'
 local range = require 'ext.range'
 local table = require 'ext.table'
-local struct = require 'struct'
-local Blob = require 'blob'
-local Palette = require 'palette'
 local Image = require 'image'
+local struct = require 'super_metroid_randomizer.smstruct'
+local Blob = require 'super_metroid_randomizer.blob'
+local Palette = require 'super_metroid_randomizer.palette'
 
-local pc = require 'pc'
+local pc = require 'super_metroid_randomizer.pc'
 local topc = pc.to
 local frompc = pc.from
 

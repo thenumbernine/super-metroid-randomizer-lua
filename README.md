@@ -16,6 +16,7 @@ Randomizer (`run.lua`) Depends On:
 - LuaJIT
 - [lua-ext](https://github.com/thenumbernine/lua-ext)
 - [lua-template](https://github.com/thenumbernine/lua-template)
+- [struct-lua](https://github.com/thenumbernine/struct-lua)
 - [lua-ips](https://github.com/thenumbernine/lua-ips)
 - [lua-image](https://github.com/thenumbernine/lua-image), if you enable config.lua's writeOutImage
 

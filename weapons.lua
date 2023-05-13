@@ -1,5 +1,5 @@
-local expRand = require 'exprand'
-local config = require 'config'
+local expRand = require 'super_metroid_randomizer.exprand'
+local config = require 'super_metroid_randomizer.config'
 
 print()
 print'weapon damages:'

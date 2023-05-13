@@ -1,7 +1,7 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
+local topc = require 'super_metroid_randomizer.pc'.to
+local frompc = require 'super_metroid_randomizer.pc'.from
 
 local SMWeapons = {}
 

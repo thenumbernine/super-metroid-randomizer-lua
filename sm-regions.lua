@@ -3,10 +3,10 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local math = require 'ext.math'
-local config = require 'config'
-local Blob = require 'blob'
+local config = require 'super_metroid_randomizer.config'
+local Blob = require 'super_metroid_randomizer.blob'
 
-local pc = require 'pc'
+local pc = require 'super_metroid_randomizer.pc'
 local topc = pc.to
 local frompc = pc.from
 
@@ -279,7 +279,7 @@ function SMRegions:regionsBindRooms()
 			end
 		end
 		local function fix(t)
-			local d = require 'util'.hexStrToByteArray(table.concat(t))
+			local d = require 'super_metroid_randomizer.util'.hexStrToByteArray(table.concat(t))
 			hiloswizzle(d, 32)
 			return d
 		end

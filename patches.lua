@@ -2,7 +2,7 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 
-local topc = require 'pc'.to
+local topc = require 'super_metroid_randomizer.pc'.to
 
 local Patches = class()
 

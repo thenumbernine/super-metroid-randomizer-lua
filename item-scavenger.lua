@@ -1,6 +1,6 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
-local config = require 'config'
+local config = require 'super_metroid_randomizer.config'
 
 local rom = sm.rom
 

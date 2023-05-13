@@ -17,7 +17,7 @@ Looks like chozo items likewise can be set in any empty tile to be a solid, shoo
 --]]
 
 local ffi = require 'ffi'
-local config = require 'config'
+local config = require 'super_metroid_randomizer.config'
 
 local rom = sm.rom
 

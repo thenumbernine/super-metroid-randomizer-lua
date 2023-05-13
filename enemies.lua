@@ -1,10 +1,10 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
-local config = require 'config'
-local struct = require 'struct'
-local expRand = require 'exprand'
+local config = require 'super_metroid_randomizer.config'
+local struct = require 'super_metroid_randomizer.smstruct'
+local expRand = require 'super_metroid_randomizer.exprand'
 local randomizeEnemyProps = config.randomizeEnemyProps
-local topc = require 'pc'.to
+local topc = require 'super_metroid_randomizer.pc'.to
 
 local typeinfo = {
 	uint8_t = {range={0,0xff}},

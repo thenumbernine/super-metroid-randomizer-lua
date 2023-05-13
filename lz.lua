@@ -7,7 +7,7 @@ local table = require 'ext.table'
 local range = require 'ext.range'
 local vector = require 'ffi.cpp.vector'
 
-local tableToByteArray = require 'util'.tableToByteArray
+local tableToByteArray = require 'super_metroid_randomizer.util'.tableToByteArray
 
 ffi.cdef[[
 typedef union lzcmd_t {

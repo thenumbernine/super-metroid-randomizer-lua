@@ -15,7 +15,7 @@ local range = require 'ext.range'
 local tolua = require 'ext.tolua'
 local cmdline = require 'ext.cmdline'(...)
 
-local topc = require 'pc'.to
+local topc = require 'super_metroid_randomizer.pc'.to
 
 local timerIndent = 0
 function timer(name, callback, ...)
@@ -32,7 +32,7 @@ end
 timer('everything', function()
 	function I(...) return ... end
 	local ffi = require 'ffi'
-	local config = require 'config'
+	local config = require 'super_metroid_randomizer.config'
 
 	for k,v in pairs(cmdline) do
 		if not ({
@@ -128,7 +128,7 @@ timer('everything', function()
 
 	-- global stuff
 
-	local patches = require 'patches'(rom)
+	local patches = require 'super_metroid_randomizer.patches'(rom)
 
 	if config.skipItemFanfare then
 		patches:skipItemFanfare()
@@ -148,7 +148,7 @@ timer('everything', function()
 
 	-- make a single object for the representation of the ROM
 	-- this way I can call stuff on it -- like making a memory map -- multiple times
-	local SM = require 'sm'
+	local SM = require 'super_metroid_randomizer.sm'
 
 	-- global for now
 	timer('read ROM', function()
@@ -502,40 +502,40 @@ timer('everything', function()
 	-- do the enemy field randomization
 	if config.randomizeEnemies then
 		timer('randomizing enemies', function()
-			require 'enemies'
+			require 'super_metroid_randomizer.enemies'
 		end)
 	end
 
 	if config.randomizeWeapons then
 		timer('randomizing weapons', function()
-			require 'weapons'
+			require 'super_metroid_randomizer.weapons'
 		end)
 	end
 
 	if config.randomizeWorld then
 		timer('randomizing world', function()
-			require 'randomizeworld'
+			require 'super_metroid_randomizer.randomizeworld'
 		end)
 	else
 
 		-- this is just my testbed for map modification code
-		--require 'rooms'
+		--require 'super_metroid_randomizer.rooms'
 
 		if config.randomizeDoors then
 			timer('randomizing doors', function()
-				require 'doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability.
+				require 'super_metroid_randomizer.doors'	-- still experimental.  this just adds colored doors, but doesn't test for playability.
 			end)
 		end
 
 		if config.randomizeItems then
 			timer('randomizing items', function()
-				require 'items'
+				require 'super_metroid_randomizer.items'
 			end)
 		end
 
 		if config.randomizeItemsScavengerHunt then
 			timer('applying item-scavenger', function()
-				require 'item-scavenger'
+				require 'super_metroid_randomizer.item-scavenger'
 			end)
 		end
 	end

@@ -1,7 +1,7 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
-local Blob = require 'blob'
-local struct = require 'struct'
+local Blob = require 'super_metroid_randomizer.blob'
+local struct = require 'super_metroid_randomizer.smstruct'
 
 
 local rgb_t = struct{

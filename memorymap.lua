@@ -1,6 +1,6 @@
 local class = require 'ext.class'
 local table = require 'ext.table'
-local pc = require 'pc'
+local pc = require 'super_metroid_randomizer.pc'
 
 local MemoryMap = class()
 

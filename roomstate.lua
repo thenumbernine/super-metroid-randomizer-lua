@@ -2,11 +2,11 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
-local struct = require 'struct'
-local Blob = require 'blob'
+local struct = require 'super_metroid_randomizer.smstruct'
+local Blob = require 'super_metroid_randomizer.blob'
 
-local frompc = require 'pc'.from
-local topc = require 'pc'.to
+local frompc = require 'super_metroid_randomizer.pc'.from
+local topc = require 'super_metroid_randomizer.pc'.to
 
 
 local roomstate_t = struct{

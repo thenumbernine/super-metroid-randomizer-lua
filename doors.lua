@@ -1,5 +1,5 @@
 local ffi = require 'ffi'
-local config = require 'config'
+local config = require 'super_metroid_randomizer.config'
 
 local rom = sm.rom
 	

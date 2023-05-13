@@ -1,11 +1,11 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
-local frompc = require 'pc'.from
-local topc = require 'pc'.to
-local struct = require 'struct'
-local RoomState = require 'roomstate'
-local Blob = require 'blob'
+local frompc = require 'super_metroid_randomizer.pc'.from
+local topc = require 'super_metroid_randomizer.pc'.to
+local struct = require 'super_metroid_randomizer.smstruct'
+local RoomState = require 'super_metroid_randomizer.roomstate'
+local Blob = require 'super_metroid_randomizer.blob'
 
 
 -- the 'mdb' defined in section 6 of metroidconstruction.com/SMMM

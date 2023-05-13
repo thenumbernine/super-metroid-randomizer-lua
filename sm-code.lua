@@ -60,11 +60,11 @@ local bit = require 'bit'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local class = require 'ext.class'
-local config = require 'config'
-local topc = require 'pc'.to
-local frompc = require 'pc'.from
+local config = require 'super_metroid_randomizer.config'
+local topc = require 'super_metroid_randomizer.pc'.to
+local frompc = require 'super_metroid_randomizer.pc'.from
 
-local tablesAreEqual = require 'util'.tablesAreEqual
+local tablesAreEqual = require 'super_metroid_randomizer.util'.tablesAreEqual
 
 
 local SMCode = {}
