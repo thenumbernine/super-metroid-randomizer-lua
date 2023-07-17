@@ -16,7 +16,7 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local math = require 'ext.math'
-local file = require 'ext.file'
+local path = require 'ext.path'
 local vec2f = require 'vec-ffi.vec2f'
 local Image = require 'image'
 local SM = require 'super_metroid_randomizer.sm'
@@ -398,7 +398,7 @@ end
 function App:initGL()
 	App.super.initGL(self)
 
-	local romstr = assert(file(infilename):read())
+	local romstr = assert(path(infilename):read())
 	local header = ''
 	if bit.band(#romstr, 0x7fff) ~= 0 then
 		print('skipping rom file header')

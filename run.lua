@@ -9,7 +9,7 @@ https://gamefaqs.gamespot.com/snes/588741-super-metroid/faqs/39375%22
 http://deanyd.net/sm/index.php?title=List_of_rooms
 --]]
 
-local file = require 'ext.file'
+local path = require 'ext.path'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local tolua = require 'ext.tolua'
@@ -98,20 +98,20 @@ timer('everything', function()
 	end
 
 	--[[ apply patches -- do this before removing any rom header (i guess that depends on the patch's requirements)
-	file'__tmp':write(file(infilename):read())
+	path'__tmp':write(path(infilename):read())
 	local function applyPatch(patchfilename)
 		exec('luajit ../ips/ips.lua __tmp patches/'..patchfilename..' __tmp2 show')
-		file'__tmp':write(file'__tmp2':read())
-		file'__tmp2':remove()
+		path'__tmp':write(path'__tmp2':read())
+		path'__tmp2':remove()
 	end
 	
 	--applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
 	
-	romstr = file'__tmp':read()
-	file'__tmp':remove()
+	romstr = path'__tmp':read()
+	path'__tmp':remove()
 	--]]
 	-- [[
-	local romstr = file(infilename):read()
+	local romstr = path(infilename):read()
 	--]]
 
 
@@ -236,7 +236,7 @@ timer('everything', function()
 			}:append(range(0x89, 0xdf))) do
 				-- you know, data could mess this up 
 				local addr = topc(bank, 0x8000)
-				file(('bank/%02X.txt'):format(bank)):write(sm:codeDisasm(addr, rom+addr, 0x8000))
+				path(('bank/%02X.txt'):format(bank)):write(sm:codeDisasm(addr, rom+addr, 0x8000))
 			end
 		end)
 	end
@@ -566,7 +566,7 @@ timer('everything', function()
 --]===]
 
 	-- write back out
-	file(outfilename):write(header .. ffi.string(rom, #romstr))
+	path(outfilename):write(header .. ffi.string(rom, #romstr))
 
 	print('done converting '..infilename..' => '..outfilename)
 
