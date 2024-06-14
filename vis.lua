@@ -32,6 +32,8 @@ local useBakedGraphicsTileTextures = true
 --local cmdline = require 'ext.cmdline'(...)
 local infilename = ... or 'Super Metroid (JU) [!].smc'
 
+require 'glapp.view'.useBuiltinMatrixMath = true
+
 local App = require 'imguiapp.withorbit'()
 
 App.title = 'Super Metroid Viewer'
@@ -626,10 +628,10 @@ function App:initGL()
 in vec4 vertex;
 in vec2 tca;
 out vec2 tcv;
-uniform mat4 pmvMat;
+uniform mat4 mvProjMat;
 void main() {
 	tcv = tca.xy;
-	gl_Position = pmvMat * vertex;
+	gl_Position = mvProjMat * vertex;
 }
 ]],
 		fragmentCode = [[
@@ -664,11 +666,11 @@ in vec2 tca;
 
 out vec2 tcv;
 
-uniform mat4 pmvMat;
+uniform mat4 mvProjMat;
 
 void main() {
 	tcv = tca.xy;
-	gl_Position = pmvMat * vertex;
+	gl_Position = mvProjMat * vertex;
 }
 ]],
 		fragmentCode = [[
@@ -898,13 +900,6 @@ function App:setRegionOffsets(index)
 	end
 end
 
-local matrix_ffi = require 'matrix.ffi'
-matrix_ffi.real = 'float'
-	
-local projMat = matrix_ffi.zeros{4,4}
-local mvMat = matrix_ffi.zeros{4,4}
-local pmvMat = matrix_ffi.zeros{4,4}
-
 -- 1 gl unit = 1 tile
 function App:update()
 
@@ -918,17 +913,12 @@ function App:update()
 	viewymin = view.pos.y - view.orthoSize
 	viewymax = view.pos.y + view.orthoSize
 
-
-	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, mvMat.ptr)
-	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, projMat.ptr)
-	matrix_ffi.inner(projMat, mvMat, nil, nil, nil, pmvMat)
-
 	self.indexShader:use()
-	gl.glUniformMatrix4fv(self.indexShader.uniforms.pmvMat.loc, 1, gl.GL_TRUE, pmvMat.ptr)
+	gl.glUniformMatrix4fv(self.indexShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjMat.ptr)
 	self.indexShader:useNone()
 	if self.tilemapShader then
 		self.tilemapShader:use()
-		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.pmvMat.loc, 1, gl.GL_TRUE, pmvMat.ptr)
+		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjmat.ptr)
 		self.tilemapShader:useNone()
 	end
 
