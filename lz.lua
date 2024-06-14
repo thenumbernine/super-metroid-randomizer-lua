@@ -51,22 +51,14 @@ local function decompress(rom, addr, ctype)
 		assert(mask == 0 or mask == 0xff)
 		local from = readbyte()
 		if bytes == 2 then
-if DEBUG then
-	print('from was', from)
-end			
+--DEBUG:print('from was', from)
 			from = bit.bor(from, bit.lshift(readbyte(), 8))
-if DEBUG then
-	print('from is', from)
-end
+--DEBUG:print('from is', from)
 		end
 		if not absolute then
-if DEBUG then
-	print('from was', from)
-end			
+--DEBUG:print('from was', from)
 			from = result.size - from
-if DEBUG then
-	print('from is', from)
-end		
+--DEBUG:print('from is', from)
 		end
 		if from >= 0 and from < result.size then
 			for i=0,len-1 do
@@ -81,17 +73,13 @@ end
 
 	while true do
 		local c = readbyte()
-if DEBUG then
-	print('got lz command', ('%02x'):format(c))		
-end		
+--DEBUG:print('got lz command', ('%02x'):format(c))		
 		if c == 0xff then break end
 		local lzc = ffi.new('lzcmd_t', c)
 		local cmd = lzc.cmd
 		local len = lzc.len
-if DEBUG then
-	print('cmd', cmd)
-	print('len', len)
-end
+--DEBUG:print('cmd', cmd)
+--DEBUG:print('len', len)
 		-- this means you can't have cmd==7 without it being an extended cmd
 		if cmd == 7 then	-- 1110:0000
 			-- extended cmd
@@ -104,23 +92,17 @@ end
 			for i=0,len-1 do
 				result:push_back(readbyte())
 			end
-if DEBUG then
-	print('cmd==0 copy '..range(len):mapi(function(i) return ('%02x'):format(result.v[#result-len+i-1]) end):concat' ')
-end
+--DEBUG:print('cmd==0 copy '..range(len):mapi(function(i) return ('%02x'):format(result.v[#result-len+i-1]) end):concat' ')
 		elseif cmd == 1 then	-- 001b: byte fill
 			local v = readbyte()
-if DEBUG then
-	print('cmd==1 byte fill '..('%02x'):format(v))
-end
+--DEBUG:print('cmd==1 byte fill '..('%02x'):format(v))
 			for i=0,len-1 do
 				result:push_back(v)
 			end
 		elseif cmd == 2 then	-- 010b: word fill
 			local v1 = readbyte()
 			local v2 = readbyte()
-if DEBUG then
-	print('cmd==2 word fill '..('%02x %02x'):format(v1, v2))
-end
+--DEBUG:print('cmd==2 word fill '..('%02x %02x'):format(v1, v2))
 			for i=0,len-1 do
 				if bit.band(i,1)==0 then
 					result:push_back(v1)
@@ -130,32 +112,22 @@ end
 			end
 		elseif cmd == 3 then	-- 011b: incremental fill
 			local v = readbyte()
-if DEBUG then
-	print('cmd==3 inc fill '..range(len):mapi(function(i) return ('%02x'):format(v+i-1) end):concat' ')
-end
+--DEBUG:print('cmd==3 inc fill '..range(len):mapi(function(i) return ('%02x'):format(v+i-1) end):concat' ')
 			for i=0,len-1 do
 				result:push_back(v)
 				v = bit.band(0xff, v+1)
 			end
 		elseif cmd == 4 then	-- 100b: 
-if DEBUG then
-	print('cmd==4')
-end
+--DEBUG:print('cmd==4')
 			lzdecompress(len, 2, 0, true)
 		elseif cmd == 5 then	-- 101b: 
-if DEBUG then
-	print('cmd==5')
-end
+--DEBUG:print('cmd==5')
 			lzdecompress(len, 2, 0xff, true)
 		elseif cmd == 6 then	-- 110b: 
-if DEBUG then
-	print('cmd==6')
-end
+--DEBUG:print('cmd==6')
 			lzdecompress(len, 1, 0, false)
 		elseif cmd == 7 then	-- 111b: 
-if DEBUG then
-	print('cmd==7')
-end
+--DEBUG:print('cmd==7')
 			lzdecompress(len, 1, 0xff, false)
 		end
 	end
@@ -208,9 +180,7 @@ local function noCompress(source, offset, length, result)
 	for i=0,length-1 do
 		result:insert(source[offset-length+i])
 	end
-if DEBUG then
-	print('adding noCompress '..range(length):mapi(function(i) return ('%02x'):format(result[#result-length+i]) end):concat' ')
-end
+--DEBUG:print('adding noCompress '..range(length):mapi(function(i) return ('%02x'):format(result[#result-length+i]) end):concat' ')
 end
 
 local function rleCompress(source, offset, op, len)
