@@ -924,11 +924,11 @@ function App:update()
 	matrix_ffi.inner(projMat, mvMat, nil, nil, nil, pmvMat)
 
 	self.indexShader:use()
-	gl.glUniformMatrix4fv(self.indexShader.uniforms.pmvMat.loc, 1, gl.GL_FALSE, pmvMat.ptr)
+	gl.glUniformMatrix4fv(self.indexShader.uniforms.pmvMat.loc, 1, gl.GL_TRUE, pmvMat.ptr)
 	self.indexShader:useNone()
 	if self.tilemapShader then
 		self.tilemapShader:use()
-		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.pmvMat.loc, 1, gl.GL_FALSE, pmvMat.ptr)
+		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.pmvMat.loc, 1, gl.GL_TRUE, pmvMat.ptr)
 		self.tilemapShader:useNone()
 	end
 
