@@ -628,10 +628,8 @@ function App:initGL()
 		precision = 'best',
 		vertexCode = [[
 layout(location=0) in vec2 vertex;
-
-// TODO turn these into divisor 4 attributes
-uniform vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions 
-uniform vec4 tcBBox;
+in vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions 
+in vec4 tcBBox;
 
 out vec2 tcv;
 uniform mat4 mvProjMat;
@@ -1072,6 +1070,7 @@ if useBakedGraphicsTileTextures then
 							bgTex:bind(0)
 							tileSet.palette.tex:bind(1)
 							
+							gl.glBegin(gl.GL_QUADS)
 							for j=0,h-1 do
 								for i=0,w-1 do
 									if (
@@ -1097,18 +1096,17 @@ if useBakedGraphicsTileTextures then
 										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
 
-										gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x1, -y1, x2, -y2)
-										gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
+										gl.glVertexAttrib4f(self.indexShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
+										gl.glVertexAttrib4f(self.indexShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
 
-										gl.glBegin(gl.GL_QUADS)
 										gl.glVertex2f(0, 0)
 										gl.glVertex2f(1, 0)
 										gl.glVertex2f(1, 1)
 										gl.glVertex2f(0, 1)
-										gl.glEnd()
 									end
 								end
 							end
+							gl.glEnd()
 							
 							tileSet.palette.tex:unbind(1)
 							bgTex:unbind(0)
@@ -1121,6 +1119,7 @@ if useBakedGraphicsTileTextures then
 						
 						local blocks12 = roomBlockData:getBlocks12()
 						local layer2blocks = roomBlockData:getLayer2Blocks()
+						gl.glBegin(gl.GL_QUADS)
 						for j=0,h-1 do
 							for i=0,w-1 do
 								if (
@@ -1177,15 +1176,13 @@ if useBakedGraphicsTileTextures then
 												local x2 = x1 + 1
 												local y2 = y1 + 1
 										
-												gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x1, -y1, x2, -y2)
-												gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
+												gl.glVertexAttrib4f(self.indexShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
+												gl.glVertexAttrib4f(self.indexShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
 												
-												gl.glBegin(gl.GL_QUADS)
 												gl.glVertex2f(0, 0)
 												gl.glVertex2f(1, 0)
 												gl.glVertex2f(1, 1)
 												gl.glVertex2f(0, 1)
-												gl.glEnd()
 											end
 											
 											-- draw tile
@@ -1214,21 +1211,20 @@ if useBakedGraphicsTileTextures then
 												local x = ti + blocksPerRoom * (i + roomxmin)
 												local y = tj + blocksPerRoom * (j + roomymin)
 												
-												gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x, -y, x+1, -y-1)
-												gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
+												gl.glVertexAttrib4f(self.indexShader.attrs.geomBBox.loc, x, -y, x+1, -y-1)
+												gl.glVertexAttrib4f(self.indexShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
 												
-												gl.glBegin(gl.GL_QUADS)
 												gl.glVertex2f(0, 0)
 												gl.glVertex2f(1, 0)
 												gl.glVertex2f(1, 1)
 												gl.glVertex2f(0, 1)
-												gl.glEnd()
 											end
 										end
 									end
 								end
 							end
 						end
+						gl.glEnd()
 						paletteTex:unbind(1)
 						tex:unbind(0)
 
