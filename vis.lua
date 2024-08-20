@@ -630,7 +630,6 @@ function App:initGL()
 layout(location=0) in vec2 vertex;
 in vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions 
 in vec4 tcBBox;
-
 out vec2 tcv;
 uniform mat4 mvProjMat;
 void main() {
@@ -664,21 +663,19 @@ if not useBakedGraphicsTileTextures then
 		version = 'latest',
 		precision = 'best',
 		vertexCode = [[
-in vec4 vertex;
-in vec2 tca;
-
+layout(location=0) in vec4 vertex;
+in vec4 geomBBox;
+in vec4 tcBBox;
 out vec2 tcv;
-
 uniform mat4 mvProjMat;
-
 void main() {
-	tcv = tca.xy;
-	gl_Position = mvProjMat * vertex;
+	tcv = mix(tcBBox.xy, tcBBox.zw, vertex.xy);
+	vec2 rvtx = mix(geomBBox.xy, geomBBox.zw, vertex.xy);
+	gl_Position = mvProjMat * vec4(rvtx, 0., 1.);
 }
 ]],
 		fragmentCode = [[
 in vec2 tcv;
-
 out vec4 fragColor;
 
 uniform sampler2D tilemap;
@@ -1264,10 +1261,13 @@ else -- useBakedGraphicsTileTextures
 										local tx2 = (i+1) * roomSizeInPixels / bgTilemapTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTilemapTex.height
 
-										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
-										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
-										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
-										gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+										gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
+										gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
+										
+										gl.glVertex2f(0, 0)
+										gl.glVertex2f(1, 0)
+										gl.glVertex2f(1, 1)
+										gl.glVertex2f(0, 1)
 									end
 								end
 							end
@@ -1348,11 +1348,14 @@ else -- useBakedGraphicsTileTextures
 												local y1 = tj + blocksPerRoom * (j + roomymin)
 												local x2 = x1 + 1
 												local y2 = y1 + 1
+										
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
 												
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+												gl.glVertex2f(0, 0)
+												gl.glVertex2f(1, 0)
+												gl.glVertex2f(1, 1)
+												gl.glVertex2f(0, 1)
 											end
 											
 											-- draw tile
@@ -1381,10 +1384,13 @@ else -- useBakedGraphicsTileTextures
 												local x = ti + blocksPerRoom * (i + roomxmin)
 												local y = tj + blocksPerRoom * (j + roomymin)
 												
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x, -y)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x+1, -y)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x+1, -y-1)
-												gl.glVertexAttrib2f(self.tilemapShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x, -y-1)
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x, -y, x+1, -y-1)
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
+												
+												gl.glVertex2f(0, 0)
+												gl.glVertex2f(1, 0)
+												gl.glVertex2f(1, 1)
+												gl.glVertex2f(0, 1)
 											end
 										end
 									end
