@@ -12,6 +12,8 @@ local gl = require 'gl'
 local glreport = require 'gl.report'
 local GLTex2D = require 'gl.tex2d'
 local GLProgram = require 'gl.program'
+local GLGeometry = require 'gl.geometry'
+local GLSceneObject = require 'gl.sceneobject'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
@@ -732,6 +734,69 @@ void main() {
 	self.tilemapShader:useNone()
 end
 
+-- [=[ unit quad filled geom
+	self.quadGeom = GLGeometry{
+		mode = gl.GL_TRIANGLE_STRIP,
+		vertexes = {
+			data = {
+				0, 0,
+				1, 0,
+				0, 1,
+				1, 1,
+			},
+			dim = 2,
+			count = 4,
+		},
+	}
+
+	self.drawRoomBakedSceneObj = GLSceneObject{
+		program = self.indexShader,
+		geometry = self.quadGeom,
+	}
+--]=]
+
+-- [=[ line loop unit quad for drawing arbitrary rectangles
+-- seems to no longer work with this after switching from immediate mode
+-- ... despite the line width range saying it is valid ....
+	self.outlineQuadGeom = GLGeometry{
+		mode = gl.GL_LINE_LOOP,
+		vertexes = {
+			data = {
+				0, 0,
+				1, 0,
+				1, 1,
+				0, 1,
+			},
+			dim = 2,
+			count = 4,
+		},
+	}
+
+	self.outlineSceneObj = GLSceneObject{
+		program = {
+			version = 'latest',
+			precision = 'best',
+			vertexCode = [[
+in vec2 vertex;
+uniform vec4 bbox;	//xyzw = [x1,y1], [x2,y2]
+uniform mat4 mvProjMat;
+void main() {
+	vec2 rvtx = vertex * (bbox.zw - bbox.xy) + bbox.xy;
+	gl_Position = mvProjMat * vec4(rvtx, 0., 1.);
+}
+]],
+			fragmentCode = [[
+uniform vec4 color;
+out vec4 fragColor;
+void main() {
+	fragColor = color;
+}
+]],
+		},
+		geometry = self.outlineQuadGeom,
+	}
+--]=]
+
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 glreport'here'
@@ -914,7 +979,7 @@ function App:update()
 	self.indexShader:useNone()
 	if self.tilemapShader then
 		self.tilemapShader:use()
-		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjmat.ptr)
+		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjMat.ptr)
 		self.tilemapShader:useNone()
 	end
 
@@ -934,14 +999,12 @@ function App:update()
 			then
 				local x1, y1 = blocksPerRoom * (region.xmin + region.ofs.x), blocksPerRoom * (region.ymin + region.ofs.y)
 				local x2, y2 = blocksPerRoom * (region.xmax + region.ofs.x), blocksPerRoom * (region.ymax + region.ofs.y)
-				gl.glColor3f(1,region==self.mouseOverRegion and 1 or 0,1)
 				gl.glLineWidth(4)
-				gl.glBegin(gl.GL_LINE_LOOP)
-				gl.glVertex2f(x1, -y1)
-				gl.glVertex2f(x1, -y2)
-				gl.glVertex2f(x2, -y2)
-				gl.glVertex2f(x2, -y1)
-				gl.glEnd()
+				self.outlineSceneObj:draw{
+					mvProjMat = self.view.mvProjMat.ptr,
+					color = region == self.mouseOverRegion and {1,1,1,1} or{1,0,1,1},
+					bbox = {x1, -y1, x2, -y2},
+				}
 				gl.glLineWidth(1)
 			end
 
@@ -965,14 +1028,12 @@ function App:update()
 					then
 						local x1, y1 = blocksPerRoom * roomxmin, blocksPerRoom * roomymin
 						local x2, y2 = blocksPerRoom * roomxmax, blocksPerRoom * roomymax
-						gl.glColor3f(1,1,self.mouseOverRoom == m and 1 or 0)
 						gl.glLineWidth(4)
-						gl.glBegin(gl.GL_LINE_LOOP)
-						gl.glVertex2f(x1, -y1)
-						gl.glVertex2f(x1, -y2)
-						gl.glVertex2f(x2, -y2)
-						gl.glVertex2f(x2, -y1)
-						gl.glEnd()
+						self.outlineSceneObj:draw{
+							mvProjMat = self.view.mvProjMat.ptr,
+							color = self.mouseOverRoom == m and {1,1,1,1} or{1,1,0,1},
+							bbox = {x1, -y1, x2, -y2},
+						}
 						gl.glLineWidth(1)				
 					end
 
@@ -1000,6 +1061,9 @@ if useBakedGraphicsTileTextures then
 						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 						local bgTex = bgBmp and bgBmp.tex
 						if bgTex then
+							
+							--self.drawRoomBakedSceneObj.texs[1] = bgTex
+							--self.drawRoomBakedSceneObj.texs[2] = tileSet.palette.tex
 							
 							bgTex:bind(0)
 							tileSet.palette.tex:bind(1)
@@ -1030,10 +1094,14 @@ if useBakedGraphicsTileTextures then
 										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
 
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)
+										gl.glVertex2f(x1, -y1)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)
+										gl.glVertex2f(x2, -y1)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)
+										gl.glVertex2f(x2, -y2)
+										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)
+										gl.glVertex2f(x1, -y2)
 									end
 								end
 							end
@@ -1458,13 +1526,14 @@ end -- useBakedGraphicsTileTextures
 
 	for _,selector in ipairs{roomSelector, regionSelector, doorSelector} do
 		if selector.selRectDownX and selector.selRectDownY then
-			gl.glColor3f(1,1,0)
-			gl.glBegin(gl.GL_LINE_LOOP)
-			gl.glVertex2f(selector.selRectDownX, selector.selRectDownY)
-			gl.glVertex2f(self.mouseViewPos.x, selector.selRectDownY)
-			gl.glVertex2f(self.mouseViewPos.x, self.mouseViewPos.y)
-			gl.glVertex2f(selector.selRectDownX, self.mouseViewPos.y)
-			gl.glEnd()
+			self.outlineSceneObj:draw{
+				mvProjMat = self.view.mvProjMat.ptr,
+				color = {1,1,0,1},
+				bbox = {
+					selector.selRectDownX, selector.selRectDownY,
+					self.mouseViewPos.x, self.mouseViewPos.y,
+				},
+			}
 		end
 	end
 
