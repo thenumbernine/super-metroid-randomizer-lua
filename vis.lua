@@ -795,6 +795,75 @@ void main() {
 		},
 		geometry = self.outlineQuadGeom,
 	}
+
+	self.plusSceneObj = GLSceneObject{
+		program = {
+			version = 'latest',
+			precision = 'best',
+			vertexCode = [[
+in vec2 vertex;
+uniform mat4 mvProjMat;
+uniform vec2 pos;
+void main() {
+	gl_Position = mvProjMat * vec4(vertex + pos, 0., 1.);
+}
+]],
+			fragmentCode = [[
+uniform vec4 color;
+out vec4 fragColor;
+void main() {
+	fragColor = color;
+}
+]],
+		},
+		vertexes = {
+			data = {
+				.5, 0,
+				-.5, 0,
+				0, .5,
+				0, -.5,
+			},
+			dim = 2,
+			count = 4,
+		},
+		geometry = {
+			mode = gl.GL_LINES,
+		},
+	}
+
+	self.lineSceneObj = GLSceneObject{
+		program = {
+			version = 'latest',
+			precision = 'best',
+			vertexCode = [[
+in vec2 vertex;
+uniform mat4 mvProjMat;
+uniform vec4 line;	//[x1,y1,x2,y2]
+void main() {
+	vec2 rvtx = mix(line.xy, line.zw, vertex.xy);
+	gl_Position = mvProjMat * vec4(rvtx, 0., 1.);
+}
+]],
+			fragmentCode = [[
+uniform vec4 color;
+out vec4 fragColor;
+void main() {
+	fragColor = color;
+}
+]],
+		},
+		vertexes = {
+			data = {
+				0, 0,
+				1, 1,
+			},
+			dim = 2,
+			count = 2,
+		},
+		geometry = {
+			mode = gl.GL_LINES,
+		},
+	}
 --]=]
 
 	gl.glEnable(gl.GL_BLEND)
@@ -1411,32 +1480,28 @@ end -- useBakedGraphicsTileTextures
 						if editorDrawPLMs
 						and rs.plmset 
 						then
-							gl.glColor3f(0,1,1)
 							for _,plm in ipairs(rs.plmset.plms) do
 								local x = .5 + plm.x + blocksPerRoom * roomxmin
 								local y = .5 + (plm.y + blocksPerRoom * roomymin)
-								gl.glBegin(gl.GL_LINES)
-								gl.glVertex2f(x-.5, -y)
-								gl.glVertex2f(x+.5, -y)
-								gl.glVertex2f(x, -y-.5)
-								gl.glVertex2f(x, -y+.5)
-								gl.glEnd()
+								self.plusSceneObj:draw{
+									mvProjMat = self.view.mvProjMat.ptr,
+									color = {0,1,1,1},
+									pos = {x, -y},
+								}
 							end
 						end
 						
 						if editorDrawEnemySpawnSets 
 						and rs.enemySpawnSet 
 						then
-							gl.glColor3f(1,0,1)
 							for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
 								local x = enemySpawn.x / 16 + blocksPerRoom * roomxmin
 								local y = enemySpawn.y / 16 + blocksPerRoom * roomymin
-								gl.glBegin(gl.GL_LINES)
-								gl.glVertex2f(x-.5, -y)
-								gl.glVertex2f(x+.5, -y)
-								gl.glVertex2f(x, -y-.5)
-								gl.glVertex2f(x, -y+.5)
-								gl.glEnd()
+								self.plusSceneObj:draw{
+									mvProjMat = self.view.mvProjMat.ptr,
+									color = {1,0,1,1},
+									pos = {x, -y},
+								}
 							end
 						end
 					
@@ -1454,7 +1519,6 @@ end -- useBakedGraphicsTileTextures
 								then
 									gl.glLineWidth(3)
 								end
-								gl.glColor3f(1,1, self.selectedDoor and door == self.selectedDoor.door and 0 or 1)
 
 								if not door 
 								or door.type ~= 'door_t' 
@@ -1466,12 +1530,11 @@ end -- useBakedGraphicsTileTextures
 										-- now for src block pos
 										local x = .5 + pos[1] + blocksPerRoom * roomxmin
 										local y = .5 + pos[2] + blocksPerRoom * roomymin
-										gl.glBegin(gl.GL_LINES)
-										gl.glVertex2f(x-.5,-y)
-										gl.glVertex2f(x+.5,-y)
-										gl.glVertex2f(x,-y-.5)
-										gl.glVertex2f(x,-y+.5)
-										gl.glEnd()
+										self.plusSceneObj:draw{
+											mvProjMat = self.view.mvProjMat.ptr,
+											color = {1,1, self.selectedDoor and door == self.selectedDoor.door and 0 or 1, 1},
+											pos = {x, -y},
+										}									
 									end
 								else
 									local dstRoom = assert(door.destRoom)
@@ -1519,10 +1582,11 @@ end -- useBakedGraphicsTileTextures
 										-- now for src block pos
 										local x2 = .5 + pos[1] + blocksPerRoom * roomxmin
 										local y2 = .5 + pos[2] + blocksPerRoom * roomymin
-										gl.glBegin(gl.GL_LINES)
-										gl.glVertex2f(x1,-y1)
-										gl.glVertex2f(x2,-y2)
-										gl.glEnd()
+										self.lineSceneObj:draw{
+											mvProjMat = self.view.mvProjMat.ptr,
+											line = {x1, -y1, x2, -y2},
+											color = {1,1,1,1},
+										}
 									end
 								end
 								
