@@ -94,14 +94,14 @@ function ObjectSelector:updateMouse(app)
 			self.selected = table{obj}
 			app[self.selectedField] = obj
 			if obj then
-				self.selObjMoveDownX = app.mouseViewPos.x
-				self.selObjMoveDownY = app.mouseViewPos.y
+				self.selObjMoveDownX = assert(app.mouseViewPos.x)
+				self.selObjMoveDownY = assert(app.mouseViewPos.y)
 				self.selectedObjDown:set(self:getObjPos(obj))
 			else
 				-- here - start a selection rectangle
 				-- then on mouseup, select all touching rooms
-				self.selRectDownX = app.mouseViewPos.x
-				self.selRectDownY = app.mouseViewPos.y
+				self.selRectDownX = assert(app.mouseViewPos.x)
+				self.selRectDownY = assert(app.mouseViewPos.y)
 			end
 		
 		-- left holding down
@@ -622,9 +622,9 @@ function App:initGL()
 
 	
 	self.indexShader = GLProgram{
+		version = 'latest',
+		precision = 'best',
 		vertexCode = [[
-#version 460
-
 in vec4 vertex;
 in vec2 tca;
 out vec2 tcv;
@@ -635,8 +635,6 @@ void main() {
 }
 ]],
 		fragmentCode = [[
-#version 460
-
 in vec2 tcv;
 out vec4 fragColor;
 uniform sampler2D tex;
@@ -658,9 +656,9 @@ void main() {
 
 if not useBakedGraphicsTileTextures then
 	self.tilemapShader = GLProgram{
+		version = 'latest',
+		precision = 'best',
 		vertexCode = [[
-#version 460
-
 in vec4 vertex;
 in vec2 tca;
 
@@ -674,8 +672,6 @@ void main() {
 }
 ]],
 		fragmentCode = [[
-#version 460
-
 in vec2 tcv;
 
 out vec4 fragColor;
@@ -1634,8 +1630,7 @@ function App:updateGUI()
 					self.mouseOverRoom = ls.door and ls.door.destRoom
 				end
 
-				for _,field in ipairs(sm.loadStation_t.fields) do
-					local name,ctype = next(field)
+				for name,ctype,field in sm.loadStation_t:fielditer() do
 					ig.igText(name..' = '..ls:obj():fieldToString(name,ctype))
 				end
 			end
@@ -1651,9 +1646,8 @@ function App:updateGUI()
 		end
 		local room = self.sm.rooms[self.selectedRoomIndex+1]
 		if room then
-			for _,field in ipairs(sm.Room.room_t.fields) do
-				local name,ctype = next(field)
-				ig.igText(name..' = '..room:obj():fieldToString(name,ctype))
+			for name, ctype, field in sm.Room.room_t:fielditer() do
+				ig.igText(name..' = '..room:obj():fieldToString(name, ctype))
 			end
 		
 			if ig.igCollapsingHeader'roomstates' then
@@ -1667,8 +1661,7 @@ function App:updateGUI()
 
 				local rs = room.roomStates[self.roomCurrentRoomStates[roomKey]+1]
 				if rs then
-					for _,field in ipairs(sm.RoomState.roomstate_t.fields) do
-						local name,ctype = next(field)
+					for name,ctype,field in sm.RoomState.roomstate_t:fielditer() do
 						ig.igText(name..' = '..rs:obj():fieldToString(name,ctype))
 					end
 				end
