@@ -627,13 +627,18 @@ function App:initGL()
 		version = 'latest',
 		precision = 'best',
 		vertexCode = [[
-in vec4 vertex;
-in vec2 tca;
+layout(location=0) in vec2 vertex;
+
+// TODO turn these into divisor 4 attributes
+uniform vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions 
+uniform vec4 tcBBox;
+
 out vec2 tcv;
 uniform mat4 mvProjMat;
 void main() {
-	tcv = tca.xy;
-	gl_Position = mvProjMat * vertex;
+	tcv = mix(tcBBox.xy, tcBBox.zw, vertex.xy);
+	vec2 rvtx = mix(geomBBox.xy, geomBBox.zw, vertex.xy);
+	gl_Position = mvProjMat * vec4(rvtx, 0., 1.);
 }
 ]],
 		fragmentCode = [[
@@ -778,10 +783,10 @@ end
 			precision = 'best',
 			vertexCode = [[
 in vec2 vertex;
-uniform vec4 bbox;	//xyzw = [x1,y1], [x2,y2]
+uniform vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2]
 uniform mat4 mvProjMat;
 void main() {
-	vec2 rvtx = vertex * (bbox.zw - bbox.xy) + bbox.xy;
+	vec2 rvtx = mix(geomBBox.xy, geomBBox.zw, vertex.xy);
 	gl_Position = mvProjMat * vec4(rvtx, 0., 1.);
 }
 ]],
@@ -1003,7 +1008,7 @@ function App:update()
 				self.outlineSceneObj:draw{
 					mvProjMat = self.view.mvProjMat.ptr,
 					color = region == self.mouseOverRegion and {1,1,1,1} or{1,0,1,1},
-					bbox = {x1, -y1, x2, -y2},
+					geomBBox = {x1, -y1, x2, -y2},
 				}
 				gl.glLineWidth(1)
 			end
@@ -1032,7 +1037,7 @@ function App:update()
 						self.outlineSceneObj:draw{
 							mvProjMat = self.view.mvProjMat.ptr,
 							color = self.mouseOverRoom == m and {1,1,1,1} or{1,1,0,1},
-							bbox = {x1, -y1, x2, -y2},
+							geomBBox = {x1, -y1, x2, -y2},
 						}
 						gl.glLineWidth(1)				
 					end
@@ -1064,11 +1069,9 @@ if useBakedGraphicsTileTextures then
 							
 							--self.drawRoomBakedSceneObj.texs[1] = bgTex
 							--self.drawRoomBakedSceneObj.texs[2] = tileSet.palette.tex
-							
 							bgTex:bind(0)
 							tileSet.palette.tex:bind(1)
 							
-							gl.glBegin(gl.GL_QUADS)
 							for j=0,h-1 do
 								for i=0,w-1 do
 									if (
@@ -1094,30 +1097,27 @@ if useBakedGraphicsTileTextures then
 										local tx2 = (i+1) * roomSizeInPixels / bgTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTex.height
 
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)
-										gl.glVertex2f(x1, -y1)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)
-										gl.glVertex2f(x2, -y1)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)
-										gl.glVertex2f(x2, -y2)
-										gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)
-										gl.glVertex2f(x1, -y2)
+										gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x1, -y1, x2, -y2)
+										gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
+
+										gl.glBegin(gl.GL_QUADS)
+										gl.glVertex2f(0, 0)
+										gl.glVertex2f(1, 0)
+										gl.glVertex2f(1, 1)
+										gl.glVertex2f(0, 1)
+										gl.glEnd()
 									end
 								end
 							end
-							gl.glEnd()
 							
 							tileSet.palette.tex:unbind(1)
 							bgTex:unbind(0)
-							
 						end
-
 
 						local tex = tileSet.tex
 						local paletteTex = tileSet.palette.tex
 						tex:bind(0)
 						paletteTex:bind(1)
-						gl.glBegin(gl.GL_QUADS)
 						
 						local blocks12 = roomBlockData:getBlocks12()
 						local layer2blocks = roomBlockData:getLayer2Blocks()
@@ -1176,11 +1176,16 @@ if useBakedGraphicsTileTextures then
 												local y1 = tj + blocksPerRoom * (j + roomymin)
 												local x2 = x1 + 1
 												local y2 = y1 + 1
+										
+												gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x1, -y1, x2, -y2)
+												gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
 												
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x1, -y1)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x2, -y1)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x2, -y2)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x1, -y2)
+												gl.glBegin(gl.GL_QUADS)
+												gl.glVertex2f(0, 0)
+												gl.glVertex2f(1, 0)
+												gl.glVertex2f(1, 1)
+												gl.glVertex2f(0, 1)
+												gl.glEnd()
 											end
 											
 											-- draw tile
@@ -1209,17 +1214,21 @@ if useBakedGraphicsTileTextures then
 												local x = ti + blocksPerRoom * (i + roomxmin)
 												local y = tj + blocksPerRoom * (j + roomymin)
 												
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty1)	gl.glVertex2f(x, -y)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty1)	gl.glVertex2f(x+1, -y)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx2, ty2)	gl.glVertex2f(x+1, -y-1)
-												gl.glVertexAttrib2f(self.indexShader.attrs.tca.loc, tx1, ty2)	gl.glVertex2f(x, -y-1)
+												gl.glUniform4f(self.indexShader.uniforms.geomBBox.loc, x, -y, x+1, -y-1)
+												gl.glUniform4f(self.indexShader.uniforms.tcBBox.loc, tx1, ty1, tx2, ty2)
+												
+												gl.glBegin(gl.GL_QUADS)
+												gl.glVertex2f(0, 0)
+												gl.glVertex2f(1, 0)
+												gl.glVertex2f(1, 1)
+												gl.glVertex2f(0, 1)
+												gl.glEnd()
 											end
 										end
 									end
 								end
 							end
 						end
-						gl.glEnd()
 						paletteTex:unbind(1)
 						tex:unbind(0)
 
@@ -1529,7 +1538,7 @@ end -- useBakedGraphicsTileTextures
 			self.outlineSceneObj:draw{
 				mvProjMat = self.view.mvProjMat.ptr,
 				color = {1,1,0,1},
-				bbox = {
+				geomBBox = {
 					selector.selRectDownX, selector.selRectDownY,
 					self.mouseViewPos.x, self.mouseViewPos.y,
 				},
