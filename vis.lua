@@ -7,9 +7,9 @@ TODO replace the rgb conversion with a shader that takes in the indexed 8-bit im
 
 --]]
 local ffi = require 'ffi'
-local ig = require 'imgui'
-local gl = require 'gl'
+local gl = require 'gl.setup'(arg[2] or 'OpenGL')
 local glreport = require 'gl.report'
+local ig = require 'imgui'
 local GLTex2D = require 'gl.tex2d'
 local GLProgram = require 'gl.program'
 local GLGeometry = require 'gl.geometry'
@@ -581,19 +581,21 @@ function App:initGL()
 		end
 	end
 
-	for _,tilemap in ipairs(self.sm.bgTilemaps) do
-		if not tilemap.tex then
-			tilemap.tex = GLTex2D{
-				width = tilemap.width,
-				height = tilemap.height,
-				data = tilemap.buffer,
-				format = gl.GL_RED,
-				internalFormat = gl.GL_R16,
-				type = gl.GL_UNSIGNED_SHORT,
-				magFilter = gl.GL_NEAREST,
-				minFilter = gl.GL_NEAREST,
-				generateMipmap = false,
-			}
+	if not useBakedGraphicsTileTextures then
+		for _,tilemap in ipairs(self.sm.bgTilemaps) do
+			if not tilemap.tex then
+				tilemap.tex = GLTex2D{
+					width = tilemap.width,
+					height = tilemap.height,
+					data = tilemap.buffer,
+					format = gl.GL_RED,
+					internalFormat = gl.GL_R16,
+					type = gl.GL_UNSIGNED_SHORT,
+					magFilter = gl.GL_NEAREST,
+					minFilter = gl.GL_NEAREST,
+					generateMipmap = false,
+				}
+			end
 		end
 	end
 
@@ -1128,21 +1130,31 @@ if useBakedGraphicsTileTextures then
 											local tx2 = (i+1) * roomSizeInPixels / bgTex.width
 											local ty2 = (j+1) * roomSizeInPixels / bgTex.height
 
-											for k=1,4 do
+											for k=1,6 do
 												geomBBox:append{x1, -y1, x2, -y2}
 												tcBBox:append{tx1, ty1, tx2, ty2}
 											end
 											-- TODO this vertex_ID based so I don't need any vertex data at all?
-											vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+											vertexData:append{
+												0, 0,
+												1, 0,
+												0, 1,
+												0, 1,
+												1, 0,
+												1, 1,
+											}
 										end
 									end
 								end
 
 								rs.drawBGSceneObj = GLSceneObject{
 									program = self.indexShader,
-									texs = {bgTex, tileSet.palette.tex},
+									texs = {
+										assert(bgTex),
+										assert(tileSet.palette.tex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
@@ -1210,12 +1222,19 @@ if useBakedGraphicsTileTextures then
 													local x2 = x1 + 1
 													local y2 = y1 + 1
 
-													for k=1,4 do
+													for k=1,6 do
 														geomBBox:append{x1, -y1, x2, -y2}
 														tcBBox:append{tx1, ty1, tx2, ty2}
 													end
 													-- TODO this vertex_ID based so I don't need any vertex data at all?
-													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+													vertexData:append{
+														0, 0,
+														1, 0,
+														0, 1,
+														0, 1,
+														1, 0,
+														1, 1,
+													}
 												end
 											end
 										end
@@ -1224,9 +1243,12 @@ if useBakedGraphicsTileTextures then
 
 								rs.drawLayer2SceneObj = GLSceneObject{
 									program = self.indexShader,
-									texs = {tex, paletteTex},
+									texs = {
+										assert(tex),
+										assert(paletteTex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
@@ -1298,12 +1320,19 @@ if useBakedGraphicsTileTextures then
 													local x = ti + blocksPerRoom * (i + roomxmin)
 													local y = tj + blocksPerRoom * (j + roomymin)
 
-													for k=1,4 do
+													for k=1,6 do
 														geomBBox:append{x, -y, x+1, -y-1}
 														tcBBox:append{tx1, ty1, tx2, ty2}
 													end
 													-- TODO this vertex_ID based so I don't need any vertex data at all?
-													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+													vertexData:append{
+														0, 0,
+														1, 0,
+														0, 1,
+														0, 1,
+														1, 0,
+														1, 1,
+													}
 												end
 											end
 										end
@@ -1312,9 +1341,12 @@ if useBakedGraphicsTileTextures then
 
 								rs.drawLayer1SceneObj = GLSceneObject{
 									program = self.indexShader,
-									texs = {tex, paletteTex},
+									texs = {
+										assert(tex),
+										assert(paletteTex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
@@ -1363,20 +1395,31 @@ else -- useBakedGraphicsTileTextures
 										local tx2 = (i+1) * roomSizeInPixels / bgTilemapTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTilemapTex.height
 
-										for k=1,4 do
+										for k=1,6 do
 											geomBBox:append{x1, -y1, x2, -y2}
 											tcBBox:append{tx1, ty1, tx2, ty2}
 										end
 										-- TODO this vertex_ID based so I don't need any vertex data at all?
-										vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+										vertexData:append{
+											0, 0,
+											1, 0,
+											0, 1,
+											0, 1,
+											1, 0,
+											1, 1,
+										}
 									end
 								end
 
 								rs.drawBGSceneObj = GLSceneObject{
 									program = self.tilemapShader,
-									texs = {bgTilemapTex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									texs = {
+										assert(bgTilemapTex),
+										assert(tileSet.graphicsTileTex),
+										assert(tileSet.palette.tex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
@@ -1449,12 +1492,19 @@ else -- useBakedGraphicsTileTextures
 													local x2 = x1 + 1
 													local y2 = y1 + 1
 
-													for k=1,4 do
+													for k=1,6 do
 														geomBBox:append{x1, -y1, x2, -y2}
 														tcBBox:append{tx1, ty1, tx2, ty2}
 													end
 													-- TODO this vertex_ID based so I don't need any vertex data at all?
-													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+													vertexData:append{
+														0, 0,
+														1, 0,
+														0, 1,
+														0, 1,
+														1, 0,
+														1, 1,
+													}
 												end
 											end
 										end
@@ -1463,9 +1513,13 @@ else -- useBakedGraphicsTileTextures
 
 								rs.drawLayer2SceneObj = GLSceneObject{
 									program = self.tilemapShader,
-									texs = {tex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									texs = {
+										assert(tex),
+										assert(tileSet.graphicsTileTex),
+										assert(tileSet.palette.tex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
@@ -1541,12 +1595,19 @@ else -- useBakedGraphicsTileTextures
 													local x = ti + blocksPerRoom * (i + roomxmin)
 													local y = tj + blocksPerRoom * (j + roomymin)
 
-													for k=1,4 do
+													for k=1,6 do
 														geomBBox:append{x, -y, x+1, -y-1}
 														tcBBox:append{tx1, ty1, tx2, ty2}
 													end
 													-- TODO this vertex_ID based so I don't need any vertex data at all?
-													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+													vertexData:append{
+														0, 0,
+														1, 0,
+														0, 1,
+														0, 1,
+														1, 0,
+														1, 1,
+													}
 												end
 											end
 										end
@@ -1555,9 +1616,13 @@ else -- useBakedGraphicsTileTextures
 
 								rs.drawLayer1SceneObj = GLSceneObject{
 									program = self.tilemapShader,
-									texs = {tex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									texs = {
+										assert(tex),
+										assert(tileSet.graphicsTileTex),
+										assert(tileSet.palette.tex),
+									},
 									geometry = {
-										mode = gl.GL_QUADS,
+										mode = gl.GL_TRIANGLES,
 									},
 									vertexes = {
 										data = vertexData,
