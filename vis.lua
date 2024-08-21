@@ -27,8 +27,8 @@ local topc = require 'super_metroid_randomizer.pc'.to
 local frompc = require 'super_metroid_randomizer.pc'.from
 
 -- TODO replace this with shaders
---local useBakedGraphicsTileTextures = true
-local useBakedGraphicsTileTextures = false
+local useBakedGraphicsTileTextures = true
+--local useBakedGraphicsTileTextures = false
 
 
 --local cmdline = require 'ext.cmdline'(...)
