@@ -27,8 +27,8 @@ local topc = require 'super_metroid_randomizer.pc'.to
 local frompc = require 'super_metroid_randomizer.pc'.from
 
 -- TODO replace this with shaders
-local useBakedGraphicsTileTextures = true
---local useBakedGraphicsTileTextures = false
+--local useBakedGraphicsTileTextures = true
+local useBakedGraphicsTileTextures = false
 
 
 --local cmdline = require 'ext.cmdline'(...)
@@ -657,8 +657,7 @@ void main() {
 			tex = 0,
 			paletteTex = 1,
 		},
-	}
-	self.indexShader:useNone()
+	}:useNone()
 
 if not useBakedGraphicsTileTextures then
 	self.tilemapShader = GLProgram{
@@ -732,8 +731,7 @@ void main() {
 			graphicsTiles = 1,
 			paletteTex = 2,
 		},
-	}
-	self.tilemapShader:useNone()
+	}:useNone()
 end
 
 -- [=[ line loop unit quad for drawing arbitrary rectangles
@@ -1138,10 +1136,10 @@ if useBakedGraphicsTileTextures then
 											vertexData:append{
 												0, 0,
 												1, 0,
-												0, 1,
-												0, 1,
-												1, 0,
 												1, 1,
+												1, 1,
+												0, 1,
+												0, 0,
 											}
 										end
 									end
@@ -1230,10 +1228,10 @@ if useBakedGraphicsTileTextures then
 													vertexData:append{
 														0, 0,
 														1, 0,
-														0, 1,
-														0, 1,
-														1, 0,
 														1, 1,
+														1, 1,
+														0, 1,
+														0, 0,
 													}
 												end
 											end
@@ -1328,10 +1326,10 @@ if useBakedGraphicsTileTextures then
 													vertexData:append{
 														0, 0,
 														1, 0,
-														0, 1,
-														0, 1,
-														1, 0,
 														1, 1,
+														1, 1,
+														0, 1,
+														0, 0,
 													}
 												end
 											end
@@ -1403,10 +1401,10 @@ else -- useBakedGraphicsTileTextures
 										vertexData:append{
 											0, 0,
 											1, 0,
-											0, 1,
-											0, 1,
-											1, 0,
 											1, 1,
+											1, 1,
+											0, 1,
+											0, 0,
 										}
 									end
 								end
@@ -1500,10 +1498,10 @@ else -- useBakedGraphicsTileTextures
 													vertexData:append{
 														0, 0,
 														1, 0,
-														0, 1,
-														0, 1,
-														1, 0,
 														1, 1,
+														1, 1,
+														0, 1,
+														0, 0,
 													}
 												end
 											end
@@ -1603,10 +1601,10 @@ else -- useBakedGraphicsTileTextures
 													vertexData:append{
 														0, 0,
 														1, 0,
-														0, 1,
-														0, 1,
-														1, 0,
 														1, 1,
+														1, 1,
+														0, 1,
+														0, 0,
 													}
 												end
 											end
