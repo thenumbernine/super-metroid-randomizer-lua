@@ -27,7 +27,7 @@ local topc = require 'super_metroid_randomizer.pc'.to
 local frompc = require 'super_metroid_randomizer.pc'.from
 
 -- TODO replace this with shaders
-local useBakedGraphicsTileTextures = true 
+local useBakedGraphicsTileTextures = true
 --local useBakedGraphicsTileTextures = false
 
 
@@ -43,9 +43,9 @@ App.title = 'Super Metroid Viewer'
 
 local blockSizeInPixels = SM.blockSizeInPixels
 local blocksPerRoom = require 'super_metroid_randomizer.roomblocks'.blocksPerRoom
-local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels 
-local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes 
-local roomSizeInPixels = SM.roomSizeInPixels 
+local graphicsTileSizeInPixels = SM.graphicsTileSizeInPixels
+local graphicsTileSizeInBytes = SM.graphicsTileSizeInBytes
+local roomSizeInPixels = SM.roomSizeInPixels
 
 -- TODO this should match the region tilemap sizes
 local mapMaxWidth = 64
@@ -80,7 +80,7 @@ editorMode = 1
 
 local ObjectSelector = class()
 
-ObjectSelector.snap = 1 
+ObjectSelector.snap = 1
 
 function ObjectSelector:init()
 	self.selectedObjDown = vec2f()
@@ -105,22 +105,22 @@ function ObjectSelector:updateMouse(app)
 				self.selRectDownX = assert(app.mouseViewPos.x)
 				self.selRectDownY = assert(app.mouseViewPos.y)
 			end
-		
+
 		-- left holding down
 		else
 			local obj = app[self.selectedField]
 			if obj then
 				local deltaX = app.mouseViewPos.x - self.selObjMoveDownX
 				local deltaY = app.mouseViewPos.y - self.selObjMoveDownY
-				
+
 				if math.abs(deltaX) > 5
 				or math.abs(deltaY) > 5
 				then
 					-- notice this 'movingSelection' means 'moving'
 					self.movingSelection = true
 				end
-				
-				
+
+
 				if self.movingSelection then
 					deltaX = math.round(deltaX / self.snap) * self.snap
 					deltaY = math.round(deltaY / self.snap) * self.snap
@@ -134,7 +134,7 @@ function ObjectSelector:updateMouse(app)
 			else
 				-- selecting rectangle
 			end
-			
+
 			-- if we are dragging then don't let orbit control view
 			app.view.orthoSize = app.viewBeforeSize
 			app.view.pos.x = app.viewBeforeX
@@ -146,7 +146,7 @@ function ObjectSelector:updateMouse(app)
 			if not self.movingSelection then
 				self:onClick(app)
 			end
---[[ only recalc bounds on mouseup			
+--[[ only recalc bounds on mouseup
 			if m then
 				m.region:calcBounds()
 			end
@@ -206,7 +206,7 @@ function RegionSelector:getObjUnderPos(app, x, y)
 end
 
 function RegionSelector:getObjPos(region)
-	return 
+	return
 		region.ofs.x * blocksPerRoom,
 		region.ofs.y * blocksPerRoom
 end
@@ -260,14 +260,14 @@ function RoomSelector:setObjPos(m, x, y)
 	x = x - m.region.ofs.x
 	y = y - m.region.ofs.y
 	x = math.clamp(x, 0, mapMaxWidth - m:obj().width)
-	y = math.clamp(y, 0, mapMaxHeight - m:obj().height) 
+	y = math.clamp(y, 0, mapMaxHeight - m:obj().height)
 	if x ~= m:obj().x
 	or y ~= m:obj().y
 	then
 		m:obj().x = x
 		m:obj().y = y
-		
--- [[ recalc bounds while you drag					
+
+-- [[ recalc bounds while you drag
 		m.region:calcBounds()
 --]]
 	end
@@ -280,7 +280,7 @@ function RoomSelector:onClick(app)
 		local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 		local currentRoomStateIndex = app.roomCurrentRoomStates[roomKey] or 0
 		currentRoomStateIndex = (currentRoomStateIndex+1) % #m.roomStates
-		app.roomCurrentRoomStates[roomKey] = currentRoomStateIndex 
+		app.roomCurrentRoomStates[roomKey] = currentRoomStateIndex
 print('room '..('%04x'):format(roomKey)..' now showing state '..currentRoomStateIndex..' of '..#m.roomStates)
 	end
 end
@@ -302,7 +302,7 @@ function DoorSelector:getObjUnderPos(app, x, y)
 				local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 				local currentRoomStateIndex = app.roomCurrentRoomStates[roomKey] or 0
 				local rs = m.roomStates[currentRoomStateIndex+1]
-		
+
 				for exitIndex,blockpos in pairs(rs.roomBlockData.blocksForExit) do
 					local door = m.doors[exitIndex+1]
 					for _,pos in ipairs(blockpos) do
@@ -414,7 +414,7 @@ function App:initGL()
 	end
 
 	-- global so other files can see it
-	self.rom = ffi.cast('uint8_t*', romstr) 
+	self.rom = ffi.cast('uint8_t*', romstr)
 	self.sm = SM(self.rom, #romstr)
 
 	self.regions = range(0,7):mapi(function(index)
@@ -471,12 +471,12 @@ function App:initGL()
 						local dx = ti + blocksPerRoom * i
 						local dy = tj + blocksPerRoom * j
 						local di = dx + blocksPerRoom * w * dy
-						
+
 						local tileIndex = bit.band(ffi.cast('uint16_t*', blocks12)[di], 0x3ff)
 						if tileIndex ~= firstTileIndex then
 							allSolid = bit.band(allSolid, bit.bnot(1))
 						end
-												
+
 						if layer2blocks then
 							local tileIndex = bit.band(ffi.cast('uint16_t*', layer2blocks)[di], 0x3ff)
 							if tileIndex ~= firstLayer2TileIndex then
@@ -498,7 +498,7 @@ function App:initGL()
 
 	-- half tempted to write a shader that reads the bits as is ....
 	for _,palette in ipairs(self.sm.tileSetPalettes) do
-		-- [[ convert to RGBA8	
+		-- [[ convert to RGBA8
 		local img = Image(256, 1, 4, 'unsigned char')
 		img:clear()
 		for paletteIndex=0,math.min(palette.count,256)-1 do
@@ -554,7 +554,7 @@ function App:initGL()
 		-- as a GL_PIXEL_UNPACK_BUFFER
 		-- but then I also can't use the palette data as a texture itself
 	end
-	
+
 	for _,tileSet in ipairs(self.sm.tileSets) do
 		-- make a texture out of the tileSet tilemap ... 1 uint16 per 8x8 tile
 		tileSet.graphicsTileTex = self:graphicsTilesToTex(tileSet.graphicsTileVec.v, tileSet.graphicsTileVec.size)
@@ -604,7 +604,7 @@ function App:initGL()
 			for _,rs in ipairs(m.roomStates) do
 				for _,bg in ipairs(rs.bgs) do
 					if bg.tilemap then
-						self.sm:mapGetBitmapForTileSetAndTileMap(rs.tileSet, bg.tilemap)			
+						self.sm:mapGetBitmapForTileSetAndTileMap(rs.tileSet, bg.tilemap)
 					end
 				end
 			end
@@ -614,7 +614,7 @@ function App:initGL()
 	-- make textures of the region maps
 	self.pauseScreenTileTex = self:graphicsTilesToTex(self.sm.pauseScreenTiles.v, self.sm.pauseScreenTiles:sizeof())
 	self.itemTileTex = self:graphicsTilesToTex(self.sm.itemTiles.v, self.sm.itemTiles:sizeof(), 8)
-	
+
 	self.view.ortho = true
 	self.view.znear = -1e+4
 	self.view.zfar = 1e+4
@@ -622,13 +622,13 @@ function App:initGL()
 	self.view.pos.x = 128
 	self.view.pos.y = -128
 
-	
+
 	self.indexShader = GLProgram{
 		version = 'latest',
 		precision = 'best',
 		vertexCode = [[
 layout(location=0) in vec2 vertex;
-in vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions 
+in vec4 geomBBox;	//xyzw = [x1,y1], [x2,y2] for vertex positions
 in vec4 tcBBox;
 out vec2 tcv;
 uniform mat4 mvProjMat;
@@ -687,15 +687,15 @@ uniform sampler2D paletteTex;
 
 void main() {
 	vec2 withinGraphicsTile = tcv - floor(tcv);
-	
+
 	float tileIndex = floor(texture(tilemap, tcv).r * 65535. + .5);
-	
+
 	bool flipy = false;
 	if (tileIndex >= 32768.) {
 		flipy = true;
 		tileIndex -= 32768.;
 	}
-	
+
 	bool flipx = false;
 	if (tileIndex >= 16384.) {
 		flipx = true;
@@ -713,12 +713,12 @@ void main() {
 	if (flipx) withinGraphicsTile.x = 1. - withinGraphicsTile.x;
 	if (flipy) withinGraphicsTile.y = 1. - withinGraphicsTile.y;
 	graphicsTC += withinGraphicsTile / graphicsTilesTexSizeInTiles;
-	
+
 	float paletteIndex = floor(texture(graphicsTiles, graphicsTC).r * 255. + .5);
 	fragColor.a = (paletteIndex == 0.) ? 0. : 1.;
 	paletteIndex += colorIndexHi * 16.;
 
-	//2) 
+	//2)
 	vec2 paletteTC;
 	paletteTC.x = (paletteIndex + .5) / 256.;
 	paletteTC.y = .5;
@@ -853,7 +853,7 @@ glreport'here'
 end
 
 --[[
-make a texture out of the graphicsTiles ... 
+make a texture out of the graphicsTiles ...
 ptr = pointer to graphics tiles (32 bytes per 8x8 tile)
 size = size of buffer in bytes
 graphicsTileSizeInPixels * graphicsTileSizeInPixels packed into a higher size
@@ -867,7 +867,7 @@ function App:graphicsTilesToTex(ptr, size, tilemapElemSizeX)
 	if tilemapElemSizeX * tilemapElemSizeY ~= numGraphicTiles then
 		error(require 'ext.tolua'{
 			tilemapElemSizeX = tilemapElemSizeX,
-			tilemapElemSizeY = tilemapElemSizeY, 
+			tilemapElemSizeY = tilemapElemSizeY,
 			numGraphicTiles = numGraphicTiles,
 		})
 	end
@@ -878,7 +878,7 @@ function App:graphicsTilesToTex(ptr, size, tilemapElemSizeX)
 		tilemap[i].xflip = 0
 		tilemap[i].yflip = 0
 	end
-	
+
 	local img = self.sm:graphicsConvertTilemapToBitmap(
 		tilemap,			-- tilemap = tilemapElem_t[numGraphicTiles * graphicsTileSizeInPixels]
 		tilemapElemSizeX,	-- tilemapElemSizeX
@@ -1034,7 +1034,7 @@ function App:update()
 	for i,region in ipairs(self.regions) do
 		local rooms = region.rooms
 		local index = i-1
-		if region.show 
+		if region.show
 		and (
 			blocksPerRoom * region.xmax >= viewxmin
 			or blocksPerRoom * region.xmin <= viewxmax
@@ -1059,7 +1059,7 @@ function App:update()
 			for _,m in ipairs(rooms) do
 				local w = m:obj().width
 				local h = m:obj().height
-				
+
 				-- in room block units
 				local roomxmin = m:obj().x + region.ofs.x
 				local roomymin = m:obj().y + region.ofs.y
@@ -1082,37 +1082,37 @@ function App:update()
 							color = self.mouseOverRoom == m and {1,1,1,1} or{1,1,0,1},
 							geomBBox = {x1, -y1, x2, -y2},
 						}
-						gl.glLineWidth(1)				
+						gl.glLineWidth(1)
 					end
 
 					local roomKey = bit.bor(bit.lshift(m:obj().region, 8), m:obj().index)
 					local currentRoomStateIndex = self.roomCurrentRoomStates[roomKey] or 0
 					local rs = m.roomStates[currentRoomStateIndex+1]
-						
+
 					local tileSet = rs.tileSet
 					local roomBlockData = rs.roomBlockData
-				
-					-- TODO instead of finding the first, hold a current index for each room 
+
+					-- TODO instead of finding the first, hold a current index for each room
 					local _, bg = rs.bgs:find(nil, function(bg) return bg.tilemap end)
 					local bgTilemap = bg and bg.tilemap
 
 					if tileSet
 					and tileSet.tex
 					and tileSet.palette
-					and roomBlockData 
+					and roomBlockData
 					then
 -- TODO get the tilemap shader working and then turn this off
 if useBakedGraphicsTileTextures then
-						
+
 						local bgBmp = bgTilemap and self.sm:mapGetBitmapForTileSetAndTileMap(tileSet, bgTilemap)
 						local bgTex = bgBmp and bgBmp.tex
 						if bgTex then
-							
+
 							if not rs.drawBGSceneObj then
 								local vertexData = table()
 								local geomBBox = table()
 								local tcBBox = table()
-								
+
 								for j=0,h-1 do
 									for i=0,w-1 do
 										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
@@ -1120,8 +1120,8 @@ if useBakedGraphicsTileTextures then
 										then
 											local x1 = blocksPerRoom * (i + roomxmin)
 											local y1 = blocksPerRoom * (j + roomymin)
-											local x2 = x1 + blocksPerRoom 
-											local y2 = y1 + blocksPerRoom 
+											local x2 = x1 + blocksPerRoom
+											local y2 = y1 + blocksPerRoom
 
 											local tx1 = i * roomSizeInPixels / bgTex.width
 											local ty1 = j * roomSizeInPixels / bgTex.height
@@ -1167,17 +1167,17 @@ if useBakedGraphicsTileTextures then
 							end
 							rs.drawBGSceneObj:draw()
 						end
-						
+
 						local layer2blocks = roomBlockData:getLayer2Blocks()
 						if layer2blocks then
 							if not rs.drawLayer2SceneObj then
 								local tex = tileSet.tex
 								local paletteTex = tileSet.palette.tex
-								
+
 								local vertexData = table()
 								local geomBBox = table()
 								local tcBBox = table()
-							
+
 								for j=0,h-1 do
 									for i=0,w-1 do
 										-- [[
@@ -1192,7 +1192,7 @@ if useBakedGraphicsTileTextures then
 													local pimask = bit.band(tileIndex, 0x400) ~= 0
 													local pjmask = bit.band(tileIndex, 0x800) ~= 0
 													tileIndex = bit.band(tileIndex, 0x3ff)
-												
+
 													local tx1 = tileIndex % tileSetRowWidth
 													local ty1 = math.floor(tileIndex / tileSetRowWidth)
 
@@ -1209,7 +1209,7 @@ if useBakedGraphicsTileTextures then
 													local y1 = tj + blocksPerRoom * (j + roomymin)
 													local x2 = x1 + 1
 													local y2 = y1 + 1
-											
+
 													for k=1,4 do
 														geomBBox:append{x1, -y1, x2, -y2}
 														tcBBox:append{tx1, ty1, tx2, ty2}
@@ -1245,7 +1245,7 @@ if useBakedGraphicsTileTextures then
 												data = tcBBox,
 												dim = 4,
 											},
-										},							
+										},
 									},
 								}
 							end
@@ -1259,11 +1259,11 @@ if useBakedGraphicsTileTextures then
 							if not rs.drawLayer1SceneObj then
 								local tex = tileSet.tex
 								local paletteTex = tileSet.palette.tex
-								
+
 								local vertexData = table()
 								local geomBBox = table()
 								local tcBBox = table()
-							
+
 								for j=0,h-1 do
 									for i=0,w-1 do
 										-- [[
@@ -1277,7 +1277,7 @@ if useBakedGraphicsTileTextures then
 													local dx = ti + blocksPerRoom * i
 													local dy = tj + blocksPerRoom * j
 													local di = dx + blocksPerRoom * w * dy
-													
+
 													local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
 													local pimask = bit.band(tileIndex, 0x400) ~= 0
 													local pjmask = bit.band(tileIndex, 0x800) ~= 0
@@ -1297,7 +1297,7 @@ if useBakedGraphicsTileTextures then
 
 													local x = ti + blocksPerRoom * (i + roomxmin)
 													local y = tj + blocksPerRoom * (j + roomymin)
-													
+
 													for k=1,4 do
 														geomBBox:append{x, -y, x+1, -y-1}
 														tcBBox:append{tx1, ty1, tx2, ty2}
@@ -1333,7 +1333,7 @@ if useBakedGraphicsTileTextures then
 												data = tcBBox,
 												dim = 4,
 											},
-										},							
+										},
 									},
 								}
 							end
@@ -1342,13 +1342,13 @@ if useBakedGraphicsTileTextures then
 							end
 						end
 
-else -- useBakedGraphicsTileTextures 
-							
+else -- useBakedGraphicsTileTextures
+
 						self.tilemapShader:use()
-						
+
 						local bgTilemapTex = bgTilemap and bgTilemap.tex
 						if bgTilemapTex then
-							
+
 							bgTilemapTex:bind(0)
 							tileSet.graphicsTileTex:bind(1)
 							tileSet.palette.tex:bind(2)
@@ -1357,7 +1357,7 @@ else -- useBakedGraphicsTileTextures
 								self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
 								tileSet.graphicsTileTex.width,
 								tileSet.graphicsTileTex.height)
-							
+
 							gl.glBegin(gl.GL_QUADS)
 							for j=0,h-1 do
 								for i=0,w-1 do
@@ -1368,8 +1368,8 @@ else -- useBakedGraphicsTileTextures
 									then
 										local x1 = blocksPerRoom * (i + roomxmin)
 										local y1 = blocksPerRoom * (j + roomymin)
-										local x2 = x1 + blocksPerRoom 
-										local y2 = y1 + blocksPerRoom 
+										local x2 = x1 + blocksPerRoom
+										local y2 = y1 + blocksPerRoom
 
 										local tx1 = i * roomSizeInPixels / bgTilemapTex.width
 										local ty1 = j * roomSizeInPixels / bgTilemapTex.height
@@ -1377,8 +1377,8 @@ else -- useBakedGraphicsTileTextures
 										local ty2 = (j+1) * roomSizeInPixels / bgTilemapTex.height
 
 										gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
-										gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
-										
+										gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
+
 										gl.glVertex2f(0, 0)
 										gl.glVertex2f(1, 0)
 										gl.glVertex2f(1, 1)
@@ -1387,7 +1387,7 @@ else -- useBakedGraphicsTileTextures
 								end
 							end
 							gl.glEnd()
-							
+
 							tileSet.palette.tex:unbind(2)
 							tileSet.graphicsTileTex:unbind(1)
 							bgTilemapTex:unbind(0)
@@ -1398,7 +1398,7 @@ else -- useBakedGraphicsTileTextures
 						tex:bind(0)
 						tileSet.graphicsTileTex:bind(1)
 						tileSet.palette.tex:bind(2)
-						
+
 						gl.glUniform2f(
 							self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
 							tileSet.graphicsTileTex.width / 8,
@@ -1406,7 +1406,7 @@ else -- useBakedGraphicsTileTextures
 
 						local blocks12 = roomBlockData:getBlocks12()
 						local layer2blocks = roomBlockData:getLayer2Blocks()
-						
+
 						gl.glBegin(gl.GL_QUADS)
 						for j=0,h-1 do
 							for i=0,w-1 do
@@ -1416,8 +1416,8 @@ else -- useBakedGraphicsTileTextures
 									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
 									or blocksPerRoom * -(roomymin + j) <= viewymax
 								) then
-									
-									local drawLayer2 = 
+
+									local drawLayer2 =
 										editorDrawLayer2
 										and layer2blocks
 										-- [[
@@ -1427,8 +1427,8 @@ else -- useBakedGraphicsTileTextures
 										)
 										--]]
 
-									local drawLayer1 = 
-										editorDrawForeground 
+									local drawLayer1 =
+										editorDrawForeground
 										and blocks12
 										-- [[
 										and (
@@ -1445,8 +1445,8 @@ else -- useBakedGraphicsTileTextures
 												local pimask = bit.band(tileIndex, 0x400) ~= 0
 												local pjmask = bit.band(tileIndex, 0x800) ~= 0
 												tileIndex = bit.band(tileIndex, 0x3ff)
-											
-												
+
+
 												local tx1 = tileIndex % tileSetRowWidth
 												local ty1 = math.floor(tileIndex / tileSetRowWidth)
 
@@ -1463,22 +1463,22 @@ else -- useBakedGraphicsTileTextures
 												local y1 = tj + blocksPerRoom * (j + roomymin)
 												local x2 = x1 + 1
 												local y2 = y1 + 1
-										
+
 												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
-												
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
+
 												gl.glVertex2f(0, 0)
 												gl.glVertex2f(1, 0)
 												gl.glVertex2f(1, 1)
 												gl.glVertex2f(0, 1)
 											end
-											
+
 											-- draw tile
 											if drawLayer1 then
 												local dx = ti + blocksPerRoom * i
 												local dy = tj + blocksPerRoom * j
 												local di = dx + blocksPerRoom * w * dy
-												
+
 												local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
 												local pimask = bit.band(tileIndex, 0x400) ~= 0
 												local pjmask = bit.band(tileIndex, 0x800) ~= 0
@@ -1498,10 +1498,10 @@ else -- useBakedGraphicsTileTextures
 
 												local x = ti + blocksPerRoom * (i + roomxmin)
 												local y = tj + blocksPerRoom * (j + roomymin)
-												
+
 												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x, -y, x+1, -y-1)
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2) 
-												
+												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
+
 												gl.glVertex2f(0, 0)
 												gl.glVertex2f(1, 0)
 												gl.glVertex2f(1, 1)
@@ -1513,7 +1513,7 @@ else -- useBakedGraphicsTileTextures
 							end
 						end
 						gl.glEnd()
-						
+
 						tileSet.palette.tex:unbind(2)
 						tileSet.graphicsTileTex:unbind(1)
 						tex:unbind(0)
@@ -1521,10 +1521,10 @@ else -- useBakedGraphicsTileTextures
 						self.tilemapShader:useNone()
 
 end -- useBakedGraphicsTileTextures
-					
+
 						-- draw roomstate plms here
 						if editorDrawPLMs
-						and rs.plmset 
+						and rs.plmset
 						then
 							for _,plm in ipairs(rs.plmset.plms) do
 								local x = .5 + plm.x + blocksPerRoom * roomxmin
@@ -1536,9 +1536,9 @@ end -- useBakedGraphicsTileTextures
 								}
 							end
 						end
-						
-						if editorDrawEnemySpawnSets 
-						and rs.enemySpawnSet 
+
+						if editorDrawEnemySpawnSets
+						and rs.enemySpawnSet
 						then
 							for _,enemySpawn in ipairs(rs.enemySpawnSet.enemySpawns) do
 								local x = enemySpawn.x / 16 + blocksPerRoom * roomxmin
@@ -1550,28 +1550,28 @@ end -- useBakedGraphicsTileTextures
 								}
 							end
 						end
-					
+
 						-- doors
 						-- segfaulting in vitality
 						if editorDrawDoors
-						and roomBlockData 
+						and roomBlockData
 						then
 							for exitIndex,blockpos in pairs(roomBlockData.blocksForExit) do
 								-- TODO lifts will mess up the order of this, maybe?
 								local door = m.doors[exitIndex+1]
-								
+
 								if self.mouseOverDoor and door == self.mouseOverDoor.door
 								or self.selectedDoor and door == self.selectedDoor.door
 								then
 									gl.glLineWidth(3)
 								end
 
-								if not door 
-								or door.type ~= 'door_t' 
+								if not door
+								or door.type ~= 'door_t'
 								then
 									-- TODO handle lifts?
 									-- are they lifts, or are they loadStation debug destinations that have no exit, only an entrance?
-									
+
 									for _,pos in ipairs(blockpos) do
 										-- now for src block pos
 										local x = .5 + pos[1] + blocksPerRoom * roomxmin
@@ -1580,11 +1580,11 @@ end -- useBakedGraphicsTileTextures
 											mvProjMat = self.view.mvProjMat.ptr,
 											color = {1,1, self.selectedDoor and door == self.selectedDoor.door and 0 or 1, 1},
 											pos = {x, -y},
-										}									
+										}
 									end
 								else
 									local dstRoom = assert(door.destRoom)
-								
+
 									-- draw an arrow or something on the map where the door drops us off at
 									-- door.destRoom is the room
 									-- draw it at door:obj().screenX by door:obj().screenY
@@ -1594,9 +1594,9 @@ end -- useBakedGraphicsTileTextures
 									local j = door:obj().screenY
 									local dir = bit.band(door:obj().direction, 3)	-- 0-based
 									local ti, tj = 0, 0	--table.unpack(doorPosForDir[dir])
-										
+
 									local k = 2
-										
+
 									-- [[
 									local pi, pj = 0, 0
 									if dir == 0 then		-- enter from left
@@ -1635,7 +1635,7 @@ end -- useBakedGraphicsTileTextures
 										}
 									end
 								end
-								
+
 								gl.glLineWidth(1)
 							end
 						end
@@ -1789,7 +1789,7 @@ function App:updateGUI()
 		end)) then
 			self.selectedRegion = self.regions[tmp[1]+1]
 		end
-		
+
 		local region = self.selectedRegion
 		if region then
 			ig.luatableTooltipCheckbox('Show Region '..region.index, region, 'show')
@@ -1805,7 +1805,7 @@ function App:updateGUI()
 			comboTooltip('loadStation', self, 'currentLoadStationIndex', lsr.stations:mapi(function(ls)
 				return ('%02x:%04x'):format(frompc(ls.addr))
 			end))
-			
+
 			local ls = lsr.stations[self.currentLoadStationIndex+1]
 			if ls then
 				if ig.igButton('door '
@@ -1813,7 +1813,7 @@ function App:updateGUI()
 				) then
 					-- redirect door
 				end
-				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) 
+				if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None)
 				and ls.door
 				then
 					self.mouseOverDoor = {door=ls.door}
@@ -1825,12 +1825,12 @@ function App:updateGUI()
 				end
 			end
 		end
-	end	
+	end
 
 	if ig.igCollapsingHeader'rooms' then
 		if not self.selectedRoomIndex then self.selectedRoomIndex = 0 end
 		local tmp = {self.selectedRoomIndex}
-		local changed = comboTooltip('room', tmp, 1, self.sm.rooms:mapi(function(room) return room:getIdentStr() end)) 
+		local changed = comboTooltip('room', tmp, 1, self.sm.rooms:mapi(function(room) return room:getIdentStr() end))
 		if changed then
 			self.selectedRoomIndex = tmp[1]
 		end
@@ -1839,7 +1839,7 @@ function App:updateGUI()
 			for name, ctype, field in sm.Room.room_t:fielditer() do
 				ig.igText(name..' = '..room:obj():fieldToString(name, ctype))
 			end
-		
+
 			if ig.igCollapsingHeader'roomstates' then
 				-- roomstates ...
 				-- roomblocks ...
@@ -1864,10 +1864,10 @@ function App:updateGUI()
 		comboTooltip('tileset', self, 'currentTileSetIndex', sm.tileSets:mapi(function(tileSet)
 			return 'tileset '..tileSet.index
 		end))
-	
+
 		local tileSet = sm.tileSets[self.currentTileSetIndex+1]
 		if tileSet then
-			if tileSet.tex then 
+			if tileSet.tex then
 				makeTooltipImage(
 					'tileset '..tileSet.index,
 					tileSet.tex
