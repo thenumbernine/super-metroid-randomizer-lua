@@ -1408,17 +1408,17 @@ else -- useBakedGraphicsTileTextures
 							end
 							rs.drawBGSceneObj:draw()
 						end
-						
+
 						-- draw layer2 background if it's there
 						local layer2blocks = roomBlockData:getLayer2Blocks()
 						if layer2blocks then
 							if not rs.drawLayer2SceneObj then
 								local tex = tileSet.tex
-								
+
 								local vertexData = table()
 								local geomBBox = table()
 								local tcBBox = table()
-								
+
 								for j=0,h-1 do
 									for i=0,w-1 do
 										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
@@ -1460,7 +1460,7 @@ else -- useBakedGraphicsTileTextures
 										end
 									end
 								end
-							
+
 								rs.drawLayer2SceneObj = GLSceneObject{
 									program = self.tilemapShader,
 									texs = {tex, tileSet.graphicsTileTex, tileSet.palette.tex},
@@ -1503,11 +1503,11 @@ else -- useBakedGraphicsTileTextures
 						if blocks12 then
 							if not rs.drawLayer1SceneObj then
 								local tex = tileSet.tex
-								
+
 								local vertexData = table()
 								local geomBBox = table()
 								local tcBBox = table()
-						
+
 								for j=0,h-1 do
 									for i=0,w-1 do
 										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
