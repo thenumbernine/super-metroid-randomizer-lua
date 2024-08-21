@@ -1115,18 +1115,8 @@ if useBakedGraphicsTileTextures then
 								
 								for j=0,h-1 do
 									for i=0,w-1 do
-										if (
-											blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-											or blocksPerRoom * (roomxmin + i) <= viewxmax
-											or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-											or blocksPerRoom * -(roomymin + j) <= viewymax
-										) 
-										-- [[
-										and (
-											not editorHideFilledMapBlocks
-											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
-										)
-										--]]
+										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+										--or not editorHideFilledMapBlocks -- TODO make this work again
 										then
 											local x1 = blocksPerRoom * (i + roomxmin)
 											local y1 = blocksPerRoom * (j + roomymin)
@@ -1177,56 +1167,32 @@ if useBakedGraphicsTileTextures then
 							end
 							rs.drawBGSceneObj:draw()
 						end
-
-						if not rs.drawFGSceneObj then
-							local tex = tileSet.tex
-							local paletteTex = tileSet.palette.tex
+						
+						local layer2blocks = roomBlockData:getLayer2Blocks()
+						if layer2blocks then
+							if not rs.drawLayer2SceneObj then
+								local tex = tileSet.tex
+								local paletteTex = tileSet.palette.tex
+								
+								local vertexData = table()
+								local geomBBox = table()
+								local tcBBox = table()
 							
-							local vertexData = table()
-							local geomBBox = table()
-							local tcBBox = table()
-							
-							local blocks12 = roomBlockData:getBlocks12()
-							local layer2blocks = roomBlockData:getLayer2Blocks()
-							for j=0,h-1 do
-								for i=0,w-1 do
-									if (
-										blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-										or blocksPerRoom * (roomxmin + i) <= viewxmax
-										or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-										or blocksPerRoom * -(roomymin + j) <= viewymax
-									) then
-										
-										local drawLayer2 = 
-											editorDrawLayer2
-											and layer2blocks
-											-- [[
-											and (
-												not editorHideFilledMapBlocks
-												or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
-											)
-											--]]
-
-										local drawLayer1 = 
-											editorDrawForeground 
-											and blocks12
-											-- [[
-											and (
-												not editorHideFilledMapBlocks
-												or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
-											)
-											--]]
-
-										for ti=0,blocksPerRoom-1 do
-											for tj=0,blocksPerRoom-1 do
-												-- draw layer2 background if it's there
-												if drawLayer2 then
+								for j=0,h-1 do
+									for i=0,w-1 do
+										-- [[
+										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
+										--or not editorHideFilledMapBlocks -- TODO make this work again
+										then
+										--]]
+											for ti=0,blocksPerRoom-1 do
+												for tj=0,blocksPerRoom-1 do
+													-- draw layer2 background if it's there
 													local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
 													local pimask = bit.band(tileIndex, 0x400) ~= 0
 													local pjmask = bit.band(tileIndex, 0x800) ~= 0
 													tileIndex = bit.band(tileIndex, 0x3ff)
 												
-													
 													local tx1 = tileIndex % tileSetRowWidth
 													local ty1 = math.floor(tileIndex / tileSetRowWidth)
 
@@ -1251,9 +1217,63 @@ if useBakedGraphicsTileTextures then
 													-- TODO this vertex_ID based so I don't need any vertex data at all?
 													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
 												end
-												
-												-- draw tile
-												if drawLayer1 then
+											end
+										end
+									end
+								end
+
+								rs.drawLayer2SceneObj = GLSceneObject{
+									program = self.indexShader,
+									texs = {tex, paletteTex},
+									geometry = {
+										mode = gl.GL_QUADS,
+									},
+									vertexes = {
+										data = vertexData,
+										dim = 2,
+									},
+									-- TODO divisor of 4 ?  or just use instances?
+									attrs = {
+										geomBBox = {
+											buffer = {
+												data = geomBBox,
+												dim = 4,
+											},
+										},
+										tcBBox = {
+											buffer = {
+												data = tcBBox,
+												dim = 4,
+											},
+										},							
+									},
+								}
+							end
+							if editorDrawLayer2 then
+								rs.drawLayer2SceneObj:draw()
+							end
+						end
+
+						local blocks12 = roomBlockData:getBlocks12()
+						if blocks12 then
+							if not rs.drawLayer1SceneObj then
+								local tex = tileSet.tex
+								local paletteTex = tileSet.palette.tex
+								
+								local vertexData = table()
+								local geomBBox = table()
+								local tcBBox = table()
+							
+								for j=0,h-1 do
+									for i=0,w-1 do
+										-- [[
+										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+										--or not editorHideFilledMapBlocks	-- TODO make this work again
+										then
+										--]]
+											for ti=0,blocksPerRoom-1 do
+												for tj=0,blocksPerRoom-1 do
+													-- draw tile
 													local dx = ti + blocksPerRoom * i
 													local dy = tj + blocksPerRoom * j
 													local di = dx + blocksPerRoom * w * dy
@@ -1289,36 +1309,38 @@ if useBakedGraphicsTileTextures then
 										end
 									end
 								end
-							end
 
-							rs.drawFGSceneObj = GLSceneObject{
-								program = self.indexShader,
-								texs = {tex, paletteTex},
-								geometry = {
-									mode = gl.GL_QUADS,
-								},
-								vertexes = {
-									data = vertexData,
-									dim = 2,
-								},
-								-- TODO divisor of 4 ?  or just use instances?
-								attrs = {
-									geomBBox = {
-										buffer = {
-											data = geomBBox,
-											dim = 4,
-										},
+								rs.drawLayer1SceneObj = GLSceneObject{
+									program = self.indexShader,
+									texs = {tex, paletteTex},
+									geometry = {
+										mode = gl.GL_QUADS,
 									},
-									tcBBox = {
-										buffer = {
-											data = tcBBox,
-											dim = 4,
+									vertexes = {
+										data = vertexData,
+										dim = 2,
+									},
+									-- TODO divisor of 4 ?  or just use instances?
+									attrs = {
+										geomBBox = {
+											buffer = {
+												data = geomBBox,
+												dim = 4,
+											},
 										},
-									},							
-								},
-							}
+										tcBBox = {
+											buffer = {
+												data = tcBBox,
+												dim = 4,
+											},
+										},							
+									},
+								}
+							end
+							if editorDrawForeground then
+								rs.drawLayer1SceneObj:draw()
+							end
 						end
-						rs.drawFGSceneObj:draw()
 
 else -- useBakedGraphicsTileTextures 
 							
