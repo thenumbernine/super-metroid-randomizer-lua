@@ -1344,28 +1344,15 @@ if useBakedGraphicsTileTextures then
 
 else -- useBakedGraphicsTileTextures
 
-						self.tilemapShader:use()
-
 						local bgTilemapTex = bgTilemap and bgTilemap.tex
 						if bgTilemapTex then
+							if not rs.drawBGSceneObj then
+								local vertexData = table()
+								local geomBBox = table()
+								local tcBBox = table()
 
-							bgTilemapTex:bind(0)
-							tileSet.graphicsTileTex:bind(1)
-							tileSet.palette.tex:bind(2)
-
-							gl.glUniform2f(
-								self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
-								tileSet.graphicsTileTex.width,
-								tileSet.graphicsTileTex.height)
-
-							gl.glBegin(gl.GL_QUADS)
-							for j=0,h-1 do
-								for i=0,w-1 do
-									if blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-									or blocksPerRoom * (roomxmin + i) <= viewxmax
-									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-									or blocksPerRoom * -(roomymin + j) <= viewymax
-									then
+								for j=0,h-1 do
+									for i=0,w-1 do
 										local x1 = blocksPerRoom * (i + roomxmin)
 										local y1 = blocksPerRoom * (j + roomymin)
 										local x2 = x1 + blocksPerRoom
@@ -1376,149 +1363,233 @@ else -- useBakedGraphicsTileTextures
 										local tx2 = (i+1) * roomSizeInPixels / bgTilemapTex.width
 										local ty2 = (j+1) * roomSizeInPixels / bgTilemapTex.height
 
-										gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
-										gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
-
-										gl.glVertex2f(0, 0)
-										gl.glVertex2f(1, 0)
-										gl.glVertex2f(1, 1)
-										gl.glVertex2f(0, 1)
+										for k=1,4 do
+											geomBBox:append{x1, -y1, x2, -y2}
+											tcBBox:append{tx1, ty1, tx2, ty2}
+										end
+										-- TODO this vertex_ID based so I don't need any vertex data at all?
+										vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
 									end
 								end
+
+								rs.drawBGSceneObj = GLSceneObject{
+									program = self.tilemapShader,
+									texs = {bgTilemapTex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									geometry = {
+										mode = gl.GL_QUADS,
+									},
+									vertexes = {
+										data = vertexData,
+										dim = 2,
+									},
+									uniforms = {
+										-- why didn't this /8 while the other two layers did?
+										graphicsTilesTexSizeInTiles = {
+											tileSet.graphicsTileTex.width,
+											tileSet.graphicsTileTex.height,
+										},
+									},
+									-- TODO divisor of 4 ?  or just use instances?
+									attrs = {
+										geomBBox = {
+											buffer = {
+												data = geomBBox,
+												dim = 4,
+											},
+										},
+										tcBBox = {
+											buffer = {
+												data = tcBBox,
+												dim = 4,
+											},
+										},
+									},
+								}
 							end
-							gl.glEnd()
-
-							tileSet.palette.tex:unbind(2)
-							tileSet.graphicsTileTex:unbind(1)
-							bgTilemapTex:unbind(0)
+							rs.drawBGSceneObj:draw()
 						end
-
-
-						local tex = tileSet.tex
-						tex:bind(0)
-						tileSet.graphicsTileTex:bind(1)
-						tileSet.palette.tex:bind(2)
-
-						gl.glUniform2f(
-							self.tilemapShader.uniforms.graphicsTilesTexSizeInTiles.loc,
-							tileSet.graphicsTileTex.width / 8,
-							tileSet.graphicsTileTex.height / 8)
-
-						local blocks12 = roomBlockData:getBlocks12()
+						
+						-- draw layer2 background if it's there
 						local layer2blocks = roomBlockData:getLayer2Blocks()
-
-						gl.glBegin(gl.GL_QUADS)
-						for j=0,h-1 do
-							for i=0,w-1 do
-								if (
-									blocksPerRoom * (roomxmin + i + 1) >= viewxmin
-									or blocksPerRoom * (roomxmin + i) <= viewxmax
-									or blocksPerRoom * -(roomymin + j + 1) >= viewymin
-									or blocksPerRoom * -(roomymin + j) <= viewymax
-								) then
-
-									local drawLayer2 =
-										editorDrawLayer2
-										and layer2blocks
-										-- [[
-										and (
-											not editorHideFilledMapBlocks
-											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
-										)
-										--]]
-
-									local drawLayer1 =
-										editorDrawForeground
-										and blocks12
-										-- [[
-										and (
-											not editorHideFilledMapBlocks
-											or bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
-										)
-										--]]
-
-									for ti=0,blocksPerRoom-1 do
-										for tj=0,blocksPerRoom-1 do
-											-- draw layer2 background if it's there
-											if drawLayer2 then
-												local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
-												local pimask = bit.band(tileIndex, 0x400) ~= 0
-												local pjmask = bit.band(tileIndex, 0x800) ~= 0
-												tileIndex = bit.band(tileIndex, 0x3ff)
+						if layer2blocks then
+							if not rs.drawLayer2SceneObj then
+								local tex = tileSet.tex
+								
+								local vertexData = table()
+								local geomBBox = table()
+								local tcBBox = table()
+								
+								for j=0,h-1 do
+									for i=0,w-1 do
+										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 2) == 0
+										--or not editorHideFilledMapBlocks	-- TODO make this work again
+										then
+											for ti=0,blocksPerRoom-1 do
+												for tj=0,blocksPerRoom-1 do
+													local tileIndex = ffi.cast('uint16_t*', layer2blocks)[ti + blocksPerRoom * i + blocksPerRoom * w * (tj + blocksPerRoom * j)]
+													local pimask = bit.band(tileIndex, 0x400) ~= 0
+													local pjmask = bit.band(tileIndex, 0x800) ~= 0
+													tileIndex = bit.band(tileIndex, 0x3ff)
 
 
-												local tx1 = tileIndex % tileSetRowWidth
-												local ty1 = math.floor(tileIndex / tileSetRowWidth)
+													local tx1 = tileIndex % tileSetRowWidth
+													local ty1 = math.floor(tileIndex / tileSetRowWidth)
 
-												tx1 = tx1 / tileSetRowWidth
-												ty1 = ty1 / (tex.height / blockSizeInPixels)
+													tx1 = tx1 / tileSetRowWidth
+													ty1 = ty1 / (tex.height / blockSizeInPixels)
 
-												local tx2 = tx1 + blockSizeInPixels/tex.width
-												local ty2 = ty1 + blockSizeInPixels/tex.height
+													local tx2 = tx1 + blockSizeInPixels/tex.width
+													local ty2 = ty1 + blockSizeInPixels/tex.height
 
-												if pimask then tx1,tx2 = tx2,tx1 end
-												if pjmask then ty1,ty2 = ty2,ty1 end
+													if pimask then tx1,tx2 = tx2,tx1 end
+													if pjmask then ty1,ty2 = ty2,ty1 end
 
-												local x1 = ti + blocksPerRoom * (i + roomxmin)
-												local y1 = tj + blocksPerRoom * (j + roomymin)
-												local x2 = x1 + 1
-												local y2 = y1 + 1
+													local x1 = ti + blocksPerRoom * (i + roomxmin)
+													local y1 = tj + blocksPerRoom * (j + roomymin)
+													local x2 = x1 + 1
+													local y2 = y1 + 1
 
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x1, -y1, x2, -y2)
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
-
-												gl.glVertex2f(0, 0)
-												gl.glVertex2f(1, 0)
-												gl.glVertex2f(1, 1)
-												gl.glVertex2f(0, 1)
-											end
-
-											-- draw tile
-											if drawLayer1 then
-												local dx = ti + blocksPerRoom * i
-												local dy = tj + blocksPerRoom * j
-												local di = dx + blocksPerRoom * w * dy
-
-												local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
-												local pimask = bit.band(tileIndex, 0x400) ~= 0
-												local pjmask = bit.band(tileIndex, 0x800) ~= 0
-												tileIndex = bit.band(tileIndex, 0x3ff)
-
-												local tx1 = tileIndex % tileSetRowWidth
-												local ty1 = math.floor(tileIndex / tileSetRowWidth)
-
-												tx1 = tx1 / tileSetRowWidth
-												ty1 = ty1 / (tex.height / blockSizeInPixels)
-
-												local tx2 = tx1 + blockSizeInPixels/tex.width
-												local ty2 = ty1 + blockSizeInPixels/tex.height
-
-												if pimask then tx1,tx2 = tx2,tx1 end
-												if pjmask then ty1,ty2 = ty2,ty1 end
-
-												local x = ti + blocksPerRoom * (i + roomxmin)
-												local y = tj + blocksPerRoom * (j + roomymin)
-
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.geomBBox.loc, x, -y, x+1, -y-1)
-												gl.glVertexAttrib4f(self.tilemapShader.attrs.tcBBox.loc, tx1, ty1, tx2, ty2)
-
-												gl.glVertex2f(0, 0)
-												gl.glVertex2f(1, 0)
-												gl.glVertex2f(1, 1)
-												gl.glVertex2f(0, 1)
+													for k=1,4 do
+														geomBBox:append{x1, -y1, x2, -y2}
+														tcBBox:append{tx1, ty1, tx2, ty2}
+													end
+													-- TODO this vertex_ID based so I don't need any vertex data at all?
+													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+												end
 											end
 										end
 									end
 								end
+							
+								rs.drawLayer2SceneObj = GLSceneObject{
+									program = self.tilemapShader,
+									texs = {tex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									geometry = {
+										mode = gl.GL_QUADS,
+									},
+									vertexes = {
+										data = vertexData,
+										dim = 2,
+									},
+									uniforms = {
+										graphicsTilesTexSizeInTiles = {
+											tileSet.graphicsTileTex.width / 8,
+											tileSet.graphicsTileTex.height / 8,
+										},
+									},
+									-- TODO divisor of 4 ?  or just use instances?
+									attrs = {
+										geomBBox = {
+											buffer = {
+												data = geomBBox,
+												dim = 4,
+											},
+										},
+										tcBBox = {
+											buffer = {
+												data = tcBBox,
+												dim = 4,
+											},
+										},
+									},
+								}
+							end
+							if editorDrawLayer2 then
+								rs.drawLayer2SceneObj:draw()
 							end
 						end
-						gl.glEnd()
 
-						tileSet.palette.tex:unbind(2)
-						tileSet.graphicsTileTex:unbind(1)
-						tex:unbind(0)
+						local blocks12 = roomBlockData:getBlocks12()
+						if blocks12 then
+							if not rs.drawLayer1SceneObj then
+								local tex = tileSet.tex
+								
+								local vertexData = table()
+								local geomBBox = table()
+								local tcBBox = table()
+						
+								for j=0,h-1 do
+									for i=0,w-1 do
+										if bit.band(roomBlockData.roomAllSolidFlags[i+w*j], 1) == 0
+										--or not editorHideFilledMapBlocks	-- TODO make this work again
+										then
+											for ti=0,blocksPerRoom-1 do
+												for tj=0,blocksPerRoom-1 do
 
-						self.tilemapShader:useNone()
+													-- draw tile
+													local dx = ti + blocksPerRoom * i
+													local dy = tj + blocksPerRoom * j
+													local di = dx + blocksPerRoom * w * dy
+
+													local tileIndex = ffi.cast('uint16_t*', blocks12)[di]
+													local pimask = bit.band(tileIndex, 0x400) ~= 0
+													local pjmask = bit.band(tileIndex, 0x800) ~= 0
+													tileIndex = bit.band(tileIndex, 0x3ff)
+
+													local tx1 = tileIndex % tileSetRowWidth
+													local ty1 = math.floor(tileIndex / tileSetRowWidth)
+
+													tx1 = tx1 / tileSetRowWidth
+													ty1 = ty1 / (tex.height / blockSizeInPixels)
+
+													local tx2 = tx1 + blockSizeInPixels/tex.width
+													local ty2 = ty1 + blockSizeInPixels/tex.height
+
+													if pimask then tx1,tx2 = tx2,tx1 end
+													if pjmask then ty1,ty2 = ty2,ty1 end
+
+													local x = ti + blocksPerRoom * (i + roomxmin)
+													local y = tj + blocksPerRoom * (j + roomymin)
+
+													for k=1,4 do
+														geomBBox:append{x, -y, x+1, -y-1}
+														tcBBox:append{tx1, ty1, tx2, ty2}
+													end
+													-- TODO this vertex_ID based so I don't need any vertex data at all?
+													vertexData:append{0, 0, 1, 0, 1, 1, 0, 1}
+												end
+											end
+										end
+									end
+								end
+
+								rs.drawLayer1SceneObj = GLSceneObject{
+									program = self.tilemapShader,
+									texs = {tex, tileSet.graphicsTileTex, tileSet.palette.tex},
+									geometry = {
+										mode = gl.GL_QUADS,
+									},
+									vertexes = {
+										data = vertexData,
+										dim = 2,
+									},
+									uniforms = {
+										graphicsTilesTexSizeInTiles = {
+											tileSet.graphicsTileTex.width / 8,
+											tileSet.graphicsTileTex.height / 8,
+										},
+									},
+									-- TODO divisor of 4 ?  or just use instances?
+									attrs = {
+										geomBBox = {
+											buffer = {
+												data = geomBBox,
+												dim = 4,
+											},
+										},
+										tcBBox = {
+											buffer = {
+												data = tcBBox,
+												dim = 4,
+											},
+										},
+									},
+								}
+							end
+							if editorDrawForeground then
+								rs.drawLayer1SceneObj:draw()
+							end
+						end
 
 end -- useBakedGraphicsTileTextures
 
