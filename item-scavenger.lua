@@ -368,12 +368,14 @@ do
 	local morphRoom = sm:mapFindRoom(1, 0x0e)
 	if config.randomizeItemsScavengerHuntProps.startWithBombs then
 		for _,plmset in ipairs(getAllRoomPLMs(morphRoom)) do
-			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
+			--placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb_hidden}
+			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-1, 48-4}, cmd=sm.plmCmdValueForName.item_bomb}
 		end
 	end
 	if config.randomizeItemsScavengerHuntProps.startWithXRay then
 		for _,plmset in ipairs(getAllRoomPLMs(morphRoom)) do
-			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
+			--placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray_hidden}
+			placeInPLMSet{room=morphRoom, plmset=plmset, pos={64-2, 48-4}, cmd=sm.plmCmdValueForName.item_xray}
 		end
 	end
 end

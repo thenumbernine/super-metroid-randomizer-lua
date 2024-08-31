@@ -66,8 +66,8 @@ return {
 	-- skips the intro cutscene
 	skipIntro = true,
 
-	-- make x-ray fullscreen
-	beefUpXRay = true,
+	-- make x-ray fullscreen.  some rooms are buggy.
+	beefUpXRay = false,--true,
 
 	---------------------------------------------------------
 	--------------------- randomization ---------------------
@@ -106,7 +106,8 @@ return {
 
 
 	-- toss out everything and rebuild a full new world
-	randomizeWorld = true,
+	-- (this is exclusive with randomizeItemsScavengerHunt)
+	randomizeWorld = false,
 
 	-- rebuild the region maps based on the rooms
 	-- this looks messy for the original data, since it doesn't know what pieces of each rooms to toss out,
