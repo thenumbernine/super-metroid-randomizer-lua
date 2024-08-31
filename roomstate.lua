@@ -184,7 +184,7 @@ function RoomState:init(args)
 		end
 	end
 
-	-- try to load tile graphics from rs.obj():tileSetIndex
+	-- try to load tile graphics from rs:obj().tileSetIndex
 	-- TODO cache this per tileSet, since there are only 256 possible, and probably much less used?
 	self:setTileSet(select(2, sm.tileSets:find(nil, function(tileSet)
 		return tileSet.index == self:obj().tileSetIndex

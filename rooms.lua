@@ -238,7 +238,7 @@ end
 -- change all scroll values to 01
 for _,m in ipairs(sm.rooms) do
 	for _,rs in ipairs(m.roomStates) do
-		rs.obj.scroll = 1
+		rs:obj().scroll = 1
 	end
 end
 --]]
