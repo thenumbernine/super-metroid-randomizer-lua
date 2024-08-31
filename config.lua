@@ -14,12 +14,12 @@ return {
 
 	-- TODO missing a few tile types (i thought i got them all?)
 	mapSaveDumpworldImage = false,
-	
-	-- rearrange and recompress room data 
+
+	-- rearrange and recompress room data
 	-- TODO necessary for 'randomizeWorld' flag below
 	mapRecompress = true,
 
-	-- write the informative image of the randomized rom 
+	-- write the informative image of the randomized rom
 	writeOutModifiedMapImage = false,
 
 	-- for the original rom:
@@ -29,10 +29,10 @@ return {
 
 	-- works for orig, can run away on modified roms
 	disasmHandleBranches = false,
-	
+
 	-- once again, modified roms can have trouble disassembling, so sometimes disable the whole thing
 	disasmDisable = true,
-	
+
 --[==[
 	-- whether to write out disasm
 	writeOutDisasm = true,
@@ -49,8 +49,9 @@ return {
 	-- for the original rom:
 	-- this is only useful for generating the map mask image
 	fillInOOBMapBlocksWithSolid = true,
+--]==]
 
-
+-- [==[
 	---------------------------------------------------------
 	----------------- some ips's / patches ------------------
 	---------------------------------------------------------
@@ -74,7 +75,7 @@ return {
 
 
 	-- this just randomizes enemy stats, not their placement
-	randomizeEnemies = false,--true,
+	randomizeEnemies = true,
 
 	-- TODO still run constraints to make sure the game is playable even if we're not randomizing items?
 	-- ... to make sure enemies aren't impossible
@@ -84,20 +85,20 @@ return {
 	-- 0) make a connectivity graph of all rooms.  maybe derive it from the room room_t's and door_t's themselves.
 	-- 1) remove the door tests from 'can access' code.  instead just pick an item location arbitrarily.
 	-- 2) then chart an arbitrary route through our graph from the start/last item location to the new item location.  it doesn't have to be optimal, it should be random in fact.
-	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have. 
+	-- 3) then - if our path includes doors (edges) which haven't been touched yet - then change the doors along the way to be colored based on whatever items we already have.
 	-- 		no harm in throwing in gates as well.  also no harm in tagging block regions to be changed as well... maybe...
 --	randomizeItems = true,
-	
+
 	-- Set this to remove all items and just spread them everywhere in the world randomly.
 	-- NOTICE This is exclusive with randomizeItems
 	-- I predict the items are accessible 91.9999repeating% of the time
-	randomizeItemsScavengerHunt = false,--true,
+	randomizeItemsScavengerHunt = true,--false
 
 	-- TODO the item placement doesn't validate that the door colors are possible to pass
 	randomizeDoors = false,--true,
 
 	-- randomize weapon damages
-	randomizeWeapons = false,--true, 
+	randomizeWeapons = true,
 
 	-- for the original rom:
 	-- randomizing sometimes has trouble with this
@@ -106,7 +107,7 @@ return {
 
 	-- toss out everything and rebuild a full new world
 	randomizeWorld = true,
-	
+
 	-- rebuild the region maps based on the rooms
 	-- this looks messy for the original data, since it doesn't know what pieces of each rooms to toss out,
 	-- but it's essential for the randomizeWorld
@@ -123,7 +124,7 @@ return {
 
 		burrowItems = true,
 		burrowLength = 100,		-- how far to try to burrow items into the wall
-	
+
 		startWithBombs = true,			-- put bombs next to morph
 		startWithXRay = true,			-- put xray next to bombs
 		clearDoorsToGetToMorph = true,	-- make sure morph is accessible in its original room
@@ -140,7 +141,7 @@ return {
 
 	-- used by enemy randomization
 	randomizeEnemyProps = {
-	
+
 		--palette = true,
 
 		weakness = true,
@@ -164,11 +165,11 @@ return {
 		-- effects
 		deathEffect = true,
 		sound = true,
-		
-		--[[ randomize the AI 
+
+		--[[ randomize the AI
 		-- hmm, mixing and matching individaul routines causes lots of crashes
 		-- but what if I randomize the sets of routines, to completely swap out one monster with another?
-		aiBank = true,	
+		aiBank = true,
 		initiationAI = true,
 		mainAI = true,
 		grappleAI = true,
@@ -176,7 +177,7 @@ return {
 		frozenAI = true,
 		xrayAI = true,
 		--]]
-	
+
 		shotDamage = true,
 		shotDamageScaleRange = {1/3, 3},
 	},
@@ -191,7 +192,7 @@ return {
 	-- used by item randomization
 	-- what skills does the player know?
 	playerSkills = {
-		
+
 		-- this one covers a wide range
 		-- there's the lower green Brinstar power bomb item, which has always required touch-and-go
 		-- but there are several other locations which requier different degrees of skill of touch-and-go:
@@ -217,13 +218,13 @@ return {
 
 		-- if you want to bother freeze the crab to jump up the maridia start area
 		suitlessMaridiaFreezeCrabs = true,
-		
+
 		-- speed boost by tapping 'a' at first, cuts off a block or two. maybe this isn't the right name.
 		shortSpeedBoost = true,
 
 		-- whether you want to run through the lava rooms of norfair without a suit
 		hellrun = true,
-		
+
 		-- if you want to bother do that stupid freeze-the-mocktroid glitch to jump through the wall
 		freezeTheMocktroidToGetToBotwoon = false,
 
@@ -236,7 +237,7 @@ return {
 
 		-- touch and go across the moat.  I've seen this done ... does it require high jump? either way...
 		canJumpAcrossEntranceToWreckedShip = false,
-		
+
 		-- how to get out of lower norfair
 		preciseTouchAndGoLowerNorfair = false,
 		lowerNorfairSuitSwap = true,
@@ -256,7 +257,7 @@ return {
 		-- only possible if you have enough e-tanks before hell runs
 		-- what this means is ... if the randomizer doesn't come up with a varia suit before hell run ... then it will be forced to place *all* energy tanks before hell run ... which might make a game that's too easy
 		{from='varia', to='missile'},
-		
+
 		{from='xray', to='missile'},
 		{from='hijump', to='missile'},
 		{from='bomb', to='missile'},
@@ -277,12 +278,12 @@ return {
 		-- removing plasma means you must keep screwattack, or else you can't escape the plasma room and it'll stall the randomizer
 		-- the other fix is to just not consider the plasma location, and put something innocuous there ...
 		{from='plasma', to='missile'},
-		
+
 		-- this will stall the randomizer because of pink Brinstar energy tank
 		-- so lets remove it and write it as a missile
 		{from='wave', to='missile'},
 		{remove='Energy Tank (pink Brinstar top)', to='missile'},
-		
+
 		-- is this possible?  maybe you can't kill the golden chozo without charge, or a lot of super missiles ... or a lot of restocking on 5 super missiles and shooting them all off at him
 		--{from='charge', to='missile'},
 
@@ -299,7 +300,7 @@ return {
 		{from='reserve', to='supermissile'},
 		{from='xray', to='supermissile'},	-- no need for these
 		{from='energy', to='supermissile', leave=7},
-		
+
 		-- get rid of unaccessible items -- remove them from the search:
 --		{remove='Spring Ball', to='supermissile'},
 --		{remove='Plasma Beam', to='supermissile'},
@@ -326,7 +327,7 @@ return {
 		powerbomb = .01,
 		reserve = 10,
 		screwattack = .01,
-		--screwattack = 100,	-- screw attack first! and make all monsters immune to it! 
+		--screwattack = 100,	-- screw attack first! and make all monsters immune to it!
 		spacejump = .01,
 		spazer = 1.5848931924611,
 		speed = .01,
@@ -336,7 +337,7 @@ return {
 		wave = 1.0471285480509,
 		xray = 1e+20,
 	},
---]]	
+--]]
 
 --[=[ enable this with damage boost and wake early and it is pretty interesting
 	itemPlacementProbability = {
@@ -362,7 +363,7 @@ return {
 		{remove='Super Missile (Gold Torizo)', to='morph'},
 		{remove='Screw Attack', to='morph'},
 
--- if you also want to get rid of grappling:	
+-- if you also want to get rid of grappling:
 --		{from='grappling', to='morph'},
 		-- without spring ball, grappling isn't essential
 --		{remove='Spring Ball', to='morph'},

@@ -1,5 +1,5 @@
 #!/usr/bin/env luajit
-	
+
 --[[
 useful pages:
 http://wiki.metroidconstruction.com/doku.php?id=super:enemy:list_of_enemies
@@ -48,7 +48,7 @@ timer('everything', function()
 	if seed then
 		seed = tonumber(seed, 16)
 	else
-		seed = os.time() 
+		seed = os.time()
 		math.randomseed(seed)
 		for i=1,100 do math.random() end
 		seed = math.random(0,0x7fffffff)
@@ -61,20 +61,20 @@ timer('everything', function()
 	f24904a32f1f6fc40f5be39086a7fa7c  Super Metroid (JU) [!] PAL.smc
 	21f3e98df4780ee1c667b84e57d88675  Super Metroid (JU) [!].smc
 	3d64f89499a403d17d530388854a7da5  Super Metroid (E) [!].smc
-	
+
 	so what version is "Metroid 3" ? if it's not JU or E?
 	"Metroid 3" matches "Super Metroid (JU)" except for:
 			"Metroid 3"		"Super Metroid (JU)"
 	$60d	a9				89
 	$60e	00				10
 	<- 89 10 = BIT #$10 = set bit (this is patrickjohnston.org's)
-	<- a9 00 = LDA #$00 = clear bit 
+	<- a9 00 = LDA #$00 = clear bit
 
 	$617	a9				89
 	$618	00				10
 	<- 89 10 = BIT #$10 = set bit (this is patrickjohnston.org's)
-	<- a9 00 = LDA #$00 = clear bit 
-	
+	<- a9 00 = LDA #$00 = clear bit
+
 	$6cb	ea				d0
 	$6cc	ea				16
 	<- ea ea = NOP NOP		<- skip the check altogether
@@ -82,12 +82,12 @@ timer('everything', function()
 
 	that's it.
 	and between JU and E? a lot.
-	
-	so which does patrickjohnston.org use? 
-	
+
+	so which does patrickjohnston.org use?
+
 	--]]
 	local infilename = cmdline['in'] or 'Super Metroid (JU) [!].smc'
-	
+
 	local outfilename = cmdline.out or 'sm-random.smc'
 
 	function exec(s)
@@ -104,9 +104,9 @@ timer('everything', function()
 		path'__tmp':write(path'__tmp2':read())
 		path'__tmp2':remove()
 	end
-	
+
 	--applyPatch'SuperMissiles.ips'	-- shoot multiple super missiles!... and it glitched the game when I shot one straight up in the air ...
-	
+
 	romstr = path'__tmp':read()
 	path'__tmp':remove()
 	--]]
@@ -124,7 +124,7 @@ timer('everything', function()
 	assert(bit.band(#romstr, 0x7fff) == 0, "rom is not bank-aligned")
 
 	-- global so other files can see it
-	local rom = ffi.cast('uint8_t*', romstr) 
+	local rom = ffi.cast('uint8_t*', romstr)
 
 	-- global stuff
 
@@ -133,7 +133,7 @@ timer('everything', function()
 	if config.skipItemFanfare then
 		patches:skipItemFanfare()
 	end
-	if config.skipIntro then 
+	if config.skipIntro then
 		patches:skipIntro()
 	end
 	if config.beefUpXRay then
@@ -215,7 +215,7 @@ timer('everything', function()
 		-- http://wiki.metroidconstruction.com/doku.php?id=super:data_maps:rom_map:bank8f
 		sm:buildMemoryMap():print'memorymap.txt'
 	end)
-	
+
 
 	-- write out original stuff
 	sm:print()
@@ -227,14 +227,14 @@ timer('everything', function()
 				0x80,	-- system routines
 				0x81,	-- SRAM
 				0x82,	-- top level main game routines
-				0x83,	-- (data) fx and door definitions 
+				0x83,	-- (data) fx and door definitions
 				0x84,	-- plms
 				0x85,	-- message boxes
 				0x86,	-- enemy projectiles
 				0x87,	-- animated tiles
 				0x88,	-- hdma
 			}:append(range(0x89, 0xdf))) do
-				-- you know, data could mess this up 
+				-- you know, data could mess this up
 				local addr = topc(bank, 0x8000)
 				path(('bank/%02X.txt'):format(bank)):write(sm:codeDisasm(addr, rom+addr, 0x8000))
 			end
@@ -243,7 +243,7 @@ timer('everything', function()
 
 	--[[
 	for verificaiton: there is one plm per item throughout the game
-	however some rooms have multiple room states where some roomstates have items and some don't 
+	however some rooms have multiple room states where some roomstates have items and some don't
 	... however if ever multiple roomStates have items, they are always stored in the same plmset
 	and in the case that different roomStates have different items (like the first blue brinstar room, intro roomState has morph, gameplay roomState has powerbomb)
 	 there is still no duplicating those roomStates.
@@ -253,16 +253,16 @@ timer('everything', function()
 	how can we get around this ...
 	one easy way: merge those two plmsets
 	how often do we have to merge separate plmsets if we only want to consolidate all items?
-		
+
 		this is safe, the item appears after wake-zebes:
 	00/13 = Crateria former mother brain room, one plmset has nothing, the other has a missile (and space pirates)
 		idk when these happen but they are safe
-	00/15 = Crateria chozo boss, there is a state where there is no bomb item ... 
+	00/15 = Crateria chozo boss, there is a state where there is no bomb item ...
 	00/1f = Crateria first missiles after bombs, has a state without the item
-		
+
 	!!!! here is the one problem child:
 	01/0e = Brinstar first blue room.  one state has morph, the other has powerbombs (behind the powerbomb wall).
-		
+
 		these are safe, the items come back when triggered after killing Phantoon:
 	03/00 = Wrecked Ship, reserve + missile in one state, not in the other
 	03/03 = Wrecked Ship, missile in one state, not in the other
@@ -295,15 +295,15 @@ timer('everything', function()
 		assert(#m.roomStates == 2)
 		local rsNormal = m.roomStates[1]
 		local rsIntro = m.roomStates[2]
-		rsIntro.obj.musicTrack = rsNormal.obj.musicTrack
-		rsIntro.obj.musicControl = rsNormal.obj.musicControl
+		rsIntro:obj().musicTrack = rsNormal:obj().musicTrack
+		rsIntro:obj().musicControl = rsNormal:obj().musicControl
 	-- the security cameras stay there, and if I update these then their palette gets messed up
-	-- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall 
+	-- but changing this - only for the first time you visit the room - will remove the big sidehoppers from behind the powerbomb wall
 	-- however there's no way to get morph + powerbomb all in one go for the first time you're in the room, so I think I'll leave it this way for now
-	--	rsIntro.obj.fx1PageOffset = rsNormal.obj.fx1PageOffset
-	--	rsIntro.obj.enemySpawnPageOffset = rsNormal.obj.enemySpawnPageOffset
-	--	rsIntro.obj.enemySet = rsNormal.obj.enemySet
-		rsIntro.obj.layerHandlingPageOffset = rsNormal.obj.layerHandlingPageOffset
+	--	rsIntro:obj().fx1PageOffset = rsNormal:obj().fx1PageOffset
+	--	rsIntro:obj().enemySpawnPageOffset = rsNormal:obj().enemySpawnPageOffset
+	--	rsIntro:obj().enemySet = rsNormal:obj().enemySet
+		rsIntro:obj().layerHandlingPageOffset = rsNormal:obj().layerHandlingPageOffset
 		local rsIntroPLMSet = rsIntro.plmset
 		rsIntro:setPLMSet(rsNormal.plmset)
 		-- TODO remove the rsIntroPLMSet from the list of all PLMSets
@@ -313,13 +313,13 @@ timer('everything', function()
 		local lastIntroPLM = rsIntroPLMSet.plms:remove()
 		assert(lastIntroPLM.cmd == sm.plmCmdValueForName.item_morph)
 		rsNormal.plmset.plms:insert(lastIntroPLM)
-		
+
 		-- and finally, adjust the item randomizer plm indexes and sets
 		local _, morphBallItem = sm.items:find(nil, function(item)
 			local name = sm.plmCmdNameForValue[item.plm.cmd]
 			return name == 'item_morph'
 		end)
-		
+
 		assert(morphBallItem)
 		morphBallItem.plmsetIndex = 56	-- same as blue brinstar powerbomb item
 		morphBallItem.plmIndex = 19		-- one past the powerbomb
@@ -343,11 +343,11 @@ timer('everything', function()
 		-- hmm, in all cases it seems the change doesn't happen until after you leave the next room
 		local m = sm:mapFindRoom(0, 0x14)
 		assert(m.doors[2].addr == topc(sm.doorBank, 0x8b9e))
-		m.doors[2].ptr.code = assert(patches.wakeZebesEarlyDoorCode)
+		m.doors[2]:ptr().code = assert(patches.wakeZebesEarlyDoorCode)
 		--]=]
 		--[=[ 01/0e = blue brinstar first room
 		locla m = sm:mapFindRoom(1, 0x0e)
-		m.doors[2].ptr.code = assert(patches.wakeZebesEarlyDoorCode)
+		m.doors[2]:ptr().code = assert(patches.wakeZebesEarlyDoorCode)
 		--]=]
 	end
 	--]]
@@ -375,15 +375,15 @@ timer('everything', function()
 		local m4_24 = assert(sm:mapFindRoom(4, 0x24))
 		local m4_25 = assert(sm:mapFindRoom(4, 0x25))
 		local m4_30 = assert(sm:mapFindRoom(4, 0x30))
-		
+
 		-- clear the code on the door in 04/24 that points back to itself?
 		local door = assert(m4_24:findDoorTo(m4_24))
 		local doorToSelfDoorCode = door:obj().code
 		door:obj().code = 0
-		
+
 		local door = assert(m4_24:findDoorTo(m4_24))
 		door:obj().code = 0
-		
+
 		for _,m in ipairs{m4_24, m4_30} do
 			-- find the door that points to 4/25, redirect it to 4/24
 			local door = assert(m:findDoorTo(m4_25))
@@ -411,12 +411,12 @@ timer('everything', function()
 		-- if you leave all original then walking through the door from 0,3 to 1,3 messes up the scroll effect
 		-- if you change the starting room to 0 then walking into 0,3 messes up the scroll effect
 		-- if you set 0,3 to 1 then it works, but you can see the room that you're walking into.
-		-- (maybe I should make the door somehow fix the scrolldata when you walk through it?) 
+		-- (maybe I should make the door somehow fix the scrolldata when you walk through it?)
 		for _,rs in ipairs(m4_24.roomStates) do
 			rs.scrollData[1+1+2*2] = 2
 			rs.scrollData[1+1+2*3] = 1
 		end
-		
+
 		-- and now remove 04/25
 		sm:mapRemoveRoom(m4_25)
 	end
@@ -427,7 +427,7 @@ timer('everything', function()
 			-- also for the sake of the item randomizer, lets fill in some of those empty room regions with solid
 			local fillSolidInfo = table{
 				--[[
-				-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break. 
+				-- TODO this isn't so straightforward.  looks like filling in the elevators makes them break.
 				-- I might have to just excise regions from the item-scavenger instead
 				{1, 0x00, 0,0,16,32+6},			-- brinstar left elevator to crateria.  another option is to make these hollow ...
 				{1, 0x0e, 16*5, 0, 16, 32+2},	-- brinstar middle elevator to crateria
@@ -439,11 +439,11 @@ timer('everything', function()
 				{4, 0x18, 0, 0, 16, 10*16},		-- maridia pipe room
 				{5, 0x00, 0,0,16,32},			-- tourian elevator shaft
 				--]]
-				
+
 				{0, 0x00, 0,0,16,32},			-- crateria first room empty regions
 				{0, 0x00, 0,48,16,16},			-- "
-				
-				{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room 
+
+				{0, 0x1c, 0,7*16-5,16,5},		-- crateria bottom of green pirate room
 
 				{1, 0x18, 0,16-3,16,3},			-- brinstar first missile room
 
@@ -459,18 +459,18 @@ timer('everything', function()
 				{4, 0x0e, 14,16+3,1,2},			-- "
 				{4, 0x0e, 1,16+11,1,2},			-- "
 				{4, 0x0e, 14,16+11,1,2},		-- "
-				{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side 
+				{4, 0x1a, 4*16-4, 16-5, 4, 4},	-- maridia first sand area pillars under door on right side
 				{4, 0x1b, 0, 32-5, 16, 4},		-- maridia green pipe in the middle pillars underneath
-				{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side 
-				{4, 0x1c, 3*16-4, 16-5, 4, 4},	-- maridia second sand area pillars under door on right side 
+				{4, 0x1c, 0, 16-5, 4, 4},		-- maridia second sand area pillars under door on left side
+				{4, 0x1c, 3*16-4, 16-5, 4, 4},	-- maridia second sand area pillars under door on right side
 				{4, 0x24, 0, 64-5, 4, 4},		-- maridia lower right sand area
 				{4, 0x24, 16-4, 64-5, 8, 4},	-- "
 				{4, 0x24, 32-4, 64-5, 4, 4},	-- "
 				{4, 0x26, 0, 32-5, 32, 5},		-- maridia spring ball room
-			} 
+			}
 			if not merging424and425 then
 				fillSolidInfo:append{
-					{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous 
+					{4, 0x25, 0, 48-5, 4, 4},		-- you could merge this room into the previous
 					{4, 0x25, 16-4, 48-5, 4, 4},	-- "
 				}
 			end
@@ -539,27 +539,27 @@ timer('everything', function()
 			end)
 		end
 	end
-	
+
 	if config.mapRecompress then
 		timer('write map changes to ROM', function()
 			-- write back changes
 			sm:mapWrite()
 		end)
 	end
-	
+
 	-- TODO split this into writing the info map, the mask map, and the textured map
 	-- I don't need a new textured map (unless I'm changin textures)
 	--  but the other two are very useful in navigating the randomized map
-	-- TODO FIXME remember the bmps are cached from the previous write of unmodified data, so 
+	-- TODO FIXME remember the bmps are cached from the previous write of unmodified data, so
 	if config.writeOutModifiedMapImage then
 		timer('write modified ROM output image', function()
 			sm:mapSaveImageInformative'map-random'
 		end)
 	end
-	
+
 	-- write out altered stuff
 	sm:print()
-	
+
 	timer('write modified ROM memory map', function()
 		sm:buildMemoryMap():print()
 	end)

@@ -1,5 +1,6 @@
 local ffi = require 'ffi'
 local table = require 'ext.table'
+local math = require 'ext.math'
 local config = require 'super_metroid_randomizer.config'
 local struct = require 'super_metroid_randomizer.smstruct'
 local expRand = require 'super_metroid_randomizer.exprand'
