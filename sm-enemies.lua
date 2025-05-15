@@ -54,7 +54,7 @@ local itemDrop_t = struct{
 }
 
 --[[
-here's possible values:    
+here's possible values:
 	0 = no damage to enemy.
     1 = 0.5x damage to enemy.
     2 = default (1x) damage to enemy.
@@ -136,8 +136,8 @@ enemyClass_t_fields = table{
 	{unused_extraAI_7 = 'uint16_t'},
 	{graphicsAddr24 = 'addr24_t'},	-- aka tile data
 	{layerPriority = 'uint8_t'},
-	{itemdrop = 'uint16_t'},	-- pointer 
-	{weakness = 'uint16_t'},	-- pointer 
+	{itemdrop = 'uint16_t'},	-- pointer
+	{weakness = 'uint16_t'},	-- pointer
 	{name = 'uint16_t'},		-- pointer
 }
 local enemyClass_t = struct{
@@ -175,13 +175,13 @@ local spritemap_t = struct{
 		-- does size go before or after unused2?
 		{unused2 = 'uint16_t:5'},
 		{size = 'uint16_t:1'},
-		
+
 		{yofs = 'uint8_t'},
-	
+
 		-- I would do uint16_t:9, but I get a NYI error
 		{tileIndex = 'uint8_t'},
 		{tileIndexHi = 'uint8_t:1'},
-		
+
 		{palette = 'uint8_t:3'},
 		{priority = 'uint8_t:2'},
 		{xflip = 'uint8_t:1'},
@@ -223,11 +223,11 @@ end
 local EnemyAuxTable = class(ROMTable)
 
 EnemyAuxTable.showDistribution = true
-EnemyAuxTable.bank = enemyAuxTableBank 
+EnemyAuxTable.bank = enemyAuxTableBank
 
 function EnemyAuxTable:init(sm)
 	EnemyAuxTable.super.init(self, sm)
-	
+
 	self.addrs = sm.enemies:map(function(enemy)
 		return true, enemy.ptr[0][self.enemyField]
 	end):keys():sort()
@@ -236,7 +236,7 @@ end
 function EnemyAuxTable:randomize()
 	local rom = self.sm.rom
 	local ptrtype = self.structName..'*'
-	
+
 	for _,addr in ipairs(self.addrs) do
 		if addr ~= 0 then
 			-- return nil to not randomize this entry
@@ -250,10 +250,10 @@ function EnemyAuxTable:randomize()
 
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
-		
+
 				-- if we are randomizing the enemy field ... then randomize the table associated with it
-				if randomizeEnemyProps[self.enemyField] 
-				and values 
+				if randomizeEnemyProps[self.enemyField]
+				and values
 				then
 					local value = values[i]
 					entry[0][name] = value
@@ -275,7 +275,7 @@ function EnemyAuxTable:print()
 	local sm = self.sm
 	local rom = sm.rom
 	local ptrtype = self.structName..'*'
-	
+
 	print()
 	print(self.name..' has '..#self.addrs..' unique addrs:')
 	print(' '..self.addrs:map(function(addr) return ('%04x'):format(addr) end):concat', ')
@@ -284,7 +284,7 @@ function EnemyAuxTable:print()
 	if self.showDistribution then
 		distr = table()
 	end
-	
+
 	print()
 	print(self.name..':')
 	for _,addr in ipairs(self.addrs) do
@@ -303,12 +303,12 @@ function EnemyAuxTable:print()
 			for i,field in ipairs(self.fields) do
 				local name = next(field)
 				local value = entry[0][name]
-				
+
 				if self.showDistribution then
 					local value = entry[0][name]
 					distr[value] = (distr[value] or 0) + 1
 				end
-				
+
 				-- concise:
 				--io.write( (' %02x'):format(value) )
 				-- verbose:
@@ -318,7 +318,7 @@ function EnemyAuxTable:print()
 		-- concise:
 		--print()
 	end
-	
+
 	if self.showDistribution then
 		print'...distribution of values:'
 		for _,k in ipairs(distr:keys():sort()) do
@@ -338,7 +338,7 @@ end
 function EnemyAuxTable:printEnemy(enemy)
 	local rom = self.sm.rom
 	local field = self.enemyField
-	
+
 	io.write(' ',field,'=',('0x%04x'):format(enemy.ptr[0][field]))
 	local addr = enemy.ptr[0][field]
 	if addr ~= 0 then
@@ -370,7 +370,7 @@ function EnemyItemDropTable:getRandomizedValues(addr)
 	if sum > 0 then
 		values = values:map(function(value) return math.ceil(value * 0xff / sum) end)
 	end
-	--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?			
+	--- TODO should always add up to 0xff here ...but if I was lazy, would floor() or ceil() be better?
 	return values
 end
 
@@ -400,7 +400,7 @@ end
 
 local dontChangeWeaknessSet = {
 	-- don't randomize Kraid's weaknesses ... for now
-	["Kraid (body)"] = true, 
+	["Kraid (body)"] = true,
 	Metroid = true,
 	["Spore Spawn"] = true,
 	['Mother Brain'] = true,
@@ -419,7 +419,7 @@ here's the distribution of original weakness values:
   0x01 x17
   0x02 x488
   0x04 x67
- 
+
 can't freeze flag:
   0x80 x235	<- can't freeze / immune flag
   0x81 x8
@@ -440,11 +440,11 @@ I'm suspicious the last 0x80 is a bitflag of some sort
 and who knows what 0xff is ...
 
 kraid is at 0xe2bf
-and has a weakness address 0xf15a <-> 0x1a715a :  
-82 82 82 82 82 
-82 82 82 82 82 
-82 82 82 82 80 
-80 80 80 80 02 
+and has a weakness address 0xf15a <-> 0x1a715a :
+82 82 82 82 82
+82 82 82 82 82
+82 82 82 82 80
+80 80 80 80 02
 80 80
 
 looks like all beams/missiles have 82 (hyper has 02)
@@ -480,17 +480,17 @@ looks like it
 0x42
 insta-freezes then insta-kills
 
-0x80 
-After writing 'freeze' everywhere, 
+0x80
+After writing 'freeze' everywhere,
 I'm now pretty sure this bit is for whether charge+beam can damage it
 
 
 0xff
-insta freeze 
+insta freeze
 speed booster still kills green zebesians
 screw attack kills mini kraid
 screw attack kils
-grappling still kills too, but not mini kraid or green zebesians 
+grappling still kills too, but not mini kraid or green zebesians
 
 soooo ... it all looks very conditional
 
@@ -511,17 +511,17 @@ function EnemyWeaknessTable:getRandomizedValues(ofs)
 		local fieldName, fieldType = next(field)
 
 		if config.forceEnemyWeakness
-		and config.forceEnemyWeakness[fieldName] 
-		then 
-			return config.forceEnemyWeakness[fieldName] 
+		and config.forceEnemyWeakness[fieldName]
+		then
+			return config.forceEnemyWeakness[fieldName]
 		end
 
 		local freezeField = iceFieldSet[fieldName]
-		
-		-- only if it's a freeze field 
+
+		-- only if it's a freeze field
 		if freezeField then
-			if math.random() < randomizeEnemyProps.chanceToInstaFreeze then 
-				return 0xff 
+			if math.random() < randomizeEnemyProps.chanceToInstaFreeze then
+				return 0xff
 			end
 		end
 
@@ -532,7 +532,7 @@ function EnemyWeaknessTable:getRandomizedValues(ofs)
 			-- exp(-x/7) has the following values for 0-15:
 			-- 1.0, 0.86687789975018, 0.75147729307529, 0.65143905753106, 0.56471812200776, 0.48954165955695, 0.42437284567695, 0.36787944117144, 0.31890655732397, 0.27645304662956, 0.23965103644178, 0.2077481871436, 0.18009231214795, 0.15611804531597, 0.13533528323661, 0.11731916609425
 			value = 1	--pickWeighted(range(0,15):map(function(x) return math.exp(-x/7) end))
-		end	
+		end
 
 		if freezeField then
 			if math.random() > randomizeEnemyProps.chanceToFreeze then
@@ -568,7 +568,7 @@ function EnemyWeaknessTable:getRandomizedValues(ofs)
 	if ofs == sm.enemyForName.Shaktool.ptr.weakness then
 		values[16] = 0
 	end
-	
+
 	return values
 end
 
@@ -577,7 +577,7 @@ function EnemyWeaknessTable:randomizeEnemy(enemy)
 	-- if (for item placement to get past canKill constraints)
 	-- we choose to allow re-rolling of weaknesses
 	-- then they will have to work around the fact that these certain enemies shouldn't re-roll
-	
+
 	if dontChangeWeaknessSet[enemy.name] then
 		print('NOT WRITING WEAKNESS OF '..enemy.name)
 		return
@@ -774,7 +774,7 @@ function SMEnemies:enemiesInit()
 		enemy.ptr = ffi.cast('enemyClass_t*', rom + addr)
 
 		enemy.graphicsAddr = enemy.ptr.graphicsAddr24:topc()
-	
+
 		-- what is the format here?
 	end
 
@@ -903,20 +903,20 @@ function SMEnemies:enemiesInit()
 			end
 			self.enemySpritemaps:insert(spritemap)
 		end
-	end	
+	end
 
 	self.allEnemyFieldValues = {}
 	for _,field in ipairs{
 		'sound',
 
 	-- doesn't look so great.
-		'palette',	
-		
+		'palette',
+
 		-- don't pick from previous values here
 		--  because only 0,2,3,4 are used, but 1 is valid
 		--'deathEffect',
 
-		--[[ randomize AI?  
+		--[[ randomize AI?
 		-- maybe only for certain monsters ... among only certain values ...
 		-- just doing everything causes it to freeze very often
 		'aiBank',
@@ -967,7 +967,7 @@ function SMEnemies:enemiesPrint()
 		print((' address=$%06x'):format(topc(enemyBank, enemy.addr)))
 
 		print(' tileDataSize='..('0x%04x'):format(enemy.ptr.tileDataSize))
-	
+
 		-- wait, is the aiBank the aiBank or the paletteBank?
 		print(' palette='
 			..('$%02x'):format(enemy.ptr.aiBank)
@@ -981,14 +981,14 @@ function SMEnemies:enemiesPrint()
 		end
 
 		print(' deathEffect='..enemy.ptr.deathEffect)
-		
+
 		for field,values in pairs(self.allEnemyFieldValues) do
 			print(' '..field..'='..('0x%x'):format(enemy.ptr[0][field]))
 		end
-		
+
 		self.enemyWeaknessTable:printEnemy(enemy)
 		self.enemyItemDropTable:printEnemy(enemy)
-		
+
 		print(' graphicsAddr24_t='..enemy.ptr.graphicsAddr24)
 		print(' graphicsAddr_t='..enemy.graphicsAddr)
 
@@ -998,7 +998,7 @@ function SMEnemies:enemiesPrint()
 			local len = 10
 			local betaname = ffi.string(rom + addr, len)
 			io.write(': '..tolua(betaname))
-			-- NOTICE the last 4 bytes are 2 addresses: 
+			-- NOTICE the last 4 bytes are 2 addresses:
 			-- 1: to a debug enemy population pointer
 			-- 2: index into debug spritemap at $a201 sized $22
 			--io.write(' / '..betaname:gsub('.', function(c) return ('%02x '):format(c:byte()) end)
@@ -1029,14 +1029,14 @@ function SMEnemies:enemiesBuildMemoryMap(mem)
 			mem:add(topc(enemyAuxTableBank, enemy.ptr.name), 14, 'enemy debug name')
 		end
 	end
-		
+
 	self.enemyWeaknessTable:buildMemoryMap(mem)
 	self.enemyItemDropTable:buildMemoryMap(mem)
 
 	for _,shot in ipairs(self.enemyShots) do
 		local addr = topc(enemyShotBank, shot.addr)
 		mem:add(addr, ffi.sizeof'enemyShot_t', 'enemyShot_t')
-	end	
+	end
 
 	for _,spritemap in ipairs(self.enemySpritemaps) do
 		mem:add(spritemap.addr, 2 + #spritemap * ffi.sizeof'spritemap_t', 'enemy sprites set')
@@ -1054,7 +1054,7 @@ all bank $b4
 b00e-bc26 = different enemy names
 bc26-dd89 = sprite stuff
 dd89-e2f6 = debug enemy names ... I am missing the 1st entry.
-e2f6-ec1c = debug enemy population data ... pointed to within the enemy name structs at the end 
+e2f6-ec1c = debug enemy population data ... pointed to within the enemy name structs at the end
 ec1c-f1f4 = weakness_t		- paddings are unused space
 f1f4-f488 = itemDrop_t's	- paddings are unused space
 f488-0000 = free space

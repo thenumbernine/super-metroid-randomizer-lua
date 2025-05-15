@@ -2,8 +2,8 @@ return {
 	-- saving data in the original rom
 	mapSaveImageInformative = false,
 	mapSaveImageTextured = false,
-	mapSaveImageRegionsTextured = false,
-	mapSaveImageTextured_HighlightItems = false,
+	mapSaveImageRegionsTextured = true,
+	mapSaveImageTextured_HighlightItems = true,
 	mapSaveGraphicsMode7 = false,
 	mapSaveGraphicsTileSets = false,
 	mapSaveGraphicsBGs = false,
