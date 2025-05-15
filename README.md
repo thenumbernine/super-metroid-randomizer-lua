@@ -20,7 +20,7 @@ Randomizer (`run.lua`) Depends On:
 - [lua-image](https://github.com/thenumbernine/lua-image), if you enable config.lua's writeOutImage
 
 Visualizer (`vis.lua`) Depends On (in addition to randomizer's dependencies):
-- [lua-imguiapp](https://github.com/thenumbernine/lua-imguiapp)
+- [imgui.app](https://github.com/thenumbernine/lua-imgui)
 
 randomizes the following:
 - enemies:
