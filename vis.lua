@@ -1835,7 +1835,7 @@ local function makeTooltipImage(name, tex, w, h, color)
 	if ig.igIsItemHovered(ig.ImGuiHoveredFlags_None) then
 		ig.igBeginTooltip()
 		ig.igText(name)
-		local texIDPtr = ffi.cast('void*',ffi.cast('intptr_t',tex.id))
+		local texIDPtr = ffi.cast('ImTextureID', tex.id)
 		ig.igImage(
 			texIDPtr,
 			ig.ImVec2(w, h),
