@@ -1,4 +1,5 @@
 local ffi = require 'ffi'
+local string = require 'ext.string'
 
 local function byteArraySubset(src, ofs, len)
 	assert(type(src) == 'cdata')
@@ -105,11 +106,6 @@ local function mergeByteArrays(...)
 	return dest
 end
 
-local function strtohex(s)
-	assert(type(s) == 'string')
-	return byteArrayToHexStr(ffi.cast('char*',s), #s)
-end
-
 return {
 	byteArraySubset = byteArraySubset,
 	tableSubsetsEqual = tableSubsetsEqual,
@@ -120,5 +116,4 @@ return {
 	hexStrToByteArray = hexStrToByteArray,
 	byteArrayToHexStr = byteArrayToHexStr,
 	mergeByteArrays = mergeByteArrays,
-	strtohex = strtohex,
 }

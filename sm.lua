@@ -8,9 +8,9 @@ so TODO clean up and bureaucratize
 
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local string = require 'ext.string'
 local MemoryMap = require 'super_metroid_randomizer.memorymap'
 local config = require 'super_metroid_randomizer.config'
-local strtohex = require 'super_metroid_randomizer.util'.strtohex
 local Blob = require 'super_metroid_randomizer.blob'
 local topc = require 'super_metroid_randomizer.pc'.to
 local frompc = require 'super_metroid_randomizer.pc'.from
@@ -33,7 +33,7 @@ function SM:init(rom, romlen)
 	self.rom = rom
 	self.romlen = romlen
 
-	self.md5hash = strtohex(require 'super_metroid_randomizer.md5'(rom, romlen))
+	self.md5hash = string.hex(require 'super_metroid_randomizer.md5'(rom, romlen))
 	print('md5: '..self.md5hash)
 
 	self.nameBlob = Blob{sm=self, addr=topc(0x80, 0xffc0), count=0x15}
