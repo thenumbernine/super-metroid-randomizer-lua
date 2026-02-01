@@ -1021,11 +1021,11 @@ function App:update()
 	viewymax = view.pos.y + view.orthoSize
 
 	self.indexShader:use()
-	gl.glUniformMatrix4fv(self.indexShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjMat.ptr)
+	gl.glUniformMatrix4fv(self.indexShader.uniforms.mvProjMat.loc, 1, gl.GL_TRUE, self.view.mvProjMat.ptr)
 	self.indexShader:useNone()
 	if self.tilemapShader then
 		self.tilemapShader:use()
-		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.mvProjMat.loc, 1, gl.GL_FALSE, self.view.mvProjMat.ptr)
+		gl.glUniformMatrix4fv(self.tilemapShader.uniforms.mvProjMat.loc, 1, gl.GL_TRUE, self.view.mvProjMat.ptr)
 		self.tilemapShader:useNone()
 	end
 
