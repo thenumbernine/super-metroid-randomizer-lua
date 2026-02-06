@@ -8,7 +8,6 @@ TODO replace the rgb conversion with a shader that takes in the indexed 8-bit im
 --]]
 local ffi = require 'ffi'
 local gl = require 'gl.setup'(arg[2] or 'OpenGL')
-local glreport = require 'gl.report'
 local ig = require 'imgui'
 local GLTex2D = require 'gl.tex2d'
 local GLProgram = require 'gl.program'
@@ -845,7 +844,6 @@ void main() {
 
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-glreport'here'
 
 	self.mouseViewPos = vec2f()
 end
@@ -1791,7 +1789,6 @@ end -- useBakedGraphicsTileTextures
 	end
 
 	App.super.update(self)
-glreport'here'
 end
 
 
