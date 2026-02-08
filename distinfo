@@ -76,6 +76,7 @@ deps = {
 	"gl",
 	"image",
 	"imgui",
+	"stl",
 	"struct",
 	"template",
 	"vec-ffi",

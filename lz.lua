@@ -5,7 +5,7 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local range = require 'ext.range'
-local vector = require 'ffi.cpp.vector-lua'
+local vector = require 'stl.vector-lua'
 
 local tableToByteArray = require 'super_metroid_randomizer.util'.tableToByteArray
 

@@ -1,7 +1,7 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
-local vector = require 'ffi.cpp.vector-lua'
+local vector = require 'stl.vector-lua'
 local struct = require 'super_metroid_randomizer.smstruct'
 local topc = require 'super_metroid_randomizer.pc'.to
 local Blob = require 'super_metroid_randomizer.blob'
