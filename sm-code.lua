@@ -56,7 +56,6 @@ uint16_t& mem16(uint24_t addr) {
 --]]
 
 local ffi = require 'ffi'
-local bit = require 'bit'
 local table = require 'ext.table'
 local range = require 'ext.range'
 local class = require 'ext.class'

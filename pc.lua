@@ -1,5 +1,3 @@
-local bit = require 'bit'
-
 local function topc(bank, offset)
 	return bit.bor(bit.lshift(bit.band(bank,0x7f),15),bit.band(offset,0x7fff))
 end
